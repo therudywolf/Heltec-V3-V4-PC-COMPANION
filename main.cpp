@@ -229,6 +229,11 @@ const uint8_t iconSnow[32] PROGMEM = {
     0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 // ============================================================================
+// FORWARD DECLARATIONS
+// ============================================================================
+String _weatherDescFromCode(int code);
+
+// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
@@ -991,7 +996,7 @@ void loop() {
       if (c == '\n') {
         if (tcpLineBuffer.length() > 0) {
           // Parse JSON
-          DynamicJsonDocument doc(4096);
+          JsonDocument doc;
           DeserializationError err = deserializeJson(doc, tcpLineBuffer);
 
           if (!err) {
