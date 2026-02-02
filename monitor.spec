@@ -1,20 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Сборка: pyinstaller monitor.spec (или build_oneclick.bat)
+# Не используем collect_all('winsdk') — тянет почти весь Windows SDK и раздувает сборку.
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_submodules
 
 # pystray/PIL — скрытые импорты для Windows-трея и иконки
 _hidden = ['pystray._win32', 'PIL.Image', 'PIL.ImageDraw']
 
-# winsdk — динамические импорты; collect_all подтягивает подмодули и данные
-_w_datas, _w_binaries, _w_hidden = collect_all('winsdk')
-_hidden += _w_hidden
+# winsdk — только то, что реально нужно для медиа-контроля (обложки/плеер)
+# monitor.py: GlobalSystemMediaTransportControlsSessionManager, Buffer, InputStreamOptions
+_hidden += collect_submodules('winsdk.windows.media.control')
+_hidden += collect_submodules('winsdk.windows.storage.streams')
+_hidden += ['winsdk', 'winsdk.windows.media', 'winsdk.windows.storage']
 
 a = Analysis(
     ['monitor.py'],
     pathex=[],
-    binaries=_w_binaries,
-    datas=_w_datas,
+    binaries=[],
+    datas=[],
     hiddenimports=_hidden,
     hookspath=[],
     hooksconfig={},
