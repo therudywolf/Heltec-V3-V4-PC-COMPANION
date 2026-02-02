@@ -4,10 +4,10 @@ import io
 import os
 import sys
 import traceback
-import serial
 import json
 import time
 import requests
+import psutil
 from dotenv import load_dotenv
 from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
 from winsdk.windows.storage.streams import Buffer, InputStreamOptions
@@ -29,12 +29,10 @@ except ImportError:
 load_dotenv()
 
 # --- КОНФИГ (из .env, см. .env.example) ---
-SERIAL_PORT = os.getenv("SERIAL_PORT", "COM6")
 LHM_URL = os.getenv("LHM_URL", "http://localhost:8085/data.json")
 TCP_HOST = os.getenv("TCP_HOST", "0.0.0.0")
 TCP_PORT = int(os.getenv("TCP_PORT", "8888"))
 PC_IP = os.getenv("PC_IP", "192.168.1.2")
-TRANSPORT = os.getenv("TRANSPORT", "serial").lower()  # serial, tcp, both
 
 # Карта сенсоров (ID из LibHardwareMonitor)
 TARGETS = {
@@ -60,7 +58,8 @@ TARGETS = {
     "c1": "/amdcpu/0/clock/3", "c2": "/amdcpu/0/clock/5",
     "c3": "/amdcpu/0/clock/7", "c4": "/amdcpu/0/clock/9",
     "c5": "/amdcpu/0/clock/11", "c6": "/amdcpu/0/clock/13",
-    "nvme2_t": "/nvme/2/temperature/0",   # NVMe temp (opt)
+    "nvme2_t": "/nvme/2/temperature/0",    # NVMe temp (opt)
+    "chipset_t": "/lpc/it8688e/0/temperature/0",  # Chipset temp
 }
 
 def clean_val(v):
@@ -96,6 +95,106 @@ def get_lhm_data():
 COVER_SIZE = 48
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
 
+# Погода (кэш)
+weather_cache = {"temp": 0, "desc": "", "icon": 0}
+last_weather_update = 0.0
+WEATHER_UPDATE_INTERVAL = 30 * 60  # 30 минут
+
+# Сеть и диски (для расчёта скорости)
+last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
+last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
+
+
+def get_weather():
+    """Получить погоду в Москве (wttr.in JSON, кэш 30 мин)"""
+    global weather_cache, last_weather_update
+    now = time.time()
+    if now - last_weather_update < WEATHER_UPDATE_INTERVAL and weather_cache["temp"] != 0:
+        return weather_cache
+    
+    try:
+        r = requests.get("https://wttr.in/Moscow?format=j1", timeout=3)
+        if r.status_code == 200:
+            data = r.json()
+            cond = data.get("current_condition", [{}])[0]
+            temp = int(cond.get("temp_C", 0))
+            desc = cond.get("weatherDesc", [{}])[0].get("value", "")[:20]
+            icon = int(cond.get("weatherCode", 0))
+            weather_cache = {"temp": temp, "desc": desc, "icon": icon}
+            last_weather_update = now
+            return weather_cache
+    except Exception as e:
+        log_err(f"Weather fetch: {e}", e, trace=False)
+    
+    return weather_cache
+
+def get_top_processes():
+    """Получить топ-3 процесса по CPU"""
+    try:
+        procs = []
+        for p in psutil.process_iter(['name', 'cpu_percent']):
+            try:
+                info = p.info
+                cpu = info.get('cpu_percent', 0.0)
+                if cpu and cpu > 0:
+                    name = info.get('name', '')[:12]
+                    procs.append({"n": name, "c": int(cpu)})
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        procs.sort(key=lambda x: x["c"], reverse=True)
+        return procs[:3]
+    except Exception as e:
+        log_err(f"Top processes: {e}", e, trace=False)
+        return []
+
+def get_net_speed():
+    """Получить скорость сети (upload/download KB/s)"""
+    global last_net_bytes
+    try:
+        counters = psutil.net_io_counters()
+        now = time.time()
+        sent = counters.bytes_sent
+        recv = counters.bytes_recv
+        
+        if last_net_bytes["time"] > 0:
+            delta_time = now - last_net_bytes["time"]
+            if delta_time > 0:
+                up = int((sent - last_net_bytes["sent"]) / delta_time / 1024)
+                down = int((recv - last_net_bytes["recv"]) / delta_time / 1024)
+                last_net_bytes = {"sent": sent, "recv": recv, "time": now}
+                return {"up": up, "down": down}
+        
+        last_net_bytes = {"sent": sent, "recv": recv, "time": now}
+        return {"up": 0, "down": 0}
+    except Exception as e:
+        log_err(f"Net speed: {e}", e, trace=False)
+        return {"up": 0, "down": 0}
+
+def get_disk_speed():
+    """Получить скорость дисков (read/write MB/s)"""
+    global last_disk_bytes
+    try:
+        counters = psutil.disk_io_counters()
+        if not counters:
+            return {"read": 0, "write": 0}
+        
+        now = time.time()
+        read = counters.read_bytes
+        write = counters.write_bytes
+        
+        if last_disk_bytes["time"] > 0:
+            delta_time = now - last_disk_bytes["time"]
+            if delta_time > 0:
+                read_mb = int((read - last_disk_bytes["read"]) / delta_time / 1024 / 1024)
+                write_mb = int((write - last_disk_bytes["write"]) / delta_time / 1024 / 1024)
+                last_disk_bytes = {"read": read, "write": write, "time": now}
+                return {"read": read_mb, "write": write_mb}
+        
+        last_disk_bytes = {"read": read, "write": write, "time": now}
+        return {"read": 0, "write": 0}
+    except Exception as e:
+        log_err(f"Disk speed: {e}", e, trace=False)
+        return {"read": 0, "write": 0}
 
 async def get_media():
     try:
@@ -143,8 +242,17 @@ async def get_media():
         log_err(f"Media session: {e}", e, trace=False)
     return {"art": "", "trk": "Stopped", "play": 0, "cover_b64": ""}
 
-def build_payload(hw, media, hw_ok, include_cover=True):
+def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None):
     """Сборка JSON-пакета. При пустом hw используются нули/кэш; hw_ok=0/1. cover_b64 только при include_cover."""
+    if weather is None:
+        weather = {"temp": 0, "desc": "", "icon": 0}
+    if top_procs is None:
+        top_procs = []
+    if net is None:
+        net = {"up": 0, "down": 0}
+    if disk is None:
+        disk = {"read": 0, "write": 0}
+    
     payload = {
         "hw_ok": 1 if hw_ok else 0,
         "ct": int(hw.get("ct", 0)),
@@ -170,6 +278,15 @@ def build_payload(hw, media, hw_ok, include_cover=True):
         "vt_tot": round(hw.get("vram_t", 0) / 1024, 1),
         "vcore": round(hw.get("vcore", 0), 2),
         "nvme2_t": int(hw.get("nvme2_t", 0)),
+        "chipset_t": int(hw.get("chipset_t", 0)),
+        "nu": net.get("up", 0),
+        "nd": net.get("down", 0),
+        "dr": disk.get("read", 0),
+        "dw": disk.get("write", 0),
+        "wt": weather.get("temp", 0),
+        "wd": weather.get("desc", ""),
+        "wi": weather.get("icon", 0),
+        "tp": top_procs,
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", 0),
@@ -226,50 +343,28 @@ async def tcp_handler(reader, writer):
 
 
 async def run():
-    ser = None
-    if TRANSPORT in ("serial", "both"):
-        try:
-            ser = serial.Serial(SERIAL_PORT, 115200, timeout=0.05)
-            print(f"[*] Serial: {SERIAL_PORT}")
-        except Exception as e:
-            log_err(f"Serial open {SERIAL_PORT}: {e}", e)
-            if TRANSPORT == "serial":
-                return
-
+    bind_host = TCP_HOST
     server = None
-    if TRANSPORT in ("tcp", "both"):
-        bind_host = TCP_HOST
-        try:
-            server = await asyncio.start_server(tcp_handler, bind_host, TCP_PORT)
-            print(f"[*] TCP: {bind_host}:{TCP_PORT}")
-        except OSError as e:
-            if bind_host != "0.0.0.0":
-                try:
-                    server = await asyncio.start_server(tcp_handler, "0.0.0.0", TCP_PORT)
-                    print(f"[*] TCP: 0.0.0.0:{TCP_PORT} (fallback, bind to {bind_host} failed: {e})")
-                except Exception as e2:
-                    log_err(f"TCP server: {e2}", e2)
-                    if TRANSPORT == "tcp":
-                        if ser:
-                            ser.close()
-                        return
-            else:
-                log_err(f"TCP server {bind_host}:{TCP_PORT}: {e}", e)
-                if TRANSPORT == "tcp":
-                    if ser:
-                        ser.close()
-                    return
-        except Exception as e:
-            log_err(f"TCP server {bind_host}:{TCP_PORT}: {e}", e)
-            if TRANSPORT == "tcp":
-                if ser:
-                    ser.close()
+    try:
+        server = await asyncio.start_server(tcp_handler, bind_host, TCP_PORT)
+        print(f"[*] TCP: {bind_host}:{TCP_PORT}")
+    except OSError as e:
+        if bind_host != "0.0.0.0":
+            try:
+                server = await asyncio.start_server(tcp_handler, "0.0.0.0", TCP_PORT)
+                print(f"[*] TCP: 0.0.0.0:{TCP_PORT} (fallback, bind to {bind_host} failed: {e})")
+            except Exception as e2:
+                log_err(f"TCP server: {e2}", e2)
                 return
+        else:
+            log_err(f"TCP server {bind_host}:{TCP_PORT}: {e}", e)
+            return
+    except Exception as e:
+        log_err(f"TCP server {bind_host}:{TCP_PORT}: {e}", e)
+        return
 
-    if TRANSPORT == "both" and ser is None and server is None:
-        log_err("Neither Serial nor TCP available. Exit.")
-        if ser:
-            ser.close()
+    if server is None:
+        log_err("TCP server failed to start. Exit.")
         return
 
     cache = {}
@@ -278,15 +373,7 @@ async def run():
     last_cover_sent = 0.0
     COVER_INTERVAL = 8.0
 
-    def send_serial(data: bytes):
-        if ser and ser.is_open:
-            try:
-                ser.write(data)
-            except Exception as e:
-                log_err(f"Serial write: {e}", e)
-
     async def send_all(data: bytes):
-        send_serial(data)
         dead = []
         for w in tcp_clients:
             try:
@@ -306,6 +393,10 @@ async def run():
     while True:
         hw = get_lhm_data()
         media = await get_media()
+        weather = get_weather()
+        top_procs = get_top_processes()
+        net = get_net_speed()
+        disk = get_disk_speed()
         hw_ok = bool(hw)
         if hw_ok:
             cache.update(hw)
@@ -317,7 +408,7 @@ async def run():
                   "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
                   "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
                   "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
-                  "vcore": 0, "nvme2_t": 0}
+                  "vcore": 0, "nvme2_t": 0, "chipset_t": 0}
             media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
         track_key = (media.get("art", "") or "") + "|" + (media.get("trk", "") or "")
         now_sec = time.time()
@@ -325,7 +416,7 @@ async def run():
         if include_cover and media.get("cover_b64"):
             last_cover_sent = now_sec
         last_track_key = track_key
-        payload = build_payload(hw, media, hw_ok, include_cover=include_cover)
+        payload = build_payload(hw, media, hw_ok, include_cover=include_cover, weather=weather, top_procs=top_procs, net=net, disk=disk)
         data_str = json.dumps(payload) + "\n"
         data = data_str.encode("utf-8")
         await send_all(data)
