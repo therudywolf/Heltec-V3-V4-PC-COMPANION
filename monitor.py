@@ -91,7 +91,8 @@ TOP_PROCS_RAM_N = 2
 
 stop_requested = False
 
-# Hardware sensor mapping (LibHardwareMonitor IDs)
+# LHM SensorId -> JSON key. LHM Value/RawValue use comma decimal; clean_val() normalizes.
+# Disks: d1=nvme/2, d2=nvme/3, d3=hdd/0, d4=ssd/1 -> main.cpp hw.disk*[0..3].
 TARGETS = {
     "ct": "/amdcpu/0/temperature/2",
     "gt": "/gpu-nvidia/0/temperature/0",
