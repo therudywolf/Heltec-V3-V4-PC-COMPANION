@@ -71,6 +71,11 @@ TARGETS = {
     "c5": "/amdcpu/0/clock/11", "c6": "/amdcpu/0/clock/13",
     "nvme2_t": "/nvme/2/temperature/0",    # NVMe temp (opt)
     "chipset_t": "/lpc/it8688e/0/temperature/0",  # Chipset temp
+    # Температуры 4 дисков (SSD/HDD) — подставь свои SensorId из LHM
+    "d1_t": "/nvme/0/temperature/0",
+    "d2_t": "/nvme/1/temperature/0",
+    "d3_t": "/nvme/2/temperature/0",
+    "d4_t": "/nvme/3/temperature/0",
 }
 
 def clean_val(v):
@@ -398,6 +403,12 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "vcore": round(hw.get("vcore", 0), 2),
         "nvme2_t": int(hw.get("nvme2_t", 0)),
         "chipset_t": int(hw.get("chipset_t", 0)),
+        "disk_t": [
+            int(hw.get("d1_t", 0)),
+            int(hw.get("d2_t", 0)),
+            int(hw.get("d3_t", 0)),
+            int(hw.get("d4_t", 0)),
+        ],
         "nu": net.get("up", 0), "nd": net.get("down", 0),
         "dr": disk.get("read", 0), "dw": disk.get("write", 0),
         "wt": weather.get("temp", 0), "wd": weather.get("desc", ""), "wi": weather.get("icon", 0),
@@ -435,7 +446,7 @@ async def run_serial(ser, cache, send_fn):
                   "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
                   "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
                   "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
-                  "vcore": 0, "nvme2_t": 0}
+                  "vcore": 0, "nvme2_t": 0, "d1_t": 0, "d2_t": 0, "d3_t": 0, "d4_t": 0}
         media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play")}
     payload = build_payload(hw, media, hw_ok)
     data_str = json.dumps(payload) + "\n"
@@ -607,7 +618,7 @@ async def run():
                           "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
                           "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
                           "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
-                          "vcore": 0, "nvme2_t": 0, "chipset_t": 0}
+                          "vcore": 0, "nvme2_t": 0, "chipset_t": 0, "d1_t": 0, "d2_t": 0, "d3_t": 0, "d4_t": 0}
                 media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
             track_key = (media.get("art", "") or "") + "|" + (media.get("trk", "") or "")
             include_cover = (track_key != last_track_key) or (now_sec - last_cover_sent >= COVER_INTERVAL)
@@ -691,7 +702,23 @@ def _start_tray():
         stop_requested = True
         icon.stop()
 
-    menu = Menu(MenuItem("Выход", on_quit, default=True))
+    def on_add_autostart(icon, item):
+        if _add_to_autostart():
+            print("[OK] Добавлено в автозапуск.", flush=True)
+        else:
+            print("[!] Не удалось добавить в автозапуск.", flush=True)
+
+    def on_remove_autostart(icon, item):
+        if _remove_from_autostart():
+            print("[OK] Убрано из автозапуска.", flush=True)
+        else:
+            print("[!] Не удалось убрать из автозапуска (возможно, не было добавлено).", flush=True)
+
+    menu = Menu(
+        MenuItem("Добавить в автозапуск", on_add_autostart),
+        MenuItem("Убрать из автозапуска", on_remove_autostart),
+        MenuItem("Выход", on_quit, default=True),
+    )
     icon = pystray.Icon("heltec", img, "Heltec Monitor", menu=menu)
     t = threading.Thread(target=_run_tray_thread, args=(icon,), daemon=True)
     t.start()
@@ -727,7 +754,11 @@ def _add_to_autostart() -> bool:
         return False
     try:
         import winreg
-        exe_path = sys.executable
+        if getattr(sys, "frozen", False):
+            exe_path = os.path.abspath(sys.executable)
+        else:
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "monitor.py"))
+            exe_path = f'"{sys.executable}" "{script_path}"'
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
@@ -739,6 +770,30 @@ def _add_to_autostart() -> bool:
         return True
     except Exception as e:
         log_err(f"Autostart add failed: {e}", e, trace=False)
+        return False
+
+
+def _remove_from_autostart() -> bool:
+    """Убрать из автозапуска Windows."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_SET_VALUE,
+        )
+        try:
+            winreg.DeleteValue(key, "HeltecMonitor")
+            return True
+        except OSError:
+            return False
+        finally:
+            winreg.CloseKey(key)
+    except Exception as e:
+        log_err(f"Autostart remove failed: {e}", e, trace=False)
         return False
 
 
