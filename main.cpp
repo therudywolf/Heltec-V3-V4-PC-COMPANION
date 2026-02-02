@@ -37,6 +37,17 @@ float ramUsed = 0.0, ramTotal = 0.0;
 float vramUsed = 0.0, vramTotal = 0.0;
 float vcore = 0.0f;
 int nvme2Temp = 0;
+int chipsetTemp = 0;
+// Network & Disk
+int netUp = 0, netDown = 0;
+int diskRead = 0, diskWrite = 0;
+// Weather
+int weatherTemp = 0;
+String weatherDesc = "";
+int weatherIcon = 0;
+// Top processes
+String procNames[3] = {"", "", ""};
+int procCpu[3] = {0, 0, 0};
 // Media
 String artist = "No Data";
 String track = "Waiting...";
@@ -49,13 +60,15 @@ bool hasCover = false;
 // --- SETTINGS & STATE ---
 bool ledEnabled = true;       // Настройка: Диод вкл/выкл
 bool carouselEnabled = false; // Настройка: Авто-смена экранов
+int eqStyle = 0;              // Стиль эквалайзера: 0=Bars, 1=Wave, 2=Circle
 
 int currentScreen = 0;
-// 0=Main, 1=Cores, 2=GPU, 3=Mem, 4=Player, 5=Equalizer, 6=Power
-const int TOTAL_SCREENS = 7;
+// 0=Main, 1=Cores, 2=GPU, 3=Mem, 4=Player, 5=Equalizer, 6=Power, 7=Weather,
+// 8=TopProcs, 9=Network
+const int TOTAL_SCREENS = 10;
 
 bool inMenu = false; // Мы в меню?
-int menuItem = 0;    // Пункт меню (0=LED, 1=Carousel, 2=Exit)
+int menuItem = 0;    // Пункт меню (0=LED, 1=Carousel, 2=EQ Style, 3=Exit)
 
 // Button Logic
 unsigned long btnPressTime = 0;
@@ -73,19 +86,39 @@ unsigned long lastBlink = 0;
 unsigned long lastEqUpdate = 0;
 bool blinkState = false;
 const unsigned long SIGNAL_TIMEOUT_MS = 10000; // 10 sec
-const unsigned long EQ_UPDATE_MS = 80;
+const unsigned long EQ_UPDATE_MS = 50;
 
 // Equalizer: 16 bars, smooth interpolation
 const int EQ_BARS = 16;
 uint8_t eqHeights[EQ_BARS] = {0};
 uint8_t eqTargets[EQ_BARS] = {0};
 
-// WiFi / Serial source
+// WiFi source
 WiFiClient tcpClient;
-bool useWifi = false;
 unsigned long wifiConnectStart = 0;
 const unsigned long WIFI_TRY_MS = 8000;
 String tcpLineBuffer; // накопление строки до \n
+
+// Weather icons (16x16, 32 bytes)
+const uint8_t iconSunny[32] PROGMEM = {
+    0x01, 0x80, 0x01, 0x80, 0x00, 0x00, 0x04, 0x20, 0x0C, 0x30, 0x3F,
+    0xFC, 0x7F, 0xFE, 0x7F, 0xFE, 0x7F, 0xFE, 0x3F, 0xFC, 0x0C, 0x30,
+    0x04, 0x20, 0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00};
+
+const uint8_t iconCloudy[32] PROGMEM = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x09, 0x80, 0x11,
+    0xC0, 0x21, 0xC0, 0x7F, 0xE0, 0x7F, 0xF0, 0xFF, 0xF8, 0xFF, 0xF8,
+    0xFF, 0xF8, 0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+const uint8_t iconRain[32] PROGMEM = {
+    0x00, 0x00, 0x07, 0x00, 0x09, 0x80, 0x11, 0xC0, 0x7F, 0xE0, 0xFF,
+    0xF0, 0xFF, 0xF8, 0x7F, 0xF0, 0x00, 0x00, 0x22, 0x44, 0x22, 0x44,
+    0x22, 0x44, 0x44, 0x22, 0x44, 0x22, 0x44, 0x22, 0x00, 0x00};
+
+const uint8_t iconSnow[32] PROGMEM = {
+    0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x11, 0x88, 0x0A, 0x50, 0x04,
+    0x20, 0xE7, 0xCE, 0x04, 0x20, 0x0A, 0x50, 0x11, 0x88, 0x01, 0x80,
+    0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 void VextON() {
   pinMode(VEXT_PIN, OUTPUT);
@@ -105,12 +138,12 @@ void setup() {
   u8g2.setContrast(255);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  Serial.begin(115200);
 
   Preferences prefs;
   prefs.begin("heltec", true);
   ledEnabled = prefs.getBool("led", true);
   carouselEnabled = prefs.getBool("carousel", false);
+  eqStyle = prefs.getInt("eqStyle", 0);
   prefs.end();
 
   // WiFi: пробуем подключиться (в loop будем проверять и подключаться к TCP)
@@ -272,13 +305,85 @@ void drawPower() {
   u8g2.print("C");
 }
 
-// Equalizer: заголовок y=0..11, столбики y=12..63 (без пиков поверх)
-void drawEqualizer() {
+// Weather: Moscow weather display
+void drawWeather() {
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 10);
-  u8g2.print("VISUALIZER ");
-  u8g2.print(isPlaying ? "[PLAY]" : "[PAUSE]");
+  u8g2.drawStr(0, 10, "WEATHER MSK");
 
+  // Icon (16x16) слева
+  const uint8_t *icon = iconCloudy;
+  if (weatherIcon == 113)
+    icon = iconSunny;
+  else if (weatherIcon == 116 || weatherIcon == 119)
+    icon = iconCloudy;
+  else if (weatherIcon >= 200 && weatherIcon < 300)
+    icon = iconRain;
+  else if (weatherIcon >= 296 && weatherIcon < 400)
+    icon = iconRain;
+  else if (weatherIcon >= 300 && weatherIcon < 400)
+    icon = iconRain;
+  else if (weatherIcon >= 338 && weatherIcon < 400)
+    icon = iconSnow;
+
+  u8g2.drawXBMP(4, 20, 16, 16, icon);
+
+  // Температура и описание справа
+  u8g2.setFont(u8g2_font_helvB10_tr);
+  u8g2.setCursor(26, 28);
+  u8g2.print(weatherTemp);
+  u8g2.print((char)0xB0);
+  u8g2.print("C");
+
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.setCursor(26, 40);
+  u8g2.print(weatherDesc.substring(0, 14));
+}
+
+// Top 3 processes by CPU
+void drawTopProcs() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "TOP 3 CPU");
+
+  for (int i = 0; i < 3; i++) {
+    int y = 24 + i * 12;
+    u8g2.setCursor(0, y);
+    if (procNames[i].length() > 0) {
+      u8g2.print(procNames[i].substring(0, 12));
+      u8g2.setCursor(80, y);
+      u8g2.print(procCpu[i]);
+      u8g2.print("%");
+    }
+  }
+}
+
+// Network & Disk screen
+void drawNetwork() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "NETWORK & DISK");
+
+  u8g2.setCursor(0, 24);
+  u8g2.print("Net Up: ");
+  u8g2.print(netUp);
+  u8g2.print(" KB/s");
+
+  u8g2.setCursor(0, 36);
+  u8g2.print("Net Dn: ");
+  u8g2.print(netDown);
+  u8g2.print(" KB/s");
+
+  u8g2.setCursor(0, 48);
+  u8g2.print("Disk R: ");
+  u8g2.print(diskRead);
+  u8g2.print(" MB/s");
+
+  u8g2.setCursor(0, 60);
+  u8g2.print("Disk W: ");
+  u8g2.print(diskWrite);
+  u8g2.print(" MB/s");
+}
+
+// Equalizer Bars (столбики)
+void drawEqBars() {
   const int barTopY = 12;
   const int barZoneH = 52;
   const int barW = 6;
@@ -291,6 +396,67 @@ void drawEqualizer() {
     int x = i * (barW + barGap);
     int y = barTopY + barZoneH - h;
     u8g2.drawBox(x, y, barW, h);
+  }
+}
+
+// Equalizer Wave (синусоида iTunes-style)
+void drawEqWave() {
+  int prevY = 32;
+  int prevX = 0;
+  for (int x = 0; x < 128; x += 2) {
+    int idx = (x * EQ_BARS) / 128;
+    if (idx >= EQ_BARS)
+      idx = EQ_BARS - 1;
+    float amp = eqHeights[idx] / 4.0;
+    int y = 32 + (int)(sin(x * 0.1) * amp);
+    if (y < 12)
+      y = 12;
+    if (y > 63)
+      y = 63;
+    if (x > 0)
+      u8g2.drawLine(prevX, prevY, x, y);
+    prevY = y;
+    prevX = x;
+  }
+}
+
+// Equalizer Circle (круговая визуализация)
+void drawEqCircle() {
+  int cx = 64, cy = 38;
+  for (int i = 0; i < EQ_BARS; i++) {
+    float angle = (i * 22.5) * PI / 180.0;
+    int len = 8 + eqHeights[i] / 2;
+    int x = cx + (int)(cos(angle) * len);
+    int y = cy + (int)(sin(angle) * len);
+    if (x < 0)
+      x = 0;
+    if (x > 127)
+      x = 127;
+    if (y < 12)
+      y = 12;
+    if (y > 63)
+      y = 63;
+    u8g2.drawLine(cx, cy, x, y);
+  }
+}
+
+// Equalizer: заголовок y=0..11, визуализация y=12..63
+void drawEqualizer() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.setCursor(0, 10);
+  u8g2.print("VISUALIZER ");
+  u8g2.print(isPlaying ? "[PLAY]" : "[PAUSE]");
+
+  switch (eqStyle) {
+  case 0:
+    drawEqBars();
+    break;
+  case 1:
+    drawEqWave();
+    break;
+  case 2:
+    drawEqCircle();
+    break;
   }
 }
 
@@ -332,26 +498,36 @@ void drawPlayer() {
 
 void drawMenu() {
   u8g2.setDrawColor(0);
-  u8g2.drawBox(10, 10, 108, 44);
-  u8g2.setDrawColor(1); // Clear area
-  u8g2.drawFrame(10, 10, 108, 44);
+  u8g2.drawBox(12, 12, 104, 48);
+  u8g2.setDrawColor(1);
+  u8g2.drawFrame(12, 12, 104, 48);
 
-  u8g2.setFont(u8g2_font_helvB08_tr);
-  u8g2.drawStr(45, 22, "- MENU -");
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(42, 20, "- MENU -");
 
   // Item 0: LED
-  u8g2.setCursor(20, 32);
+  u8g2.setCursor(16, 30);
   u8g2.print(menuItem == 0 ? "> LED: " : "  LED: ");
   u8g2.print(ledEnabled ? "ON" : "OFF");
 
   // Item 1: Carousel
-  u8g2.setCursor(20, 42);
+  u8g2.setCursor(16, 40);
   u8g2.print(menuItem == 1 ? "> AUTO: " : "  AUTO: ");
   u8g2.print(carouselEnabled ? "ON" : "OFF");
 
-  // Item 2: Exit
-  u8g2.setCursor(20, 52);
-  u8g2.print(menuItem == 2 ? "> EXIT" : "  EXIT");
+  // Item 2: EQ Style
+  u8g2.setCursor(16, 50);
+  u8g2.print(menuItem == 2 ? "> EQ: " : "  EQ: ");
+  if (eqStyle == 0)
+    u8g2.print("Bars");
+  else if (eqStyle == 1)
+    u8g2.print("Wave");
+  else
+    u8g2.print("Circle");
+
+  // Item 3: Exit
+  u8g2.setCursor(16, 58);
+  u8g2.print(menuItem == 3 ? "> EXIT" : "  EXIT");
 }
 
 void loop() {
@@ -359,24 +535,21 @@ void loop() {
 
   // --- 0. WiFi / TCP connect (при старте или при обрыве) ---
   if (strlen(WIFI_PASS) > 0) {
-    if (WiFi.status() == WL_CONNECTED && !tcpClient.connected() && !useWifi) {
-      if (tcpClient.connect(PC_IP, TCP_PORT, 2000)) {
-        useWifi = true;
-      }
+    if (WiFi.status() == WL_CONNECTED && !tcpClient.connected()) {
+      tcpClient.connect(PC_IP, TCP_PORT, 2000);
     }
     if (WiFi.status() != WL_CONNECTED &&
         (now - wifiConnectStart < WIFI_TRY_MS)) {
       delay(10); // даём WiFi время при старте
     }
-    if (useWifi && !tcpClient.connected()) {
-      useWifi = false;
+    if (!tcpClient.connected()) {
       tcpClient.stop();
     }
   }
 
-  // --- 1. JSON READ (WiFi или Serial) ---
+  // --- 1. JSON READ (WiFi) ---
   String input;
-  if (useWifi && tcpClient.connected()) {
+  if (tcpClient.connected()) {
     while (tcpClient.available()) {
       char c = (char)tcpClient.read();
       if (c == '\n') {
@@ -389,10 +562,6 @@ void loop() {
       else
         tcpLineBuffer = "";
     }
-  } else {
-    tcpLineBuffer = "";
-    if (Serial.available() > 0)
-      input = Serial.readStringUntil('\n');
   }
 
   if (input.length() > 0 && input.length() < 4096) {
@@ -428,6 +597,29 @@ void loop() {
       vramTotal = doc["vt_tot"];
       vcore = doc["vcore"];
       nvme2Temp = doc["nvme2_t"];
+      chipsetTemp = doc["chipset_t"];
+
+      netUp = doc["nu"];
+      netDown = doc["nd"];
+      diskRead = doc["dr"];
+      diskWrite = doc["dw"];
+
+      weatherTemp = doc["wt"];
+      const char *wd = doc["wd"];
+      weatherDesc = String(wd ? wd : "");
+      weatherIcon = doc["wi"];
+
+      JsonArray tp = doc["tp"];
+      for (int i = 0; i < 3; i++) {
+        if (i < tp.size()) {
+          const char *n = tp[i]["n"];
+          procNames[i] = String(n ? n : "");
+          procCpu[i] = tp[i]["c"];
+        } else {
+          procNames[i] = "";
+          procCpu[i] = 0;
+        }
+      }
 
       const char *art = doc["art"];
       const char *trk = doc["trk"];
@@ -481,7 +673,7 @@ void loop() {
       if (inMenu) {
         lastMenuActivity = now;
         menuItem++;
-        if (menuItem > 2)
+        if (menuItem > 3)
           menuItem = 0;
       } else {
         // Screen Navigation
@@ -517,7 +709,14 @@ void loop() {
       p.putBool("carousel", carouselEnabled);
       p.end();
     }
-    if (menuItem == 2)
+    if (menuItem == 2) {
+      eqStyle = (eqStyle + 1) % 3;
+      Preferences p;
+      p.begin("heltec", false);
+      p.putInt("eqStyle", eqStyle);
+      p.end();
+    }
+    if (menuItem == 3)
       inMenu = false;
   }
 
@@ -541,7 +740,7 @@ void loop() {
     lastEqUpdate = now;
     if (isPlaying) {
       for (int i = 0; i < EQ_BARS; i++) {
-        if (random(0, 4) == 0) // occasionally pick new target
+        if (random(0, 4) == 0)
           eqTargets[i] = (uint8_t)random(4, 48);
         if (eqHeights[i] < eqTargets[i] && eqHeights[i] < 52)
           eqHeights[i]++;
@@ -551,8 +750,10 @@ void loop() {
     } else {
       for (int i = 0; i < EQ_BARS; i++) {
         eqTargets[i] = 0;
-        if (eqHeights[i] > 0)
-          eqHeights[i]--;
+        if (eqHeights[i] > 1)
+          eqHeights[i] -= 2;
+        else if (eqHeights[i] > 0)
+          eqHeights[i] = 0;
       }
     }
   }
@@ -597,6 +798,15 @@ void loop() {
     case 6:
       drawPower();
       break;
+    case 7:
+      drawWeather();
+      break;
+    case 8:
+      drawTopProcs();
+      break;
+    case 9:
+      drawNetwork();
+      break;
     }
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.drawStr(70, 8, "Reconnect");
@@ -623,10 +833,19 @@ void loop() {
     case 6:
       drawPower();
       break;
+    case 7:
+      drawWeather();
+      break;
+    case 8:
+      drawTopProcs();
+      break;
+    case 9:
+      drawNetwork();
+      break;
     }
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.setCursor(118, 8);
-    u8g2.print(useWifi ? "W" : "S");
+    u8g2.print("W");
 
     if (inMenu)
       drawMenu();
