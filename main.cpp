@@ -1,5 +1,5 @@
 /*
- * Heltec PC Monitor v6.0 [NEURAL LINK] — Cyberpunk Cyberdeck Edition
+ * Heltec PC Monitor v7.0 [NEURAL LINK] — Cyberpunk Cyberdeck Edition
  *
  * Hardware: Heltec WiFi LoRa 32 V3 (ESP32-S3) + SSD1306 OLED 128x64
  *
@@ -22,6 +22,12 @@
  * - Robust parsing: handles incomplete packets
  * - WiFi reconnection logic
  * - "NO SIGNAL" screen if TCP disconnects > 3 sec
+ *
+ * v7.0 CHANGES:
+ * - FIXED: Rapid connect/disconnect loop (lastUpdate initialization)
+ * - FIXED: TCP connection stability with proper handshake
+ * - ADDED: Connection grace period after TCP connect
+ * - IMPROVED: Anti-ghosting with full buffer clear strategy
  */
 
 #include <Arduino.h>
@@ -59,6 +65,8 @@
 #define DISP_H 64
 #define MARGIN 2
 #define TCP_LINE_MAX 4096
+#define TCP_CONNECT_TIMEOUT 5000    // 5 sec connection timeout
+#define TCP_RECONNECT_INTERVAL 2000 // 2 sec between reconnect attempts
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 
@@ -137,9 +145,13 @@ unsigned long lastUpdate = 0;
 unsigned long lastCarousel = 0;
 unsigned long lastBlink = 0;
 unsigned long lastWifiRetry = 0;
+unsigned long lastTcpAttempt = 0; // [v7] Track TCP reconnect attempts
+unsigned long tcpConnectTime = 0; // [v7] Track when TCP connected
 unsigned long bootTime = 0;
 bool blinkState = false;
-const unsigned long SIGNAL_TIMEOUT_MS = 3000; // 3 sec for "NO SIGNAL"
+const unsigned long SIGNAL_TIMEOUT_MS = 5000; // [v7] Increased to 5 sec
+const unsigned long SIGNAL_GRACE_PERIOD_MS =
+    8000; // [v7] Grace period after connect
 const unsigned long WIFI_RETRY_INTERVAL = 30000;
 
 int scrollOffset = 0;
@@ -154,12 +166,19 @@ WiFiClient tcpClient;
 String tcpLineBuffer;
 int lastSentScreen = -1;
 bool wifiConnected = false;
+bool tcpConnectedState = false; // [v7] Track TCP connection state
+bool firstDataReceived = false; // [v7] Track if we ever received valid data
 int wifiRssi = 0;
 
 // Fan animation state
 int fanAnimFrame = 0;
 unsigned long lastFanAnim = 0;
 const unsigned long FAN_ANIM_INTERVAL = 100;
+
+// Glitch effect state (cyberpunk aesthetic)
+unsigned long lastGlitch = 0;
+const unsigned long GLITCH_INTERVAL = 5000;
+bool doGlitch = false;
 
 // ============================================================================
 // ANTI-GHOSTING — MANDATORY for dynamic text (prevents overlapping/ghosting)
@@ -274,6 +293,37 @@ void drawFanIcon(int x, int y, int frame) {
   }
 }
 
+void drawLinkStatus(int x, int y, bool linked) {
+  /*
+   * CYBERPUNK HUD: Data link status indicator
+   */
+  u8g2.setFont(FONT_TINY);
+  if (linked) {
+    u8g2.drawStr(x, y, "LINK");
+  } else {
+    if (blinkState) {
+      u8g2.drawStr(x, y, "----");
+    }
+  }
+}
+
+void drawGlitchEffect() {
+  /*
+   * CYBERPUNK GLITCH: Random horizontal line displacement
+   * Simulates signal interference / data corruption
+   */
+  if (random(100) < 15) { // 15% chance
+    int y = random(DISP_H);
+    int shift = random(-3, 4);
+    // Draw a displaced horizontal segment
+    for (int x = 0; x < DISP_W; x++) {
+      if (random(10) < 3) {
+        u8g2.drawPixel((x + shift + DISP_W) % DISP_W, y);
+      }
+    }
+  }
+}
+
 // ============================================================================
 // PARSING (2-char keys, robust against incomplete packets)
 // ============================================================================
@@ -339,6 +389,73 @@ void parsePayload(JsonDocument &doc) {
   media.artist = String(art ? art : "");
   media.track = String(trk ? trk : "");
   media.isPlaying = doc["mp"] | false;
+}
+
+// ============================================================================
+// TCP CONNECTION MANAGEMENT [v7 - CRITICAL FIX]
+// ============================================================================
+void tcpDisconnect() {
+  if (tcpClient.connected()) {
+    tcpClient.stop();
+  }
+  tcpLineBuffer = "";
+  lastSentScreen = -1;
+  tcpConnectedState = false;
+  tcpConnectTime = 0;
+}
+
+bool tcpConnect() {
+  unsigned long now = millis();
+
+  // Don't attempt too frequently
+  if (now - lastTcpAttempt < TCP_RECONNECT_INTERVAL) {
+    return false;
+  }
+  lastTcpAttempt = now;
+
+  // Ensure clean state before connecting
+  if (tcpClient.connected()) {
+    return true; // Already connected
+  }
+
+  // Set connection timeout
+  tcpClient.setTimeout(TCP_CONNECT_TIMEOUT / 1000); // setTimeout uses seconds
+
+  if (tcpClient.connect(PC_IP, TCP_PORT)) {
+    tcpLineBuffer = "";
+    lastSentScreen = -1;
+    tcpConnectedState = true;
+    tcpConnectTime = now;
+
+    // [v7] CRITICAL: Set lastUpdate to NOW to prevent immediate signal loss
+    lastUpdate = now;
+
+    // Send initial handshake
+    tcpClient.print("HELO\n");
+
+    return true;
+  }
+
+  return false;
+}
+
+bool isSignalLost(unsigned long now) {
+  // [v7] If we just connected, give grace period for first data
+  if (tcpConnectedState && tcpConnectTime > 0) {
+    unsigned long sinceConnect = now - tcpConnectTime;
+    if (sinceConnect < SIGNAL_GRACE_PERIOD_MS) {
+      // Still within grace period - not lost
+      return false;
+    }
+  }
+
+  // [v7] If never received data, use connection time as reference
+  if (!firstDataReceived && tcpConnectedState) {
+    return (now - tcpConnectTime > SIGNAL_GRACE_PERIOD_MS);
+  }
+
+  // Normal signal loss check
+  return (now - lastUpdate > SIGNAL_TIMEOUT_MS);
 }
 
 // ============================================================================
@@ -570,6 +687,14 @@ void drawScreenTaskKill() {
   char buf[24];
 
   if (procs.cpuNames[0].length() > 0) {
+    // Warning icon if high CPU
+    if (procs.cpuPercent[0] > 80) {
+      u8g2.setFont(FONT_LABEL);
+      if (blinkState) {
+        u8g2.drawStr(DISP_W - 24, MARGIN + LINE_H_HEADER, "WARN");
+      }
+    }
+
     // Top process name
     u8g2.setFont(FONT_LABEL);
     u8g2.drawStr(MARGIN + 2, y, "TOP PROC");
@@ -703,11 +828,20 @@ void drawScreen(int screen) {
 
 void drawSplash() {
   u8g2.setFont(FONT_BIG);
-  u8g2.drawStr(8, 20, "HELTEC v6.0");
+  u8g2.drawStr(8, 20, "HELTEC v7.0");
   u8g2.setFont(FONT_DATA);
   u8g2.drawStr(8, 34, "[NEURAL LINK]");
   u8g2.setFont(FONT_TINY);
   u8g2.drawStr(8, 44, "Cyberdeck Edition");
+
+  // WiFi status during splash
+  u8g2.setFont(FONT_TINY);
+  if (wifiConnected) {
+    u8g2.drawStr(8, 54, "WiFi: OK");
+    drawWiFiIcon(DISP_W - 16, 48, wifiRssi);
+  } else {
+    u8g2.drawStr(8, 54, "WiFi: ...");
+  }
 
   int barW =
       (int)((millis() - splashStart) * (DISP_W - 2 * MARGIN) / SPLASH_MS);
@@ -743,13 +877,45 @@ void drawMenu() {
 
 void drawNoSignal() {
   u8g2.setFont(FONT_BIG);
-  u8g2.drawStr((DISP_W - 72) / 2, DISP_H / 2, "NO SIGNAL");
+  u8g2.drawStr((DISP_W - 72) / 2, DISP_H / 2 - 4, "NO SIGNAL");
+
+  // Connection status text
+  u8g2.setFont(FONT_TINY);
+  if (!wifiConnected) {
+    u8g2.drawStr(MARGIN + 2, DISP_H / 2 + 10, "WiFi: DISCONNECTED");
+  } else if (!tcpConnectedState) {
+    u8g2.drawStr(MARGIN + 2, DISP_H / 2 + 10, "TCP: CONNECTING...");
+  } else {
+    u8g2.drawStr(MARGIN + 2, DISP_H / 2 + 10, "WAITING FOR DATA...");
+  }
 
   // Static noise effect (cyberpunk glitch)
-  for (int i = 0; i < 20; i++) {
+  for (int i = 0; i < 30; i++) {
     int x = random(0, DISP_W);
     int y = random(0, DISP_H);
     u8g2.drawPixel(x, y);
+  }
+
+  if (wifiConnected)
+    drawWiFiIcon(DISP_W - MARGIN - 14, MARGIN, wifiRssi);
+
+  // Blinking cursor effect
+  if (blinkState) {
+    u8g2.drawBox(DISP_W / 2 + 40, DISP_H / 2 - 8, 6, 12);
+  }
+}
+
+void drawConnecting() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr((DISP_W - 72) / 2, DISP_H / 2 - 4, "LINKING...");
+
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(MARGIN + 2, DISP_H / 2 + 10, "Establishing data link");
+
+  // Animated dots
+  int dots = (millis() / 300) % 4;
+  for (int i = 0; i < dots; i++) {
+    u8g2.drawBox(DISP_W / 2 + 36 + i * 6, DISP_H / 2 + 8, 3, 3);
   }
 
   if (wifiConnected)
@@ -794,10 +960,16 @@ void setup() {
   u8g2.setContrast((uint8_t)settings.displayContrast);
   u8g2.setFlipMode(settings.displayInverted ? 1 : 0);
 
-  if (strlen(WIFI_PASS) > 0) {
+  // Initialize random seed for glitch effects
+  randomSeed(analogRead(0));
+
+  if (strlen(WIFI_SSID) > 0) {
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
   }
+
+  // [v7] Initialize lastUpdate to boot time to prevent immediate signal loss
+  lastUpdate = bootTime;
 }
 
 // ============================================================================
@@ -815,15 +987,20 @@ void loop() {
     if (now % 5000 < 100)
       wifiRssi = WiFi.RSSI();
 
+    // [v7] TCP connection with proper state management
     if (!tcpClient.connected()) {
-      tcpClient.connect(PC_IP, TCP_PORT);
-      if (tcpClient.connected()) {
-        tcpLineBuffer = "";
-        lastSentScreen = -1;
+      if (tcpConnectedState) {
+        // Connection was lost - reset state
+        tcpDisconnect();
       }
+      // Attempt to connect
+      tcpConnect();
     }
   } else {
     wifiConnected = false;
+    if (tcpConnectedState) {
+      tcpDisconnect();
+    }
     if (now - lastWifiRetry > WIFI_RETRY_INTERVAL) {
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -841,14 +1018,17 @@ void loop() {
           DeserializationError err = deserializeJson(doc, tcpLineBuffer);
           if (!err) {
             lastUpdate = now;
+            firstDataReceived = true; // [v7] Mark that we got valid data
             parsePayload(doc);
           }
           tcpLineBuffer = "";
         }
       } else {
         tcpLineBuffer += c;
-        if (tcpLineBuffer.length() >= TCP_LINE_MAX)
+        // [v7] Buffer overflow protection
+        if (tcpLineBuffer.length() >= TCP_LINE_MAX) {
           tcpLineBuffer = "";
+        }
       }
     }
   }
@@ -953,6 +1133,12 @@ void loop() {
     lastBlink = now;
   }
 
+  // Glitch effect timing
+  if (now - lastGlitch > GLITCH_INTERVAL) {
+    doGlitch = (random(100) < 10); // 10% chance
+    lastGlitch = now;
+  }
+
   // LED alert (temperature warnings)
   bool anyAlarm = (hw.ct >= CPU_TEMP_ALERT) || (hw.gt >= GPU_TEMP_ALERT);
   if (settings.ledEnabled && anyAlarm && blinkState)
@@ -964,37 +1150,54 @@ void loop() {
   if (!splashDone) {
     if (splashStart == 0)
       splashStart = now;
-    if (now - splashStart >= SPLASH_MS)
+    if (now - splashStart >= SPLASH_MS) {
       splashDone = true;
+      // [v7] Reset lastUpdate when splash ends to start fresh
+      lastUpdate = now;
+    }
   }
 
   // RENDER FRAME
   u8g2.clearBuffer();
-  bool signalLost = (now - lastUpdate > SIGNAL_TIMEOUT_MS);
+  bool signalLost = splashDone && isSignalLost(now);
 
   if (!splashDone) {
     drawSplash();
+  } else if (!wifiConnected) {
+    // WiFi not connected - show connecting state
+    drawNoSignal();
+  } else if (!tcpConnectedState) {
+    // WiFi OK but TCP not connected
+    drawConnecting();
   } else if (signalLost) {
-    if (tcpClient.connected()) {
-      tcpClient.stop();
-      tcpLineBuffer = "";
-      lastSentScreen = -1;
+    // [v7] Only disconnect if truly lost (after grace period)
+    if (tcpClient.connected() && firstDataReceived) {
+      // Only disconnect if we previously had data
+      tcpDisconnect();
     }
     drawNoSignal();
   } else {
-    // Draw corner crosshairs (cyberpunk HUD)
+    // Normal operation - draw HUD
     drawCornerCrosshairs();
-
-    // Draw main screen content
     drawScreen(currentScreen);
 
     // WiFi icon
     if (wifiConnected)
       drawWiFiIcon(DISP_W - 16, 2, wifiRssi);
 
+    // Link status indicator
+    drawLinkStatus(MARGIN + 2, DISP_H - MARGIN - 2,
+                   tcpConnectedState && firstDataReceived);
+
     // Temperature alarm frame
     if (anyAlarm && blinkState)
       u8g2.drawFrame(0, 0, DISP_W, DISP_H);
+
+    // Optional glitch effect
+    if (doGlitch) {
+      drawGlitchEffect();
+      doGlitch = false;
+    }
 
     // Menu overlay
     if (inMenu)
@@ -1011,4 +1214,7 @@ void loop() {
   }
 
   u8g2.sendBuffer();
+
+  // Small delay to prevent CPU hogging
+  delay(10);
 }
