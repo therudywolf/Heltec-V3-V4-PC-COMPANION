@@ -63,34 +63,52 @@ TARGETS = {
 }
 
 def clean_val(v):
+    if v is None:
+        return 0.0
     try:
-        return float(str(v).replace(",", ".").split()[0])
+        s = str(v).strip().replace(",", ".")
+        if not s:
+            return 0.0
+        num_part = s.split()[0] if s.split() else s
+        return float(num_part)
     except (ValueError, TypeError):
         return 0.0
 
 def get_lhm_data():
     for attempt in range(3):
         try:
-            r = requests.get(LHM_URL, timeout=1)
+            r = requests.get(LHM_URL, timeout=2)
             if r.status_code != 200:
                 continue
+            data = r.json()
             results = {}
+            targets_set = set(TARGETS.values())
+
             def walk(node):
                 if isinstance(node, list):
-                    for i in node: walk(i)
+                    for i in node:
+                        walk(i)
                 elif isinstance(node, dict):
-                    sid = node.get("SensorId")
-                    if sid in TARGETS.values():
+                    sid = node.get("SensorId") or node.get("SensorID")
+                    if sid and sid in targets_set:
                         raw = node.get("Value") or node.get("RawValue") or ""
                         for k, v in TARGETS.items():
-                            if sid == v:
+                            if v == sid:
                                 results[k] = clean_val(raw)
-                    if "Children" in node: walk(node["Children"])
-            walk(r.json())
+                                break
+                    if "Children" in node:
+                        walk(node["Children"])
+                    return
+                return
+
+            if isinstance(data, list):
+                walk(data)
+            else:
+                walk(data)
             return results
         except Exception as e:
             if attempt == 2:
-                log_err(f"LHM timeout after 3 attempts: {e}", e)
+                log_err(f"LHM after 3 attempts: {e}", e, trace=False)
             continue
     return {}
 
@@ -100,10 +118,19 @@ COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
 # Погода (Open-Meteo). Координаты из .env или Москва по умолчанию
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
 WEATHER_LON = os.getenv("WEATHER_LON", "37.6173")
-WEATHER_URL = f"https://api.open-meteo.com/v1/forecast?latitude={WEATHER_LAT}&longitude={WEATHER_LON}&current=temperature_2m,weather_code"
+WEATHER_URL = (
+    f"https://api.open-meteo.com/v1/forecast?latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
+    "&current=temperature_2m,weather_code"
+    "&daily=temperature_2m_max,temperature_2m_min,weather_code"
+    "&timezone=auto&forecast_days=8"
+)
 WEATHER_TIMEOUT = 10
 WEATHER_UPDATE_INTERVAL = 10 * 60  # 10 минут (фоновая задача)
-weather_cache = {"temp": 0, "desc": "", "icon": 0}
+weather_cache = {
+    "temp": 0, "desc": "", "icon": 0,
+    "day_high": 0, "day_low": 0, "day_code": 0,
+    "week_high": [], "week_low": [], "week_code": [],
+}
 last_weather_update = 0.0
 _last_weather_log_time = 0.0
 _weather_first_ok = False  # лог при первой успешной загрузке
@@ -126,7 +153,7 @@ def _weather_desc_from_code(code):
 
 
 def get_weather():
-    """Синхронный запрос погоды (Open-Meteo). Обновляет weather_cache при успехе; при ошибке кэш не затирается."""
+    """Синхронный запрос погоды (Open-Meteo): текущая + дневной и недельный прогноз."""
     global weather_cache, last_weather_update, _last_weather_log_time, _weather_first_ok
     now = time.time()
     for attempt in range(2):
@@ -138,11 +165,25 @@ def get_weather():
                 temp = int(cur.get("temperature_2m", 0))
                 code = int(cur.get("weather_code", 0))
                 desc = _weather_desc_from_code(code)[:20]
-                weather_cache = {"temp": temp, "desc": desc, "icon": code}
+                daily = data.get("daily", {})
+                dmax = daily.get("temperature_2m_max") or []
+                dmin = daily.get("temperature_2m_min") or []
+                dcode = daily.get("weather_code") or []
+                day_high = int(dmax[0]) if len(dmax) > 0 else temp
+                day_low = int(dmin[0]) if len(dmin) > 0 else temp
+                day_code = int(dcode[0]) if len(dcode) > 0 else code
+                week_high = [int(x) for x in dmax[:7]] if isinstance(dmax, list) else []
+                week_low = [int(x) for x in dmin[:7]] if isinstance(dmin, list) else []
+                week_code = [int(x) for x in dcode[:7]] if isinstance(dcode, list) else []
+                weather_cache = {
+                    "temp": temp, "desc": desc, "icon": code,
+                    "day_high": day_high, "day_low": day_low, "day_code": day_code,
+                    "week_high": week_high, "week_low": week_low, "week_code": week_code,
+                }
                 last_weather_update = now
                 if not _weather_first_ok:
                     _weather_first_ok = True
-                    print(f"[Weather] OK: {temp} C, {desc}", flush=True)
+                    print(f"[Weather] OK: {temp} C, {desc}, day {day_low}-{day_high}", flush=True)
                 return weather_cache
         except Exception as e:
             if attempt == 1 and (now - _last_weather_log_time) > 60:
@@ -254,8 +295,15 @@ async def get_media():
                         cap = min(getattr(stream, "size", 256 * 1024) or 256 * 1024, 256 * 1024)
                         buf = Buffer(cap)
                         await stream.read_async(buf, cap, InputStreamOptions.READ_AHEAD)
-                        n = getattr(buf, "length", cap)
-                        raw = bytes(memoryview(buf)[:n]) if hasattr(buf, "__buffer__") else b""
+                        n = getattr(buf, "length", cap) or cap
+                        raw = b""
+                        try:
+                            raw = bytes(memoryview(buf)[:n])
+                        except Exception:
+                            try:
+                                raw = bytes(list(buf)[:n])
+                            except Exception:
+                                pass
                         if raw:
                             img = Image.open(io.BytesIO(raw)).convert("RGB")
                             img = img.resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
@@ -342,22 +390,22 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "nu": net.get("up", 0), "nd": net.get("down", 0),
         "dr": disk.get("read", 0), "dw": disk.get("write", 0),
         "wt": weather.get("temp", 0), "wd": weather.get("desc", ""), "wi": weather.get("icon", 0),
+        "wday_high": weather.get("day_high", 0), "wday_low": weather.get("day_low", 0),
+        "wday_code": weather.get("day_code", 0),
+        "week_high": weather.get("week_high", [])[:7],
+        "week_low": weather.get("week_low", [])[:7],
+        "week_code": weather.get("week_code", [])[:7],
         "tp": top_procs,
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", 0),
     }
 
-    if screen is not None and 0 <= screen <= 11:
-        keys = set(_COMMON_KEYS) | set(_SCREEN_KEYS.get(screen, ()))
-        if screen == 4 and media.get("cover_b64"):
-            keys.add("cover_b64")
-        payload = {k: full[k] for k in keys if k in full}
-        return payload
-
+    # Всегда отправляем полный пакет, чтобы на устройстве не было пустых экранов
     payload = dict(full)
-    if include_cover and media.get("cover_b64"):
-        payload["cover_b64"] = media["cover_b64"]
+    if (screen is not None and screen == 4) or include_cover:
+        if media.get("cover_b64"):
+            payload["cover_b64"] = media["cover_b64"]
     return payload
 
 
