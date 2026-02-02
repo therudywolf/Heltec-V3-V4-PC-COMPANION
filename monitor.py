@@ -142,7 +142,12 @@ client_screens: Dict = {}  # StreamWriter -> screen number
 client_buffers: Dict = {}  # StreamWriter -> buffer for reading
 
 last_track_key = ""
-last_cover_sent = 0
+
+# Top processes cache (TTL 2.5 s) to reduce psutil.process_iter() load
+top_procs_cache: List = []
+top_procs_ram_cache: List = []
+last_top_procs_time: float = 0.0
+TOP_PROCS_CACHE_TTL = 2.5
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -512,7 +517,6 @@ def build_payload(
     hw: Dict,
     media: Dict,
     hw_ok: bool,
-    include_cover: bool,
     weather: Dict,
     top_procs: List,
     top_procs_ram: List,
@@ -597,13 +601,9 @@ def build_payload(
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", False),
+        # Always include cover when available so device can cache it (e.g. for Player screen)
+        "cover_b64": media.get("cover_b64", ""),
     }
-    
-    # Only include cover if requested
-    if include_cover:
-        payload["cover_b64"] = media.get("cover_b64", "")
-    else:
-        payload["cover_b64"] = ""
         
     return payload
 
@@ -680,7 +680,7 @@ async def weather_updater():
 
 async def run():
     """Main server loop."""
-    global last_track_key, last_cover_sent
+    global last_track_key, top_procs_cache, top_procs_ram_cache, last_top_procs_time
     
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
     
@@ -703,8 +703,8 @@ async def run():
     
     log_info("Server ready. Waiting for clients...")
     
-    # Initialize data
-    get_weather()  # Initial weather fetch
+    # Initialize weather cache (weather_updater refreshes it; main loop uses cache only)
+    get_weather()
     
     # Cache for data
     cache = {}
@@ -712,6 +712,7 @@ async def run():
     while not stop_requested:
         try:
             now_sec = int(time.time())
+            now_f = time.time()
             
             # Collect data
             hw = get_lhm_data()
@@ -721,9 +722,14 @@ async def run():
                 hw = {k: 0 for k in TARGETS.keys()}
                 
             media = await get_media_info()
-            weather = get_weather()
-            top_procs = get_top_processes_cpu(3)
-            top_procs_ram = get_top_processes_ram(2)
+            # Use weather from cache (updated by weather_updater); do not call get_weather() every tick
+            weather = weather_cache
+            if now_f - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
+                top_procs_cache = get_top_processes_cpu(3)
+                top_procs_ram_cache = get_top_processes_ram(2)
+                last_top_procs_time = now_f
+            top_procs = top_procs_cache
+            top_procs_ram = top_procs_ram_cache
             net = get_network_speed()
             disk = get_disk_speed()
             core_loads = get_core_loads(6)
@@ -741,34 +747,20 @@ async def run():
                 "core_loads": core_loads,
             })
             
-            # Determine if we should send cover
             track_key = f"{media.get('art', '')}|{media.get('trk', '')}"
-            include_cover_base = (
-                track_key != last_track_key or
-                (now_sec - last_cover_sent >= COVER_INTERVAL)
-            )
-            
-            if include_cover_base and media.get("cover_b64"):
-                last_cover_sent = now_sec
-                
             if track_key != last_track_key and last_track_key:
                 cov_len = len(media.get("cover_b64", ""))
                 log_info(f"Track changed. Cover: {cov_len} bytes")
-                
             last_track_key = track_key
-            
+
             # Send to all clients
             dead = []
             for writer in list(tcp_clients):
                 screen = client_screens.get(writer, 0)
-                # Always include cover when client is on Player screen (6 = MEDIA)
-                include_cover = include_cover_base or (screen == 6)
-                
                 payload = build_payload(
                     hw=cache["hw"],
                     media=cache["media"],
                     hw_ok=cache["hw_ok"],
-                    include_cover=include_cover,
                     weather=cache["weather"],
                     top_procs=cache["top_procs"],
                     top_procs_ram=cache["top_procs_ram"],
@@ -799,7 +791,7 @@ async def run():
         except Exception as e:
             log_err(f"Main loop error: {e}", e)
             
-        await asyncio.sleep(0.5)  # 2 Hz update rate
+        await asyncio.sleep(0.8)  # ~1.25 Hz to reduce CPU load
         
     # Cleanup
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
