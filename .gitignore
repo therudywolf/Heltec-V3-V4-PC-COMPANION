@@ -15,8 +15,8 @@ __pycache__/
 # Сборка exe (PyInstaller)
 dist/
 build/
-*.spec
 *.exe
+# monitor.spec — в репозитории (нужен для build_oneclick.bat)
 
 # IDE / OS
 .idea/
