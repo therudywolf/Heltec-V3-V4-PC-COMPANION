@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
-Heltec PC Monitor Server v6.0 [NEURAL LINK] — Cyberpunk Cyberdeck Edition
+Heltec PC Monitor Server v7.0 [NEURAL LINK] — Cyberpunk Cyberdeck Edition
 
 ARCHITECTURE:
 - asyncio main loop (non-blocking TCP stream)
 - ThreadPoolExecutor for blocking tasks (LHM polling, Weather API, Ping)
 - 2-char JSON keys for bandwidth efficiency
 - Exact Hardware IDs from LibreHardwareMonitor
+
+v7.0 CHANGES:
+- FIXED: Immediate data send on client connect (prevents disconnect loop)
+- FIXED: Connection stability with heartbeat/handshake handling
+- IMPROVED: Faster initial data transmission
+- IMPROVED: Better error handling and logging
 
 DATA SOURCES:
 - LibreHardwareMonitor HTTP JSON (localhost:8085)
@@ -87,6 +93,9 @@ TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
 TOP_PROCS_CACHE_TTL = 2.5
 
+# v7: Faster data send interval
+DATA_SEND_INTERVAL = 0.5  # Send data every 500ms
+
 # ============================================================================
 # DATA MAPPING — EXACT Sensor IDs from serverpars.txt, 2-char JSON keys
 # ============================================================================
@@ -144,6 +153,7 @@ _last_weather_log_time = 0.0
 tcp_clients: List = []
 client_screens: Dict = {}
 client_buffers: Dict = {}
+client_connect_times: Dict = {}  # v7: Track when clients connected
 last_track_key = ""
 
 top_procs_cache: List = []
@@ -153,6 +163,18 @@ last_top_procs_time: float = 0.0
 last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
 last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
 ping_latency_ms = 0
+
+# v7: Global cache for immediate send to new clients
+global_data_cache: Dict = {
+    "hw": {},
+    "weather": {},
+    "media": {"art": "", "trk": "", "play": False, "cover_b64": ""},
+    "top_procs": [],
+    "top_procs_ram": [],
+    "net": (0, 0),
+    "disk": (0, 0),
+    "ping": 0,
+}
 
 # ============================================================================
 # UTILITIES
@@ -172,6 +194,12 @@ def log_err(msg: str, exc: Optional[BaseException] = None, trace_bt: bool = True
 
 def log_info(msg: str):
     print(f"[INFO] {msg}", flush=True)
+
+
+def log_debug(msg: str):
+    """Debug logging (can be disabled for production)"""
+    if os.getenv("DEBUG", "0") == "1":
+        print(f"[DEBUG] {msg}", flush=True)
 
 
 def clean_val(v: Any) -> float:
@@ -238,7 +266,7 @@ def get_lhm_data() -> Dict[str, float]:
             return results
         except Exception as e:
             if attempt == 2:
-                log_err(f"LHM failed after 3 attempts: {e}", e, trace_bt=False)
+                log_debug(f"LHM failed after 3 attempts: {e}")
             continue
     return {}
 
@@ -625,21 +653,71 @@ def build_payload(
 
 
 # ============================================================================
-# TCP SERVER
+# TCP SERVER — v7 with immediate data send
 # ============================================================================
 
+async def send_data_to_client(writer, payload: Dict) -> bool:
+    """
+    Send JSON payload to a single client.
+    Returns True on success, False on failure.
+    """
+    try:
+        data = json.dumps(payload, separators=(",", ":")) + "\n"
+        writer.write(data.encode("utf-8"))
+        await writer.drain()
+        return True
+    except Exception as e:
+        log_debug(f"Send failed: {e}")
+        return False
+
+
 async def handle_client(reader, writer):
-    """Handle TCP client connection. Receives screen change commands."""
+    """
+    Handle TCP client connection.
+    v7: Immediately sends cached data on connect to prevent timeout.
+    """
     addr = writer.get_extra_info("peername")
     log_info(f"Client connected: {addr}")
     tcp_clients.append(writer)
     client_screens[writer] = 0
     client_buffers[writer] = ""
+    client_connect_times[writer] = time.time()
+    
+    # v7 CRITICAL: Send cached data IMMEDIATELY on connect
+    # This prevents the client from timing out waiting for first data
+    try:
+        if global_data_cache["hw"]:
+            payload = build_payload(
+                hw=global_data_cache["hw"],
+                media=global_data_cache["media"],
+                weather=global_data_cache["weather"],
+                top_procs=global_data_cache["top_procs"],
+                top_procs_ram=global_data_cache["top_procs_ram"],
+                net=global_data_cache["net"],
+                disk=global_data_cache["disk"],
+                ping_ms=global_data_cache["ping"],
+            )
+            success = await send_data_to_client(writer, payload)
+            if success:
+                log_debug(f"Sent initial data to {addr}")
+            else:
+                log_debug(f"Failed to send initial data to {addr}")
+        else:
+            # No cached data yet - send minimal heartbeat
+            heartbeat = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0}
+            await send_data_to_client(writer, heartbeat)
+            log_debug(f"Sent heartbeat to {addr}")
+    except Exception as e:
+        log_debug(f"Initial send error: {e}")
+    
     try:
         while not stop_requested:
             try:
                 data = await asyncio.wait_for(reader.read(256), timeout=1.0)
             except asyncio.TimeoutError:
+                # Check if connection is still alive
+                if writer.is_closing():
+                    break
                 continue
             if not data:
                 break
@@ -651,6 +729,10 @@ async def handle_client(reader, writer):
                 while "\n" in client_buffers[writer]:
                     line, client_buffers[writer] = client_buffers[writer].split("\n", 1)
                     line = line.strip()
+                    # Handle HELO handshake from v7 firmware
+                    if line == "HELO":
+                        log_debug(f"Received HELO from {addr}")
+                        continue
                     if line.startswith("screen:"):
                         try:
                             client_screens[writer] = int(line.split(":", 1)[1])
@@ -659,12 +741,13 @@ async def handle_client(reader, writer):
             except UnicodeDecodeError:
                 client_buffers[writer] = ""
     except Exception as e:
-        log_err(f"Client error: {e}", trace_bt=False)
+        log_debug(f"Client handler error: {e}")
     finally:
         if writer in tcp_clients:
             tcp_clients.remove(writer)
         client_screens.pop(writer, None)
         client_buffers.pop(writer, None)
+        client_connect_times.pop(writer, None)
         try:
             writer.close()
             await writer.wait_closed()
@@ -674,7 +757,7 @@ async def handle_client(reader, writer):
 
 
 # ============================================================================
-# MAIN ASYNC LOOP — LHM & weather in executor; TCP never blocked
+# MAIN ASYNC LOOP — v7 with faster data collection and immediate sends
 # ============================================================================
 
 async def run():
@@ -684,9 +767,10 @@ async def run():
     - Weather API runs in ThreadPoolExecutor (non-blocking)
     - Ping runs in ThreadPoolExecutor (non-blocking)
     - TCP stream is never blocked
+    - v7: Faster initial data collection, immediate sends to new clients
     """
     global executor, last_track_key, top_procs_cache, top_procs_ram_cache
-    global last_top_procs_time, ping_latency_ms
+    global last_top_procs_time, ping_latency_ms, global_data_cache
     
     executor = ThreadPoolExecutor(max_workers=6)
 
@@ -702,22 +786,35 @@ async def run():
     log_info("Server ready. Waiting for clients...")
 
     loop = asyncio.get_event_loop()
-    cache = {
-        "hw": {},
-        "weather": weather_cache,
-        "media": {"art": "", "trk": "", "play": False, "cover_b64": ""},
-        "top_procs": [],
-        "top_procs_ram": [],
-        "net": (0, 0),
-        "disk": (0, 0),
-        "ping": 0,
-    }
+    
     last_lhm_time = 0.0
     last_weather_time = 0.0
     last_ping_time = 0.0
-    LHM_INTERVAL = 0.9
+    last_send_time = 0.0
+    LHM_INTERVAL = 0.5  # v7: Faster polling (500ms)
     WEATHER_INTERVAL_F = float(WEATHER_UPDATE_INTERVAL)
     PING_INTERVAL = 5.0  # Ping every 5 seconds
+
+    # v7: Initial data collection before accepting clients
+    log_info("Collecting initial data...")
+    try:
+        global_data_cache["hw"] = await loop.run_in_executor(executor, get_lhm_data)
+        global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
+        global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
+        global_data_cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
+        global_data_cache["media"] = await get_media_info()
+        top_procs_cache = await loop.run_in_executor(
+            executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N)
+        )
+        top_procs_ram_cache = await loop.run_in_executor(
+            executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N)
+        )
+        global_data_cache["top_procs"] = top_procs_cache
+        global_data_cache["top_procs_ram"] = top_procs_ram_cache
+        last_top_procs_time = time.time()
+        log_info("Initial data collected.")
+    except Exception as e:
+        log_err(f"Initial data collection failed: {e}", trace_bt=False)
 
     while not stop_requested:
         now = time.time()
@@ -725,71 +822,90 @@ async def run():
         # Schedule LHM in executor (non-blocking)
         if now - last_lhm_time >= LHM_INTERVAL:
             last_lhm_time = now
-            cache["hw"] = await loop.run_in_executor(executor, get_lhm_data)
-            cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
-            cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
+            try:
+                hw_data = await loop.run_in_executor(executor, get_lhm_data)
+                if hw_data:
+                    global_data_cache["hw"] = hw_data
+                global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
+                global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
+            except Exception as e:
+                log_debug(f"Data collection error: {e}")
+            
             if now - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
-                top_procs_cache = await loop.run_in_executor(
-                    executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N)
-                )
-                top_procs_ram_cache = await loop.run_in_executor(
-                    executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N)
-                )
-                last_top_procs_time = now
-            cache["top_procs"] = top_procs_cache
-            cache["top_procs_ram"] = top_procs_ram_cache
+                try:
+                    top_procs_cache = await loop.run_in_executor(
+                        executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N)
+                    )
+                    top_procs_ram_cache = await loop.run_in_executor(
+                        executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N)
+                    )
+                    last_top_procs_time = now
+                    global_data_cache["top_procs"] = top_procs_cache
+                    global_data_cache["top_procs_ram"] = top_procs_ram_cache
+                except Exception as e:
+                    log_debug(f"Process collection error: {e}")
 
         # Weather in executor (long interval)
         if now - last_weather_time >= WEATHER_INTERVAL_F:
             last_weather_time = now
-            cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
+            try:
+                global_data_cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
+            except Exception as e:
+                log_debug(f"Weather collection error: {e}")
 
         # Ping in executor (5 sec interval)
         if now - last_ping_time >= PING_INTERVAL:
             last_ping_time = now
-            ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
-            cache["ping"] = ping_latency_ms
+            try:
+                ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
+                global_data_cache["ping"] = ping_latency_ms
+            except Exception as e:
+                log_debug(f"Ping error: {e}")
 
         # Media info (async, non-blocking)
-        cache["media"] = await get_media_info()
+        try:
+            global_data_cache["media"] = await get_media_info()
+        except Exception as e:
+            log_debug(f"Media info error: {e}")
 
-        track_key = f"{cache['media'].get('art', '')}|{cache['media'].get('trk', '')}"
+        track_key = f"{global_data_cache['media'].get('art', '')}|{global_data_cache['media'].get('trk', '')}"
         if track_key != last_track_key and last_track_key:
             log_info("Track changed.")
         last_track_key = track_key
 
-        # Send to all connected clients
-        dead = []
-        for writer in list(tcp_clients):
-            screen = client_screens.get(writer, 0)
-            payload = build_payload(
-                hw=cache["hw"],
-                media=cache["media"],
-                weather=cache["weather"],
-                top_procs=cache["top_procs"],
-                top_procs_ram=cache["top_procs_ram"],
-                net=cache["net"],
-                disk=cache["disk"],
-                ping_ms=cache["ping"],
-            )
-            try:
-                writer.write((json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8"))
-                await writer.drain()
-            except Exception:
-                dead.append(writer)
+        # Send to all connected clients (at DATA_SEND_INTERVAL)
+        if now - last_send_time >= DATA_SEND_INTERVAL:
+            last_send_time = now
+            dead = []
+            for writer in list(tcp_clients):
+                payload = build_payload(
+                    hw=global_data_cache["hw"],
+                    media=global_data_cache["media"],
+                    weather=global_data_cache["weather"],
+                    top_procs=global_data_cache["top_procs"],
+                    top_procs_ram=global_data_cache["top_procs_ram"],
+                    net=global_data_cache["net"],
+                    disk=global_data_cache["disk"],
+                    ping_ms=global_data_cache["ping"],
+                )
+                success = await send_data_to_client(writer, payload)
+                if not success:
+                    dead.append(writer)
 
-        for writer in dead:
-            if writer in tcp_clients:
-                tcp_clients.remove(writer)
-            client_screens.pop(writer, None)
-            client_buffers.pop(writer, None)
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+            for writer in dead:
+                if writer in tcp_clients:
+                    tcp_clients.remove(writer)
+                client_screens.pop(writer, None)
+                client_buffers.pop(writer, None)
+                client_connect_times.pop(writer, None)
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:
+                    pass
 
-        await asyncio.sleep(0.8)
+        # v7: Faster loop interval for responsiveness
+        await asyncio.sleep(0.1)
 
     if executor:
         executor.shutdown(wait=False)
@@ -853,7 +969,7 @@ def _start_tray():
         MenuItem("Remove from Autostart", on_remove_autostart),
         MenuItem("Exit", on_quit, default=True),
     )
-    icon = pystray.Icon("heltec", img, "Heltec Monitor v6.0 [NEURAL LINK]", menu=menu)
+    icon = pystray.Icon("heltec", img, "Heltec Monitor v7.0 [NEURAL LINK]", menu=menu)
     import threading
     t = threading.Thread(target=_run_tray_thread, args=(icon,), daemon=True)
     t.start()
@@ -928,7 +1044,7 @@ def _remove_from_autostart() -> bool:
 
 if __name__ == "__main__":
     log_info("=" * 60)
-    log_info("Heltec PC Monitor Server v6.0 [NEURAL LINK]")
+    log_info("Heltec PC Monitor Server v7.0 [NEURAL LINK]")
     log_info("Cyberpunk Cyberdeck Edition")
     log_info("=" * 60)
 
