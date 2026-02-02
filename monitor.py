@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Heltec PC Monitor Server v2.0
+Heltec PC Monitor Server v3.0 — Cyberpunk/Tech-Deck
 
-Collects PC data (hardware, weather, media, processes) and sends JSON over TCP
-to Heltec ESP32 (WiFi LoRa 32 V3). One JSON line per update; device sends
-screen:N to request screen-specific data.
+Asynchronous TCP server: LHM and weather run in ThreadPoolExecutor so the
+TCP keepalive loop never blocks. JSON keys are 2 chars; values: int for
+loads/temps, 1-decimal float for RAM. Weather: cache last success; never
+send 0/null after first successful fetch.
 
-Dependencies: LHM (LibHardwareMonitor HTTP), Open-Meteo API, winsdk (media),
-pystray (tray), PIL (cover resize). Main flows: TCP server, weather_updater
-task, main loop (LHM + media + payload broadcast).
+Data source: LibreHardwareMonitor HTTP JSON, Open-Meteo, winsdk (media).
 """
 
 import asyncio
@@ -16,11 +15,10 @@ import base64
 import io
 import json
 import os
-import socket
 import sys
-import threading
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Any
 
 import psutil
@@ -50,20 +48,16 @@ except ImportError:
     HAS_PIL = False
 
 # ============================================================================
-# CONFIGURATION — .env overrides; see .env.example
+# CONFIGURATION
 # ============================================================================
 
 load_dotenv()
 
-# LHM (LibHardwareMonitor) HTTP endpoint
 LHM_URL = os.getenv("LHM_URL", "http://localhost:8085/data.json")
-
-# TCP server (device connects to this host/port)
 TCP_HOST = os.getenv("TCP_HOST", "0.0.0.0")
 TCP_PORT = int(os.getenv("TCP_PORT", "8888"))
 PC_IP = os.getenv("PC_IP", "192.168.1.2")
 
-# Open-Meteo weather
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
 WEATHER_LON = os.getenv("WEATHER_LON", "37.6173")
 WEATHER_URL = (
@@ -74,69 +68,56 @@ WEATHER_URL = (
     "&timezone=auto&forecast_days=8"
 )
 WEATHER_TIMEOUT = 10
-WEATHER_UPDATE_INTERVAL = 10 * 60  # 10 minutes
+WEATHER_UPDATE_INTERVAL = 10 * 60
 
-# Album cover: 48x48 monochrome bitmap
+# NIC sensor path (LHM) — override if your adapter GUID differs
+NIC_GUID = os.getenv(
+    "NIC_GUID",
+    "{EC657B3C-D11A-4B56-984F-4D84B9FF9580}",
+)
+NIC_DOWN_PATH = f"/nic/{NIC_GUID}/throughput/8"
+NIC_UP_PATH = f"/nic/{NIC_GUID}/throughput/7"
+
 COVER_SIZE = 48
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
-COVER_INTERVAL = 60  # Send cover max once per minute
-
-# Top processes: counts must match main.cpp (procs.cpuNames[3], procs.ramNames[2])
+COVER_INTERVAL = 60
 TOP_PROCS_CPU_N = 3
 TOP_PROCS_RAM_N = 2
+CLIENT_LINE_MAX = 4096
+TOP_PROCS_CACHE_TTL = 2.5
+
+# ============================================================================
+# DATA MAPPING — EXACT Sensor IDs, 2-char JSON keys
+# ============================================================================
+
+TARGETS = {
+    "ct": "/amdcpu/0/temperature/2",
+    "gt": "/gpu-nvidia/0/temperature/0",
+    "cl": "/amdcpu/0/load/0",
+    "gl": "/gpu-nvidia/0/load/0",
+    "ru": "/ram/data/0",
+    "ra": "/ram/data/1",
+    "nd": NIC_DOWN_PATH,
+    "nu": NIC_UP_PATH,
+    "cf": "/lpc/it8688e/0/fan/0",
+    "s1": "/lpc/it8688e/0/fan/1",
+    "s2": "/lpc/it8688e/0/fan/2",
+    "gf": "/gpu-nvidia/0/fan/1",
+    "su": "/nvme/2/load/30",
+    "du": "/hdd/0/load/30",
+    "vu": "/gpu-nvidia/0/smalldata/1",
+    "vt": "/gpu-nvidia/0/smalldata/2",
+    "ch": "/lpc/it8688e/0/temperature/0",
+}
 
 # ============================================================================
 # GLOBAL STATE
 # ============================================================================
 
 stop_requested = False
+executor: Optional[ThreadPoolExecutor] = None
 
-# LHM SensorId -> JSON key. LHM Value/RawValue use comma decimal; clean_val() normalizes.
-# Disks: d1=nvme/2, d2=nvme/3, d3=hdd/0, d4=ssd/1 -> main.cpp hw.disk*[0..3].
-TARGETS = {
-    "ct": "/amdcpu/0/temperature/2",
-    "gt": "/gpu-nvidia/0/temperature/0",
-    "gth": "/gpu-nvidia/0/temperature/2",
-    "vt": "/lpc/it8688e/0/temperature/4",
-    "cpu_load": "/amdcpu/0/load/0",
-    "cpu_pwr": "/amdcpu/0/power/0",
-    "cpu_mhz": "/amdcpu/0/clock/0",
-    "gpu_load": "/gpu-nvidia/0/load/0",
-    "gpu_pwr": "/gpu-nvidia/0/power/0",
-    "p": "/lpc/it8688e/0/fan/0",
-    "r": "/lpc/it8688e/0/fan/1",
-    "c": "/lpc/it8688e/0/fan/2",
-    "gf": "/gpu-nvidia/0/fan/1",
-    "gck": "/gpu-nvidia/0/clock/0",
-    "ram_u": "/ram/data/0",
-    "ram_a": "/ram/data/1",
-    "ram_pct": "/ram/load/0",
-    "vram_u": "/gpu-nvidia/0/smalldata/1",
-    "vram_t": "/gpu-nvidia/0/smalldata/2",
-    "vcore": "/lpc/it8688e/0/voltage/0",
-    "c1": "/amdcpu/0/clock/3",
-    "c2": "/amdcpu/0/clock/5",
-    "c3": "/amdcpu/0/clock/7",
-    "c4": "/amdcpu/0/clock/9",
-    "c5": "/amdcpu/0/clock/11",
-    "c6": "/amdcpu/0/clock/13",
-    "nvme2_t": "/nvme/2/temperature/0",
-    "chipset_t": "/lpc/it8688e/0/temperature/0",
-    "d1_t": "/nvme/2/temperature/0",
-    "d1_free": "/nvme/2/data/31",
-    "d1_total": "/nvme/2/data/32",
-    "d2_t": "/nvme/3/temperature/0",
-    "d2_free": "/nvme/3/data/31",
-    "d2_total": "/nvme/3/data/32",
-    "d3_t": "/hdd/0/temperature/0",
-    "d3_free": "/hdd/0/data/31",
-    "d3_total": "/hdd/0/data/32",
-    "d4_t": "/ssd/1/temperature/0",
-    "d4_free": "/ssd/1/data/31",
-    "d4_total": "/ssd/1/data/32",
-}
-
-weather_cache = {
+weather_cache: Dict = {
     "temp": 0,
     "desc": "",
     "icon": 0,
@@ -147,49 +128,42 @@ weather_cache = {
     "week_low": [],
     "week_code": [],
 }
-last_weather_update = 0.0
 _weather_first_ok = False
 _last_weather_log_time = 0.0
+
+tcp_clients: List = []
+client_screens: Dict = {}
+client_buffers: Dict = {}
+last_track_key = ""
+
+top_procs_cache: List = []
+top_procs_ram_cache: List = []
+last_top_procs_time: float = 0.0
 
 last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
 last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
 
-tcp_clients: List = []
-client_screens: Dict = {}  # StreamWriter -> screen number
-client_buffers: Dict = {}  # StreamWriter -> buffer for reading
-
-last_track_key = ""
-
-# Top processes cache (TTL 2.5 s) to reduce psutil.process_iter() load
-top_procs_cache: List = []
-top_procs_ram_cache: List = []
-last_top_procs_time: float = 0.0
-TOP_PROCS_CACHE_TTL = 2.5  # seconds
-
 # ============================================================================
-# UTILITY FUNCTIONS
+# UTILITIES
 # ============================================================================
 
-def log_err(msg: str, exc: Optional[BaseException] = None, trace: bool = True):
-    """Print error to stderr with optional traceback. Safe when stderr is None (e.g. frozen app)."""
-    err_stream = sys.stderr if sys.stderr is not None else sys.stdout
+def log_err(msg: str, exc: Optional[BaseException] = None, trace_bt: bool = True):
+    err_stream = getattr(sys, "stderr", None) or sys.stdout
     try:
         print(f"[ERROR] {msg}", file=err_stream, flush=True)
-        if exc is not None and trace:
+        if exc is not None and trace_bt:
             traceback.print_exc(file=err_stream)
-            if getattr(err_stream, "flush", None) is not None:
+            if getattr(err_stream, "flush", None):
                 err_stream.flush()
     except (OSError, AttributeError):
-        pass  # headless/frozen: avoid secondary crash
+        pass
 
 
 def log_info(msg: str):
-    """Print info message."""
     print(f"[INFO] {msg}", flush=True)
 
 
 def clean_val(v: Any) -> float:
-    """Clean and convert sensor value to float."""
     if v is None:
         return 0.0
     try:
@@ -203,17 +177,16 @@ def clean_val(v: Any) -> float:
 
 
 # ============================================================================
-# DATA COLLECTION
+# DATA COLLECTION (blocking — run in executor)
 # ============================================================================
 
 def get_lhm_data() -> Dict[str, float]:
-    """Fetch hardware monitoring data from LibHardwareMonitor."""
+    """Fetch LHM JSON and extract values for TARGETS. Blocking."""
     for attempt in range(3):
         try:
             r = requests.get(LHM_URL, timeout=2)
             if r.status_code != 200:
                 continue
-                
             data = r.json()
             results = {}
             targets_set = set(TARGETS.values())
@@ -233,23 +206,16 @@ def get_lhm_data() -> Dict[str, float]:
                     if "Children" in node:
                         walk(node["Children"])
 
-            if isinstance(data, list):
-                walk(data)
-            else:
-                walk(data)
-                
+            walk(data)
             return results
-            
         except Exception as e:
             if attempt == 2:
-                log_err(f"LHM failed after 3 attempts: {e}", e, trace=False)
+                log_err(f"LHM failed after 3 attempts: {e}", e, trace_bt=False)
             continue
-            
     return {}
 
 
 def _weather_desc_from_code(code: int) -> str:
-    """Convert WMO weather code to description."""
     if code == 0:
         return "Clear"
     if 1 <= code <= 3:
@@ -269,162 +235,115 @@ def _weather_desc_from_code(code: int) -> str:
     return "Cloudy"
 
 
-def get_weather() -> Dict:
-    """Fetch weather data from Open-Meteo API."""
-    global weather_cache, last_weather_update, _weather_first_ok
-    global _last_weather_log_time
-    
+def get_weather_sync() -> Dict:
+    """Fetch weather. Never raises; returns cache on failure. Blocking."""
+    global weather_cache, _weather_first_ok, _last_weather_log_time
     now = time.time()
-    
     for attempt in range(2):
         try:
             r = requests.get(WEATHER_URL, timeout=WEATHER_TIMEOUT)
-            if r.status_code == 200:
-                data = r.json()
-                
-                cur = data.get("current", {})
-                temp = int(cur.get("temperature_2m", 0))
-                code = int(cur.get("weather_code", 0))
-                desc = _weather_desc_from_code(code)[:20]
-                
-                daily = data.get("daily", {})
-                dmax = daily.get("temperature_2m_max") or []
-                dmin = daily.get("temperature_2m_min") or []
-                dcode = daily.get("weather_code") or []
-                
-                day_high = int(dmax[0]) if len(dmax) > 0 else temp
-                day_low = int(dmin[0]) if len(dmin) > 0 else temp
-                day_code = int(dcode[0]) if len(dcode) > 0 else code
-                
-                week_high = [int(x) for x in dmax[:7]] if isinstance(dmax, list) else []
-                week_low = [int(x) for x in dmin[:7]] if isinstance(dmin, list) else []
-                week_code = [int(x) for x in dcode[:7]] if isinstance(dcode, list) else []
-                
-                weather_cache = {
-                    "temp": temp,
-                    "desc": desc,
-                    "icon": code,
-                    "day_high": day_high,
-                    "day_low": day_low,
-                    "day_code": day_code,
-                    "week_high": week_high,
-                    "week_low": week_low,
-                    "week_code": week_code,
-                }
-                last_weather_update = now
-                
-                if not _weather_first_ok:
-                    _weather_first_ok = True
-                    log_info(f"Weather: {temp}°C, {desc}")
-                    
-                return weather_cache
-                
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            cur = data.get("current") or {}
+            temp = int(cur.get("temperature_2m", 0) or 0)
+            code = int(cur.get("weather_code", 0) or 0)
+            desc = (_weather_desc_from_code(code) or "Cloudy")[:20]
+            daily = data.get("daily") or {}
+            dmax = daily.get("temperature_2m_max") or []
+            dmin = daily.get("temperature_2m_min") or []
+            dcode = daily.get("weather_code") or []
+            day_high = int(dmax[0]) if len(dmax) > 0 else temp
+            day_low = int(dmin[0]) if len(dmin) > 0 else temp
+            day_code = int(dcode[0]) if len(dcode) > 0 else code
+            week_high = [int(x) for x in dmax[:7]] if isinstance(dmax, list) else []
+            week_low = [int(x) for x in dmin[:7]] if isinstance(dmin, list) else []
+            week_code = [int(x) for x in dcode[:7]] if isinstance(dcode, list) else []
+            weather_cache = {
+                "temp": temp,
+                "desc": desc,
+                "icon": code,
+                "day_high": day_high,
+                "day_low": day_low,
+                "day_code": day_code,
+                "week_high": week_high,
+                "week_low": week_low,
+                "week_code": week_code,
+            }
+            if not _weather_first_ok:
+                _weather_first_ok = True
+                log_info(f"Weather: {temp}C, {desc}")
+            return weather_cache
         except Exception as e:
-            if attempt == 1:
-                if now - _last_weather_log_time > 300:  # Log once per 5 min
-                    log_err(f"Weather fetch failed: {e}", trace=False)
-                    _last_weather_log_time = now
-                    
+            if attempt == 1 and (now - _last_weather_log_time > 300):
+                log_err(f"Weather fetch failed: {e}", trace_bt=False)
+                _last_weather_log_time = now
     return weather_cache
 
 
-def get_network_speed() -> tuple:
-    """Calculate network upload/download speed in KB/s."""
-    global last_net_bytes
-    
+def get_network_speed_sync() -> tuple:
     try:
         counters = psutil.net_io_counters()
         now = time.time()
-        
         if last_net_bytes["time"] == 0:
-            last_net_bytes = {
-                "sent": counters.bytes_sent,
-                "recv": counters.bytes_recv,
-                "time": now,
-            }
+            last_net_bytes["sent"] = counters.bytes_sent
+            last_net_bytes["recv"] = counters.bytes_recv
+            last_net_bytes["time"] = now
             return 0, 0
-            
         dt = now - last_net_bytes["time"]
         if dt < 0.1:
             return 0, 0
-            
         up = int((counters.bytes_sent - last_net_bytes["sent"]) / dt / 1024)
         down = int((counters.bytes_recv - last_net_bytes["recv"]) / dt / 1024)
-        
-        last_net_bytes = {
-            "sent": counters.bytes_sent,
-            "recv": counters.bytes_recv,
-            "time": now,
-        }
-        
+        last_net_bytes["sent"] = counters.bytes_sent
+        last_net_bytes["recv"] = counters.bytes_recv
+        last_net_bytes["time"] = now
         return max(0, up), max(0, down)
-        
     except Exception:
         return 0, 0
 
 
-def get_disk_speed() -> tuple:
-    """Calculate disk read/write speed in KB/s."""
-    global last_disk_bytes
-    
+def get_disk_speed_sync() -> tuple:
     try:
         counters = psutil.disk_io_counters()
         if counters is None:
             return 0, 0
-            
         now = time.time()
-        
         if last_disk_bytes["time"] == 0:
-            last_disk_bytes = {
-                "read": counters.read_bytes,
-                "write": counters.write_bytes,
-                "time": now,
-            }
+            last_disk_bytes["read"] = counters.read_bytes
+            last_disk_bytes["write"] = counters.write_bytes
+            last_disk_bytes["time"] = now
             return 0, 0
-            
         dt = now - last_disk_bytes["time"]
         if dt < 0.1:
             return 0, 0
-            
         read_speed = int((counters.read_bytes - last_disk_bytes["read"]) / dt / 1024)
         write_speed = int((counters.write_bytes - last_disk_bytes["write"]) / dt / 1024)
-        
-        last_disk_bytes = {
-            "read": counters.read_bytes,
-            "write": counters.write_bytes,
-            "time": now,
-        }
-        
+        last_disk_bytes["read"] = counters.read_bytes
+        last_disk_bytes["write"] = counters.write_bytes
+        last_disk_bytes["time"] = now
         return max(0, read_speed), max(0, write_speed)
-        
     except Exception:
         return 0, 0
 
 
-def get_top_processes_cpu(n: int = 3) -> List[Dict]:
-    """Get top N processes by CPU usage."""
+def get_top_processes_cpu_sync(n: int = 3) -> List[Dict]:
     try:
         procs = []
         for p in psutil.process_iter(["name", "cpu_percent"]):
             try:
                 info = p.info
-                if info["cpu_percent"] and info["cpu_percent"] > 0:
-                    procs.append({
-                        "n": info["name"][:20],
-                        "c": int(info["cpu_percent"]),
-                    })
+                if info.get("cpu_percent") and info["cpu_percent"] > 0:
+                    procs.append({"n": (info.get("name") or "")[:20], "c": int(info["cpu_percent"])})
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-                
         procs.sort(key=lambda x: x["c"], reverse=True)
         return procs[:n]
-        
     except Exception:
         return []
 
 
-def get_top_processes_ram(n: int = 2) -> List[Dict]:
-    """Get top N processes by memory usage (excludes MemCompression)."""
+def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
     try:
         procs = []
         for p in psutil.process_iter(["name", "memory_info"]):
@@ -433,54 +352,38 @@ def get_top_processes_ram(n: int = 2) -> List[Dict]:
                 name = (info.get("name") or "").strip()
                 if "memcompression" in name.lower() or "memory compression" in name.lower():
                     continue
-                if info["memory_info"]:
+                if info.get("memory_info"):
                     mb = info["memory_info"].rss / (1024 * 1024)
-                    if mb > 10:  # Only show processes using >10MB
-                        procs.append({
-                            "n": name[:20],
-                            "r": int(mb),
-                        })
+                    if mb > 10:
+                        procs.append({"n": name[:20], "r": int(mb)})
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-                
         procs.sort(key=lambda x: x["r"], reverse=True)
         return procs[:n]
-        
     except Exception:
         return []
 
 
 async def get_media_info() -> Dict:
-    """Get currently playing media info from Windows."""
     if not HAS_WINSDK:
         return {"art": "", "trk": "", "play": False, "cover_b64": ""}
-        
     try:
         manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
         session = manager.get_current_session()
-        
         if not session:
             return {"art": "", "trk": "", "play": False, "cover_b64": ""}
-            
         info = await session.try_get_media_properties_async()
         playback = session.get_playback_info()
-        
         artist = info.artist if info and info.artist else ""
         track = info.title if info and info.title else ""
-        is_playing = (
-            playback
-            and playback.playback_status == 4  # Playing status
-        )
-        
-        # Get album cover — read full thumbnail stream (Windows can return large JPEG/PNG)
+        is_playing = playback and getattr(playback, "playback_status", 0) == 4
         cover_b64 = ""
         if HAS_PIL and info:
             try:
-                thumb_ref = info.thumbnail
+                thumb_ref = getattr(info, "thumbnail", None)
                 if thumb_ref:
                     thumb_stream = await thumb_ref.open_read_async()
                     if thumb_stream:
-                        # Read entire stream in chunks (thumbnail can be 50–200 KB)
                         chunk_size = 32768
                         chunks = []
                         while True:
@@ -490,14 +393,10 @@ async def get_media_info() -> Dict:
                                 break
                             chunks.append(bytes(buf)[:n])
                         img_bytes = b"".join(chunks)
-                        if not img_bytes:
-                            pass
-                        else:
+                        if img_bytes:
                             img = Image.open(io.BytesIO(img_bytes))
-                            # Convert to 48x48 monochrome bitmap (XBM: 1 bit per pixel)
                             img = img.convert("L").resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
-                            threshold = 128
-                            img = img.point(lambda p: 255 if p > threshold else 0, mode="1")
+                            img = img.point(lambda p: 255 if p > 128 else 0, mode="1")
                             bitmap = []
                             for y in range(COVER_SIZE):
                                 for x in range(0, COVER_SIZE, 8):
@@ -508,123 +407,86 @@ async def get_media_info() -> Dict:
                                     bitmap.append(byte)
                             cover_b64 = base64.b64encode(bytes(bitmap)).decode("ascii")
             except Exception:
-                cover_b64 = ""
-                
-        return {
-            "art": artist[:30],
-            "trk": track[:30],
-            "play": is_playing,
-            "cover_b64": cover_b64,
-        }
-        
+                pass
+        return {"art": artist[:30], "trk": track[:30], "play": is_playing, "cover_b64": cover_b64}
     except Exception:
         return {"art": "", "trk": "", "play": False, "cover_b64": ""}
 
 
-def get_core_loads(num_cores: int = 6) -> List[int]:
-    """Get per-core CPU load percentages."""
-    try:
-        per_cpu = psutil.cpu_percent(interval=0, percpu=True)
-        return [int(x) for x in per_cpu[:num_cores]]
-    except Exception:
-        return [0] * num_cores
-
-
 # ============================================================================
-# PAYLOAD BUILDING
+# PAYLOAD — 2-char keys, int for loads/temps, 1-decimal float for RAM
+# Weather: never send 0/null after first success (use cache)
 # ============================================================================
 
 def build_payload(
     hw: Dict,
     media: Dict,
-    hw_ok: bool,
     weather: Dict,
     top_procs: List,
     top_procs_ram: List,
     net: tuple,
     disk: tuple,
-    core_loads: List,
     screen: int,
 ) -> Dict:
-    """Build JSON payload to send to Heltec. Keys must match main.cpp parsing."""
+    # Weather: after first success, always send cached; never 0/null for temp/desc
+    w = weather if _weather_first_ok else weather
+    wt_val = w.get("temp", 0)
+    wd_val = w.get("desc", "") or ""
+    if _weather_first_ok and (wt_val == 0 and weather_cache.get("temp", 0) != 0):
+        wt_val = weather_cache["temp"]
+    if _weather_first_ok and not wd_val and weather_cache.get("desc"):
+        wd_val = weather_cache["desc"]
+
+    ram_used = hw.get("ru", 0.0)
+    ram_total = hw.get("ra", 0.0)
+    ram_used_f = round(float(ram_used), 1)
+    ram_total_f = round(float(ram_total), 1)
+
+    nd_raw = hw.get("nd", 0)
+    nu_raw = hw.get("nu", 0)
+    if nd_raw > 100000:
+        nd_raw = nd_raw / 1024
+    if nu_raw > 100000:
+        nu_raw = nu_raw / 1024
+    nd_val = int(nd_raw)
+    nu_val = int(nu_raw)
+
     payload = {
-        # Hardware
         "ct": int(hw.get("ct", 0)),
         "gt": int(hw.get("gt", 0)),
-        "gth": int(hw.get("gth", 0)),
-        "vt": int(hw.get("vt", 0)),
-        "cpu_load": int(hw.get("cpu_load", 0)),
-        "cpu_pwr": int(hw.get("cpu_pwr", 0)),
-        "cpu_mhz": int(hw.get("cpu_mhz", 0)),
-        "gpu_load": int(hw.get("gpu_load", 0)),
-        "gpu_pwr": int(hw.get("gpu_pwr", 0)),
-        "p": int(hw.get("p", 0)),
-        "r": int(hw.get("r", 0)),
-        "c": int(hw.get("c", 0)),
+        "cl": int(hw.get("cl", 0)),
+        "gl": int(hw.get("gl", 0)),
+        "ru": ram_used_f,
+        "ra": ram_total_f,
+        "nd": nd_val,
+        "nu": nu_val,
+        "cf": int(hw.get("cf", 0)),
+        "s1": int(hw.get("s1", 0)),
+        "s2": int(hw.get("s2", 0)),
         "gf": int(hw.get("gf", 0)),
-        "gck": int(hw.get("gck", 0)),
-        "ram_u": round(hw.get("ram_u", 0), 1),
-        "ram_a": round(hw.get("ram_a", 0), 1),
-        "ram_pct": int(hw.get("ram_pct", 0)),
-        "vram_u": round(hw.get("vram_u", 0), 1),
-        "vram_t": round(hw.get("vram_t", 0), 1),
-        "nvme2_t": int(hw.get("nvme2_t", 0)),
-        "chipset_t": int(hw.get("chipset_t", 0)),
-        
-        # CPU Cores
-        "c_arr": [
-            int(hw.get("c1", 0)),
-            int(hw.get("c2", 0)),
-            int(hw.get("c3", 0)),
-            int(hw.get("c4", 0)),
-            int(hw.get("c5", 0)),
-            int(hw.get("c6", 0)),
-        ],
-        "cl_arr": core_loads,
-        
-        # Disks
-        "d1_t": int(hw.get("d1_t", 0)),
-        "d1_u": round(hw.get("d1_total", 0) - hw.get("d1_free", 0), 1),
-        "d1_f": round(hw.get("d1_free", 0), 1),
-        "d2_t": int(hw.get("d2_t", 0)),
-        "d2_u": round(hw.get("d2_total", 0) - hw.get("d2_free", 0), 1),
-        "d2_f": round(hw.get("d2_free", 0), 1),
-        "d3_t": int(hw.get("d3_t", 0)),
-        "d3_u": round(hw.get("d3_total", 0) - hw.get("d3_free", 0), 1),
-        "d3_f": round(hw.get("d3_free", 0), 1),
-        "d4_t": int(hw.get("d4_t", 0)),
-        "d4_u": round(hw.get("d4_total", 0) - hw.get("d4_free", 0), 1),
-        "d4_f": round(hw.get("d4_free", 0), 1),
-        
-        # Network & Disk I/O
-        "net_up": net[0],
-        "net_down": net[1],
-        "disk_r": disk[0],
-        "disk_w": disk[1],
-        
-        # Weather
-        "wt": weather.get("temp", 0),
-        "wd": weather.get("desc", ""),
-        "wi": weather.get("icon", 0),
-        "w_dh": weather.get("day_high", 0),
-        "w_dl": weather.get("day_low", 0),
-        "w_dc": weather.get("day_code", 0),
-        "w_wh": weather.get("week_high", []),
-        "w_wl": weather.get("week_low", []),
-        "w_wc": weather.get("week_code", []),
-        
-        # Processes
+        "su": int(hw.get("su", 0)),
+        "du": int(hw.get("du", 0)),
+        "vu": round(float(hw.get("vu", 0)), 1),
+        "vt": round(float(hw.get("vt", 0)), 1),
+        "ch": int(hw.get("ch", 0)),
+        "dr": disk[0],
+        "dw": disk[1],
+        "wt": wt_val,
+        "wd": wd_val,
+        "wi": int(w.get("icon", 0)),
+        "w_wh": w.get("week_high", []),
+        "w_wl": w.get("week_low", []),
+        "w_wc": w.get("week_code", []),
         "tp": top_procs,
         "tp_ram": top_procs_ram,
-        
-        # Media
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", False),
-        # Always include cover when available so device can cache it (e.g. for Player screen)
         "cover_b64": media.get("cover_b64", ""),
     }
-        
+    if payload["nd"] == 0 and payload["nu"] == 0:
+        payload["nd"] = net[1]
+        payload["nu"] = net[0]
     return payload
 
 
@@ -633,287 +495,225 @@ def build_payload(
 # ============================================================================
 
 async def handle_client(reader, writer):
-    """Handle incoming client connection."""
     addr = writer.get_extra_info("peername")
     log_info(f"Client connected: {addr}")
-    
     tcp_clients.append(writer)
     client_screens[writer] = 0
     client_buffers[writer] = ""
-    
     try:
         while not stop_requested:
             try:
                 data = await asyncio.wait_for(reader.read(256), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
-                
             if not data:
                 break
-                
             try:
                 text = data.decode("utf-8")
                 client_buffers[writer] += text
-                
+                if len(client_buffers[writer]) >= CLIENT_LINE_MAX:
+                    client_buffers[writer] = ""
                 while "\n" in client_buffers[writer]:
                     line, client_buffers[writer] = client_buffers[writer].split("\n", 1)
                     line = line.strip()
-                    
                     if line.startswith("screen:"):
                         try:
-                            screen_num = int(line.split(":", 1)[1])
-                            client_screens[writer] = screen_num
+                            client_screens[writer] = int(line.split(":", 1)[1])
                         except (ValueError, IndexError):
                             pass
-                            
             except UnicodeDecodeError:
                 client_buffers[writer] = ""
-                
     except Exception as e:
-        log_err(f"Client error: {e}", trace=False)
-        
+        log_err(f"Client error: {e}", trace_bt=False)
     finally:
         if writer in tcp_clients:
             tcp_clients.remove(writer)
         client_screens.pop(writer, None)
         client_buffers.pop(writer, None)
-        
         try:
             writer.close()
             await writer.wait_closed()
         except Exception:
             pass
-            
         log_info(f"Client disconnected: {addr}")
 
 
-async def weather_updater():
-    """Background task to update weather periodically."""
-    while not stop_requested:
-        try:
-            get_weather()
-        except Exception as e:
-            log_err(f"Weather updater error: {e}", trace=False)
-            
-        await asyncio.sleep(WEATHER_UPDATE_INTERVAL)
-
+# ============================================================================
+# MAIN ASYNC LOOP — LHM & weather in executor; TCP never blocked
+# ============================================================================
 
 async def run():
-    """Main server loop."""
-    global last_track_key, top_procs_cache, top_procs_ram_cache, last_top_procs_time
-    
+    global executor, last_track_key, top_procs_cache, top_procs_ram_cache, last_top_procs_time
+    executor = ThreadPoolExecutor(max_workers=4)
+
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
-    
-    # Start TCP server
+
     try:
         server = await asyncio.start_server(handle_client, TCP_HOST, TCP_PORT)
     except OSError as e:
         if "bind" in str(e).lower() or "address" in str(e).lower():
-            log_err(
-                f"Cannot bind to {TCP_HOST}:{TCP_PORT}. "
-                f"Check that TCP_HOST is an address on this machine (e.g. 0.0.0.0 for all interfaces) "
-                f"and that port {TCP_PORT} is not in use.",
-                e,
-                trace=True,
-            )
+            log_err(f"Cannot bind to {TCP_HOST}:{TCP_PORT}. Check port and interface.", e, trace_bt=True)
         raise
-    
-    # Start background tasks
-    asyncio.create_task(weather_updater())
-    
-    log_info("Server ready. Waiting for clients...")
-    
-    # Initialize weather cache (weather_updater refreshes it; main loop uses cache only)
-    get_weather()
-    
-    # Cache for data
-    cache = {}
-    
-    while not stop_requested:
-        try:
-            now_sec = int(time.time())
-            now_f = time.time()
-            
-            # Collect data
-            hw = get_lhm_data()
-            hw_ok = len(hw) > 5
-            
-            if not hw_ok:
-                hw = {k: 0 for k in TARGETS.keys()}
-                
-            media = await get_media_info()
-            # Use weather from cache (updated by weather_updater); do not call get_weather() every tick
-            weather = weather_cache
-            if now_f - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
-                top_procs_cache = get_top_processes_cpu(TOP_PROCS_CPU_N)
-                top_procs_ram_cache = get_top_processes_ram(TOP_PROCS_RAM_N)
-                last_top_procs_time = now_f
-            top_procs = top_procs_cache
-            top_procs_ram = top_procs_ram_cache
-            net = get_network_speed()
-            disk = get_disk_speed()
-            core_loads = get_core_loads(6)
-            
-            # Update cache
-            cache.update({
-                "hw": hw,
-                "hw_ok": hw_ok,
-                "media": media,
-                "weather": weather,
-                "top_procs": top_procs,
-                "top_procs_ram": top_procs_ram,
-                "net": net,
-                "disk": disk,
-                "core_loads": core_loads,
-            })
-            
-            track_key = f"{media.get('art', '')}|{media.get('trk', '')}"
-            if track_key != last_track_key and last_track_key:
-                cov_len = len(media.get("cover_b64", ""))
-                log_info(f"Track changed. Cover: {cov_len} bytes")
-            last_track_key = track_key
 
-            # Send to all clients
-            dead = []
-            for writer in list(tcp_clients):
-                screen = client_screens.get(writer, 0)
-                payload = build_payload(
-                    hw=cache["hw"],
-                    media=cache["media"],
-                    hw_ok=cache["hw_ok"],
-                    weather=cache["weather"],
-                    top_procs=cache["top_procs"],
-                    top_procs_ram=cache["top_procs_ram"],
-                    net=cache["net"],
-                    disk=cache["disk"],
-                    core_loads=cache["core_loads"],
-                    screen=screen,
+    log_info("Server ready. Waiting for clients...")
+
+    loop = asyncio.get_event_loop()
+    cache = {
+        "hw": {},
+        "weather": weather_cache,
+        "media": {"art": "", "trk": "", "play": False, "cover_b64": ""},
+        "top_procs": [],
+        "top_procs_ram": [],
+        "net": (0, 0),
+        "disk": (0, 0),
+    }
+    last_lhm_time = 0.0
+    last_weather_time = 0.0
+    LHM_INTERVAL = 0.9
+    WEATHER_INTERVAL_F = float(WEATHER_UPDATE_INTERVAL)
+
+    while not stop_requested:
+        now = time.time()
+
+        # Schedule LHM in executor (non-blocking)
+        if now - last_lhm_time >= LHM_INTERVAL:
+            last_lhm_time = now
+            cache["hw"] = await loop.run_in_executor(executor, get_lhm_data)
+            cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
+            cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
+            if now - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
+                top_procs_cache = await loop.run_in_executor(
+                    executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N)
                 )
-                
-                try:
-                    writer.write((json.dumps(payload) + "\n").encode("utf-8"))
-                    await writer.drain()
-                except Exception:
-                    dead.append(writer)
-                    
-            # Clean up dead connections
-            for writer in dead:
-                if writer in tcp_clients:
-                    tcp_clients.remove(writer)
-                client_screens.pop(writer, None)
-                client_buffers.pop(writer, None)
-                try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception:
-                    pass
-                    
-        except Exception as e:
-            log_err(f"Main loop error: {e}", e)
-            
-        await asyncio.sleep(0.8)  # ~1.25 Hz to reduce CPU load
-        
-    # Cleanup
+                top_procs_ram_cache = await loop.run_in_executor(
+                    executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N)
+                )
+                last_top_procs_time = now
+            cache["top_procs"] = top_procs_cache
+            cache["top_procs_ram"] = top_procs_ram_cache
+
+        # Weather in executor (long interval)
+        if now - last_weather_time >= WEATHER_INTERVAL_F:
+            last_weather_time = now
+            cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
+
+        cache["media"] = await get_media_info()
+
+        track_key = f"{cache['media'].get('art', '')}|{cache['media'].get('trk', '')}"
+        if track_key != last_track_key and last_track_key:
+            log_info("Track changed.")
+        last_track_key = track_key
+
+        dead = []
+        for writer in list(tcp_clients):
+            screen = client_screens.get(writer, 0)
+            payload = build_payload(
+                hw=cache["hw"],
+                media=cache["media"],
+                weather=cache["weather"],
+                top_procs=cache["top_procs"],
+                top_procs_ram=cache["top_procs_ram"],
+                net=cache["net"],
+                disk=cache["disk"],
+                screen=screen,
+            )
+            try:
+                writer.write((json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8"))
+                await writer.drain()
+            except Exception:
+                dead.append(writer)
+
+        for writer in dead:
+            if writer in tcp_clients:
+                tcp_clients.remove(writer)
+            client_screens.pop(writer, None)
+            client_buffers.pop(writer, None)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+        await asyncio.sleep(0.8)
+
+    if executor:
+        executor.shutdown(wait=False)
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     for t in tasks:
         t.cancel()
-        
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
-        
     if server:
         server.close()
         await server.wait_closed()
 
 
 # ============================================================================
-# SYSTEM TRAY (Windows only)
+# SYSTEM TRAY (Windows)
 # ============================================================================
 
 def _make_tray_icon_image():
-    """Create tray icon image."""
     if not HAS_PIL:
         return None
-        
     try:
         from PIL import ImageDraw
-        
         img = Image.new("RGBA", (32, 32), (30, 30, 40, 255))
         draw = ImageDraw.Draw(img)
         draw.ellipse((4, 4, 28, 28), fill=(80, 140, 220), outline=(200, 200, 220))
         return img
-        
     except Exception:
         return None
 
 
 def _run_tray_thread(icon):
-    """Run tray icon in current thread."""
     try:
         icon.run()
     except Exception as e:
-        log_err(f"Tray icon error: {e}", trace=False)
+        log_err(f"Tray error: {e}", trace_bt=False)
 
 
 def _start_tray():
-    """Start tray icon in separate thread."""
-    global stop_requested
-    
     if sys.platform != "win32" or not HAS_PYSTRAY:
         return None
-        
     img = _make_tray_icon_image()
     if img is None and HAS_PIL:
         img = Image.new("RGBA", (32, 32), (80, 80, 80, 255))
-        
     if img is None:
         return None
-        
+
     def on_quit(icon, item):
         global stop_requested
         stop_requested = True
         icon.stop()
-        
+
     def on_add_autostart(icon, item):
-        if _add_to_autostart():
-            log_info("Added to autostart")
-        else:
-            log_err("Failed to add to autostart", trace=False)
-            
+        log_info("Add to autostart" if _add_to_autostart() else "Autostart add failed")
+
     def on_remove_autostart(icon, item):
-        if _remove_from_autostart():
-            log_info("Removed from autostart")
-        else:
-            log_err("Failed to remove from autostart", trace=False)
-            
+        log_info("Remove from autostart" if _remove_from_autostart() else "Autostart remove failed")
+
     menu = Menu(
         MenuItem("Add to Autostart", on_add_autostart),
         MenuItem("Remove from Autostart", on_remove_autostart),
         MenuItem("Exit", on_quit, default=True),
     )
-    
-    icon = pystray.Icon("heltec", img, "Heltec Monitor v2.0", menu=menu)
+    icon = pystray.Icon("heltec", img, "Heltec Monitor v3.0", menu=menu)
+    import threading
     t = threading.Thread(target=_run_tray_thread, args=(icon,), daemon=True)
     t.start()
-    
     return icon
 
 
 def _is_in_autostart() -> bool:
-    """Check if in Windows autostart registry."""
     if sys.platform != "win32":
         return False
-        
     try:
         import winreg
-        
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_READ,
+            0, winreg.KEY_READ,
         )
-        
         try:
             winreg.QueryValueEx(key, "HeltecMonitor")
             return True
@@ -921,57 +721,39 @@ def _is_in_autostart() -> bool:
             return False
         finally:
             winreg.CloseKey(key)
-            
     except Exception:
         return False
 
 
 def _add_to_autostart() -> bool:
-    """Add to Windows autostart registry."""
     if sys.platform != "win32":
         return False
-        
     try:
         import winreg
-        
-        if getattr(sys, "frozen", False):
-            exe_path = os.path.abspath(sys.executable)
-        else:
-            script_path = os.path.abspath(__file__)
-            exe_path = f'"{sys.executable}" "{script_path}"'
-            
+        exe_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"' if not getattr(sys, "frozen", False) else os.path.abspath(sys.executable)
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_SET_VALUE,
+            0, winreg.KEY_SET_VALUE,
         )
-        
         winreg.SetValueEx(key, "HeltecMonitor", 0, winreg.REG_SZ, exe_path)
         winreg.CloseKey(key)
-        
         return True
-        
     except Exception as e:
-        log_err(f"Autostart add failed: {e}", trace=False)
+        log_err(f"Autostart add failed: {e}", trace_bt=False)
         return False
 
 
 def _remove_from_autostart() -> bool:
-    """Remove from Windows autostart registry."""
     if sys.platform != "win32":
         return False
-        
     try:
         import winreg
-        
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_SET_VALUE,
+            0, winreg.KEY_SET_VALUE,
         )
-        
         try:
             winreg.DeleteValue(key, "HeltecMonitor")
             return True
@@ -979,9 +761,8 @@ def _remove_from_autostart() -> bool:
             return False
         finally:
             winreg.CloseKey(key)
-            
     except Exception as e:
-        log_err(f"Autostart remove failed: {e}", trace=False)
+        log_err(f"Autostart remove failed: {e}", trace_bt=False)
         return False
 
 
@@ -990,43 +771,30 @@ def _remove_from_autostart() -> bool:
 # ============================================================================
 
 if __name__ == "__main__":
-    log_info("Heltec PC Monitor Server v2.0")
+    log_info("Heltec PC Monitor Server v3.0 — Cyberpunk/Tech-Deck")
     log_info("=" * 50)
-    
-    # Check autostart on first run
-    if sys.platform == "win32" and not getattr(sys, "frozen", False):
-        if not _is_in_autostart():
-            try:
-                print("Add to Windows autostart? (Y/N): ", end="", flush=True)
-                ans = input().strip().upper()
-                if ans in ("Y", "YES"):
-                    if _add_to_autostart():
-                        log_info("Added to autostart")
-                    else:
-                        log_err("Failed to add to autostart", trace=False)
-            except Exception:
-                pass
-                
-    # Start tray icon
-    tray_icon = None
-    if sys.platform == "win32":
-        tray_icon = _start_tray()
-        
-    # Run main server
+
+    if sys.platform == "win32" and not getattr(sys, "frozen", False) and not _is_in_autostart():
+        try:
+            print("Add to Windows autostart? (Y/N): ", end="", flush=True)
+            if input().strip().upper() in ("Y", "YES"):
+                _add_to_autostart()
+        except Exception:
+            pass
+
+    tray_icon = _start_tray() if sys.platform == "win32" else None
+
     try:
         asyncio.run(run())
     except KeyboardInterrupt:
         log_info("Shutting down...")
     except Exception as e:
-        log_err(f"Fatal error: {e}", e)
-        
+        log_err(f"Fatal: {e}", e)
         if getattr(sys, "frozen", False) and sys.platform == "win32":
             try:
                 import ctypes
                 ctypes.windll.user32.MessageBoxW(None, str(e), "Heltec Monitor", 0x10)
             except Exception:
                 pass
-                
         sys.exit(1)
-        
-    log_info("Goodbye!")
+    log_info("Goodbye.")
