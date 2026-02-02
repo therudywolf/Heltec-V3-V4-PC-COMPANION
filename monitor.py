@@ -95,37 +95,56 @@ def get_lhm_data():
 COVER_SIZE = 48
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
 
-# Погода (кэш)
+# Погода (Open-Meteo, кэш 30 мин)
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast?latitude=55.7558&longitude=37.6173&current=temperature_2m,weather_code"
+WEATHER_TIMEOUT = 10
+WEATHER_UPDATE_INTERVAL = 30 * 60  # 30 минут
 weather_cache = {"temp": 0, "desc": "", "icon": 0}
 last_weather_update = 0.0
-WEATHER_UPDATE_INTERVAL = 30 * 60  # 30 минут
+_last_weather_log_time = 0.0  # не логировать каждый тик
 
 # Сеть и диски (для расчёта скорости)
 last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
 last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
 
+# WMO weather_code -> short desc (Open-Meteo)
+def _weather_desc_from_code(code):
+    if code == 0: return "Clear"
+    if 1 <= code <= 3: return "Cloudy"
+    if 45 <= code <= 48: return "Fog"
+    if 51 <= code <= 67: return "Rain"
+    if 71 <= code <= 77: return "Snow"
+    if 80 <= code <= 82: return "Showers"
+    if 85 <= code <= 86: return "Snow"
+    if 95 <= code <= 99: return "Storm"
+    return "Cloudy"
+
 
 def get_weather():
-    """Получить погоду в Москве (wttr.in JSON, кэш 30 мин)"""
-    global weather_cache, last_weather_update
+    """Погода в Москве (Open-Meteo, без ключа). Кэш 30 мин, retry при ошибке."""
+    global weather_cache, last_weather_update, _last_weather_log_time
     now = time.time()
-    if now - last_weather_update < WEATHER_UPDATE_INTERVAL and weather_cache["temp"] != 0:
+    if now - last_weather_update < WEATHER_UPDATE_INTERVAL and (weather_cache["temp"] != 0 or last_weather_update > 0):
         return weather_cache
-    
-    try:
-        r = requests.get("https://wttr.in/Moscow?format=j1", timeout=3)
-        if r.status_code == 200:
-            data = r.json()
-            cond = data.get("current_condition", [{}])[0]
-            temp = int(cond.get("temp_C", 0))
-            desc = cond.get("weatherDesc", [{}])[0].get("value", "")[:20]
-            icon = int(cond.get("weatherCode", 0))
-            weather_cache = {"temp": temp, "desc": desc, "icon": icon}
-            last_weather_update = now
-            return weather_cache
-    except Exception as e:
-        log_err(f"Weather fetch: {e}", e, trace=False)
-    
+
+    for attempt in range(2):
+        try:
+            r = requests.get(WEATHER_URL, timeout=WEATHER_TIMEOUT)
+            if r.status_code == 200:
+                data = r.json()
+                cur = data.get("current", {})
+                temp = int(cur.get("temperature_2m", 0))
+                code = int(cur.get("weather_code", 0))
+                desc = _weather_desc_from_code(code)[:20]
+                weather_cache = {"temp": temp, "desc": desc, "icon": code}
+                last_weather_update = now
+                return weather_cache
+        except Exception as e:
+            if attempt == 1 and (now - _last_weather_log_time) > 60:
+                log_err(f"Weather fetch failed after retry: {e}", e, trace=False)
+                _last_weather_log_time = now
+            continue
+
     return weather_cache
 
 def get_top_processes():
@@ -242,8 +261,25 @@ async def get_media():
         log_err(f"Media session: {e}", e, trace=False)
     return {"art": "", "trk": "Stopped", "play": 0, "cover_b64": ""}
 
-def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None):
-    """Сборка JSON-пакета. При пустом hw используются нули/кэш; hw_ok=0/1. cover_b64 только при include_cover."""
+# Поля по экранам для полного пакета (0=Main .. 9=Network); общие (алерты) всегда
+_SCREEN_KEYS = {
+    0: ("gth", "vt", "ru", "rt", "rp", "vu", "vt_tot"),
+    1: ("c1", "c2", "c3", "c4", "c5", "c6"),
+    2: ("gck", "gf", "gth", "vu", "vt_tot", "gpu_pwr"),
+    3: ("ru", "rt", "rp", "vu", "vt_tot"),
+    4: ("art", "trk", "cover_b64"),
+    5: (),  # Equalizer: play уже в общих
+    6: ("vcore", "cpu_pwr", "gpu_pwr", "nvme2_t"),
+    7: ("wt", "wd", "wi"),
+    8: ("tp",),
+    9: ("nu", "nd", "dr", "dw"),
+    10: (),  # Wolf Game: только heartbeat
+}
+_COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play")
+
+
+def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None, screen=None):
+    """Сборка JSON. screen=N — только поля для экрана N + общие (алерты). Иначе полный пакет."""
     if weather is None:
         weather = {"temp": 0, "desc": "", "icon": 0}
     if top_procs is None:
@@ -252,8 +288,8 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         net = {"up": 0, "down": 0}
     if disk is None:
         disk = {"read": 0, "write": 0}
-    
-    payload = {
+
+    full = {
         "hw_ok": 1 if hw_ok else 0,
         "ct": int(hw.get("ct", 0)),
         "gt": int(hw.get("gt", 0)),
@@ -263,14 +299,10 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "cpu_pwr": round(hw.get("cpu_pwr", 0), 1),
         "gpu_load": int(hw.get("gpu_load", 0)),
         "gpu_pwr": round(hw.get("gpu_pwr", 0), 1),
-        "p": int(hw.get("p", 0)),
-        "r": int(hw.get("r", 0)),
-        "c": int(hw.get("c", 0)),
-        "gf": int(hw.get("gf", 0)),
-        "gck": int(hw.get("gck", 0)),
-        "c1": int(hw.get("c1", 0)), "c2": int(hw.get("c2", 0)),
-        "c3": int(hw.get("c3", 0)), "c4": int(hw.get("c4", 0)),
-        "c5": int(hw.get("c5", 0)), "c6": int(hw.get("c6", 0)),
+        "p": int(hw.get("p", 0)), "r": int(hw.get("r", 0)), "c": int(hw.get("c", 0)),
+        "gf": int(hw.get("gf", 0)), "gck": int(hw.get("gck", 0)),
+        "c1": int(hw.get("c1", 0)), "c2": int(hw.get("c2", 0)), "c3": int(hw.get("c3", 0)),
+        "c4": int(hw.get("c4", 0)), "c5": int(hw.get("c5", 0)), "c6": int(hw.get("c6", 0)),
         "ru": round(hw.get("ram_u", 0), 1),
         "rt": round(hw.get("ram_u", 0) + hw.get("ram_a", 0), 1),
         "rp": int(hw.get("ram_pct", 0)),
@@ -279,18 +311,23 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "vcore": round(hw.get("vcore", 0), 2),
         "nvme2_t": int(hw.get("nvme2_t", 0)),
         "chipset_t": int(hw.get("chipset_t", 0)),
-        "nu": net.get("up", 0),
-        "nd": net.get("down", 0),
-        "dr": disk.get("read", 0),
-        "dw": disk.get("write", 0),
-        "wt": weather.get("temp", 0),
-        "wd": weather.get("desc", ""),
-        "wi": weather.get("icon", 0),
+        "nu": net.get("up", 0), "nd": net.get("down", 0),
+        "dr": disk.get("read", 0), "dw": disk.get("write", 0),
+        "wt": weather.get("temp", 0), "wd": weather.get("desc", ""), "wi": weather.get("icon", 0),
         "tp": top_procs,
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", 0),
     }
+
+    if screen is not None and 0 <= screen <= 10:
+        keys = set(_COMMON_KEYS) | set(_SCREEN_KEYS.get(screen, ()))
+        if screen == 4 and include_cover and media.get("cover_b64"):
+            keys.add("cover_b64")
+        payload = {k: full[k] for k in keys if k in full}
+        return payload
+
+    payload = dict(full)
     if include_cover and media.get("cover_b64"):
         payload["cover_b64"] = media["cover_b64"]
     return payload
@@ -318,22 +355,48 @@ async def run_serial(ser, cache, send_fn):
     send_fn(data_str.encode("utf-8"))
 
 
-# Клиенты TCP (для рассылки одного и того же JSON)
+# Клиенты TCP: writer -> last screen (0–10)
 tcp_clients = []
+client_screens = {}  # writer -> int
+client_buffers = {}  # writer -> str
+
+
+def _parse_screen_line(line: str) -> int | None:
+    s = line.strip()
+    if s.startswith("screen:") and len(s) < 20:
+        try:
+            n = int(s.split(":")[1].strip())
+            if 0 <= n <= 10:
+                return n
+        except (ValueError, IndexError):
+            pass
+    return None
 
 
 async def tcp_handler(reader, writer):
     addr = writer.get_extra_info("peername")
     tcp_clients.append(writer)
+    client_screens[writer] = 0
+    client_buffers[writer] = ""
     print(f"[TCP] Подключён {addr}")
     try:
-        while await reader.read(100):
-            pass
+        while True:
+            data = await reader.read(100)
+            if not data:
+                break
+            client_buffers[writer] += data.decode("utf-8", errors="ignore")
+            while "\n" in client_buffers[writer]:
+                line, client_buffers[writer] = client_buffers[writer].split("\n", 1)
+                n = _parse_screen_line(line)
+                if n is not None:
+                    client_screens[writer] = n
     except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):
         pass
     finally:
         if writer in tcp_clients:
             tcp_clients.remove(writer)
+        client_screens.pop(writer, None)
+        client_buffers.pop(writer, None)
         try:
             writer.close()
             await writer.wait_closed()
@@ -368,10 +431,20 @@ async def run():
         return
 
     cache = {}
-    interval = 0.8
     last_track_key = ""
     last_cover_sent = 0.0
     COVER_INTERVAL = 8.0
+    HEARTBEAT_INTERVAL = 0.3
+    FULL_INTERVAL = 0.8
+    last_heartbeat = 0.0
+    last_full = 0.0
+
+    # Первый тик: заполнить cache для heartbeat
+    hw0 = get_lhm_data()
+    if hw0:
+        cache.update(hw0)
+    media0 = await get_media()
+    cache.update(media0)
 
     async def send_all(data: bytes):
         dead = []
@@ -384,6 +457,8 @@ async def run():
         for w in dead:
             if w in tcp_clients:
                 tcp_clients.remove(w)
+            client_screens.pop(w, None)
+            client_buffers.pop(w, None)
             try:
                 w.close()
                 await w.wait_closed()
@@ -391,36 +466,73 @@ async def run():
                 log_err(f"TCP close: {e}", trace=False)
 
     while True:
-        hw = get_lhm_data()
-        media = await get_media()
-        weather = get_weather()
-        top_procs = get_top_processes()
-        net = get_net_speed()
-        disk = get_disk_speed()
-        hw_ok = bool(hw)
-        if hw_ok:
-            cache.update(hw)
-            cache.update(media)
-        else:
-            hw = dict(cache)
-            if not hw:
-                hw = {"ct": 0, "gt": 0, "gth": 0, "vt": 0, "cpu_load": 0, "cpu_pwr": 0,
-                  "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
-                  "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
-                  "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
-                  "vcore": 0, "nvme2_t": 0, "chipset_t": 0}
-            media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
-        track_key = (media.get("art", "") or "") + "|" + (media.get("trk", "") or "")
         now_sec = time.time()
-        include_cover = (track_key != last_track_key) or (now_sec - last_cover_sent >= COVER_INTERVAL)
-        if include_cover and media.get("cover_b64"):
-            last_cover_sent = now_sec
-        last_track_key = track_key
-        payload = build_payload(hw, media, hw_ok, include_cover=include_cover, weather=weather, top_procs=top_procs, net=net, disk=disk)
-        data_str = json.dumps(payload) + "\n"
-        data = data_str.encode("utf-8")
-        await send_all(data)
-        await asyncio.sleep(interval)
+
+        # Heartbeat каждые 0.3 s — только алерты (температуры, нагрузки, play)
+        if now_sec - last_heartbeat >= HEARTBEAT_INTERVAL:
+            last_heartbeat = now_sec
+            hw_c = cache if cache else {"ct": 0, "gt": 0, "cpu_load": 0, "gpu_load": 0}
+            media_c = cache if cache else {}
+            hb = {
+                "hw_ok": 1 if cache else 0,
+                "ct": int(hw_c.get("ct", 0)),
+                "gt": int(hw_c.get("gt", 0)),
+                "cpu_load": int(hw_c.get("cpu_load", 0)),
+                "gpu_load": int(hw_c.get("gpu_load", 0)),
+                "play": media_c.get("play", 0),
+            }
+            await send_all((json.dumps(hb) + "\n").encode("utf-8"))
+
+        # Полный пакет по экрану каждые 0.8 s
+        if now_sec - last_full >= FULL_INTERVAL:
+            last_full = now_sec
+            hw = get_lhm_data()
+            media = await get_media()
+            weather = get_weather()
+            top_procs = get_top_processes()
+            net = get_net_speed()
+            disk = get_disk_speed()
+            hw_ok = bool(hw)
+            if hw_ok:
+                cache.update(hw)
+                cache.update(media)
+            else:
+                hw = dict(cache)
+                if not hw:
+                    hw = {"ct": 0, "gt": 0, "gth": 0, "vt": 0, "cpu_load": 0, "cpu_pwr": 0,
+                          "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
+                          "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
+                          "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
+                          "vcore": 0, "nvme2_t": 0, "chipset_t": 0}
+                media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
+            track_key = (media.get("art", "") or "") + "|" + (media.get("trk", "") or "")
+            include_cover = (track_key != last_track_key) or (now_sec - last_cover_sent >= COVER_INTERVAL)
+            if include_cover and media.get("cover_b64"):
+                last_cover_sent = now_sec
+            last_track_key = track_key
+
+            dead = []
+            for w in list(tcp_clients):
+                screen = client_screens.get(w, 0)
+                payload = build_payload(hw, media, hw_ok, include_cover=include_cover, weather=weather,
+                                        top_procs=top_procs, net=net, disk=disk, screen=screen)
+                try:
+                    w.write((json.dumps(payload) + "\n").encode("utf-8"))
+                    await w.drain()
+                except Exception:
+                    dead.append(w)
+            for w in dead:
+                if w in tcp_clients:
+                    tcp_clients.remove(w)
+                client_screens.pop(w, None)
+                client_buffers.pop(w, None)
+                try:
+                    w.close()
+                    await w.wait_closed()
+                except Exception:
+                    pass
+
+        await asyncio.sleep(0.05)
 
 if __name__ == "__main__":
     print("[INIT] Запуск мониторинга...", flush=True)
