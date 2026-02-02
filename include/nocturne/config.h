@@ -16,6 +16,11 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
+
+// Safe zones for scene content (pixels)
+#define NOCT_SAFE_TOP 18    // below header
+#define NOCT_SAFE_BOTTOM 48 // above graph and footer
+#define NOCT_FOOTER_Y 50    // start of footer (graph + indicators)
 #define NOCT_LINE_H_DATA 12
 #define NOCT_LINE_H_LABEL 5
 #define NOCT_LINE_H_HEAD 10
