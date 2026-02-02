@@ -7,7 +7,7 @@
 #include "config.h"
 
 #define NOCT_GRAPH_SAMPLES 64
-#define NOCT_GRAPH_HEIGHT 12
+#define NOCT_GRAPH_HEIGHT 11
 
 class RollingGraph {
 public:

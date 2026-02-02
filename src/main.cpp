@@ -15,7 +15,6 @@
 #include "nocturne/config.h"
 #include "secrets.h"
 
-
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
@@ -280,7 +279,11 @@ void loop() {
 
     if (netLink.isWifiConnected())
       display.drawWiFiIcon(NOCT_DISP_W - 16, 2, netLink.rssi());
-    display.drawLinkStatus(NOCT_MARGIN + 2, NOCT_DISP_H - NOCT_MARGIN - 2,
+    int graphY = NOCT_FOOTER_Y;
+    display.drawRollingGraph(2, graphY, NOCT_DISP_W - 4, NOCT_GRAPH_HEIGHT,
+                             display.cpuGraph, 100);
+
+    display.drawLinkStatus(2, NOCT_DISP_H - 2,
                            netLink.isTcpConnected() &&
                                netLink.hasReceivedData());
 
@@ -293,17 +296,14 @@ void loop() {
       sceneManager.drawMenu(menuItem);
 
     int n = sceneManager.totalScenes();
+    int dotsW = n * 6 - 2;
     for (int i = 0; i < n; i++) {
-      int x = NOCT_DISP_W / 2 - (n * 3) + (i * 6);
+      int x = NOCT_DISP_W / 2 - dotsW / 2 + (i * 6);
       if (i == currentScene)
         display.u8g2().drawBox(x, NOCT_DISP_H - 2, 3, 2);
       else
         display.u8g2().drawPixel(x + 1, NOCT_DISP_H - 1);
     }
-
-    int graphY = NOCT_DISP_H - NOCT_GRAPH_HEIGHT - 2;
-    display.drawRollingGraph(2, graphY, NOCT_DISP_W - 4, NOCT_GRAPH_HEIGHT,
-                             display.cpuGraph, 100);
   }
 
   display.sendBuffer();

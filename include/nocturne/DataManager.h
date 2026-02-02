@@ -8,7 +8,6 @@
 #include "Types.h"
 #include <ArduinoJson.h>
 
-
 class DataManager {
 public:
   DataManager();
@@ -18,6 +17,7 @@ public:
 
   HardwareData &hw() { return hw_; }
   WeatherData &weather() { return weather_; }
+  bool weatherReceived() const { return weatherReceived_; }
   ProcessData &procs() { return procs_; }
   MediaData &media() { return media_; }
 
@@ -26,6 +26,7 @@ private:
 
   HardwareData hw_;
   WeatherData weather_;
+  bool weatherReceived_ = false;
   ProcessData procs_;
   MediaData media_;
 };

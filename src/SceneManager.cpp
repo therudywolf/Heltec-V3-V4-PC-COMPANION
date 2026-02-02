@@ -55,7 +55,7 @@ void SceneManager::drawCortex(unsigned long bootTime) {
 
   int gx = NOCT_MARGIN + 2, gy = NOCT_MARGIN + LINE_H_HEAD + 4;
   int halfW = (NOCT_DISP_W - 2 * NOCT_MARGIN - 4) / 2;
-  int halfH = (NOCT_DISP_H - gy - NOCT_MARGIN - 2) / 2;
+  int halfH = (NOCT_SAFE_BOTTOM - gy - 8) / 2;
   char buf[24];
 
   u8g2.setFont(FONT_LABEL);
@@ -132,9 +132,9 @@ void SceneManager::drawNeural() {
 
   u8g2.setFont(FONT_TINY);
   String ip = WiFi.localIP().toString();
-  if (ip.length() > 20)
-    ip = ip.substring(0, 20);
-  u8g2.drawStr(NOCT_MARGIN + 2, NOCT_DISP_H - NOCT_MARGIN - 2, ip.c_str());
+  if (ip.length() > 16)
+    ip = ip.substring(0, 16);
+  u8g2.drawStr(NOCT_MARGIN + 2, NOCT_SAFE_BOTTOM - 2, ip.c_str());
 }
 
 void SceneManager::drawThermal(int fanFrame) {
@@ -142,14 +142,13 @@ void SceneManager::drawThermal(int fanFrame) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_HEAD);
   u8g2.drawStr(NOCT_MARGIN + 2, NOCT_MARGIN + LINE_H_HEAD, "[THERMAL]");
-  disp_.drawFanIcon(NOCT_DISP_W - 12, NOCT_MARGIN + LINE_H_HEAD - 2, fanFrame);
+  disp_.drawFanIcon(NOCT_DISP_W - 28, NOCT_MARGIN + LINE_H_HEAD - 2, fanFrame);
 
   int y = NOCT_MARGIN + LINE_H_HEAD + 4;
   char buf[24];
   const char *labels[] = {"PUMP", "RAD", "SYS2", "GPU"};
   int vals[] = {hw.cf, hw.s1, hw.s2, hw.gf};
-  for (int i = 0; i < 4 && y + LINE_H_DATA <= NOCT_DISP_H - NOCT_MARGIN - 8;
-       i++) {
+  for (int i = 0; i < 4 && y + LINE_H_DATA <= NOCT_SAFE_BOTTOM - 8; i++) {
     snprintf(buf, sizeof(buf), "%d RPM", vals[i]);
     disp_.drawMetricStr(NOCT_MARGIN + 32, y + LINE_H_DATA, labels[i],
                         String(buf));
@@ -157,10 +156,10 @@ void SceneManager::drawThermal(int fanFrame) {
   }
   if (hw.ch > 0) {
     u8g2.setFont(FONT_LABEL);
-    u8g2.drawStr(NOCT_MARGIN + 2, NOCT_DISP_H - NOCT_MARGIN - 8, "CHIP");
+    u8g2.drawStr(NOCT_MARGIN + 2, NOCT_SAFE_BOTTOM - 8, "CHIP");
     snprintf(buf, sizeof(buf), "%dC", hw.ch);
     u8g2.setFont(FONT_VAL);
-    u8g2.drawUTF8(NOCT_MARGIN + 32, NOCT_DISP_H - NOCT_MARGIN, buf);
+    u8g2.drawUTF8(NOCT_MARGIN + 32, NOCT_SAFE_BOTTOM - 2, buf);
   }
 }
 
@@ -179,8 +178,8 @@ void SceneManager::drawMemBank() {
   u8g2.setFont(FONT_VAL);
   u8g2.drawUTF8(NOCT_DISP_W - NOCT_MARGIN - u8g2.getUTF8Width(buf), y, buf);
   disp_.drawProgressBar(NOCT_MARGIN + 2, y + 2,
-                        NOCT_DISP_W - 2 * NOCT_MARGIN - 4, 6, ramPct);
-  y += LINE_H_DATA + 4;
+                        NOCT_DISP_W - 2 * NOCT_MARGIN - 4, 5, ramPct);
+  y += 11;
 
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(NOCT_MARGIN + 2, y, "SYS(C:)");
@@ -188,8 +187,8 @@ void SceneManager::drawMemBank() {
   u8g2.setFont(FONT_VAL);
   u8g2.drawUTF8(NOCT_DISP_W - NOCT_MARGIN - u8g2.getUTF8Width(buf), y, buf);
   disp_.drawProgressBar(NOCT_MARGIN + 2, y + 2,
-                        NOCT_DISP_W - 2 * NOCT_MARGIN - 4, 6, (float)hw.su);
-  y += LINE_H_DATA + 4;
+                        NOCT_DISP_W - 2 * NOCT_MARGIN - 4, 5, (float)hw.su);
+  y += 11;
 
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(NOCT_MARGIN + 2, y, "DATA(D:)");
@@ -197,11 +196,11 @@ void SceneManager::drawMemBank() {
   u8g2.setFont(FONT_VAL);
   u8g2.drawUTF8(NOCT_DISP_W - NOCT_MARGIN - u8g2.getUTF8Width(buf), y, buf);
   disp_.drawProgressBar(NOCT_MARGIN + 2, y + 2,
-                        NOCT_DISP_W - 2 * NOCT_MARGIN - 4, 6, (float)hw.du);
+                        NOCT_DISP_W - 2 * NOCT_MARGIN - 4, 5, (float)hw.du);
 
   u8g2.setFont(FONT_TINY);
   snprintf(buf, sizeof(buf), "R:%dK W:%dK", hw.dr, hw.dw);
-  u8g2.drawStr(NOCT_MARGIN + 2, NOCT_DISP_H - NOCT_MARGIN - 2, buf);
+  u8g2.drawStr(NOCT_MARGIN + 2, NOCT_SAFE_BOTTOM - 2, buf);
 }
 
 void SceneManager::drawTaskKill(bool blinkState) {
@@ -231,11 +230,11 @@ void SceneManager::drawTaskKill(bool blinkState) {
     u8g2.drawUTF8(NOCT_MARGIN + 2, y + LINE_H_BIG, buf);
     y += LINE_H_BIG + 4;
     u8g2.setFont(FONT_TINY);
-    for (int i = 1; i < 3; i++) {
+    for (int i = 1; i < 3 && y + 6 <= NOCT_SAFE_BOTTOM; i++) {
       if (procs.cpuNames[i].length() > 0) {
         String pn = procs.cpuNames[i];
-        if (pn.length() > 16)
-          pn = pn.substring(0, 16);
+        if (pn.length() > 14)
+          pn = pn.substring(0, 14);
         snprintf(buf, sizeof(buf), "%s %d%%", pn.c_str(), procs.cpuPercent[i]);
         u8g2.drawStr(NOCT_MARGIN + 2, y, buf);
         y += 6;
@@ -290,22 +289,24 @@ void SceneManager::drawDeck(bool blinkState) {
   u8g2.drawStr(NOCT_MARGIN + 2, y, "ARTIST");
   u8g2.setFont(FONT_VAL);
   u8g2.drawUTF8(NOCT_MARGIN + 2, y + LINE_H_DATA, art.c_str());
-  y += LINE_H_DATA + 4;
+  y += 11;
 
   String trk = media.track.length() > 0 ? media.track : "Unknown";
-  if (trk.length() > 20)
-    trk = trk.substring(0, 20);
+  if (trk.length() > 18)
+    trk = trk.substring(0, 18);
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(NOCT_MARGIN + 2, y, "TRACK");
   u8g2.setFont(FONT_VAL);
   u8g2.drawUTF8(NOCT_MARGIN + 2, y + LINE_H_DATA, trk.c_str());
-  y += LINE_H_DATA + 4;
+  y += 11;
 
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN + 2, y, "STATUS");
-  u8g2.setFont(FONT_VAL);
-  const char *status = blinkState ? "> PLAYING" : "  PLAYING";
-  u8g2.drawStr(NOCT_MARGIN + 2, y + LINE_H_DATA, status);
+  if (y + LINE_H_DATA <= NOCT_SAFE_BOTTOM) {
+    u8g2.setFont(FONT_LABEL);
+    u8g2.drawStr(NOCT_MARGIN + 2, y, "STATUS");
+    u8g2.setFont(FONT_VAL);
+    const char *status = blinkState ? "> PLAYING" : "  PLAYING";
+    u8g2.drawStr(NOCT_MARGIN + 2, y + LINE_H_DATA, status);
+  }
 }
 
 void SceneManager::drawWmoIcon(int x, int y, int wmoCode) {
@@ -348,6 +349,13 @@ void SceneManager::drawWeather() {
   u8g2.drawStr(NOCT_MARGIN + 2, NOCT_MARGIN + LINE_H_HEAD, "[WEATHER]");
 
   int y = NOCT_MARGIN + LINE_H_HEAD + 6;
+  if (!data_.weatherReceived() || (w.temp == 0 && w.desc.length() == 0)) {
+    u8g2.setFont(FONT_BIG);
+    u8g2.drawStr(NOCT_MARGIN + 2, y + LINE_H_BIG, "NO DATA");
+    u8g2.setFont(FONT_TINY);
+    u8g2.drawStr(NOCT_MARGIN + 2, y + LINE_H_BIG + 8, "Waiting for weather...");
+    return;
+  }
   drawWmoIcon(NOCT_MARGIN, y, w.wmoCode);
 
   char buf[24];
@@ -382,8 +390,8 @@ void SceneManager::drawRadar() {
   snprintf(buf, sizeof(buf), "RSSI %d dBm", rssi);
   u8g2.drawStr(NOCT_MARGIN + 2, y + barH + 8, buf);
 
-  int cx = NOCT_DISP_W / 2, cy = NOCT_DISP_H - 20;
-  int r = 18;
+  int cx = NOCT_DISP_W / 2, cy = NOCT_SAFE_BOTTOM - 14;
+  int r = 16;
   u8g2.drawCircle(cx, cy, r);
   u8g2.drawCircle(cx, cy, r / 2);
   int sweep = (millis() / 80) % 360;

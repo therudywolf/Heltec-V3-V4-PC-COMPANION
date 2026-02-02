@@ -46,6 +46,9 @@ void DataManager::parsePayload(JsonDocument &doc) {
     const char *wd = doc["wd"];
     weather_.desc = String(wd ? wd : "");
     weather_.wmoCode = doc["wi"] | 0;
+    if (weather_.desc.length() > 0 || weather_.temp != 0 ||
+        weather_.wmoCode != 0)
+      weatherReceived_ = true;
   }
 
   JsonArray tp = doc["tp"];
