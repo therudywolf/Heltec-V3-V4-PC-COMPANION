@@ -51,8 +51,9 @@ float vramUsed = 0.0, vramTotal = 0.0;
 float vcore = 0.0f;
 int nvme2Temp = 0;
 int chipsetTemp = 0;
-int diskTemp[4] = {0, 0, 0, 0}; // D1..D4 (SSD/HDD temps)
-// Network & Disk
+int diskTemp[4] = {0, 0, 0, 0}; // D1..D4 temps °C
+float diskUsed[4] = {0, 0, 0, 0}, diskTotal[4] = {0, 0, 0, 0}; // GB
+// Network
 int netUp = 0, netDown = 0;
 int diskRead = 0, diskWrite = 0;
 // Weather
@@ -84,8 +85,9 @@ bool displayInverted = false; // Ориентация: 0=обычный, 1=ин�
 
 int currentScreen = 0;
 // 0=Main 1=Cores 2=GPU 3=Memory 4=Player 5=EQ 6=Power 7=Fans 8=Weather
-// 9=TopProcs 10=Network 11=Wolf Game
-const int TOTAL_SCREENS = 12;
+// 9=TopProcs 10=Network 11=Disks 12=Game
+const int TOTAL_SCREENS = 13;
+const int GAME_SCREEN_INDEX = 12;
 
 bool inMenu = false; // Мы в меню?
 int menuItem =
@@ -135,7 +137,7 @@ const unsigned long WIFI_TRY_MS = 8000;
 String tcpLineBuffer;    // накопление строки до \n
 int lastSentScreen = -1; // для отправки screen:N при смене экрана
 
-// Wolf Runner (screen 11): волк прыгает через препятствия
+// Wolf Runner (screen GAME_SCREEN_INDEX): волк прыгает через препятствия
 const int GAME_WOLF_X = 20;
 const int GAME_WOLF_W = 14, GAME_WOLF_H = 10;
 const int GAME_GROUND_Y = 52;
@@ -262,57 +264,41 @@ void drawBar(int x, int y, int w, int h, float val, float max) {
   u8g2.drawBox(x + 1, y + 1, f, h - 2);
 }
 
-// Жирная шапка с фоном (Apple-стиль)
-const int HEADER_H = 12;
+// Компактная шапка с фоном (экономия места)
+const int HEADER_H = 8;
 void drawHeader(const char *title) {
   u8g2.setDrawColor(1);
   u8g2.drawBox(0, 0, 128, HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setFont(u8g2_font_helvB08_tr);
-  u8g2.drawStr(2, 10, title);
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.drawStr(2, 7, title);
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, HEADER_H, 128, HEADER_H);
 }
 
 // --- SCREENS ---
 
-// --- SPLASH (волчья тема) ---
+// --- SPLASH: Forest OS, затем By RudyWolf + иконка волка (чистый Apple-стиль)
+// ---
 void drawSplash() {
   if (splashPhase == 0) {
     u8g2.setFont(u8g2_font_helvB14_tr);
-    u8g2.drawStr(18, 26, "Forest");
-    u8g2.drawStr(26, 46, "OS");
-    int o = (splashFrame % 8);
-    for (int i = 0; i < 5; i++) {
-      int x = 8 + (i * 28 + o) % 112;
-      u8g2.drawPixel(x, 58);
-      u8g2.drawPixel(x + 2, 58);
-      u8g2.drawPixel(x + 1, 60);
-    }
+    u8g2.drawStr(28, 30, "Forest");
+    u8g2.drawStr(52, 50, "OS");
   } else {
     u8g2.setFont(u8g2_font_6x10_tr);
-    u8g2.drawStr(24, 16, "By RudyWolf");
-    u8g2.drawXBMP(52, 24, 24, 24, wolfFace);
-    u8g2.setFont(u8g2_font_5x7_tr);
-    u8g2.drawStr(36, 56, "vuf vuf *w* uvu");
-    int o = (splashFrame % 6) * 3;
-    u8g2.drawPixel(6 + o, 58);
-    u8g2.drawPixel(8 + o, 58);
-    u8g2.drawPixel(7 + o, 60);
-    u8g2.drawPixel(122 - o, 58);
-    u8g2.drawPixel(120 - o, 58);
-    u8g2.drawPixel(121 - o, 60);
-    u8g2.drawPixel(6 + o, 6);
-    u8g2.drawPixel(122 - o, 6);
+    u8g2.drawStr(34, 12, "By RudyWolf");
+    u8g2.drawXBMP(52, 22, 24, 24, wolfFace);
   }
 }
 
 // --- SCREEN ZONES: header y=0..HEADER_H, content y>=HEADER_H+2 ---
-// 1. Main (сводка): блоки CPU/GPU, RAM, VRAM, Load
+// 1. Main (сводка): CPU/GPU блоки с рамкой, RAM, VRAM, Load
 void drawMain() {
   drawHeader("MAIN");
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 22);
+  u8g2.drawFrame(0, HEADER_H + 1, 128, 12);
+  u8g2.setFont(u8g2_font_helvB08_tr);
+  u8g2.setCursor(2, HEADER_H + 10);
   u8g2.print("CPU ");
   u8g2.print(cpuTemp);
   u8g2.print((char)0xB0);
@@ -320,7 +306,8 @@ void drawMain() {
   u8g2.print(gpuTemp);
   u8g2.print((char)0xB0);
   u8g2.print("C");
-  u8g2.setCursor(0, 33);
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.setCursor(0, HEADER_H + 16);
   u8g2.print("RAM ");
   u8g2.print(ramUsed, 1);
   u8g2.print("/");
@@ -328,83 +315,83 @@ void drawMain() {
   u8g2.print("G ");
   u8g2.print(ramPct);
   u8g2.print("%");
-  u8g2.setCursor(0, 44);
+  u8g2.setCursor(0, HEADER_H + 27);
   u8g2.print("VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print("G");
-  u8g2.setCursor(0, 55);
-  u8g2.print("Load CPU ");
+  u8g2.setCursor(0, HEADER_H + 38);
+  u8g2.print("Load ");
   u8g2.print(cpuLoad);
-  u8g2.print("% GPU ");
+  u8g2.print("% ");
   u8g2.print(gpuLoad);
   u8g2.print("%");
 }
 
-// Cores: per-core load 0–100% (столбики, аккуратно)
+// Cores: per-core load 0–100% (столбики, ровные отступы, подписи 1–6)
 void drawCores() {
   drawHeader("CORES %");
-  const int barTop = HEADER_H + 2;
-  const int barH = 50;
+  const int barTop = HEADER_H + 4;
+  const int barH = 48;
+  const int colW = 20;
+  const int barW = 14;
   for (int i = 0; i < 6; i++) {
     int h = map(coreLoad[i], 0, 100, 2, barH);
     if (h < 0)
       h = 0;
     if (h > barH)
       h = barH;
-    int x = i * 20 + 4;
-    u8g2.drawFrame(x, barTop, 15, barH);
-    u8g2.drawBox(x + 1, barTop + barH - h, 13, h);
+    int x = 2 + i * colW + (colW - barW) / 2;
+    u8g2.drawFrame(x, barTop, barW, barH);
+    u8g2.drawBox(x + 1, barTop + barH - h, barW - 2, h);
   }
   u8g2.setFont(u8g2_font_5x7_tr);
   for (int i = 0; i < 6; i++) {
-    u8g2.setCursor(i * 20 + 6, 63);
+    u8g2.setCursor(2 + i * colW + 5, 63);
     u8g2.print(i + 1);
   }
 }
 
-// GPU: темп, нагрузка, MHz/W/Fan/VRAM — без графика (красиво)
+// GPU: только данные; T и Load % выделены, MHz/W/Fan/VRAM компактно
 void drawGpu() {
   drawHeader("GPU");
   if (gpuTemp >= GPU_TEMP_ALERT) {
     u8g2.setDrawColor(0);
     u8g2.setFont(u8g2_font_5x7_tr);
-    u8g2.drawStr(96, 10, "ALERT");
+    u8g2.drawStr(96, 7, "ALERT");
     u8g2.setDrawColor(1);
   }
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 24);
+  u8g2.setFont(u8g2_font_helvB08_tr);
+  u8g2.setCursor(0, HEADER_H + 10);
   u8g2.print("T ");
   u8g2.print(gpuTemp);
   u8g2.print("/");
   u8g2.print(gpuHotSpot);
   u8g2.print((char)0xB0);
-  u8g2.print("C   Load ");
+  u8g2.print("  Load ");
   u8g2.print(gpuLoad);
   u8g2.print("%");
-  u8g2.setCursor(0, 36);
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.setCursor(0, HEADER_H + 22);
   u8g2.print(gpuClk);
   u8g2.print(" MHz  ");
   u8g2.print(gpuPwr);
-  u8g2.print(" W   Fan ");
+  u8g2.print(" W  Fan ");
   u8g2.print(fanGpu);
-  u8g2.setCursor(0, 48);
+  u8g2.setCursor(0, HEADER_H + 32);
   u8g2.print("VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print(" G");
-  u8g2.setFont(u8g2_font_5x7_tr);
-  u8g2.setCursor(0, 60);
-  u8g2.print("vuf vuf *w*");
 }
 
 // Memory: RAM и VRAM с барами
 void drawMemory() {
   drawHeader("MEMORY");
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 24);
+  u8g2.setCursor(0, HEADER_H + 4);
   u8g2.print("RAM ");
   u8g2.print(ramUsed, 1);
   u8g2.print("/");
@@ -412,58 +399,46 @@ void drawMemory() {
   u8g2.print("G ");
   u8g2.print(ramPct);
   u8g2.print("%");
-  drawBar(0, 28, 128, 6, ramUsed, ramTotal > 0 ? ramTotal : 1);
-  u8g2.setCursor(0, 42);
+  drawBar(0, HEADER_H + 10, 128, 6, ramUsed, ramTotal > 0 ? ramTotal : 1);
+  u8g2.setCursor(0, HEADER_H + 24);
   u8g2.print("VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print("G");
-  drawBar(0, 48, 128, 6, vramUsed, vramTotal > 0 ? vramTotal : 1);
+  drawBar(0, HEADER_H + 30, 128, 6, vramUsed, vramTotal > 0 ? vramTotal : 1);
 }
 
-// Power: Vcore, CPU/GPU W, темпы 4 дисков
+// Power: только питание (Vcore, CPU W, GPU W)
 void drawPower() {
   drawHeader("POWER");
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 24);
+  u8g2.setCursor(0, HEADER_H + 6);
   u8g2.print("Vcore ");
   u8g2.print(vcore, 2);
-  u8g2.print("V   CPU ");
+  u8g2.print(" V");
+  u8g2.setCursor(0, HEADER_H + 18);
+  u8g2.print("CPU ");
   u8g2.print(cpuPwr);
-  u8g2.print("W GPU ");
+  u8g2.print(" W   GPU ");
   u8g2.print(gpuPwr);
-  u8g2.print("W");
-  u8g2.setCursor(0, 36);
-  u8g2.print("D1:");
-  u8g2.print(diskTemp[0]);
-  u8g2.print((char)0xB0);
-  u8g2.print(" D2:");
-  u8g2.print(diskTemp[1]);
-  u8g2.print((char)0xB0);
-  u8g2.setCursor(0, 48);
-  u8g2.print("D3:");
-  u8g2.print(diskTemp[2]);
-  u8g2.print((char)0xB0);
-  u8g2.print(" D4:");
-  u8g2.print(diskTemp[3]);
-  u8g2.print((char)0xB0);
+  u8g2.print(" W");
 }
 
 // Fans: Pump, Rad, Case, GPU
 void drawFans() {
   drawHeader("FANS");
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 24);
+  u8g2.setCursor(0, HEADER_H + 6);
   u8g2.print("Pump: ");
   u8g2.print(fanPump);
-  u8g2.setCursor(0, 36);
+  u8g2.setCursor(0, HEADER_H + 18);
   u8g2.print("Rad:  ");
   u8g2.print(fanRad);
-  u8g2.setCursor(0, 48);
+  u8g2.setCursor(0, HEADER_H + 30);
   u8g2.print("Case: ");
   u8g2.print(fanCase);
-  u8g2.setCursor(0, 60);
+  u8g2.setCursor(0, HEADER_H + 42);
   u8g2.print("GPU:  ");
   u8g2.print(fanGpu);
 }
@@ -480,19 +455,19 @@ static const uint8_t *weatherIconFromCode(int code) {
   return iconCloudy;
 }
 
-// Weather: 3 карточки — Сейчас / День / Неделя
+// Weather: 3 зоны — NOW / DAY / WEEK, чистая разметка, без наезда на шапку
 void drawWeather() {
   drawHeader("WEATHER");
   u8g2.setFont(u8g2_font_5x7_tr);
   const char *titles[] = {"NOW", "DAY", "WEEK"};
-  u8g2.setCursor(80, 10);
+  u8g2.setCursor(92, 7);
   u8g2.print(titles[weatherPage]);
 
   if (weatherPage == 0) {
     bool noData = (weatherTemp == 0 && weatherDesc.length() == 0);
     const uint8_t *icon =
         noData ? iconCloudy : weatherIconFromCode(weatherIcon);
-    int iconY = HEADER_H + 2;
+    int iconY = HEADER_H + 3;
     for (int dy = 0; dy < 16; dy++)
       for (int dx = 0; dx < 16; dx++) {
         int byteIdx = dy * 2 + (dx / 8);
@@ -504,58 +479,57 @@ void drawWeather() {
           u8g2.drawPixel(5 + dx * 2, iconY + dy * 2 + 1);
         }
       }
-    u8g2.setFont(u8g2_font_helvB12_tr);
-    u8g2.setCursor(42, iconY + 14);
+    u8g2.setFont(u8g2_font_helvB10_tr);
+    u8g2.setCursor(40, iconY + 12);
     u8g2.print(noData ? "--" : String(weatherTemp));
     u8g2.print((char)0xB0);
     u8g2.setFont(u8g2_font_5x7_tr);
-    u8g2.setCursor(42, iconY + 28);
-    u8g2.print(noData ? "Loading..." : weatherDesc.substring(0, 12));
+    u8g2.setCursor(40, iconY + 26);
+    u8g2.print(noData ? "..." : weatherDesc.substring(0, 14));
     return;
   }
 
   if (weatherPage == 1) {
     const uint8_t *icon = weatherIconFromCode(weatherDayCode);
-    u8g2.drawXBMP(4, HEADER_H + 2, 16, 16, icon);
-    u8g2.setFont(u8g2_font_helvB10_tr);
-    u8g2.setCursor(28, HEADER_H + 10);
+    u8g2.drawXBMP(2, HEADER_H + 3, 16, 16, icon);
+    u8g2.setFont(u8g2_font_5x7_tr);
+    u8g2.setCursor(22, HEADER_H + 10);
     u8g2.print("Lo ");
     u8g2.print(weatherDayLow);
     u8g2.print((char)0xB0);
-    u8g2.setCursor(28, HEADER_H + 22);
+    u8g2.setCursor(22, HEADER_H + 20);
     u8g2.print("Hi ");
     u8g2.print(weatherDayHigh);
     u8g2.print((char)0xB0);
-    u8g2.setFont(u8g2_font_5x7_tr);
-    u8g2.setCursor(28, HEADER_H + 36);
+    u8g2.setCursor(22, HEADER_H + 32);
     u8g2.print("Today");
     return;
   }
 
   u8g2.setFont(u8g2_font_5x7_tr);
-  u8g2.drawStr(0, HEADER_H + 4, "Week Hi/Lo");
+  u8g2.drawStr(0, HEADER_H + 5, "Hi");
+  u8g2.drawStr(0, HEADER_H + 14, "Lo");
   for (int i = 0; i < 7; i++) {
-    int x = 2 + i * 18;
-    u8g2.setCursor(x, HEADER_H + 14);
+    int x = 14 + i * 16;
+    u8g2.setCursor(x, HEADER_H + 5);
     u8g2.print(weatherWeekHigh[i]);
-    u8g2.setCursor(x, HEADER_H + 24);
+    u8g2.setCursor(x, HEADER_H + 14);
     u8g2.print(weatherWeekLow[i]);
   }
-  u8g2.drawLine(0, HEADER_H + 30, 128, HEADER_H + 30);
+  u8g2.drawLine(0, HEADER_H + 22, 128, HEADER_H + 22);
   for (int i = 0; i < 7; i++) {
-    int x = 6 + i * 18;
-    u8g2.setCursor(x, HEADER_H + 40);
+    u8g2.setCursor(16 + i * 16, HEADER_H + 30);
     u8g2.print(i + 1);
   }
 }
 
-// Top 3 processes by CPU
+// Top 3 processes by CPU (первая строка HEADER_H+5, межстрочный шаг 14)
 void drawTopProcs() {
   drawHeader("TOP 3 CPU");
   u8g2.setFont(u8g2_font_6x10_tr);
   bool any = false;
   for (int i = 0; i < 3; i++) {
-    int y = HEADER_H + 4 + i * 14;
+    int y = HEADER_H + 5 + i * 14;
     u8g2.setCursor(0, y);
     if (procNames[i].length() > 0) {
       u8g2.print(procNames[i].substring(0, 14));
@@ -566,36 +540,53 @@ void drawTopProcs() {
     }
   }
   if (!any) {
-    u8g2.setCursor(0, HEADER_H + 22);
+    u8g2.setCursor(0, HEADER_H + 24);
     u8g2.print("No data");
   }
 }
 
-// Network & Disk screen
+// Network only (Up/Dn KB/s)
 void drawNetwork() {
-  drawHeader("NET & DISK");
+  drawHeader("NET");
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 24);
+  u8g2.setCursor(0, HEADER_H + 8);
   u8g2.print("Up ");
   u8g2.print(netUp);
-  u8g2.print(" Dn ");
+  u8g2.print(" KB/s");
+  u8g2.setCursor(0, HEADER_H + 22);
+  u8g2.print("Dn ");
   u8g2.print(netDown);
   u8g2.print(" KB/s");
-  u8g2.setCursor(0, 38);
-  u8g2.print("R ");
-  u8g2.print(diskRead);
-  u8g2.print(" W ");
-  u8g2.print(diskWrite);
-  u8g2.print(" MB/s");
+}
+
+// Disks: D1..D4 — темп °C, занято/всего GB
+void drawDisks() {
+  drawHeader("DISKS");
+  u8g2.setFont(u8g2_font_5x7_tr);
+  for (int i = 0; i < 4; i++) {
+    int y = HEADER_H + 4 + i * 14;
+    u8g2.setCursor(0, y);
+    u8g2.print("D");
+    u8g2.print(i + 1);
+    u8g2.print(" ");
+    u8g2.print(diskTemp[i]);
+    u8g2.print((char)0xB0);
+    u8g2.print(" ");
+    int usedG = (int)(diskUsed[i] + 0.5f);
+    int totalG = (int)(diskTotal[i] + 0.5f);
+    u8g2.print(usedG);
+    u8g2.print("/");
+    u8g2.print(totalG);
+    u8g2.print("G");
+  }
 }
 
 // Wolf Runner: волк, препятствия, счёт
 void drawWolfGame() {
   drawHeader("WOLF RUN");
   u8g2.setFont(u8g2_font_5x7_tr);
-  u8g2.setCursor(70, 10);
+  u8g2.setCursor(70, 7);
   u8g2.print(gameScore);
-  u8g2.print(" vuf!");
   if (gameOver) {
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.setCursor(28, 36);
@@ -633,8 +624,8 @@ void drawWolfGame() {
 
 // Equalizer Bars (столбики)
 void drawEqBars() {
-  const int barTopY = 12;
-  const int barZoneH = 52;
+  const int barTopY = HEADER_H + 2;
+  const int barZoneH = 64 - barTopY;
   const int barW = 6;
   const int barGap = 2;
 
@@ -658,8 +649,8 @@ void drawEqWave() {
       idx = EQ_BARS - 1;
     float amp = eqHeights[idx] / 4.0;
     int y = 32 + (int)(sin(x * 0.1) * amp);
-    if (y < 12)
-      y = 12;
+    if (y < HEADER_H + 2)
+      y = HEADER_H + 2;
     if (y > 63)
       y = 63;
     if (x > 0)
@@ -681,8 +672,8 @@ void drawEqCircle() {
       x = 0;
     if (x > 127)
       x = 127;
-    if (y < 12)
-      y = 12;
+    if (y < HEADER_H + 2)
+      y = HEADER_H + 2;
     if (y > 63)
       y = 63;
     u8g2.drawLine(cx, cy, x, y);
@@ -694,7 +685,7 @@ void drawEqualizer() {
   drawHeader("VISUALIZER");
   u8g2.setDrawColor(0);
   u8g2.setFont(u8g2_font_5x7_tr);
-  u8g2.setCursor(80, 10);
+  u8g2.setCursor(80, 7);
   u8g2.print(isPlaying ? "PLAY" : "---");
   u8g2.setDrawColor(1);
 
@@ -731,11 +722,30 @@ void drawPlayer() {
   }
   // Кириллица для артиста и трека (шрифт с поддержкой русского)
   u8g2.setFont(u8g2_font_cu12_t_cyrillic);
-  u8g2.setCursor(textX, 20);
-  u8g2.print(artist);
-
-  u8g2.setCursor(textX, 34);
-  u8g2.print(track.substring(0, 16));
+  const int maxArtistChars = 12;
+  const int maxTrackChars = 14;
+  if (artist.length() <= (unsigned)maxArtistChars) {
+    u8g2.setCursor(textX, 20);
+    u8g2.print(artist);
+  } else {
+    String ext = artist + "   ";
+    unsigned int len = ext.length();
+    unsigned int off = (millis() / 400) % len;
+    u8g2.setCursor(textX, 20);
+    for (int i = 0; i < maxArtistChars; i++)
+      u8g2.print(ext.charAt((off + i) % len));
+  }
+  if (track.length() <= (unsigned)maxTrackChars) {
+    u8g2.setCursor(textX, 34);
+    u8g2.print(track.substring(0, maxTrackChars));
+  } else {
+    String ext = track + "   ";
+    unsigned int len = ext.length();
+    unsigned int off = (millis() / 300) % len;
+    u8g2.setCursor(textX, 34);
+    for (int i = 0; i < maxTrackChars; i++)
+      u8g2.print(ext.charAt((off + i) % len));
+  }
   u8g2.drawFrame(textX, 48, 128 - textX - 2, 6);
   if (isPlaying) {
     int barW = 128 - textX - 4;
@@ -753,42 +763,39 @@ void drawMenu() {
   u8g2.drawFrame(8, 8, 112, 48);
 
   u8g2.setFont(u8g2_font_5x7_tr);
-  u8g2.drawStr(42, 16, "Menu");
+  u8g2.drawStr(48, 16, "Menu");
   u8g2.drawLine(8, 18, 119, 18);
 
-  const int col1X = 12;
-  const int col2X = 68;
-  int y = 24;
-  u8g2.setCursor(col1X, y);
-  u8g2.print(menuItem == 0 ? ">" : " ");
-  u8g2.print("LED ");
-  u8g2.print(ledEnabled ? "ON" : "OFF");
-  u8g2.setCursor(col2X, y);
-  u8g2.print(menuItem == 3 ? ">" : " ");
-  u8g2.print("Intvl ");
-  u8g2.print(carouselIntervalSec);
-  u8g2.print("s");
-  y += 8;
-  u8g2.setCursor(col1X, y);
-  u8g2.print(menuItem == 1 ? ">" : " ");
-  u8g2.print("AUTO ");
-  u8g2.print(carouselEnabled ? "ON" : "OFF");
-  u8g2.setCursor(col2X, y);
-  u8g2.print(menuItem == 4 ? ">" : " ");
-  u8g2.print("EQ ");
-  u8g2.print(eqStyle == 0 ? "Bars" : (eqStyle == 1 ? "Wave" : "Circ"));
-  y += 8;
-  u8g2.setCursor(col1X, y);
-  u8g2.print(menuItem == 2 ? ">" : " ");
-  u8g2.print("Bright ");
-  u8g2.print(displayContrast);
-  u8g2.setCursor(col2X, y);
-  u8g2.print(menuItem == 5 ? ">" : " ");
-  u8g2.print("Disp ");
-  u8g2.print(displayInverted ? "Inv" : "Norm");
-  y += 8;
-  u8g2.setCursor(col1X, y);
-  u8g2.print(menuItem == 6 ? "> EXIT" : "  EXIT");
+  const int rowH = 10;
+  const int x0 = 12;
+  for (int i = 0; i < 4; i++) {
+    int idx = (menuItem + i) % MENU_ITEMS;
+    int y = 22 + i * rowH;
+    u8g2.setCursor(x0, y);
+    u8g2.print(i == 0 ? ">" : " ");
+    if (idx == 0) {
+      u8g2.print("LED ");
+      u8g2.print(ledEnabled ? "ON" : "OFF");
+    } else if (idx == 1) {
+      u8g2.print("AUTO ");
+      u8g2.print(carouselEnabled ? "ON" : "OFF");
+    } else if (idx == 2) {
+      u8g2.print("Bright ");
+      u8g2.print(displayContrast);
+    } else if (idx == 3) {
+      u8g2.print("Intvl ");
+      u8g2.print(carouselIntervalSec);
+      u8g2.print("s");
+    } else if (idx == 4) {
+      u8g2.print("EQ ");
+      u8g2.print(eqStyle == 0 ? "Bars" : (eqStyle == 1 ? "Wave" : "Circ"));
+    } else if (idx == 5) {
+      u8g2.print("Disp ");
+      u8g2.print(displayInverted ? "Inv" : "Norm");
+    } else {
+      u8g2.print("EXIT");
+    }
+  }
 }
 
 void drawScreen(int screen) {
@@ -827,6 +834,9 @@ void drawScreen(int screen) {
     drawNetwork();
     break;
   case 11:
+    drawDisks();
+    break;
+  case 12:
     drawWolfGame();
     break;
   default:
@@ -937,6 +947,13 @@ void loop() {
         for (int i = 0; i < 4; i++) {
           diskTemp[i] = (i < dt.size()) ? (int)dt[i] : 0;
         }
+        JsonArray du = doc["disk_used"];
+        JsonArray dtotal = doc["disk_total"];
+        for (int i = 0; i < 4; i++) {
+          diskUsed[i] = (i < du.size()) ? (float)du[i].as<double>() : 0.0f;
+          diskTotal[i] =
+              (i < dtotal.size()) ? (float)dtotal[i].as<double>() : 0.0f;
+        }
 
         netUp = doc["nu"];
         netDown = doc["nd"];
@@ -999,14 +1016,14 @@ void loop() {
     btnPressTime = now;
     menuHoldHandled = false;
     wasInMenuOnPress = inMenu;
-    wasInGameOnPress = (currentScreen == 11);
+    wasInGameOnPress = (currentScreen == GAME_SCREEN_INDEX);
   }
 
   if (btnState == HIGH && btnHeld) {
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
 
-    if (wasInGameOnPress && duration > 1500) {
+    if (wasInGameOnPress && duration > 800) {
       currentScreen = (currentScreen + 1) % TOTAL_SCREENS;
       lastCarousel = now;
     } else if (duration > 800) {
@@ -1032,7 +1049,7 @@ void loop() {
               currentScreen = 0;
             lastCarousel = now;
           }
-        } else if (currentScreen == 11) {
+        } else if (currentScreen == GAME_SCREEN_INDEX) {
           if (gameOver) {
             gameOver = false;
             gameScore = 0;
@@ -1126,9 +1143,10 @@ void loop() {
   if (carouselEnabled && !inMenu) {
     unsigned long intervalMs = (unsigned long)carouselIntervalSec * 1000;
     if (now - lastCarousel > intervalMs) {
-      currentScreen++;
-      if (currentScreen >= TOTAL_SCREENS)
-        currentScreen = 0;
+      int next = (currentScreen + 1) % TOTAL_SCREENS;
+      if (next == GAME_SCREEN_INDEX)
+        next = (next + 1) % TOTAL_SCREENS;
+      currentScreen = next;
       lastCarousel = now;
     }
   }
@@ -1139,7 +1157,7 @@ void loop() {
     tcpClient.print(currentScreen);
     tcpClient.print("\n");
     lastSentScreen = currentScreen;
-    if (currentScreen == 11) {
+    if (currentScreen == GAME_SCREEN_INDEX) {
       gameStartTime = now;
       gameScore = 0;
       gameOver = false;
@@ -1152,7 +1170,7 @@ void loop() {
   }
 
   // --- 4c. Wolf Runner physics: волк прыгает, препятствия движутся влево
-  if (currentScreen == 11 && splashDone && !gameOver &&
+  if (currentScreen == GAME_SCREEN_INDEX && splashDone && !gameOver &&
       (now - lastGameTick >= GAME_TICK_MS)) {
     lastGameTick = now;
     if (gameStartTime == 0)
@@ -1185,7 +1203,8 @@ void loop() {
       }
     }
   }
-  if (currentScreen == 11 && gameOver && (now - lastGameTick >= GAME_TICK_MS)) {
+  if (currentScreen == GAME_SCREEN_INDEX && gameOver &&
+      (now - lastGameTick >= GAME_TICK_MS)) {
     lastGameTick = now;
   }
 
