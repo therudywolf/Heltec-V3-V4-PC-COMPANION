@@ -58,6 +58,9 @@ int diskRead = 0, diskWrite = 0;
 int weatherTemp = 0;
 String weatherDesc = "";
 int weatherIcon = 0;
+int weatherDayHigh = 0, weatherDayLow = 0, weatherDayCode = 0;
+int weatherWeekHigh[7] = {0}, weatherWeekLow[7] = {0}, weatherWeekCode[7] = {0};
+int weatherPage = 0; // 0=Now, 1=Day, 2=Week
 // Top processes
 String procNames[3] = {"", "", ""};
 int procCpu[3] = {0, 0, 0};
@@ -345,36 +348,36 @@ void drawCores() {
   }
 }
 
-// GPU: зоны — темпы, VRAM bar, частота/нагрузка/мощность, вентилятор
+// GPU: компактно — темп, нагрузка, бар, MHz/W/Fan/VRAM
 void drawGpu() {
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(0, 10, "GPU");
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.drawStr(0, 8, "GPU");
   if (gpuTemp >= GPU_TEMP_ALERT)
-    u8g2.drawStr(90, 10, "ALERT");
-  u8g2.drawLine(0, 12, 128, 12);
-  u8g2.setCursor(0, 21);
-  u8g2.print("T: ");
+    u8g2.drawStr(98, 8, "ALERT");
+  u8g2.drawLine(0, 10, 128, 10);
+  u8g2.setCursor(0, 18);
+  u8g2.print("T ");
   u8g2.print(gpuTemp);
   u8g2.print("/");
   u8g2.print(gpuHotSpot);
   u8g2.print((char)0xB0);
-  u8g2.print("C");
-  drawBar(0, 25, 128, 6, vramUsed, vramTotal > 0 ? vramTotal : 1);
-  u8g2.setCursor(0, 35);
+  u8g2.print("  Load ");
+  u8g2.print(gpuLoad);
+  u8g2.print("%");
+  drawBar(0, 21, 128, 4, (float)gpuLoad, 100.0f);
+  u8g2.setCursor(0, 28);
   u8g2.print(gpuClk);
   u8g2.print("MHz ");
-  u8g2.print(gpuLoad);
-  u8g2.print("% ");
   u8g2.print(gpuPwr);
-  u8g2.print("W");
-  u8g2.setCursor(0, 47);
-  u8g2.print("Fan ");
+  u8g2.print("W Fan");
   u8g2.print(fanGpu);
-  u8g2.print("  VRAM ");
+  u8g2.setCursor(0, 36);
+  u8g2.print("VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print("G");
+  drawBar(0, 40, 128, 5, vramUsed, vramTotal > 0 ? vramTotal : 1);
 }
 
 // Memory: RAM и VRAM (used/total, %) с подписями и барами
@@ -441,119 +444,122 @@ void drawFans() {
   u8g2.print(fanGpu);
 }
 
-// Weather: display with icon and simple animated effects
-void drawWeather() {
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(0, 10, "WEATHER");
-  u8g2.drawLine(0, 12, 128, 12);
+// Выбор иконки по коду погоды
+static const uint8_t *weatherIconFromCode(int code) {
+  if (code == 0)
+    return iconSunny;
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) ||
+      (code >= 95 && code <= 99))
+    return iconRain;
+  if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86))
+    return iconSnow;
+  return iconCloudy;
+}
 
-  bool noData = (weatherTemp == 0 && weatherDesc.length() == 0);
-  if (noData) {
-    u8g2.drawXBMP(4, 20, 16, 16, iconCloudy);
-    u8g2.setFont(u8g2_font_helvB10_tr);
-    u8g2.setCursor(26, 28);
-    u8g2.print("--");
+// Weather: 3 карточки — Сейчас / День / Неделя, иконка 24x24 (масштаб 1.5)
+void drawWeather() {
+  u8g2.setFont(u8g2_font_5x7_tr);
+  const char *titles[] = {"NOW", "DAY", "WEEK"};
+  u8g2.drawStr(0, 8, "WEATHER");
+  u8g2.drawStr(80, 8, titles[weatherPage]);
+  u8g2.drawLine(0, 10, 128, 10);
+
+  if (weatherPage == 0) {
+    bool noData = (weatherTemp == 0 && weatherDesc.length() == 0);
+    const uint8_t *icon =
+        noData ? iconCloudy : weatherIconFromCode(weatherIcon);
+    for (int dy = 0; dy < 16; dy++)
+      for (int dx = 0; dx < 16; dx++) {
+        int byteIdx = dy * 2 + (dx / 8);
+        uint8_t b = icon[byteIdx];
+        if (b & (1 << (7 - (dx % 8)))) {
+          u8g2.drawPixel(4 + dx * 2, 14 + dy * 2);
+          u8g2.drawPixel(5 + dx * 2, 14 + dy * 2);
+          u8g2.drawPixel(4 + dx * 2, 15 + dy * 2);
+          u8g2.drawPixel(5 + dx * 2, 15 + dy * 2);
+        }
+      }
+    u8g2.setFont(u8g2_font_helvB12_tr);
+    u8g2.setCursor(42, 28);
+    u8g2.print(noData ? "--" : String(weatherTemp));
     u8g2.print((char)0xB0);
-    u8g2.print("C");
-    u8g2.setFont(u8g2_font_6x10_tr);
-    u8g2.setCursor(26, 40);
-    u8g2.print("Loading...");
+    u8g2.setFont(u8g2_font_5x7_tr);
+    u8g2.setCursor(42, 42);
+    u8g2.print(noData ? "Loading..." : weatherDesc.substring(0, 12));
     return;
   }
 
-  bool isRain = (weatherIcon >= 51 && weatherIcon <= 67) ||
-                (weatherIcon >= 80 && weatherIcon <= 82) ||
-                (weatherIcon >= 95 && weatherIcon <= 99);
-  bool isSnow = (weatherIcon >= 71 && weatherIcon <= 77) ||
-                (weatherIcon >= 85 && weatherIcon <= 86);
-  bool isSunny = (weatherIcon == 0);
-  bool isCloudy = (weatherIcon >= 1 && weatherIcon <= 3) ||
-                  (weatherIcon >= 45 && weatherIcon <= 48);
-
-  const uint8_t *icon = iconCloudy;
-  if (isSunny)
-    icon = iconSunny;
-  else if (isRain)
-    icon = iconRain;
-  else if (isSnow)
-    icon = iconSnow;
-  else
-    icon = iconCloudy;
-
-  int anim = (millis() / 100) % 16;
-  int iconX = 4;
-  if (isCloudy && !isSunny)
-    iconX = 4 + ((millis() / 200) % 3);
-
-  u8g2.drawXBMP(iconX, 20, 16, 16, icon);
-
-  if (isRain) {
-    for (int i = 0; i < 4; i++) {
-      int y = 20 + (anim + i * 4) % 16;
-      u8g2.drawVLine(8 + i * 3, y, 2);
-      u8g2.drawVLine(10 + i * 3, y + 4, 2);
-    }
-  } else if (isSnow) {
-    for (int i = 0; i < 4; i++) {
-      int y = 20 + (anim + i * 4) % 16;
-      u8g2.drawPixel(8 + i * 3, y);
-      u8g2.drawPixel(9 + i * 3, y + 1);
-      u8g2.drawPixel(8 + i * 3, y + 2);
-    }
-  } else if (isSunny && blinkState) {
-    u8g2.drawDisc(12, 28, 2, U8G2_DRAW_ALL);
+  if (weatherPage == 1) {
+    const uint8_t *icon = weatherIconFromCode(weatherDayCode);
+    u8g2.drawXBMP(4, 14, 16, 16, icon);
+    u8g2.setFont(u8g2_font_helvB10_tr);
+    u8g2.setCursor(28, 22);
+    u8g2.print("Lo ");
+    u8g2.print(weatherDayLow);
+    u8g2.print((char)0xB0);
+    u8g2.setCursor(28, 34);
+    u8g2.print("Hi ");
+    u8g2.print(weatherDayHigh);
+    u8g2.print((char)0xB0);
+    u8g2.setFont(u8g2_font_5x7_tr);
+    u8g2.setCursor(28, 48);
+    u8g2.print("Today");
+    return;
   }
 
-  u8g2.setFont(u8g2_font_helvB10_tr);
-  u8g2.setCursor(26, 28);
-  u8g2.print(weatherTemp);
-  u8g2.print((char)0xB0);
-  u8g2.print("C");
-
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(26, 40);
-  u8g2.print(weatherDesc.substring(0, 14));
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.drawStr(0, 16, "Week Hi/Lo");
+  for (int i = 0; i < 7; i++) {
+    int x = 2 + i * 18;
+    u8g2.setCursor(x, 26);
+    u8g2.print(weatherWeekHigh[i]);
+    u8g2.setCursor(x, 36);
+    u8g2.print(weatherWeekLow[i]);
+  }
+  u8g2.drawLine(0, 42, 128, 42);
+  for (int i = 0; i < 7; i++) {
+    int x = 6 + i * 18;
+    u8g2.setCursor(x, 52);
+    u8g2.print(i + 1);
+  }
 }
 
 // Top 3 processes by CPU
 void drawTopProcs() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "TOP 3 CPU");
-
+  u8g2.drawLine(0, 12, 128, 12);
+  bool any = false;
   for (int i = 0; i < 3; i++) {
-    int y = 24 + i * 12;
+    int y = 22 + i * 14;
     u8g2.setCursor(0, y);
     if (procNames[i].length() > 0) {
-      u8g2.print(procNames[i].substring(0, 12));
-      u8g2.setCursor(80, y);
+      u8g2.print(procNames[i].substring(0, 14));
+      u8g2.setCursor(88, y);
       u8g2.print(procCpu[i]);
       u8g2.print("%");
+      any = true;
     }
   }
+  if (!any)
+    u8g2.setCursor(0, 32), u8g2.print("No data");
 }
 
 // Network & Disk screen
 void drawNetwork() {
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(0, 10, "NETWORK & DISK");
-
+  u8g2.drawStr(0, 10, "NET & DISK");
+  u8g2.drawLine(0, 12, 128, 12);
   u8g2.setCursor(0, 24);
-  u8g2.print("Net Up: ");
+  u8g2.print("Up ");
   u8g2.print(netUp);
-  u8g2.print(" KB/s");
-
-  u8g2.setCursor(0, 36);
-  u8g2.print("Net Dn: ");
+  u8g2.print(" Dn ");
   u8g2.print(netDown);
   u8g2.print(" KB/s");
-
-  u8g2.setCursor(0, 48);
-  u8g2.print("Disk R: ");
+  u8g2.setCursor(0, 38);
+  u8g2.print("R ");
   u8g2.print(diskRead);
-  u8g2.print(" MB/s");
-
-  u8g2.setCursor(0, 60);
-  u8g2.print("Disk W: ");
+  u8g2.print(" W ");
   u8g2.print(diskWrite);
   u8g2.print(" MB/s");
 }
@@ -706,42 +712,41 @@ void drawPlayer() {
 
 void drawMenu() {
   u8g2.setDrawColor(0);
-  u8g2.drawBox(12, 12, 104, 48);
+  u8g2.drawBox(8, 8, 112, 48);
   u8g2.setDrawColor(1);
-  u8g2.drawFrame(12, 12, 104, 48);
+  u8g2.drawFrame(8, 8, 112, 48);
 
-  u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(36, 20, "Forest Menu");
-  u8g2.drawLine(16, 22, 108, 22);
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.drawStr(42, 16, "Menu");
+  u8g2.drawLine(8, 18, 119, 18);
 
-  int y = 26;
-  u8g2.setCursor(16, y);
+  const int col1X = 12;
+  const int col2X = 68;
+  int y = 25;
+  u8g2.setCursor(col1X, y);
   u8g2.print(menuItem == 0 ? ">" : " ");
-  u8g2.print(" LED ");
+  u8g2.print("LED ");
   u8g2.print(ledEnabled ? "ON" : "OFF");
-  y += 6;
-  u8g2.setCursor(16, y);
-  u8g2.print(menuItem == 1 ? ">" : " ");
-  u8g2.print(" AUTO ");
-  u8g2.print(carouselEnabled ? "ON" : "OFF");
-  y += 6;
-  u8g2.setCursor(16, y);
-  u8g2.print(menuItem == 2 ? ">" : " ");
-  u8g2.print(" Bright ");
-  u8g2.print(displayContrast);
-  y += 6;
-  u8g2.setCursor(16, y);
+  u8g2.setCursor(col2X, y);
   u8g2.print(menuItem == 3 ? ">" : " ");
-  u8g2.print(" Intvl ");
+  u8g2.print("Intvl ");
   u8g2.print(carouselIntervalSec);
   u8g2.print("s");
-  y += 6;
-  u8g2.setCursor(16, y);
+  y += 9;
+  u8g2.setCursor(col1X, y);
+  u8g2.print(menuItem == 1 ? ">" : " ");
+  u8g2.print("AUTO ");
+  u8g2.print(carouselEnabled ? "ON" : "OFF");
+  u8g2.setCursor(col2X, y);
   u8g2.print(menuItem == 4 ? ">" : " ");
-  u8g2.print(" EQ ");
-  u8g2.print(eqStyle == 0 ? "Bars" : (eqStyle == 1 ? "Wave" : "Circle"));
-  y += 6;
-  u8g2.setCursor(16, y);
+  u8g2.print("EQ ");
+  u8g2.print(eqStyle == 0 ? "Bars" : (eqStyle == 1 ? "Wave" : "Circ"));
+  y += 9;
+  u8g2.setCursor(col1X, y);
+  u8g2.print(menuItem == 2 ? ">" : " ");
+  u8g2.print("Bright ");
+  u8g2.print(displayContrast);
+  u8g2.setCursor(col2X, y);
   u8g2.print(menuItem == 5 ? "> EXIT" : "  EXIT");
 }
 
@@ -897,6 +902,17 @@ void loop() {
         const char *wd = doc["wd"];
         weatherDesc = String(wd ? wd : "");
         weatherIcon = doc["wi"];
+        weatherDayHigh = doc["wday_high"] | 0;
+        weatherDayLow = doc["wday_low"] | 0;
+        weatherDayCode = doc["wday_code"] | 0;
+        JsonArray wh = doc["week_high"];
+        JsonArray wl = doc["week_low"];
+        JsonArray wc = doc["week_code"];
+        for (int i = 0; i < 7; i++) {
+          weatherWeekHigh[i] = (i < wh.size()) ? (int)wh[i] : 0;
+          weatherWeekLow[i] = (i < wl.size()) ? (int)wl[i] : 0;
+          weatherWeekCode[i] = (i < wc.size()) ? (int)wc[i] : 0;
+        }
 
         JsonArray tp = doc["tp"];
         for (int i = 0; i < 3; i++) {
@@ -962,7 +978,9 @@ void loop() {
         if (menuItem >= MENU_ITEMS)
           menuItem = 0;
       } else {
-        if (currentScreen == 11) {
+        if (currentScreen == 8) {
+          weatherPage = (weatherPage + 1) % 3;
+        } else if (currentScreen == 11) {
           gameWolfVy = JUMP_VY;
         } else {
           currentScreen++;
