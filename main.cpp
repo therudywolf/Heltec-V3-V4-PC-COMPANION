@@ -57,6 +57,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 #define FONT_TITLE u8g2_font_7x13B_tf        // Bold headers
 #define FONT_MAIN u8g2_font_7x13_tf          // Main data
 #define FONT_SMALL u8g2_font_5x8_tf          // Small text
+#define FONT_TINY u8g2_font_4x6_tf           // Tiny (C1-C6 labels)
 #define FONT_LARGE u8g2_font_9x15B_tf        // Large numbers
 #define FONT_MEDIA u8g2_font_cu12_t_cyrillic // Cyrillic support
 
@@ -70,7 +71,6 @@ struct HardwareData {
   int cpuTemp = 0;
   int gpuTemp = 0;
   int gpuHotSpot = 0;
-  int vrmTemp = 0;
   int nvme2Temp = 0;
   int chipsetTemp = 0;
   int diskTemp[4] = {0};
@@ -99,7 +99,6 @@ struct HardwareData {
   float ramTotal = 0.0;
   float vramUsed = 0.0;
   float vramTotal = 0.0;
-  float vcore = 0.0;
 
   // Disks
   float diskUsed[4] = {0};
@@ -300,16 +299,16 @@ void drawBar(int x, int y, int w, int h, float val, float max) {
   drawProgressBar(x, y, w, h, pct);
 }
 
-// Draw card with title and content area
+// Draw card with title and content area (baseline: y+4 for small font)
 void drawCard(int x, int y, int w, int h, const char *title) {
   u8g2.drawRFrame(x, y, w, h, 3);
   if (title && strlen(title) > 0) {
     u8g2.setFont(FONT_SMALL);
     int tw = u8g2.getStrWidth(title);
     u8g2.setDrawColor(0);
-    u8g2.drawBox(x + 4, y - 3, tw + 4, 7);
+    u8g2.drawBox(x + 4, y - 3, tw + 4, 8);
     u8g2.setDrawColor(1);
-    u8g2.drawStr(x + 6, y + 3, title);
+    u8g2.drawStr(x + 6, y + 4, title);
   }
 }
 
@@ -374,7 +373,7 @@ void drawMainScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "SYSTEM");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   // CPU
   u8g2.drawStr(4, y, "CPU");
@@ -412,8 +411,7 @@ void drawMainScreen() {
 void drawCoresScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "CPU CORES");
 
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   for (int i = 0; i < 6; i++) {
     int x = (i % 2 == 0) ? 4 : 66;
@@ -422,11 +420,13 @@ void drawCoresScreen() {
 
     char buf[20];
     snprintf(buf, sizeof(buf), "C%d", i + 1);
+    u8g2.setFont(FONT_TINY);
     u8g2.drawStr(x, y, buf);
 
     int mhz = (hw.cores[i] > 0) ? hw.cores[i] : hw.cpuMhzFallback;
     snprintf(buf, sizeof(buf), "%dMHz", mhz);
-    u8g2.drawStr(x + 16, y, buf);
+    u8g2.setFont(FONT_SMALL);
+    u8g2.drawStr(x + 14, y, buf);
 
     // Load bar
     drawProgressBar(x, y + 2, 56, 6, hw.coreLoad[i]);
@@ -437,7 +437,7 @@ void drawCPUScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "CPU DETAILS");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   char buf[30];
 
@@ -459,16 +459,10 @@ void drawCPUScreen() {
   snprintf(buf, sizeof(buf), "%dW", hw.cpuPwr);
   u8g2.drawStr(35, y, buf);
 
-  // Vcore
+  // CPU frequency
   y += 10;
-  u8g2.drawStr(4, y, "Vcore:");
-  snprintf(buf, sizeof(buf), "%.2fV", hw.vcore);
-  u8g2.drawStr(35, y, buf);
-
-  // VRM Temp
-  y += 10;
-  u8g2.drawStr(4, y, "VRM:");
-  snprintf(buf, sizeof(buf), "%d°C", hw.vrmTemp);
+  u8g2.drawStr(4, y, "Freq:");
+  snprintf(buf, sizeof(buf), "%d MHz", hw.cpuMhzFallback);
   u8g2.drawStr(35, y, buf);
 }
 
@@ -476,7 +470,7 @@ void drawGPUScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "GPU DETAILS");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   char buf[30];
 
@@ -515,7 +509,7 @@ void drawMemoryScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "MEMORY");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   char buf[30];
 
@@ -555,7 +549,7 @@ void drawDisksScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "STORAGE");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   char buf[30];
   const char *diskNames[] = {"NVMe1", "NVMe2", "HDD", "SSD"};
@@ -580,11 +574,11 @@ void drawDisksScreen() {
 void drawPlayerScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "MEDIA");
 
-  // Album cover
+  // Frame always drawn; cover inside when available
+  u8g2.drawRFrame(4, MARGIN + 8, 48, 48, 3);
   if (media.hasCover) {
     u8g2.drawXBM(4, MARGIN + 8, 48, 48, media.coverBitmap);
   } else {
-    u8g2.drawRFrame(4, MARGIN + 8, 48, 48, 3);
     u8g2.setFont(FONT_SMALL);
     u8g2.drawStr(15, MARGIN + 34, "No");
     u8g2.drawStr(10, MARGIN + 44, "Cover");
@@ -617,7 +611,7 @@ void drawFansScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "COOLING");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 12;
+  int y = MARGIN + 11;
 
   char buf[20];
 
@@ -720,7 +714,7 @@ void drawTopProcsScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "TOP CPU");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 14;
+  int y = MARGIN + 13;
 
   for (int i = 0; i < 3; i++) {
     if (procs.cpuNames[i].length() > 0) {
@@ -1006,7 +1000,6 @@ void loop() {
             hw.cpuTemp = doc["ct"] | 0;
             hw.gpuTemp = doc["gt"] | 0;
             hw.gpuHotSpot = doc["gth"] | 0;
-            hw.vrmTemp = doc["vt"] | 0;
             hw.cpuLoad = doc["cpu_load"] | 0;
             hw.cpuPwr = doc["cpu_pwr"] | 0;
             hw.gpuLoad = doc["gpu_load"] | 0;
@@ -1040,7 +1033,6 @@ void loop() {
             hw.ramPct = doc["ram_pct"] | 0;
             hw.vramUsed = doc["vram_u"] | 0.0;
             hw.vramTotal = doc["vram_t"] | 0.0;
-            hw.vcore = doc["vcore"] | 0.0;
 
             // Disks
             for (int i = 0; i < 4; i++) {

@@ -402,17 +402,20 @@ def get_top_processes_cpu(n: int = 3) -> List[Dict]:
 
 
 def get_top_processes_ram(n: int = 2) -> List[Dict]:
-    """Get top N processes by memory usage."""
+    """Get top N processes by memory usage (excludes MemCompression)."""
     try:
         procs = []
         for p in psutil.process_iter(["name", "memory_info"]):
             try:
                 info = p.info
+                name = (info.get("name") or "").strip()
+                if "memcompression" in name.lower() or "memory compression" in name.lower():
+                    continue
                 if info["memory_info"]:
                     mb = info["memory_info"].rss / (1024 * 1024)
                     if mb > 10:  # Only show processes using >10MB
                         procs.append({
-                            "n": info["name"][:20],
+                            "n": name[:20],
                             "r": int(mb),
                         })
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -541,7 +544,6 @@ def build_payload(
         "ram_pct": int(hw.get("ram_pct", 0)),
         "vram_u": round(hw.get("vram_u", 0), 1),
         "vram_t": round(hw.get("vram_t", 0), 1),
-        "vcore": round(hw.get("vcore", 0), 2),
         "nvme2_t": int(hw.get("nvme2_t", 0)),
         "chipset_t": int(hw.get("chipset_t", 0)),
         
@@ -741,12 +743,12 @@ async def run():
             
             # Determine if we should send cover
             track_key = f"{media.get('art', '')}|{media.get('trk', '')}"
-            include_cover = (
+            include_cover_base = (
                 track_key != last_track_key or
                 (now_sec - last_cover_sent >= COVER_INTERVAL)
             )
             
-            if include_cover and media.get("cover_b64"):
+            if include_cover_base and media.get("cover_b64"):
                 last_cover_sent = now_sec
                 
             if track_key != last_track_key and last_track_key:
@@ -759,6 +761,8 @@ async def run():
             dead = []
             for writer in list(tcp_clients):
                 screen = client_screens.get(writer, 0)
+                # Always include cover when client is on Player screen (6 = MEDIA)
+                include_cover = include_cover_base or (screen == 6)
                 
                 payload = build_payload(
                     hw=cache["hw"],
