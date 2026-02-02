@@ -221,15 +221,39 @@ async def run():
 
     server = None
     if TRANSPORT in ("tcp", "both"):
+        bind_host = TCP_HOST
         try:
-            server = await asyncio.start_server(tcp_handler, TCP_HOST, TCP_PORT)
-            print(f"[*] TCP: {TCP_HOST}:{TCP_PORT}")
+            server = await asyncio.start_server(tcp_handler, bind_host, TCP_PORT)
+            print(f"[*] TCP: {bind_host}:{TCP_PORT}")
+        except OSError as e:
+            if bind_host != "0.0.0.0":
+                try:
+                    server = await asyncio.start_server(tcp_handler, "0.0.0.0", TCP_PORT)
+                    print(f"[*] TCP: 0.0.0.0:{TCP_PORT} (fallback, bind to {bind_host} failed: {e})")
+                except Exception as e2:
+                    log_err(f"TCP server: {e2}", e2)
+                    if TRANSPORT == "tcp":
+                        if ser:
+                            ser.close()
+                        return
+            else:
+                log_err(f"TCP server {bind_host}:{TCP_PORT}: {e}", e)
+                if TRANSPORT == "tcp":
+                    if ser:
+                        ser.close()
+                    return
         except Exception as e:
-            log_err(f"TCP server {TCP_HOST}:{TCP_PORT}: {e}", e)
+            log_err(f"TCP server {bind_host}:{TCP_PORT}: {e}", e)
             if TRANSPORT == "tcp":
                 if ser:
                     ser.close()
                 return
+
+    if TRANSPORT == "both" and ser is None and server is None:
+        log_err("Neither Serial nor TCP available. Exit.")
+        if ser:
+            ser.close()
+        return
 
     cache = {}
     interval = 0.8
