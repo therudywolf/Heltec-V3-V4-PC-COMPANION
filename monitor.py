@@ -2,6 +2,8 @@ import asyncio
 import base64
 import io
 import os
+import sys
+import traceback
 import serial
 import json
 import time
@@ -9,6 +11,14 @@ import requests
 from dotenv import load_dotenv
 from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
 from winsdk.windows.storage.streams import Buffer, InputStreamOptions
+
+
+def log_err(msg: str, exc: BaseException | None = None, trace: bool = True):
+    """Печать ошибки в stderr; при exc и trace=True — вывести traceback."""
+    print(f"[!] {msg}", file=sys.stderr, flush=True)
+    if exc is not None and trace:
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
 
 try:
     from PIL import Image
@@ -47,8 +57,10 @@ TARGETS = {
 }
 
 def clean_val(v):
-    try: return float(str(v).replace(',', '.').split()[0])
-    except: return 0.0
+    try:
+        return float(str(v).replace(",", ".").split()[0])
+    except (ValueError, TypeError):
+        return 0.0
 
 def get_lhm_data():
     for attempt in range(3):
@@ -70,7 +82,7 @@ def get_lhm_data():
             return results
         except Exception as e:
             if attempt == 2:
-                print("[!] LHM timeout:", e)
+                log_err(f"LHM timeout after 3 attempts: {e}", e)
             continue
     return {}
 
@@ -114,13 +126,14 @@ async def get_media():
                             out["cover_b64"] = ""
                     else:
                         out["cover_b64"] = ""
-                except Exception:
+                except Exception as e:
+                    log_err(f"Cover art: {e}", e, trace=False)
                     out["cover_b64"] = ""
             else:
                 out["cover_b64"] = ""
             return out
-    except Exception:
-        pass
+    except Exception as e:
+        log_err(f"Media session: {e}", e, trace=False)
     return {"art": "", "trk": "Stopped", "play": 0, "cover_b64": ""}
 
 def build_payload(hw, media, hw_ok, include_cover=True):
@@ -202,7 +215,7 @@ async def run():
             ser = serial.Serial(SERIAL_PORT, 115200, timeout=0.05)
             print(f"[*] Serial: {SERIAL_PORT}")
         except Exception as e:
-            print("[!] Serial:", e)
+            log_err(f"Serial open {SERIAL_PORT}: {e}", e)
             if TRANSPORT == "serial":
                 return
 
@@ -212,7 +225,7 @@ async def run():
             server = await asyncio.start_server(tcp_handler, TCP_HOST, TCP_PORT)
             print(f"[*] TCP: {TCP_HOST}:{TCP_PORT}")
         except Exception as e:
-            print("[!] TCP:", e)
+            log_err(f"TCP server {TCP_HOST}:{TCP_PORT}: {e}", e)
             if TRANSPORT == "tcp":
                 if ser:
                     ser.close()
@@ -229,7 +242,7 @@ async def run():
             try:
                 ser.write(data)
             except Exception as e:
-                print("[!] Serial write:", e)
+                log_err(f"Serial write: {e}", e)
 
     async def send_all(data: bytes):
         send_serial(data)
@@ -246,8 +259,8 @@ async def run():
             try:
                 w.close()
                 await w.wait_closed()
-            except Exception:
-                pass
+            except Exception as e:
+                log_err(f"TCP close: {e}", trace=False)
 
     while True:
         hw = get_lhm_data()
@@ -276,5 +289,11 @@ async def run():
         await asyncio.sleep(interval)
 
 if __name__ == "__main__":
-    print("[INIT] Запуск мониторинга...")
-    asyncio.run(run())
+    print("[INIT] Запуск мониторинга...", flush=True)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        log_err(f"Fatal: {e}", e)
+        if getattr(sys, "frozen", False):
+            input("Нажми Enter для выхода...")
+        sys.exit(1)
