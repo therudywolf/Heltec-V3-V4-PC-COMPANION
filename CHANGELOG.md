@@ -1,5 +1,67 @@
 # CHANGELOG
 
+## v7.0 [NEURAL LINK] - 2026-02-03
+
+### 🔧 CRITICAL BUG FIX - Connection Stability
+
+**Root Cause Analysis:**
+
+The rapid connect/disconnect loop was caused by a timing bug:
+
+1. `lastUpdate` was initialized to 0 in firmware
+2. After splash screen, `signalLost` check (`now - lastUpdate > 3000ms`) was ALWAYS true
+3. Firmware immediately disconnected before receiving any data
+4. Server wasn't sending data fast enough on initial connect
+
+**Firmware Fixes (`main.cpp`):**
+
+- ✅ **FIXED: lastUpdate Initialization** - Set to boot time, then reset when splash ends
+- ✅ **FIXED: Grace Period** - 8 second grace period after TCP connect before signal loss check
+- ✅ **FIXED: firstDataReceived Flag** - Tracks if valid JSON ever received
+- ✅ **NEW: tcpConnect() / tcpDisconnect()** - Proper connection state management
+- ✅ **NEW: HELO Handshake** - Sends "HELO\n" on connect for server acknowledgment
+- ✅ **NEW: isSignalLost()** - Smarter signal loss detection with grace period
+- ✅ **NEW: drawConnecting() Screen** - Shows "LINKING..." while connecting
+- ✅ **NEW: drawLinkStatus()** - Shows "LINK" indicator when data flowing
+- ✅ **IMPROVED: TCP_RECONNECT_INTERVAL** - 2 second debounce between reconnect attempts
+- ✅ **IMPROVED: Glitch Effect** - Optional cyberpunk signal interference aesthetic
+
+**Server Fixes (`monitor.py`):**
+
+- ✅ **FIXED: Immediate Data Send** - Sends cached data IMMEDIATELY when client connects
+- ✅ **FIXED: Initial Data Collection** - Collects LHM/Weather/Media BEFORE accepting clients
+- ✅ **NEW: global_data_cache** - Always has data ready for new clients
+- ✅ **NEW: HELO Handler** - Acknowledges firmware handshake
+- ✅ **IMPROVED: DATA_SEND_INTERVAL** - 500ms send interval (was 800ms)
+- ✅ **IMPROVED: LHM_INTERVAL** - 500ms polling (was 900ms)
+- ✅ **IMPROVED: Loop interval** - 100ms (was 800ms) for faster responsiveness
+
+**Connection Flow (v7):**
+
+```
+[Firmware]                          [Server]
+    |                                   |
+    |--- TCP Connect ---------------->  |
+    |                                   |-- Immediate cached data send
+    |<-- JSON payload (cached) ------   |
+    |--- "HELO\n" ------------------>   |
+    |                                   |-- Log handshake
+    |<-- JSON payload (fresh) -------   | (every 500ms)
+    |                                   |
+```
+
+**Timing Constants:**
+
+| Constant               | v6.0 | v7.0 | Purpose                              |
+| ---------------------- | ---- | ---- | ------------------------------------ |
+| SIGNAL_TIMEOUT_MS      | 3000 | 5000 | Time without data before "NO SIGNAL" |
+| SIGNAL_GRACE_PERIOD_MS | N/A  | 8000 | Grace period after connect           |
+| TCP_RECONNECT_INTERVAL | N/A  | 2000 | Debounce between reconnects          |
+| DATA_SEND_INTERVAL     | 800  | 500  | Server send interval                 |
+| LHM_INTERVAL           | 900  | 500  | Hardware data polling                |
+
+---
+
 ## v6.0 [NEURAL LINK] - 2026-02-03
 
 ### 🚀 MAJOR REFACTOR - Cyberpunk Cyberdeck Edition
