@@ -1,3 +1,13 @@
+/*
+ * Heltec PC Monitor v2.0
+ * Display firmware for Heltec WiFi LoRa 32 V3 (128x64 OLED).
+ * Data source: TCP JSON from monitor.py (host PC). One line per update.
+ * Screens (0-10): Main, Cores, CPU Details, GPU Details, Memory, Storage,
+ *   Media, Cooling, Weather (3 subpages), Top CPU, Equalizer.
+ * Controls: short press = next screen; long press = open/close menu;
+ *   carousel (if enabled) auto-cycles screens.
+ */
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
@@ -7,7 +17,7 @@
 #include <Wire.h>
 
 // ============================================================================
-// CONFIGURATION (edit WIFI_SSID, WIFI_PASS, PC_IP, TCP_PORT below)
+// CONFIGURATION — WiFi, PC, alerts (override alerts via platformio build_flags)
 // ============================================================================
 #define WIFI_SSID "Forest"
 #define WIFI_PASS ""
@@ -38,14 +48,17 @@
 #define BUTTON_PIN 0
 
 // ============================================================================
-// DISPLAY SETUP
+// DISPLAY — dimensions, margins, TCP/cover buffer limits
 // ============================================================================
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
-
 #define DISP_W 128
 #define DISP_H 64
 #define MARGIN 8
 #define CARD_PADDING 3
+#define TCP_LINE_MAX 2048
+#define COVER_BITMAP_BYTES 288
+#define COVER_B64_MAX_LEN 600
+
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 
 // ============================================================================
 // UNIFIED FONT SYSTEM
@@ -134,7 +147,7 @@ struct MediaData {
   String artist = "No Data";
   String track = "Waiting...";
   bool isPlaying = false;
-  uint8_t coverBitmap[288]; // 48x48 / 8
+  uint8_t coverBitmap[COVER_BITMAP_BYTES];
   bool hasCover = false;
 } media;
 
@@ -150,7 +163,8 @@ struct Settings {
   bool displayInverted = false;
 } settings;
 
-// UI State
+// UI State — screen order must match JSON usage: 0=Main, 1=Cores, 2=CPU, 3=GPU,
+// 4=Memory, 5=Storage, 6=Media, 7=Cooling, 8=Weather, 9=Top CPU, 10=Equalizer
 int currentScreen = 0;
 const int TOTAL_SCREENS = 11;
 bool inMenu = false;
@@ -227,6 +241,9 @@ const uint8_t iconSnow[32] PROGMEM = {
 // FORWARD DECLARATIONS
 // ============================================================================
 String _weatherDescFromCode(int code);
+void parseHardwareBasic(JsonDocument &doc);
+void parseFullPayload(JsonDocument &doc);
+void parseMediaFromDoc(JsonDocument &doc, bool useDefaults);
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -269,6 +286,127 @@ static bool isOnlyAscii(const String &s) {
       return false;
   }
   return true;
+}
+
+// Parse basic hardware and play state (heartbeat / any payload)
+void parseHardwareBasic(JsonDocument &doc) {
+  hw.cpuTemp = doc["ct"] | 0;
+  hw.gpuTemp = doc["gt"] | 0;
+  hw.gpuHotSpot = doc["gth"] | 0;
+  hw.cpuLoad = doc["cpu_load"] | 0;
+  hw.cpuPwr = doc["cpu_pwr"] | 0;
+  hw.gpuLoad = doc["gpu_load"] | 0;
+  hw.gpuPwr = doc["gpu_pwr"] | 0;
+  hw.fanPump = doc["p"] | 0;
+  hw.fanRad = doc["r"] | 0;
+  hw.fanCase = doc["c"] | 0;
+  hw.fanGpu = doc["gf"] | 0;
+  hw.gpuClk = doc["gck"] | 0;
+  hw.cpuMhzFallback = doc["cpu_mhz"] | 0;
+  hw.nvme2Temp = doc["nvme2_t"] | 0;
+  hw.chipsetTemp = doc["chipset_t"] | 0;
+  media.isPlaying = doc["play"] | false;
+}
+
+// Parse full payload: cores, memory, disks, network, weather, processes, media
+void parseFullPayload(JsonDocument &doc) {
+  JsonArray c_arr = doc["c_arr"];
+  for (int i = 0; i < 6; i++) {
+    hw.cores[i] = (i < c_arr.size()) ? (c_arr[i] | 0) : 0;
+  }
+  JsonArray cl_arr = doc["cl_arr"];
+  for (int i = 0; i < 6; i++) {
+    hw.coreLoad[i] = (i < cl_arr.size()) ? (cl_arr[i] | 0) : 0;
+  }
+
+  float ramAvail = doc["ram_a"] | 0.0;
+  hw.ramUsed = doc["ram_u"] | 0.0;
+  hw.ramTotal = hw.ramUsed + ramAvail;
+  hw.ramPct = doc["ram_pct"] | 0;
+  hw.vramUsed = doc["vram_u"] | 0.0;
+  hw.vramTotal = doc["vram_t"] | 0.0;
+
+  for (int i = 0; i < 4; i++) {
+    char tk[10], uk[10], fk[10];
+    snprintf(tk, sizeof(tk), "d%d_t", i + 1);
+    snprintf(uk, sizeof(uk), "d%d_u", i + 1);
+    snprintf(fk, sizeof(fk), "d%d_f", i + 1);
+    hw.diskTemp[i] = doc[tk] | 0;
+    hw.diskUsed[i] = doc[uk] | 0.0;
+    float free = doc[fk] | 0.0;
+    hw.diskTotal[i] = hw.diskUsed[i] + free;
+  }
+
+  hw.netUp = doc["net_up"] | 0;
+  hw.netDown = doc["net_down"] | 0;
+  hw.diskRead = doc["disk_r"] | 0;
+  hw.diskWrite = doc["disk_w"] | 0;
+
+  weather.temp = doc["wt"] | 0;
+  const char *wd = doc["wd"];
+  weather.desc = String(wd ? wd : "");
+  weather.icon = doc["wi"] | 0;
+  weather.dayHigh = doc["w_dh"] | 0;
+  weather.dayLow = doc["w_dl"] | 0;
+  weather.dayCode = doc["w_dc"] | 0;
+  JsonArray wh = doc["w_wh"];
+  JsonArray wl = doc["w_wl"];
+  JsonArray wc = doc["w_wc"];
+  for (int i = 0; i < 7; i++) {
+    weather.weekHigh[i] = (i < wh.size()) ? (wh[i] | 0) : 0;
+    weather.weekLow[i] = (i < wl.size()) ? (wl[i] | 0) : 0;
+    weather.weekCode[i] = (i < wc.size()) ? (wc[i] | 0) : 0;
+  }
+
+  JsonArray tp = doc["tp"];
+  for (int i = 0; i < 3; i++) {
+    if (i < tp.size()) {
+      const char *n = tp[i]["n"];
+      procs.cpuNames[i] = String(n ? n : "");
+      procs.cpuPercent[i] = tp[i]["c"] | 0;
+    } else {
+      procs.cpuNames[i] = "";
+      procs.cpuPercent[i] = 0;
+    }
+  }
+  JsonArray tpRam = doc["tp_ram"];
+  for (int i = 0; i < 2; i++) {
+    if (i < tpRam.size()) {
+      const char *n = tpRam[i]["n"];
+      procs.ramNames[i] = String(n ? n : "");
+      procs.ramMb[i] = tpRam[i]["r"] | 0;
+    } else {
+      procs.ramNames[i] = "";
+      procs.ramMb[i] = 0;
+    }
+  }
+
+  parseMediaFromDoc(doc, true);
+}
+
+// Parse artist, track, cover from doc; useDefaults = true for full payload
+void parseMediaFromDoc(JsonDocument &doc, bool useDefaults) {
+  const char *art = doc["art"];
+  const char *trk = doc["trk"];
+  if (useDefaults) {
+    media.artist = String(art ? art : "No Data");
+    media.track = String(trk ? trk : "Waiting...");
+  } else {
+    if (art)
+      media.artist = String(art);
+    if (trk)
+      media.track = String(trk);
+  }
+  const char *cov = doc["cover_b64"];
+  if (!cov || strlen(cov) == 0) {
+    media.hasCover = false;
+  } else {
+    size_t covLen = strlen(cov);
+    if (covLen <= (size_t)COVER_B64_MAX_LEN) {
+      int n = b64Decode(cov, covLen, media.coverBitmap, COVER_BITMAP_BYTES);
+      media.hasCover = (n == COVER_BITMAP_BYTES);
+    }
+  }
 }
 
 // ============================================================================
@@ -852,6 +990,8 @@ void drawMenu() {
   u8g2.setFont(FONT_TINY);
   u8g2.drawStr(12, 12, "SETTINGS");
 
+  // Menu values: Contrast 128|192|255; Interval 5|10|15 s; EQ
+  // 0=Bars|1=Wave|2=Circle; Display 0|180
   const char *labels[] = {"LED", "Carousel", "Contrast", "Interval",
                           "EQ",  "Display",  "Exit"};
   const int lineH = 6;
@@ -926,6 +1066,7 @@ void setup() {
   prefs.begin("heltec", true);
   settings.ledEnabled = prefs.getBool("led", true);
   settings.carouselEnabled = prefs.getBool("carousel", false);
+  // Valid: carousel 5|10|15 s; contrast 0–255
   settings.carouselIntervalSec = prefs.getInt("carouselSec", 10);
   if (settings.carouselIntervalSec != 5 && settings.carouselIntervalSec != 10 &&
       settings.carouselIntervalSec != 15) {
@@ -934,6 +1075,8 @@ void setup() {
   settings.displayContrast = prefs.getInt("contrast", 255);
   if (settings.displayContrast > 255)
     settings.displayContrast = 255;
+  if (settings.displayContrast < 0)
+    settings.displayContrast = 0;
   settings.eqStyle = prefs.getInt("eqStyle", 0);
   settings.displayInverted = prefs.getBool("inverted", false);
   prefs.end();
@@ -1006,143 +1149,18 @@ void loop() {
             bool fullPayload = (tcpLineBuffer.length() >= 350 &&
                                 tcpLineBuffer.indexOf("cover_b64") >= 0);
 
-            // Always parse basic hardware (heartbeat may send these)
-            hw.cpuTemp = doc["ct"] | 0;
-            hw.gpuTemp = doc["gt"] | 0;
-            hw.gpuHotSpot = doc["gth"] | 0;
-            hw.cpuLoad = doc["cpu_load"] | 0;
-            hw.cpuPwr = doc["cpu_pwr"] | 0;
-            hw.gpuLoad = doc["gpu_load"] | 0;
-            hw.gpuPwr = doc["gpu_pwr"] | 0;
-            hw.fanPump = doc["p"] | 0;
-            hw.fanRad = doc["r"] | 0;
-            hw.fanCase = doc["c"] | 0;
-            hw.fanGpu = doc["gf"] | 0;
-            hw.gpuClk = doc["gck"] | 0;
-            hw.cpuMhzFallback = doc["cpu_mhz"] | 0;
-            hw.nvme2Temp = doc["nvme2_t"] | 0;
-            hw.chipsetTemp = doc["chipset_t"] | 0;
-            media.isPlaying = doc["play"] | false;
-
-            if (fullPayload) {
-              // Cores
-              JsonArray c_arr = doc["c_arr"];
-              for (int i = 0; i < 6; i++) {
-                hw.cores[i] = (i < c_arr.size()) ? (c_arr[i] | 0) : 0;
-              }
-              JsonArray cl_arr = doc["cl_arr"];
-              for (int i = 0; i < 6; i++) {
-                hw.coreLoad[i] = (i < cl_arr.size()) ? (cl_arr[i] | 0) : 0;
-              }
-
-              // Memory
-              hw.ramUsed = doc["ram_u"] | 0.0;
-              hw.ramTotal = doc["ram_u"] | 0.0;
-              float ramAvail = doc["ram_a"] | 0.0;
-              if (ramAvail > 0)
-                hw.ramTotal = hw.ramUsed + ramAvail;
-              hw.ramPct = doc["ram_pct"] | 0;
-              hw.vramUsed = doc["vram_u"] | 0.0;
-              hw.vramTotal = doc["vram_t"] | 0.0;
-
-              // Disks
-              for (int i = 0; i < 4; i++) {
-                char tk[10], uk[10], fk[10];
-                snprintf(tk, sizeof(tk), "d%d_t", i + 1);
-                snprintf(uk, sizeof(uk), "d%d_u", i + 1);
-                snprintf(fk, sizeof(fk), "d%d_f", i + 1);
-                hw.diskTemp[i] = doc[tk] | 0;
-                hw.diskUsed[i] = doc[uk] | 0.0;
-                float free = doc[fk] | 0.0;
-                hw.diskTotal[i] = hw.diskUsed[i] + free;
-              }
-
-              hw.netUp = doc["net_up"] | 0;
-              hw.netDown = doc["net_down"] | 0;
-              hw.diskRead = doc["disk_r"] | 0;
-              hw.diskWrite = doc["disk_w"] | 0;
-
-              // Weather
-              weather.temp = doc["wt"] | 0;
-              const char *wd = doc["wd"];
-              weather.desc = String(wd ? wd : "");
-              weather.icon = doc["wi"] | 0;
-              weather.dayHigh = doc["w_dh"] | 0;
-              weather.dayLow = doc["w_dl"] | 0;
-              weather.dayCode = doc["w_dc"] | 0;
-              JsonArray wh = doc["w_wh"];
-              JsonArray wl = doc["w_wl"];
-              JsonArray wc = doc["w_wc"];
-              for (int i = 0; i < 7; i++) {
-                weather.weekHigh[i] = (i < wh.size()) ? (wh[i] | 0) : 0;
-                weather.weekLow[i] = (i < wl.size()) ? (wl[i] | 0) : 0;
-                weather.weekCode[i] = (i < wc.size()) ? (wc[i] | 0) : 0;
-              }
-
-              // Processes
-              JsonArray tp = doc["tp"];
-              for (int i = 0; i < 3; i++) {
-                if (i < tp.size()) {
-                  const char *n = tp[i]["n"];
-                  procs.cpuNames[i] = String(n ? n : "");
-                  procs.cpuPercent[i] = tp[i]["c"] | 0;
-                } else {
-                  procs.cpuNames[i] = "";
-                  procs.cpuPercent[i] = 0;
-                }
-              }
-              JsonArray tpRam = doc["tp_ram"];
-              for (int i = 0; i < 2; i++) {
-                if (i < tpRam.size()) {
-                  const char *n = tpRam[i]["n"];
-                  procs.ramNames[i] = String(n ? n : "");
-                  procs.ramMb[i] = tpRam[i]["r"] | 0;
-                } else {
-                  procs.ramNames[i] = "";
-                  procs.ramMb[i] = 0;
-                }
-              }
-
-              // Media (artist, track, cover) inside full payload
-              const char *art = doc["art"];
-              const char *trk = doc["trk"];
-              media.artist = String(art ? art : "No Data");
-              media.track = String(trk ? trk : "Waiting...");
-
-              const char *cov = doc["cover_b64"];
-              if (!cov || strlen(cov) == 0) {
-                media.hasCover = false;
-              } else {
-                size_t covLen = strlen(cov);
-                if (covLen <= 600) {
-                  int n = b64Decode(cov, covLen, media.coverBitmap, 288);
-                  if (n == 288)
-                    media.hasCover = true;
-                }
-              }
-            } else {
-              // Partial payload: still update media/cover when present (e.g.
-              // media-only packet)
-              const char *art = doc["art"];
-              const char *trk = doc["trk"];
-              if (art)
-                media.artist = String(art);
-              if (trk)
-                media.track = String(trk);
-              const char *cov = doc["cover_b64"];
-              if (cov && strlen(cov) > 0 && strlen(cov) <= 600) {
-                int n = b64Decode(cov, strlen(cov), media.coverBitmap, 288);
-                if (n == 288)
-                  media.hasCover = true;
-              }
-            }
+            parseHardwareBasic(doc);
+            if (fullPayload)
+              parseFullPayload(doc);
+            else
+              parseMediaFromDoc(doc, false);
           }
 
           tcpLineBuffer = "";
         }
       } else {
         tcpLineBuffer += c;
-        if (tcpLineBuffer.length() > 5000) {
+        if (tcpLineBuffer.length() > TCP_LINE_MAX) {
           tcpLineBuffer = "";
         }
       }

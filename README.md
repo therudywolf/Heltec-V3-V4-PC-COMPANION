@@ -62,6 +62,7 @@ rudywolf/
 ├── monitor.spec             # Spec для PyInstaller (без консоли, трей)
 ├── README.md                # Этот файл
 ├── CHANGELOG.md             # История версий (v2.0 — ультимативный билд)
+├── PROTOCOL.md              # JSON ключи → main.cpp (синхронизация payload)
 ├── FIRST_START.md           # Пошаговый первый запуск
 └── AUTOSTART.md             # Автозапуск в Windows
 ```
