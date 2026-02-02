@@ -7,16 +7,12 @@
 #include <Wire.h>
 
 // ============================================================================
-// CONFIGURATION
+// CONFIGURATION (edit WIFI_SSID, WIFI_PASS, PC_IP, TCP_PORT below)
 // ============================================================================
-#if __has_include("config_private.h")
-#include "config_private.h"
-#else
 #define WIFI_SSID "Forest"
 #define WIFI_PASS ""
 #define PC_IP "192.168.1.2"
 #define TCP_PORT 8888
-#endif
 
 #ifndef CPU_TEMP_ALERT
 #define CPU_TEMP_ALERT 80
@@ -67,7 +63,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 
 // Hardware Monitoring Data
 struct HardwareData {
-  // Temperatures (°C)
+  // Temperatures (C)
   int cpuTemp = 0;
   int gpuTemp = 0;
   int gpuHotSpot = 0;
@@ -378,15 +374,25 @@ void drawMainScreen() {
   // CPU
   u8g2.drawStr(4, y, "CPU");
   char buf[20];
-  snprintf(buf, sizeof(buf), "%d°C %d%%", hw.cpuTemp, hw.cpuLoad);
+  snprintf(buf, sizeof(buf), "%d%cC ", hw.cpuTemp, (char)0xB0);
   u8g2.drawStr(30, y, buf);
+  int w = u8g2.getStrWidth(buf);
+  snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(30 + w, y, buf);
+  u8g2.setFont(FONT_SMALL);
   drawProgressBar(80, y - 6, 44, 8, hw.cpuLoad);
 
   // GPU
   y += 12;
   u8g2.drawStr(4, y, "GPU");
-  snprintf(buf, sizeof(buf), "%d°C %d%%", hw.gpuTemp, hw.gpuLoad);
+  snprintf(buf, sizeof(buf), "%d%cC ", hw.gpuTemp, (char)0xB0);
   u8g2.drawStr(30, y, buf);
+  w = u8g2.getStrWidth(buf);
+  snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(30 + w, y, buf);
+  u8g2.setFont(FONT_SMALL);
   drawProgressBar(80, y - 6, 44, 8, hw.gpuLoad);
 
   // RAM
@@ -443,14 +449,16 @@ void drawCPUScreen() {
 
   // Temperature
   u8g2.drawStr(4, y, "Temp:");
-  snprintf(buf, sizeof(buf), "%d°C", hw.cpuTemp);
+  snprintf(buf, sizeof(buf), "%d%cC", hw.cpuTemp, (char)0xB0);
   u8g2.drawStr(35, y, buf);
 
   // Load
   y += 10;
   u8g2.drawStr(4, y, "Load:");
   snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
+  u8g2.setFont(FONT_TINY);
   u8g2.drawStr(35, y, buf);
+  u8g2.setFont(FONT_SMALL);
   drawProgressBar(65, y - 6, 58, 8, hw.cpuLoad);
 
   // Power
@@ -476,20 +484,22 @@ void drawGPUScreen() {
 
   // Temperature
   u8g2.drawStr(4, y, "Core:");
-  snprintf(buf, sizeof(buf), "%d°C", hw.gpuTemp);
+  snprintf(buf, sizeof(buf), "%d%cC", hw.gpuTemp, (char)0xB0);
   u8g2.drawStr(35, y, buf);
 
   // Hot Spot
   y += 10;
   u8g2.drawStr(4, y, "Hot:");
-  snprintf(buf, sizeof(buf), "%d°C", hw.gpuHotSpot);
+  snprintf(buf, sizeof(buf), "%d%cC", hw.gpuHotSpot, (char)0xB0);
   u8g2.drawStr(35, y, buf);
 
   // Load
   y += 10;
   u8g2.drawStr(4, y, "Load:");
   snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
+  u8g2.setFont(FONT_TINY);
   u8g2.drawStr(35, y, buf);
+  u8g2.setFont(FONT_SMALL);
   drawProgressBar(65, y - 6, 58, 8, hw.gpuLoad);
 
   // Clock
@@ -559,8 +569,8 @@ void drawDisksScreen() {
       u8g2.drawStr(4, y, diskNames[i]);
 
       float pct = (hw.diskUsed[i] / hw.diskTotal[i]) * 100.0;
-      snprintf(buf, sizeof(buf), "%.0fG %d°", hw.diskTotal[i] - hw.diskUsed[i],
-               hw.diskTemp[i]);
+      snprintf(buf, sizeof(buf), "%.0fG %d%cC",
+               hw.diskTotal[i] - hw.diskUsed[i], hw.diskTemp[i], (char)0xB0);
       int tw = u8g2.getStrWidth(buf);
       u8g2.drawStr(DISP_W - tw - 4, y, buf);
 
@@ -588,15 +598,17 @@ void drawPlayerScreen() {
   int textX = 56;
   int textW = DISP_W - textX - 4;
 
-  u8g2.setFont(FONT_SMALL);
+  const uint8_t *fontArtist =
+      isOnlyAscii(media.artist) ? FONT_SMALL : FONT_MEDIA;
+  const uint8_t *fontTrack = isOnlyAscii(media.track) ? FONT_SMALL : FONT_MEDIA;
 
   // Artist
   int y = MARGIN + 18;
-  drawScrollingText(textX, y, textW, media.artist, FONT_SMALL);
+  drawScrollingText(textX, y, textW, media.artist, fontArtist);
 
   // Track
   y += 10;
-  drawScrollingText(textX, y, textW, media.track, FONT_SMALL);
+  drawScrollingText(textX, y, textW, media.track, fontTrack);
 
   // Playing status
   y += 14;
@@ -641,12 +653,12 @@ void drawFansScreen() {
   // Additional temps
   y += 14;
   u8g2.drawStr(4, y, "Chipset:");
-  snprintf(buf, sizeof(buf), "%d°C", hw.chipsetTemp);
+  snprintf(buf, sizeof(buf), "%d%cC", hw.chipsetTemp, (char)0xB0);
   u8g2.drawStr(55, y, buf);
 
   y += 10;
   u8g2.drawStr(4, y, "NVMe:");
-  snprintf(buf, sizeof(buf), "%d°C", hw.nvme2Temp);
+  snprintf(buf, sizeof(buf), "%d%cC", hw.nvme2Temp, (char)0xB0);
   u8g2.drawStr(55, y, buf);
 }
 
@@ -669,11 +681,11 @@ void drawWeatherScreen() {
 
     u8g2.setFont(FONT_LARGE);
     char buf[20];
-    snprintf(buf, sizeof(buf), "%d°C", weather.temp);
+    snprintf(buf, sizeof(buf), "%d%cC", weather.temp, (char)0xB0);
     u8g2.drawStr(28, MARGIN + 22, buf);
 
-    u8g2.setFont(FONT_SMALL);
-    u8g2.drawStr(6, MARGIN + 38, weather.desc.c_str());
+    u8g2.setFont(isOnlyAscii(weather.desc) ? FONT_SMALL : FONT_MEDIA);
+    u8g2.drawUTF8(6, MARGIN + 38, weather.desc.c_str());
 
   } else if (weather.page == 1) {
     // Today forecast
@@ -681,10 +693,10 @@ void drawWeatherScreen() {
 
     u8g2.setFont(FONT_MAIN);
     char buf[30];
-    snprintf(buf, sizeof(buf), "High: %d°C", weather.dayHigh);
+    snprintf(buf, sizeof(buf), "High: %d%cC", weather.dayHigh, (char)0xB0);
     u8g2.drawStr(6, MARGIN + 18, buf);
 
-    snprintf(buf, sizeof(buf), "Low:  %d°C", weather.dayLow);
+    snprintf(buf, sizeof(buf), "Low:  %d%cC", weather.dayLow, (char)0xB0);
     u8g2.drawStr(6, MARGIN + 32, buf);
 
     u8g2.setFont(FONT_SMALL);
@@ -701,8 +713,8 @@ void drawWeatherScreen() {
     for (int i = 0; i < min(5, 7); i++) {
       if (i < (int)(sizeof(weather.weekHigh) / sizeof(weather.weekHigh[0]))) {
         char buf[25];
-        snprintf(buf, sizeof(buf), "D%d: %d/%d°C", i + 1, weather.weekHigh[i],
-                 weather.weekLow[i]);
+        snprintf(buf, sizeof(buf), "D%d: %d/%d%cC", i + 1, weather.weekHigh[i],
+                 weather.weekLow[i], (char)0xB0);
         u8g2.drawStr(6, y, buf);
         y += 10;
       }
@@ -726,8 +738,10 @@ void drawTopProcsScreen() {
       u8g2.drawStr(6, y, name.c_str());
 
       snprintf(buf, sizeof(buf), "%d%%", procs.cpuPercent[i]);
+      u8g2.setFont(FONT_TINY);
       int tw = u8g2.getStrWidth(buf);
       u8g2.drawStr(DISP_W - tw - 6, y, buf);
+      u8g2.setFont(FONT_SMALL);
 
       y += 12;
       if (i < 2) {
@@ -876,7 +890,7 @@ void drawMenu() {
       const char *styles[] = {"Bars", "Wave", "Circle"};
       strcat(buf, styles[settings.eqStyle % 3]);
     } else if (i == 5)
-      strcat(buf, settings.displayInverted ? "180°" : "0°");
+      strcat(buf, settings.displayInverted ? "180" : "0");
     else if (i == 6)
       strcpy(buf, "> Exit");
 
@@ -995,8 +1009,10 @@ void loop() {
 
           if (!err) {
             lastUpdate = now;
+            bool fullPayload = (tcpLineBuffer.length() >= 350 &&
+                                tcpLineBuffer.indexOf("cover_b64") >= 0);
 
-            // Hardware data
+            // Always parse basic hardware (heartbeat may send these)
             hw.cpuTemp = doc["ct"] | 0;
             hw.gpuTemp = doc["gt"] | 0;
             hw.gpuHotSpot = doc["gth"] | 0;
@@ -1012,106 +1028,105 @@ void loop() {
             hw.cpuMhzFallback = doc["cpu_mhz"] | 0;
             hw.nvme2Temp = doc["nvme2_t"] | 0;
             hw.chipsetTemp = doc["chipset_t"] | 0;
-
-            // Cores
-            JsonArray c_arr = doc["c_arr"];
-            for (int i = 0; i < 6; i++) {
-              hw.cores[i] = (i < c_arr.size()) ? (c_arr[i] | 0) : 0;
-            }
-
-            JsonArray cl_arr = doc["cl_arr"];
-            for (int i = 0; i < 6; i++) {
-              hw.coreLoad[i] = (i < cl_arr.size()) ? (cl_arr[i] | 0) : 0;
-            }
-
-            // Memory
-            hw.ramUsed = doc["ram_u"] | 0.0;
-            hw.ramTotal = doc["ram_u"] | 0.0;
-            float ramAvail = doc["ram_a"] | 0.0;
-            if (ramAvail > 0)
-              hw.ramTotal = hw.ramUsed + ramAvail;
-            hw.ramPct = doc["ram_pct"] | 0;
-            hw.vramUsed = doc["vram_u"] | 0.0;
-            hw.vramTotal = doc["vram_t"] | 0.0;
-
-            // Disks
-            for (int i = 0; i < 4; i++) {
-              char tk[10], uk[10], fk[10];
-              snprintf(tk, sizeof(tk), "d%d_t", i + 1);
-              snprintf(uk, sizeof(uk), "d%d_u", i + 1);
-              snprintf(fk, sizeof(fk), "d%d_f", i + 1);
-
-              hw.diskTemp[i] = doc[tk] | 0;
-              hw.diskUsed[i] = doc[uk] | 0.0;
-              float free = doc[fk] | 0.0;
-              hw.diskTotal[i] = hw.diskUsed[i] + free;
-            }
-
-            // Network & Disk I/O
-            hw.netUp = doc["net_up"] | 0;
-            hw.netDown = doc["net_down"] | 0;
-            hw.diskRead = doc["disk_r"] | 0;
-            hw.diskWrite = doc["disk_w"] | 0;
-
-            // Weather
-            weather.temp = doc["wt"] | 0;
-            const char *wd = doc["wd"];
-            weather.desc = String(wd ? wd : "");
-            weather.icon = doc["wi"] | 0;
-            weather.dayHigh = doc["w_dh"] | 0;
-            weather.dayLow = doc["w_dl"] | 0;
-            weather.dayCode = doc["w_dc"] | 0;
-
-            JsonArray wh = doc["w_wh"];
-            JsonArray wl = doc["w_wl"];
-            JsonArray wc = doc["w_wc"];
-            for (int i = 0; i < 7; i++) {
-              weather.weekHigh[i] = (i < wh.size()) ? (wh[i] | 0) : 0;
-              weather.weekLow[i] = (i < wl.size()) ? (wl[i] | 0) : 0;
-              weather.weekCode[i] = (i < wc.size()) ? (wc[i] | 0) : 0;
-            }
-
-            // Processes
-            JsonArray tp = doc["tp"];
-            for (int i = 0; i < 3; i++) {
-              if (i < tp.size()) {
-                const char *n = tp[i]["n"];
-                procs.cpuNames[i] = String(n ? n : "");
-                procs.cpuPercent[i] = tp[i]["c"] | 0;
-              } else {
-                procs.cpuNames[i] = "";
-                procs.cpuPercent[i] = 0;
-              }
-            }
-
-            JsonArray tpRam = doc["tp_ram"];
-            for (int i = 0; i < 2; i++) {
-              if (i < tpRam.size()) {
-                const char *n = tpRam[i]["n"];
-                procs.ramNames[i] = String(n ? n : "");
-                procs.ramMb[i] = tpRam[i]["r"] | 0;
-              } else {
-                procs.ramNames[i] = "";
-                procs.ramMb[i] = 0;
-              }
-            }
-
-            // Media
-            const char *art = doc["art"];
-            const char *trk = doc["trk"];
-            media.artist = String(art ? art : "No Data");
-            media.track = String(trk ? trk : "Waiting...");
             media.isPlaying = doc["play"] | false;
 
-            const char *cov = doc["cover_b64"];
-            if (cov && strlen(cov) > 0) {
-              size_t covLen = strlen(cov);
-              if (covLen <= 600) {
-                int n = b64Decode(cov, covLen, media.coverBitmap, 288);
-                media.hasCover = (n == 288);
+            if (fullPayload) {
+              // Cores
+              JsonArray c_arr = doc["c_arr"];
+              for (int i = 0; i < 6; i++) {
+                hw.cores[i] = (i < c_arr.size()) ? (c_arr[i] | 0) : 0;
               }
-            } else {
-              media.hasCover = false;
+              JsonArray cl_arr = doc["cl_arr"];
+              for (int i = 0; i < 6; i++) {
+                hw.coreLoad[i] = (i < cl_arr.size()) ? (cl_arr[i] | 0) : 0;
+              }
+
+              // Memory
+              hw.ramUsed = doc["ram_u"] | 0.0;
+              hw.ramTotal = doc["ram_u"] | 0.0;
+              float ramAvail = doc["ram_a"] | 0.0;
+              if (ramAvail > 0)
+                hw.ramTotal = hw.ramUsed + ramAvail;
+              hw.ramPct = doc["ram_pct"] | 0;
+              hw.vramUsed = doc["vram_u"] | 0.0;
+              hw.vramTotal = doc["vram_t"] | 0.0;
+
+              // Disks
+              for (int i = 0; i < 4; i++) {
+                char tk[10], uk[10], fk[10];
+                snprintf(tk, sizeof(tk), "d%d_t", i + 1);
+                snprintf(uk, sizeof(uk), "d%d_u", i + 1);
+                snprintf(fk, sizeof(fk), "d%d_f", i + 1);
+                hw.diskTemp[i] = doc[tk] | 0;
+                hw.diskUsed[i] = doc[uk] | 0.0;
+                float free = doc[fk] | 0.0;
+                hw.diskTotal[i] = hw.diskUsed[i] + free;
+              }
+
+              hw.netUp = doc["net_up"] | 0;
+              hw.netDown = doc["net_down"] | 0;
+              hw.diskRead = doc["disk_r"] | 0;
+              hw.diskWrite = doc["disk_w"] | 0;
+
+              // Weather
+              weather.temp = doc["wt"] | 0;
+              const char *wd = doc["wd"];
+              weather.desc = String(wd ? wd : "");
+              weather.icon = doc["wi"] | 0;
+              weather.dayHigh = doc["w_dh"] | 0;
+              weather.dayLow = doc["w_dl"] | 0;
+              weather.dayCode = doc["w_dc"] | 0;
+              JsonArray wh = doc["w_wh"];
+              JsonArray wl = doc["w_wl"];
+              JsonArray wc = doc["w_wc"];
+              for (int i = 0; i < 7; i++) {
+                weather.weekHigh[i] = (i < wh.size()) ? (wh[i] | 0) : 0;
+                weather.weekLow[i] = (i < wl.size()) ? (wl[i] | 0) : 0;
+                weather.weekCode[i] = (i < wc.size()) ? (wc[i] | 0) : 0;
+              }
+
+              // Processes
+              JsonArray tp = doc["tp"];
+              for (int i = 0; i < 3; i++) {
+                if (i < tp.size()) {
+                  const char *n = tp[i]["n"];
+                  procs.cpuNames[i] = String(n ? n : "");
+                  procs.cpuPercent[i] = tp[i]["c"] | 0;
+                } else {
+                  procs.cpuNames[i] = "";
+                  procs.cpuPercent[i] = 0;
+                }
+              }
+              JsonArray tpRam = doc["tp_ram"];
+              for (int i = 0; i < 2; i++) {
+                if (i < tpRam.size()) {
+                  const char *n = tpRam[i]["n"];
+                  procs.ramNames[i] = String(n ? n : "");
+                  procs.ramMb[i] = tpRam[i]["r"] | 0;
+                } else {
+                  procs.ramNames[i] = "";
+                  procs.ramMb[i] = 0;
+                }
+              }
+
+              // Media (artist, track, cover) only in full payload
+              const char *art = doc["art"];
+              const char *trk = doc["trk"];
+              media.artist = String(art ? art : "No Data");
+              media.track = String(trk ? trk : "Waiting...");
+
+              const char *cov = doc["cover_b64"];
+              if (!cov || strlen(cov) == 0) {
+                media.hasCover = false;
+              } else {
+                size_t covLen = strlen(cov);
+                if (covLen <= 600) {
+                  int n = b64Decode(cov, covLen, media.coverBitmap, 288);
+                  if (n == 288)
+                    media.hasCover = true;
+                  // on decode failure (n != 288) do not change hasCover
+                }
+              }
             }
           }
 

@@ -1,6 +1,5 @@
 # Секреты и конфиг (не коммитить)
 .env
-config_private.h
 
 # Python
 .venv*/
