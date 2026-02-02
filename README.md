@@ -37,7 +37,7 @@
 
 - Python 3.10+
 - [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) с веб-сервером на `http://localhost:8085`
-- Зависимости: `pip install -r requirements.txt`
+- Зависимости: `pip install -r requirements.txt` (в т.ч. pystray для иконки в трее, Pillow для обложек)
 
 **Плата:**
 
@@ -56,9 +56,10 @@ rudywolf/
 ├── requirements.txt         # Зависимости Python
 ├── .env.example             # Шаблон конфига ПК → скопировать в .env
 ├── config_private.h.example # Шаблон WiFi для платы → скопировать в config_private.h
-├── run_monitor.bat          # Запуск монитора (с консолью)
-├── run_monitor.vbs          # Запуск монитора без окна
-├── build_oneclick.bat       # Один клик: venv + requirements + exe в корень
+├── run_monitor.bat          # Запуск монитора (консоль)
+├── run_monitor.vbs          # Запуск без окна (pythonw)
+├── build_oneclick.bat       # Всё в одном: venv + зависимости + PyInstaller + monitor.exe в корень
+├── monitor.spec             # Spec для PyInstaller (без консоли, трей)
 ├── README.md                # Этот файл
 ├── FIRST_START.md           # Пошаговый первый запуск
 └── AUTOSTART.md              # Автозапуск в Windows
@@ -89,7 +90,7 @@ pip install -r requirements.txt
 python monitor.py
 ```
 
-Должно появиться: `[*] TCP: 0.0.0.0:8888`. Монитор ждёт подключения платы.
+Должно появиться: `[*] TCP: 0.0.0.0:8888`. На Windows в трее появится иконка «Heltec Monitor»; выход — правый клик по иконке → Выход. Монитор ждёт подключения платы.
 
 ### 3. Плата: WiFi
 
@@ -115,21 +116,23 @@ python monitor.py
 
 ## Автозапуск в Windows
 
-При первом запуске **monitor.exe** программа спросит: «Поместить сервер в автозапуск Windows? (Y/N)». При ответе Y добавляется запись в реестр (HKCU Run). Либо вручную: ярлык на **run_monitor.vbs** или **monitor.exe** в папку автозагрузки (Win+R → `shell:startup`). Подробнее: [AUTOSTART.md](AUTOSTART.md).
+При запуске **из Python** (не из EXE) программа может спросить: «Поместить сервер в автозапуск Windows? (Y/N)». При ответе Y добавляется запись в реестр (HKCU Run). **monitor.exe** работает без консоли (только иконка в трее), вопрос автозапуска при первом запуске EXE не показывается — добавь в автозапуск вручную: ярлык на **monitor.exe** или **run_monitor.vbs** в папку автозагрузки (Win+R → `shell:startup`). Подробнее: [AUTOSTART.md](AUTOSTART.md).
 
 ---
 
 ## Сборка одного EXE
 
-**Один клик (venv + зависимости + exe в корень):**
+**Один скрипт (venv + все зависимости + PyInstaller + exe в корень):**
 
 ```bash
 build_oneclick.bat
 ```
 
-Создаётся `.venv`, ставятся зависимости, собирается `monitor.exe` и копируется в корень проекта. Положи рядом `.env` и запускай (см. AUTOSTART.md).
+Скрипт: проверяет Python, создаёт `.venv`, ставит `requirements.txt` и PyInstaller, собирает по **monitor.spec** (без консоли, с иконкой в трее) и копирует `monitor.exe` в корень проекта. Положи рядом `.env` (скопируй из `.env.example` при необходимости) и запускай. EXE работает без окна — только иконка в трее; выход: правый клик по иконке → Выход. Подробнее: [AUTOSTART.md](AUTOSTART.md).
 
-Либо вручную: `build_exe.bat` → `dist\monitor.exe` скопировать в каталог с `.env`.
+Вручную: `pip install -r requirements.txt` и `pyinstaller --noconfirm monitor.spec`, затем скопировать `dist\monitor.exe` в каталог с `.env`.
+
+**Если сборка не удалась:** убедись, что Python 3.10+ в PATH, все зависимости установлены (`pip install -r requirements.txt`). Ошибки вида «ModuleNotFoundError: winsdk» или «No module named pystray» — переустанови зависимости в том же окружении, откуда запускаешь `pyinstaller`. Антивирус иногда блокирует создание EXE — добавь папку проекта в исключения или отключи на время сборки.
 
 ---
 
