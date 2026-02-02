@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-Heltec PC Monitor Server v3.0 — Cyberpunk/Tech-Deck
+Heltec PC Monitor Server v6.0 [NEURAL LINK] — Cyberpunk Cyberdeck Edition
 
-Asynchronous TCP server: LHM and weather run in ThreadPoolExecutor so the
-TCP keepalive loop never blocks. JSON keys are 2 chars; values: int for
-loads/temps, 1-decimal float for RAM. Weather: cache last success; never
-send 0/null after first successful fetch.
+ARCHITECTURE:
+- asyncio main loop (non-blocking TCP stream)
+- ThreadPoolExecutor for blocking tasks (LHM polling, Weather API, Ping)
+- 2-char JSON keys for bandwidth efficiency
+- Exact Hardware IDs from LibreHardwareMonitor
 
-Data source: LibreHardwareMonitor HTTP JSON, Open-Meteo, winsdk (media).
+DATA SOURCES:
+- LibreHardwareMonitor HTTP JSON (localhost:8085)
+- Open-Meteo Weather API
+- psutil (Network speed delta calculation)
+- winsdk (Windows Media Info)
+- ping (Google DNS 8.8.8.8 for latency)
 """
 
 import asyncio
@@ -15,6 +21,8 @@ import base64
 import io
 import json
 import os
+import platform
+import subprocess
 import sys
 import time
 import traceback
@@ -56,7 +64,6 @@ load_dotenv()
 LHM_URL = os.getenv("LHM_URL", "http://localhost:8085/data.json")
 TCP_HOST = os.getenv("TCP_HOST", "0.0.0.0")
 TCP_PORT = int(os.getenv("TCP_PORT", "8888"))
-PC_IP = os.getenv("PC_IP", "192.168.1.2")
 
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
 WEATHER_LON = os.getenv("WEATHER_LON", "37.6173")
@@ -68,46 +75,49 @@ WEATHER_URL = (
     "&timezone=auto&forecast_days=8"
 )
 WEATHER_TIMEOUT = 10
-WEATHER_UPDATE_INTERVAL = 10 * 60
+WEATHER_UPDATE_INTERVAL = 10 * 60  # 10 minutes
 
-# NIC sensor path (LHM) — override if your adapter GUID differs
-NIC_GUID = os.getenv(
-    "NIC_GUID",
-    "{EC657B3C-D11A-4B56-984F-4D84B9FF9580}",
-)
-NIC_DOWN_PATH = f"/nic/{NIC_GUID}/throughput/8"
-NIC_UP_PATH = f"/nic/{NIC_GUID}/throughput/7"
+PING_TARGET = "8.8.8.8"  # Google DNS
+PING_TIMEOUT = 2
 
 COVER_SIZE = 48
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
-COVER_INTERVAL = 60
 TOP_PROCS_CPU_N = 3
 TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
 TOP_PROCS_CACHE_TTL = 2.5
 
 # ============================================================================
-# DATA MAPPING — EXACT Sensor IDs, 2-char JSON keys
+# DATA MAPPING — EXACT Sensor IDs from serverpars.txt, 2-char JSON keys
 # ============================================================================
 
 TARGETS = {
-    "ct": "/amdcpu/0/temperature/2",
-    "gt": "/gpu-nvidia/0/temperature/0",
-    "cl": "/amdcpu/0/load/0",
-    "gl": "/gpu-nvidia/0/load/0",
-    "ru": "/ram/data/0",
-    "ra": "/ram/data/1",
-    "nd": NIC_DOWN_PATH,
-    "nu": NIC_UP_PATH,
-    "cf": "/lpc/it8688e/0/fan/0",
-    "s1": "/lpc/it8688e/0/fan/1",
-    "s2": "/lpc/it8688e/0/fan/2",
-    "gf": "/gpu-nvidia/0/fan/1",
-    "su": "/nvme/2/load/30",
-    "du": "/hdd/0/load/30",
-    "vu": "/gpu-nvidia/0/smalldata/1",
-    "vt": "/gpu-nvidia/0/smalldata/2",
-    "ch": "/lpc/it8688e/0/temperature/0",
+    # CPU & GPU Core Metrics
+    "ct": "/amdcpu/0/temperature/2",      # CPU Temp (Tdie)
+    "gt": "/gpu-nvidia/0/temperature/0",  # GPU Temp
+    "cl": "/amdcpu/0/load/0",             # CPU Load (Total)
+    "gl": "/gpu-nvidia/0/load/0",         # GPU Load (Core)
+    
+    # Memory
+    "ru": "/ram/data/0",                  # RAM Used (GB)
+    "ra": "/ram/data/1",                  # RAM Available (GB) - will calc total
+    
+    # Fans (RPM)
+    "cf": "/lpc/it8688e/0/fan/0",         # CPU Fan (Pump)
+    "s1": "/lpc/it8688e/0/fan/1",         # System Fan #1 (Radiator)
+    "s2": "/lpc/it8688e/0/fan/2",         # System Fan #2
+    "gf": "/gpu-nvidia/0/fan/1",          # GPU Fan
+    
+    # Storage Load (%)
+    "su": "/nvme/2/load/30",              # NVMe System Drive (C:)
+    "du": "/hdd/0/load/30",               # HDD Data Drive (D:)
+    
+    # VRAM
+    "vu": "/gpu-nvidia/0/smalldata/1",    # VRAM Used (MB)
+    "vt": "/gpu-nvidia/0/smalldata/2",    # VRAM Total (MB)
+    
+    # Chipset Temp
+    "ch": "/lpc/it8688e/0/temperature/0", # Chipset/System Temp
 }
 
 # ============================================================================
@@ -142,6 +152,7 @@ last_top_procs_time: float = 0.0
 
 last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
 last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
+ping_latency_ms = 0
 
 # ============================================================================
 # UTILITIES
@@ -164,6 +175,7 @@ def log_info(msg: str):
 
 
 def clean_val(v: Any) -> float:
+    """Extract numeric value from LHM sensor string (e.g., '53.5 °C' -> 53.5)"""
     if v is None:
         return 0.0
     try:
@@ -177,11 +189,14 @@ def clean_val(v: Any) -> float:
 
 
 # ============================================================================
-# DATA COLLECTION (blocking — run in executor)
+# DATA COLLECTION (blocking — run in ThreadPoolExecutor)
 # ============================================================================
 
 def get_lhm_data() -> Dict[str, float]:
-    """Fetch LHM JSON and extract values for TARGETS. Blocking."""
+    """
+    Fetch LibreHardwareMonitor JSON and extract values for TARGETS.
+    Blocking operation - MUST run in executor.
+    """
     for attempt in range(3):
         try:
             r = requests.get(LHM_URL, timeout=2)
@@ -207,6 +222,19 @@ def get_lhm_data() -> Dict[str, float]:
                         walk(node["Children"])
 
             walk(data)
+            
+            # Calculate RAM Total from Used + Available
+            if "ru" in results and "ra" in results:
+                ram_used = results["ru"]
+                ram_avail = results["ra"]
+                results["ra"] = ram_used + ram_avail  # Now 'ra' = total
+            
+            # Convert VRAM from MB to GB for consistency
+            if "vu" in results:
+                results["vu"] = round(results["vu"] / 1024.0, 1)
+            if "vt" in results:
+                results["vt"] = round(results["vt"] / 1024.0, 1)
+            
             return results
         except Exception as e:
             if attempt == 2:
@@ -216,6 +244,7 @@ def get_lhm_data() -> Dict[str, float]:
 
 
 def _weather_desc_from_code(code: int) -> str:
+    """Convert WMO weather code to short description"""
     if code == 0:
         return "Clear"
     if 1 <= code <= 3:
@@ -236,7 +265,10 @@ def _weather_desc_from_code(code: int) -> str:
 
 
 def get_weather_sync() -> Dict:
-    """Fetch weather. Never raises; returns cache on failure. Blocking."""
+    """
+    Fetch weather from Open-Meteo API.
+    Never raises; returns cache on failure. Blocking.
+    """
     global weather_cache, _weather_first_ok, _last_weather_log_time
     now = time.time()
     for attempt in range(2):
@@ -272,7 +304,7 @@ def get_weather_sync() -> Dict:
             }
             if not _weather_first_ok:
                 _weather_first_ok = True
-                log_info(f"Weather: {temp}C, {desc}")
+                log_info(f"Weather: {temp}°C, {desc}")
             return weather_cache
         except Exception as e:
             if attempt == 1 and (now - _last_weather_log_time > 300):
@@ -282,6 +314,10 @@ def get_weather_sync() -> Dict:
 
 
 def get_network_speed_sync() -> tuple:
+    """
+    Calculate network speed (KB/s) using psutil delta.
+    Returns (upload_kbps, download_kbps). Blocking.
+    """
     try:
         counters = psutil.net_io_counters()
         now = time.time()
@@ -304,6 +340,10 @@ def get_network_speed_sync() -> tuple:
 
 
 def get_disk_speed_sync() -> tuple:
+    """
+    Calculate disk I/O speed (KB/s) using psutil delta.
+    Returns (read_kbps, write_kbps). Blocking.
+    """
     try:
         counters = psutil.disk_io_counters()
         if counters is None:
@@ -327,7 +367,51 @@ def get_disk_speed_sync() -> tuple:
         return 0, 0
 
 
+def get_ping_latency_sync() -> int:
+    """
+    Ping Google DNS (8.8.8.8) and return latency in ms.
+    Returns 0 on failure. Blocking.
+    """
+    try:
+        if platform.system().lower() == "windows":
+            cmd = ["ping", "-n", "1", "-w", str(PING_TIMEOUT * 1000), PING_TARGET]
+        else:
+            cmd = ["ping", "-c", "1", "-W", str(PING_TIMEOUT), PING_TARGET]
+        
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=PING_TIMEOUT + 1,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            output = result.stdout
+            # Parse latency from output
+            if "time=" in output.lower():
+                for part in output.split():
+                    if "time=" in part.lower():
+                        time_str = part.split("=")[1].replace("ms", "").strip()
+                        return int(float(time_str))
+            elif "average" in output.lower():
+                # Windows format: "Average = Xms"
+                for line in output.split("\n"):
+                    if "average" in line.lower():
+                        parts = line.split("=")
+                        if len(parts) > 1:
+                            time_str = parts[-1].replace("ms", "").strip()
+                            return int(float(time_str))
+        return 0
+    except Exception:
+        return 0
+
+
 def get_top_processes_cpu_sync(n: int = 3) -> List[Dict]:
+    """
+    Get top N processes by CPU usage.
+    Returns list of {n: name, c: cpu_percent}. Blocking.
+    """
     try:
         procs = []
         for p in psutil.process_iter(["name", "cpu_percent"]):
@@ -344,6 +428,10 @@ def get_top_processes_cpu_sync(n: int = 3) -> List[Dict]:
 
 
 def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
+    """
+    Get top N processes by RAM usage.
+    Returns list of {n: name, r: ram_mb}. Blocking.
+    """
     try:
         procs = []
         for p in psutil.process_iter(["name", "memory_info"]):
@@ -365,6 +453,10 @@ def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
 
 
 async def get_media_info() -> Dict:
+    """
+    Get Windows media info (Artist, Track, Playing status, Album cover).
+    Returns {art, trk, play, cover_b64}. Async (uses winsdk).
+    """
     if not HAS_WINSDK:
         return {"art": "", "trk": "", "play": False, "cover_b64": ""}
     try:
@@ -414,7 +506,7 @@ async def get_media_info() -> Dict:
 
 
 # ============================================================================
-# PAYLOAD — 2-char keys, int for loads/temps, 1-decimal float for RAM
+# PAYLOAD — 2-char keys, int for loads/temps, 1-decimal float for RAM/VRAM
 # Weather: never send 0/null after first success (use cache)
 # ============================================================================
 
@@ -426,8 +518,42 @@ def build_payload(
     top_procs_ram: List,
     net: tuple,
     disk: tuple,
-    screen: int,
+    ping_ms: int,
 ) -> Dict:
+    """
+    Build JSON payload with 2-char keys for bandwidth efficiency.
+    
+    Key mapping:
+    - ct: CPU temp (°C)
+    - gt: GPU temp (°C)
+    - cl: CPU load (%)
+    - gl: GPU load (%)
+    - ru: RAM used (GB, 1 decimal)
+    - ra: RAM total (GB, 1 decimal)
+    - nd: Network down (KB/s)
+    - nu: Network up (KB/s)
+    - pg: Ping latency (ms)
+    - cf: CPU fan (RPM)
+    - s1: System fan 1 (RPM)
+    - s2: System fan 2 (RPM)
+    - gf: GPU fan (RPM)
+    - su: System drive usage (%)
+    - du: Data drive usage (%)
+    - vu: VRAM used (GB, 1 decimal)
+    - vt: VRAM total (GB, 1 decimal)
+    - ch: Chipset temp (°C)
+    - dr: Disk read (KB/s)
+    - dw: Disk write (KB/s)
+    - wt: Weather temp (°C)
+    - wd: Weather description
+    - wi: Weather icon code
+    - tp: Top processes by CPU [{n: name, c: percent}]
+    - tr: Top processes by RAM [{n: name, r: MB}]
+    - art: Media artist
+    - trk: Media track
+    - mp: Media playing (bool)
+    - cov: Album cover (base64)
+    """
     # Weather: after first success, always send cached; never 0/null for temp/desc
     w = weather if _weather_first_ok else weather
     wt_val = w.get("temp", 0)
@@ -442,51 +568,59 @@ def build_payload(
     ram_used_f = round(float(ram_used), 1)
     ram_total_f = round(float(ram_total), 1)
 
-    nd_raw = hw.get("nd", 0)
-    nu_raw = hw.get("nu", 0)
-    if nd_raw > 100000:
-        nd_raw = nd_raw / 1024
-    if nu_raw > 100000:
-        nu_raw = nu_raw / 1024
-    nd_val = int(nd_raw)
-    nu_val = int(nu_raw)
-
     payload = {
+        # Core metrics
         "ct": int(hw.get("ct", 0)),
         "gt": int(hw.get("gt", 0)),
         "cl": int(hw.get("cl", 0)),
         "gl": int(hw.get("gl", 0)),
+        
+        # Memory
         "ru": ram_used_f,
         "ra": ram_total_f,
-        "nd": nd_val,
-        "nu": nu_val,
+        
+        # Network
+        "nd": net[1],  # download
+        "nu": net[0],  # upload
+        "pg": ping_ms,
+        
+        # Fans
         "cf": int(hw.get("cf", 0)),
         "s1": int(hw.get("s1", 0)),
         "s2": int(hw.get("s2", 0)),
         "gf": int(hw.get("gf", 0)),
+        
+        # Storage
         "su": int(hw.get("su", 0)),
         "du": int(hw.get("du", 0)),
+        
+        # VRAM
         "vu": round(float(hw.get("vu", 0)), 1),
         "vt": round(float(hw.get("vt", 0)), 1),
+        
+        # Chipset
         "ch": int(hw.get("ch", 0)),
+        
+        # Disk I/O
         "dr": disk[0],
         "dw": disk[1],
+        
+        # Weather
         "wt": wt_val,
         "wd": wd_val,
         "wi": int(w.get("icon", 0)),
-        "w_wh": w.get("week_high", []),
-        "w_wl": w.get("week_low", []),
-        "w_wc": w.get("week_code", []),
+        
+        # Processes
         "tp": top_procs,
-        "tp_ram": top_procs_ram,
+        "tr": top_procs_ram,
+        
+        # Media
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
-        "play": media.get("play", False),
-        "cover_b64": media.get("cover_b64", ""),
+        "mp": media.get("play", False),
+        "cov": media.get("cover_b64", ""),
     }
-    if payload["nd"] == 0 and payload["nu"] == 0:
-        payload["nd"] = net[1]
-        payload["nu"] = net[0]
+    
     return payload
 
 
@@ -495,6 +629,7 @@ def build_payload(
 # ============================================================================
 
 async def handle_client(reader, writer):
+    """Handle TCP client connection. Receives screen change commands."""
     addr = writer.get_extra_info("peername")
     log_info(f"Client connected: {addr}")
     tcp_clients.append(writer)
@@ -543,8 +678,17 @@ async def handle_client(reader, writer):
 # ============================================================================
 
 async def run():
-    global executor, last_track_key, top_procs_cache, top_procs_ram_cache, last_top_procs_time
-    executor = ThreadPoolExecutor(max_workers=4)
+    """
+    Main async loop. Architecture:
+    - LHM polling runs in ThreadPoolExecutor (non-blocking)
+    - Weather API runs in ThreadPoolExecutor (non-blocking)
+    - Ping runs in ThreadPoolExecutor (non-blocking)
+    - TCP stream is never blocked
+    """
+    global executor, last_track_key, top_procs_cache, top_procs_ram_cache
+    global last_top_procs_time, ping_latency_ms
+    
+    executor = ThreadPoolExecutor(max_workers=6)
 
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
 
@@ -566,11 +710,14 @@ async def run():
         "top_procs_ram": [],
         "net": (0, 0),
         "disk": (0, 0),
+        "ping": 0,
     }
     last_lhm_time = 0.0
     last_weather_time = 0.0
+    last_ping_time = 0.0
     LHM_INTERVAL = 0.9
     WEATHER_INTERVAL_F = float(WEATHER_UPDATE_INTERVAL)
+    PING_INTERVAL = 5.0  # Ping every 5 seconds
 
     while not stop_requested:
         now = time.time()
@@ -597,6 +744,13 @@ async def run():
             last_weather_time = now
             cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
 
+        # Ping in executor (5 sec interval)
+        if now - last_ping_time >= PING_INTERVAL:
+            last_ping_time = now
+            ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
+            cache["ping"] = ping_latency_ms
+
+        # Media info (async, non-blocking)
         cache["media"] = await get_media_info()
 
         track_key = f"{cache['media'].get('art', '')}|{cache['media'].get('trk', '')}"
@@ -604,6 +758,7 @@ async def run():
             log_info("Track changed.")
         last_track_key = track_key
 
+        # Send to all connected clients
         dead = []
         for writer in list(tcp_clients):
             screen = client_screens.get(writer, 0)
@@ -615,7 +770,7 @@ async def run():
                 top_procs_ram=cache["top_procs_ram"],
                 net=cache["net"],
                 disk=cache["disk"],
-                screen=screen,
+                ping_ms=cache["ping"],
             )
             try:
                 writer.write((json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8"))
@@ -657,9 +812,10 @@ def _make_tray_icon_image():
         return None
     try:
         from PIL import ImageDraw
-        img = Image.new("RGBA", (32, 32), (30, 30, 40, 255))
+        img = Image.new("RGBA", (32, 32), (10, 10, 20, 255))
         draw = ImageDraw.Draw(img)
-        draw.ellipse((4, 4, 28, 28), fill=(80, 140, 220), outline=(200, 200, 220))
+        # Cyberpunk cyan accent
+        draw.ellipse((4, 4, 28, 28), fill=(0, 255, 255), outline=(255, 255, 255))
         return img
     except Exception:
         return None
@@ -697,7 +853,7 @@ def _start_tray():
         MenuItem("Remove from Autostart", on_remove_autostart),
         MenuItem("Exit", on_quit, default=True),
     )
-    icon = pystray.Icon("heltec", img, "Heltec Monitor v3.0", menu=menu)
+    icon = pystray.Icon("heltec", img, "Heltec Monitor v6.0 [NEURAL LINK]", menu=menu)
     import threading
     t = threading.Thread(target=_run_tray_thread, args=(icon,), daemon=True)
     t.start()
@@ -771,8 +927,10 @@ def _remove_from_autostart() -> bool:
 # ============================================================================
 
 if __name__ == "__main__":
-    log_info("Heltec PC Monitor Server v3.0 — Cyberpunk/Tech-Deck")
-    log_info("=" * 50)
+    log_info("=" * 60)
+    log_info("Heltec PC Monitor Server v6.0 [NEURAL LINK]")
+    log_info("Cyberpunk Cyberdeck Edition")
+    log_info("=" * 60)
 
     if sys.platform == "win32" and not getattr(sys, "frozen", False) and not _is_in_autostart():
         try:
