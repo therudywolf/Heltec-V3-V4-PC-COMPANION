@@ -455,7 +455,7 @@ async def get_media_info() -> Dict:
             and playback.playback_status == 4  # Playing status
         )
         
-        # Get album cover
+        # Get album cover — read full thumbnail stream (Windows can return large JPEG/PNG)
         cover_b64 = ""
         if HAS_PIL and info:
             try:
@@ -463,29 +463,33 @@ async def get_media_info() -> Dict:
                 if thumb_ref:
                     thumb_stream = await thumb_ref.open_read_async()
                     if thumb_stream:
-                        buf = Buffer(COVER_BYTES * 20)  # Larger buffer for image data
-                        await thumb_stream.read_async(buf, buf.capacity, InputStreamOptions.READ_AHEAD)
-                        
-                        img_bytes = bytes(buf)
-                        img = Image.open(io.BytesIO(img_bytes))
-                        
-                        # Convert to 48x48 monochrome bitmap
-                        img = img.convert("L").resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
-                        threshold = 128
-                        img = img.point(lambda p: 255 if p > threshold else 0, mode="1")
-                        
-                        # Convert to XBM format (1 bit per pixel)
-                        bitmap = []
-                        for y in range(COVER_SIZE):
-                            for x in range(0, COVER_SIZE, 8):
-                                byte = 0
-                                for bit in range(8):
-                                    if img.getpixel((x + bit, y)):
-                                        byte |= (1 << bit)
-                                bitmap.append(byte)
-                                
-                        cover_b64 = base64.b64encode(bytes(bitmap)).decode("ascii")
-                        
+                        # Read entire stream in chunks (thumbnail can be 50–200 KB)
+                        chunk_size = 32768
+                        chunks = []
+                        while True:
+                            buf = Buffer(chunk_size)
+                            n = await thumb_stream.read_async(buf, chunk_size, InputStreamOptions.READ_AHEAD)
+                            if n == 0:
+                                break
+                            chunks.append(bytes(buf)[:n])
+                        img_bytes = b"".join(chunks)
+                        if not img_bytes:
+                            pass
+                        else:
+                            img = Image.open(io.BytesIO(img_bytes))
+                            # Convert to 48x48 monochrome bitmap (XBM: 1 bit per pixel)
+                            img = img.convert("L").resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
+                            threshold = 128
+                            img = img.point(lambda p: 255 if p > threshold else 0, mode="1")
+                            bitmap = []
+                            for y in range(COVER_SIZE):
+                                for x in range(0, COVER_SIZE, 8):
+                                    byte = 0
+                                    for bit in range(8):
+                                        if img.getpixel((x + bit, y)):
+                                            byte |= (1 << bit)
+                                    bitmap.append(byte)
+                            cover_b64 = base64.b64encode(bytes(bitmap)).decode("ascii")
             except Exception:
                 cover_b64 = ""
                 

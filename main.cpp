@@ -55,7 +55,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 #define FONT_SMALL u8g2_font_5x8_tf          // Small text
 #define FONT_TINY u8g2_font_4x6_tf           // Tiny (C1-C6 labels)
 #define FONT_LARGE u8g2_font_9x15B_tf        // Large numbers
-#define FONT_MEDIA u8g2_font_cu12_t_cyrillic // Cyrillic support
+#define FONT_MEDIA u8g2_font_7x13_t_cyrillic // Readable Latin + Cyrillic (7x13)
 
 // ============================================================================
 // GLOBAL DATA STRUCTURES
@@ -584,38 +584,30 @@ void drawDisksScreen() {
 void drawPlayerScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "MEDIA");
 
-  // Frame always drawn; cover inside when available
+  // Cover frame; draw bitmap when available
   u8g2.drawRFrame(4, MARGIN + 8, 48, 48, 3);
   if (media.hasCover) {
     u8g2.drawXBM(4, MARGIN + 8, 48, 48, media.coverBitmap);
   } else {
     u8g2.setFont(FONT_SMALL);
-    u8g2.drawStr(15, MARGIN + 34, "No");
-    u8g2.drawStr(10, MARGIN + 44, "Cover");
+    u8g2.drawStr(12, MARGIN + 32, "No");
+    u8g2.drawStr(8, MARGIN + 44, "Cover");
   }
 
-  // Artist and track info
+  // Artist and track — always use readable 7x13 Cyrillic font
   int textX = 56;
   int textW = DISP_W - textX - 4;
-
-  const uint8_t *fontArtist =
-      isOnlyAscii(media.artist) ? FONT_SMALL : FONT_MEDIA;
-  const uint8_t *fontTrack = isOnlyAscii(media.track) ? FONT_SMALL : FONT_MEDIA;
-
-  // Artist
-  int y = MARGIN + 18;
-  drawScrollingText(textX, y, textW, media.artist, fontArtist);
-
-  // Track
-  y += 10;
-  drawScrollingText(textX, y, textW, media.track, fontTrack);
-
-  // Playing status
+  int y = MARGIN + 16;
+  u8g2.setFont(FONT_MEDIA);
+  drawScrollingText(textX, y, textW, media.artist, FONT_MEDIA);
+  y += 12;
+  drawScrollingText(textX, y, textW, media.track, FONT_MEDIA);
   y += 14;
+  u8g2.setFont(FONT_SMALL);
   if (media.isPlaying) {
-    u8g2.drawStr(textX, y, "♪ Playing");
+    u8g2.drawStr(textX, y, "Playing");
   } else {
-    u8g2.drawStr(textX, y, "|| Paused");
+    u8g2.drawStr(textX, y, "Paused");
   }
 }
 
@@ -851,60 +843,62 @@ String _weatherDescFromCode(int code) {
 }
 
 void drawMenu() {
-  // Semi-transparent overlay
+  // Overlay: all items must fit in DISP_H (64px)
   u8g2.setDrawColor(0);
-  u8g2.drawBox(10, 10, DISP_W - 20, DISP_H - 20);
+  u8g2.drawBox(8, 6, DISP_W - 16, DISP_H - 12);
   u8g2.setDrawColor(1);
-  u8g2.drawRFrame(10, 10, DISP_W - 20, DISP_H - 20, 3);
+  u8g2.drawRFrame(8, 6, DISP_W - 16, DISP_H - 12, 2);
 
-  u8g2.setFont(FONT_SMALL);
-  u8g2.drawStr(16, 20, "SETTINGS");
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(12, 12, "SETTINGS");
 
-  int y = 30;
-  const char *items[] = {"LED",      "Carousel", "Contrast", "Interval",
-                         "EQ Style", "Display",  "Exit"};
+  const char *labels[] = {"LED", "Carousel", "Contrast", "Interval",
+                          "EQ",  "Display",  "Exit"};
+  const int lineH = 6;
+  const int startY = 14; // 7 items * 6px = 42, 14+42=56, fits in 64
 
   for (int i = 0; i < MENU_ITEMS; i++) {
+    int y = startY + i * lineH;
+    if (y + 6 > DISP_H - 5)
+      break;
+
     if (i == menuItem) {
-      u8g2.drawBox(14, y - 7, DISP_W - 28, 9);
+      u8g2.drawBox(10, y - 5, DISP_W - 20, lineH);
       u8g2.setDrawColor(0);
     }
 
-    char buf[30];
-    strcpy(buf, items[i]);
-    strcat(buf, ": ");
-
-    if (i == 0)
-      strcat(buf, settings.ledEnabled ? "ON" : "OFF");
-    else if (i == 1)
-      strcat(buf, settings.carouselEnabled ? "ON" : "OFF");
-    else if (i == 2) {
-      char tmp[10];
-      snprintf(tmp, sizeof(tmp), "%d", settings.displayContrast);
-      strcat(buf, tmp);
-    } else if (i == 3) {
-      char tmp[10];
-      snprintf(tmp, sizeof(tmp), "%ds", settings.carouselIntervalSec);
-      strcat(buf, tmp);
-    } else if (i == 4) {
-      const char *styles[] = {"Bars", "Wave", "Circle"};
-      strcat(buf, styles[settings.eqStyle % 3]);
-    } else if (i == 5)
-      strcat(buf, settings.displayInverted ? "180" : "0");
-    else if (i == 6)
+    char buf[28];
+    if (i == 6) {
       strcpy(buf, "> Exit");
-
-    u8g2.drawStr(16, y, buf);
-
-    if (i == menuItem) {
-      u8g2.setDrawColor(1);
+    } else {
+      snprintf(buf, sizeof(buf), "%s:", labels[i]);
+      if (i == 0)
+        strcat(buf, settings.ledEnabled ? " ON" : " OFF");
+      else if (i == 1)
+        strcat(buf, settings.carouselEnabled ? " ON" : " OFF");
+      else if (i == 2) {
+        char t[8];
+        snprintf(t, sizeof(t), " %d", settings.displayContrast);
+        strcat(buf, t);
+      } else if (i == 3) {
+        char t[8];
+        snprintf(t, sizeof(t), " %ds", settings.carouselIntervalSec);
+        strcat(buf, t);
+      } else if (i == 4) {
+        const char *s[] = {" Bars", " Wave", " Circle"};
+        strcat(buf, s[settings.eqStyle % 3]);
+      } else if (i == 5)
+        strcat(buf, settings.displayInverted ? " 180" : " 0");
     }
 
-    y += 9;
+    u8g2.drawStr(12, y, buf);
+
+    if (i == menuItem)
+      u8g2.setDrawColor(1);
   }
 
-  u8g2.setFont(FONT_SMALL);
-  u8g2.drawStr(14, DISP_H - 12, "Hold: Select");
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(12, DISP_H - 4, "Hold=Select");
 }
 
 // ============================================================================
@@ -1109,7 +1103,7 @@ void loop() {
                 }
               }
 
-              // Media (artist, track, cover) only in full payload
+              // Media (artist, track, cover) inside full payload
               const char *art = doc["art"];
               const char *trk = doc["trk"];
               media.artist = String(art ? art : "No Data");
@@ -1124,8 +1118,22 @@ void loop() {
                   int n = b64Decode(cov, covLen, media.coverBitmap, 288);
                   if (n == 288)
                     media.hasCover = true;
-                  // on decode failure (n != 288) do not change hasCover
                 }
+              }
+            } else {
+              // Partial payload: still update media/cover when present (e.g.
+              // media-only packet)
+              const char *art = doc["art"];
+              const char *trk = doc["trk"];
+              if (art)
+                media.artist = String(art);
+              if (trk)
+                media.track = String(trk);
+              const char *cov = doc["cover_b64"];
+              if (cov && strlen(cov) > 0 && strlen(cov) <= 600) {
+                int n = b64Decode(cov, strlen(cov), media.coverBitmap, 288);
+                if (n == 288)
+                  media.hasCover = true;
               }
             }
           }
