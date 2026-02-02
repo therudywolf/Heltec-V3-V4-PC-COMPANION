@@ -38,22 +38,29 @@ TRANSPORT = os.getenv("TRANSPORT", "serial").lower()  # serial, tcp, both
 
 # Карта сенсоров (ID из LibHardwareMonitor)
 TARGETS = {
-    "ct": "/amdcpu/0/temperature/2",      # CPU Temp
-    "gt": "/gpu-nvidia/0/temperature/0",  # GPU Temp
+    "ct": "/amdcpu/0/temperature/2",       # CPU Temp
+    "gt": "/gpu-nvidia/0/temperature/0",     # GPU Core
+    "gth": "/gpu-nvidia/0/temperature/2",   # GPU Hot Spot
     "vt": "/lpc/it8688e/0/temperature/4", # VRM MOS
-    "p":  "/lpc/it8688e/0/fan/0",         # Pump
-    "r":  "/lpc/it8688e/0/fan/1",         # Rad
-    "c":  "/lpc/it8688e/0/fan/2",         # Case
-    "gf": "/gpu-nvidia/0/fan/1",         # GPU Fan
-    "gck": "/gpu-nvidia/0/clock/0",       # GPU Clock
-    "ram_u": "/ram/data/0",               # RAM Used
-    "ram_a": "/ram/data/1",               # RAM Avail
-    "vram_u": "/gpu-nvidia/0/smalldata/1",# VRAM Used
-    "vram_t": "/gpu-nvidia/0/smalldata/2",# VRAM Total
-    # Ядра 5600X
+    "cpu_load": "/amdcpu/0/load/0",        # CPU Total %
+    "cpu_pwr": "/amdcpu/0/power/0",        # CPU Package W
+    "gpu_load": "/gpu-nvidia/0/load/0",    # GPU Core %
+    "gpu_pwr": "/gpu-nvidia/0/power/0",    # GPU Package W
+    "p": "/lpc/it8688e/0/fan/0",           # Pump
+    "r": "/lpc/it8688e/0/fan/1",           # Rad
+    "c": "/lpc/it8688e/0/fan/2",           # Case
+    "gf": "/gpu-nvidia/0/fan/1",           # GPU Fan
+    "gck": "/gpu-nvidia/0/clock/0",        # GPU Clock
+    "ram_u": "/ram/data/0",                # RAM Used
+    "ram_a": "/ram/data/1",                # RAM Avail
+    "ram_pct": "/ram/load/0",              # RAM %
+    "vram_u": "/gpu-nvidia/0/smalldata/1", # VRAM Used
+    "vram_t": "/gpu-nvidia/0/smalldata/2", # VRAM Total
+    "vcore": "/lpc/it8688e/0/voltage/0",  # Vcore
     "c1": "/amdcpu/0/clock/3", "c2": "/amdcpu/0/clock/5",
     "c3": "/amdcpu/0/clock/7", "c4": "/amdcpu/0/clock/9",
-    "c5": "/amdcpu/0/clock/11", "c6": "/amdcpu/0/clock/13"
+    "c5": "/amdcpu/0/clock/11", "c6": "/amdcpu/0/clock/13",
+    "nvme2_t": "/nvme/2/temperature/0",   # NVMe temp (opt)
 }
 
 def clean_val(v):
@@ -142,7 +149,12 @@ def build_payload(hw, media, hw_ok, include_cover=True):
         "hw_ok": 1 if hw_ok else 0,
         "ct": int(hw.get("ct", 0)),
         "gt": int(hw.get("gt", 0)),
+        "gth": int(hw.get("gth", 0)),
         "vt": int(hw.get("vt", 0)),
+        "cpu_load": int(hw.get("cpu_load", 0)),
+        "cpu_pwr": round(hw.get("cpu_pwr", 0), 1),
+        "gpu_load": int(hw.get("gpu_load", 0)),
+        "gpu_pwr": round(hw.get("gpu_pwr", 0), 1),
         "p": int(hw.get("p", 0)),
         "r": int(hw.get("r", 0)),
         "c": int(hw.get("c", 0)),
@@ -153,8 +165,11 @@ def build_payload(hw, media, hw_ok, include_cover=True):
         "c5": int(hw.get("c5", 0)), "c6": int(hw.get("c6", 0)),
         "ru": round(hw.get("ram_u", 0), 1),
         "rt": round(hw.get("ram_u", 0) + hw.get("ram_a", 0), 1),
+        "rp": int(hw.get("ram_pct", 0)),
         "vu": round(hw.get("vram_u", 0) / 1024, 1),
         "vt_tot": round(hw.get("vram_t", 0) / 1024, 1),
+        "vcore": round(hw.get("vcore", 0), 2),
+        "nvme2_t": int(hw.get("nvme2_t", 0)),
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", 0),
@@ -175,9 +190,11 @@ async def run_serial(ser, cache, send_fn):
     else:
         hw = dict(cache)
         if not hw:
-            hw = {"ct": 0, "gt": 0, "vt": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
+            hw = {"ct": 0, "gt": 0, "gth": 0, "vt": 0, "cpu_load": 0, "cpu_pwr": 0,
+                  "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
                   "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
-                  "ram_u": 0, "ram_a": 0, "vram_u": 0, "vram_t": 0}
+                  "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
+                  "vcore": 0, "nvme2_t": 0}
         media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play")}
     payload = build_payload(hw, media, hw_ok)
     data_str = json.dumps(payload) + "\n"
@@ -296,9 +313,11 @@ async def run():
         else:
             hw = dict(cache)
             if not hw:
-                hw = {"ct": 0, "gt": 0, "vt": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
-                      "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
-                      "ram_u": 0, "ram_a": 0, "vram_u": 0, "vram_t": 0}
+                hw = {"ct": 0, "gt": 0, "gth": 0, "vt": 0, "cpu_load": 0, "cpu_pwr": 0,
+                  "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
+                  "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
+                  "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
+                  "vcore": 0, "nvme2_t": 0}
             media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
         track_key = (media.get("art", "") or "") + "|" + (media.get("trk", "") or "")
         now_sec = time.time()

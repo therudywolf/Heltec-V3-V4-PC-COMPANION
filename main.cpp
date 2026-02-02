@@ -27,12 +27,16 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 
 // --- GLOBAL DATA ---
 // Hardware
-int cpuTemp = 0, gpuTemp = 0, vrmTemp = 0;
+int cpuTemp = 0, gpuTemp = 0, gpuHotSpot = 0, vrmTemp = 0;
+int cpuLoad = 0, cpuPwr = 0, gpuLoad = 0, gpuPwr = 0;
 int fanPump = 0, fanRad = 0, fanCase = 0, fanGpu = 0;
 int gpuClk = 0;
 int cores[6] = {0};
+int ramPct = 0;
 float ramUsed = 0.0, ramTotal = 0.0;
 float vramUsed = 0.0, vramTotal = 0.0;
+float vcore = 0.0f;
+int nvme2Temp = 0;
 // Media
 String artist = "No Data";
 String track = "Waiting...";
@@ -47,8 +51,8 @@ bool ledEnabled = true;       // Настройка: Диод вкл/выкл
 bool carouselEnabled = false; // Настройка: Авто-смена экранов
 
 int currentScreen = 0;
-// 0=Main, 1=Cores, 2=GPU, 3=Mem, 4=Player, 5=Equalizer
-const int TOTAL_SCREENS = 6;
+// 0=Main, 1=Cores, 2=GPU, 3=Mem, 4=Player, 5=Equalizer, 6=Power
+const int TOTAL_SCREENS = 7;
 
 bool inMenu = false; // Мы в меню?
 int menuItem = 0;    // Пункт меню (0=LED, 1=Carousel, 2=Exit)
@@ -57,13 +61,24 @@ int menuItem = 0;    // Пункт меню (0=LED, 1=Carousel, 2=Exit)
 unsigned long btnPressTime = 0;
 bool btnHeld = false;
 bool menuHoldHandled = false; // один раз за удержание в меню
+bool wasInMenuOnPress =
+    false; // были в меню в момент нажатия (чтобы EXIT не открывал снова)
+unsigned long lastMenuActivity = 0; // для авто-закрытия меню через 5 мин
+const unsigned long MENU_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Timers
 unsigned long lastUpdate = 0;
 unsigned long lastCarousel = 0;
 unsigned long lastBlink = 0;
+unsigned long lastEqUpdate = 0;
 bool blinkState = false;
 const unsigned long SIGNAL_TIMEOUT_MS = 10000; // 10 sec
+const unsigned long EQ_UPDATE_MS = 80;
+
+// Equalizer: 16 bars, smooth interpolation
+const int EQ_BARS = 16;
+uint8_t eqHeights[EQ_BARS] = {0};
+uint8_t eqTargets[EQ_BARS] = {0};
 
 // WiFi / Serial source
 WiFiClient tcpClient;
@@ -76,67 +91,6 @@ void VextON() {
   pinMode(VEXT_PIN, OUTPUT);
   digitalWrite(VEXT_PIN, LOW);
   delay(100);
-}
-
-static int base64Decode(const char *in, uint8_t *outBuf, int outLen) {
-  static const char tbl[] =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  int inLen = 0;
-  while (in[inLen])
-    inLen++;
-  int outIdx = 0;
-  int i = 0;
-  while (i < inLen && outIdx < outLen) {
-    int v0 = -1, v1 = -1, v2 = -1, v3 = -1;
-    for (int k = 0; k < 64; k++) {
-      if (tbl[k] == in[i]) {
-        v0 = k;
-        break;
-      }
-    }
-    i++;
-    if (i >= inLen)
-      break;
-    for (int k = 0; k < 64; k++) {
-      if (tbl[k] == in[i]) {
-        v1 = k;
-        break;
-      }
-    }
-    i++;
-    if (v0 < 0 || v1 < 0)
-      continue;
-    outBuf[outIdx++] = (uint8_t)((v0 << 2) | (v1 >> 4));
-    if (outIdx >= outLen)
-      break;
-    if (i >= inLen || in[i] == '=')
-      break;
-    for (int k = 0; k < 64; k++) {
-      if (tbl[k] == in[i]) {
-        v2 = k;
-        break;
-      }
-    }
-    i++;
-    if (v2 < 0)
-      continue;
-    outBuf[outIdx++] = (uint8_t)((v1 << 4) | (v2 >> 2));
-    if (outIdx >= outLen)
-      break;
-    if (i >= inLen || in[i] == '=')
-      break;
-    for (int k = 0; k < 64; k++) {
-      if (tbl[k] == in[i]) {
-        v3 = k;
-        break;
-      }
-    }
-    i++;
-    if (v3 < 0)
-      continue;
-    outBuf[outIdx++] = (uint8_t)((v2 << 6) | v3);
-  }
-  return outIdx;
 }
 
 void setup() {
@@ -202,57 +156,141 @@ void drawBar(int x, int y, int w, int h, float val, float max) {
 
 // --- SCREENS ---
 
-// 1. HARDWARE SCREENS (Компактно)
+// --- SCREEN ZONES: header y=0..11, content below ---
+// 1. Main (сводка)
 void drawMain() {
-  u8g2.setFont(u8g2_font_helvB14_tr);
-  u8g2.setCursor(0, 20);
+  u8g2.setFont(u8g2_font_helvB10_tr);
+  u8g2.setCursor(0, 10);
   u8g2.print("CPU:");
   u8g2.print(cpuTemp);
   u8g2.print((char)0xB0);
-  u8g2.print("C");
-  u8g2.setCursor(64, 20);
-  u8g2.print("GPU:");
+  u8g2.print(" GPU:");
   u8g2.print(gpuTemp);
   u8g2.print((char)0xB0);
-  u8g2.print("C");
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.setCursor(0, 35);
+  u8g2.setCursor(0, 22);
   u8g2.print("RAM:");
   u8g2.print(ramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)ramTotal);
-  u8g2.print("G");
-  u8g2.setCursor(0, 45);
+  u8g2.print("G ");
+  u8g2.print(ramPct);
+  u8g2.print("%");
+  u8g2.setCursor(0, 33);
   u8g2.print("VRAM:");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print("G");
+  u8g2.setCursor(0, 44);
+  u8g2.print("Load CPU:");
+  u8g2.print(cpuLoad);
+  u8g2.print("% GPU:");
+  u8g2.print(gpuLoad);
+  u8g2.print("%");
   if (cpuTemp > 80 && blinkState)
     u8g2.drawBox(0, 0, 128, 64);
 }
 
+// Cores: зона заголовка y=0..11, столбики y=12..63
+void drawCores() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "CORES");
+  const int barTop = 14;
+  const int barH = 48;
+  for (int i = 0; i < 6; i++) {
+    int h = map(cores[i], 3000, 4850, 2, barH);
+    if (h < 0)
+      h = 0;
+    if (h > barH)
+      h = barH;
+    int x = i * 20 + 4;
+    u8g2.drawBox(x, barTop + barH - h, 15, h);
+  }
+}
+
+// GPU: заголовок, частота, VRAM bar, вентилятор, нагрузка, мощность
+void drawGpu() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "GPU");
+  u8g2.setCursor(0, 22);
+  u8g2.print(gpuClk);
+  u8g2.print(" MHz ");
+  u8g2.print(gpuLoad);
+  u8g2.print("% ");
+  u8g2.print(gpuPwr);
+  u8g2.print("W");
+  drawBar(0, 26, 128, 8, vramUsed, vramTotal > 0 ? vramTotal : 1);
+  u8g2.setCursor(0, 42);
+  u8g2.print("Fan:");
+  u8g2.print(fanGpu);
+  u8g2.print(" Hot:");
+  u8g2.print(gpuHotSpot);
+  u8g2.print((char)0xB0);
+}
+
+// Memory: RAM и VRAM (used/total, %)
+void drawMemory() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "MEMORY");
+  u8g2.setCursor(0, 24);
+  u8g2.print("RAM ");
+  u8g2.print(ramUsed, 1);
+  u8g2.print("/");
+  u8g2.print((int)ramTotal);
+  u8g2.print("G ");
+  u8g2.print(ramPct);
+  u8g2.print("%");
+  drawBar(0, 28, 128, 6, ramUsed, ramTotal > 0 ? ramTotal : 1);
+  u8g2.setCursor(0, 42);
+  u8g2.print("VRAM ");
+  u8g2.print(vramUsed, 1);
+  u8g2.print("/");
+  u8g2.print((int)vramTotal);
+  u8g2.print("G");
+  drawBar(0, 46, 128, 6, vramUsed, vramTotal > 0 ? vramTotal : 1);
+}
+
+// Power: Vcore, CPU W, GPU W, NVMe temp
+void drawPower() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "POWER");
+  u8g2.setCursor(0, 24);
+  u8g2.print("Vcore ");
+  u8g2.print(vcore, 2);
+  u8g2.print("V");
+  u8g2.setCursor(0, 36);
+  u8g2.print("CPU ");
+  u8g2.print(cpuPwr);
+  u8g2.print("W  GPU ");
+  u8g2.print(gpuPwr);
+  u8g2.print("W");
+  u8g2.setCursor(0, 50);
+  u8g2.print("NVMe ");
+  u8g2.print(nvme2Temp);
+  u8g2.print((char)0xB0);
+  u8g2.print("C");
+}
+
+// Equalizer: заголовок y=0..11, столбики y=12..63 (без пиков поверх)
 void drawEqualizer() {
-  u8g2.setFont(u8g2_font_profont12_tr);
-  u8g2.drawStr(2, 8, "VISUALIZER");
-  if (isPlaying)
-    u8g2.drawStr(80, 8, "[PLAY]");
-  else
-    u8g2.drawStr(80, 8, "[PAUSE]");
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.setCursor(0, 10);
+  u8g2.print("VISUALIZER ");
+  u8g2.print(isPlaying ? "[PLAY]" : "[PAUSE]");
 
-  int bars = 16;
-  int w = 6;
-  int gap = 2;
+  const int barTopY = 12;
+  const int barZoneH = 52;
+  const int barW = 6;
+  const int barGap = 2;
 
-  for (int i = 0; i < bars; i++) {
-    int h = 2;
-    if (isPlaying) {
-      // Симуляция эквалайзера (шум Перлина был бы лучше, но рандом тоже сойдет)
-      h = random(4, 50);
-    }
-    int x = i * (w + gap);
-    u8g2.drawBox(x, 64 - h, w, h);
-    u8g2.drawBox(x, 64 - h - 2, w, 1); // Пик
+  for (int i = 0; i < EQ_BARS; i++) {
+    int h = eqHeights[i];
+    if (h > barZoneH)
+      h = barZoneH;
+    int x = i * (barW + barGap);
+    int y = barTopY + barZoneH - h;
+    u8g2.drawBox(x, y, barW, h);
   }
 }
 
@@ -346,7 +384,7 @@ void loop() {
         tcpLineBuffer = "";
         break;
       }
-      if (tcpLineBuffer.length() < 2048)
+      if (tcpLineBuffer.length() < 4096)
         tcpLineBuffer += c;
       else
         tcpLineBuffer = "";
@@ -357,14 +395,19 @@ void loop() {
       input = Serial.readStringUntil('\n');
   }
 
-  if (input.length() > 0 && input.length() < 2048) {
-    JsonDocument doc;
+  if (input.length() > 0 && input.length() < 4096) {
+    StaticJsonDocument<3600> doc;
     DeserializationError error = deserializeJson(doc, input);
     if (!error) {
       int hwOk = doc["hw_ok"] | 1;
       cpuTemp = doc["ct"];
       gpuTemp = doc["gt"];
+      gpuHotSpot = doc["gth"];
       vrmTemp = doc["vt"];
+      cpuLoad = doc["cpu_load"];
+      cpuPwr = (int)(float(doc["cpu_pwr"]) + 0.5f);
+      gpuLoad = doc["gpu_load"];
+      gpuPwr = (int)(float(doc["gpu_pwr"]) + 0.5f);
       fanPump = doc["p"];
       fanRad = doc["r"];
       fanCase = doc["c"];
@@ -380,8 +423,11 @@ void loop() {
 
       ramUsed = doc["ru"];
       ramTotal = doc["rt"];
+      ramPct = doc["rp"];
       vramUsed = doc["vu"];
       vramTotal = doc["vt_tot"];
+      vcore = doc["vcore"];
+      nvme2Temp = doc["nvme2_t"];
 
       const char *art = doc["art"];
       const char *trk = doc["trk"];
@@ -391,9 +437,14 @@ void loop() {
       isPlaying = (p == 1);
 
       const char *cov = doc["cover_b64"];
-      if (cov && strlen(cov) > 0) {
-        int n = base64Decode(cov, coverBitmap, COVER_BYTES);
-        hasCover = (n == COVER_BYTES);
+      if (cov) {
+        size_t covLen = strlen(cov);
+        if (covLen > 0 && covLen <= 512) {
+          int n = b64Decode(cov, covLen, coverBitmap, COVER_BYTES);
+          hasCover = (n == (int)COVER_BYTES);
+        } else {
+          hasCover = false;
+        }
       } else {
         hasCover = false;
       }
@@ -409,6 +460,7 @@ void loop() {
     btnHeld = true;
     btnPressTime = now;
     menuHoldHandled = false;
+    wasInMenuOnPress = inMenu;
   }
 
   if (btnState == HIGH && btnHeld) {
@@ -417,16 +469,17 @@ void loop() {
     btnHeld = false;
 
     if (duration > 800) {
-      // --- LONG PRESS: открыть меню только если мы НЕ в меню (в меню не
-      // закрываем при отпускании) ---
-      if (!inMenu) {
+      // --- LONG PRESS: открыть меню только если при нажатии мы НЕ были в меню
+      // ---
+      if (!wasInMenuOnPress) {
         inMenu = true;
         menuItem = 0;
+        lastMenuActivity = now;
       }
     } else {
       // --- SHORT PRESS ---
       if (inMenu) {
-        // Menu Navigation (Scroll down)
+        lastMenuActivity = now;
         menuItem++;
         if (menuItem > 2)
           menuItem = 0;
@@ -448,8 +501,8 @@ void loop() {
 
   if (inMenu && btnState == LOW && (now - btnPressTime > 800) &&
       !menuHoldHandled) {
-    // Долгое удержание в меню — переключить значение (один раз за удержание)
     menuHoldHandled = true;
+    lastMenuActivity = now;
     if (menuItem == 0) {
       ledEnabled = !ledEnabled;
       Preferences p;
@@ -468,7 +521,12 @@ void loop() {
       inMenu = false;
   }
 
-  // --- 3. CAROUSEL LOGIC ---
+  // --- 3. MENU AUTO-CLOSE (5 min) ---
+  if (inMenu && (now - lastMenuActivity > MENU_TIMEOUT_MS)) {
+    inMenu = false;
+  }
+
+  // --- 4. CAROUSEL LOGIC ---
   if (carouselEnabled && !inMenu) {
     if (now - lastCarousel > 4000) { // 4 sec per screen
       currentScreen++;
@@ -478,7 +536,28 @@ void loop() {
     }
   }
 
-  // --- 4. ALARM LOGIC ---
+  // --- 5. EQUALIZER ANIMATION (smooth interpolation) ---
+  if (now - lastEqUpdate >= EQ_UPDATE_MS) {
+    lastEqUpdate = now;
+    if (isPlaying) {
+      for (int i = 0; i < EQ_BARS; i++) {
+        if (random(0, 4) == 0) // occasionally pick new target
+          eqTargets[i] = (uint8_t)random(4, 48);
+        if (eqHeights[i] < eqTargets[i] && eqHeights[i] < 52)
+          eqHeights[i]++;
+        else if (eqHeights[i] > eqTargets[i] && eqHeights[i] > 0)
+          eqHeights[i]--;
+      }
+    } else {
+      for (int i = 0; i < EQ_BARS; i++) {
+        eqTargets[i] = 0;
+        if (eqHeights[i] > 0)
+          eqHeights[i]--;
+      }
+    }
+  }
+
+  // --- 6. ALARM LOGIC ---
   if (now - lastBlink > 500) {
     blinkState = !blinkState;
     lastBlink = now;
@@ -491,95 +570,58 @@ void loop() {
   else
     digitalWrite(LED_PIN, LOW);
 
-  // --- 5. DRAWING ---
+  // --- 7. DRAWING ---
   u8g2.clearBuffer();
   bool signalLost = (now - lastUpdate > SIGNAL_TIMEOUT_MS);
 
   if (signalLost) {
-    // Показываем последние метрики + надпись в углу
     switch (currentScreen) {
     case 0:
       drawMain();
       break;
     case 1:
-      u8g2.setFont(u8g2_font_micro_tr);
-      u8g2.drawStr(0, 10, "CORES");
-      for (int i = 0; i < 6; i++) {
-        int h = map(cores[i], 3000, 4850, 2, 40);
-        u8g2.drawBox(i * 20 + 5, 60 - h, 15, h);
-      }
+      drawCores();
       break;
     case 2:
-      u8g2.setFont(u8g2_font_helvB10_tr);
-      u8g2.setCursor(0, 20);
-      u8g2.print("GPU: ");
-      u8g2.print(gpuClk);
-      u8g2.print(" MHz");
-      drawBar(0, 30, 128, 10, vramUsed, vramTotal);
-      u8g2.setCursor(0, 55);
-      u8g2.print("FAN: ");
-      u8g2.print(fanGpu);
+      drawGpu();
       break;
     case 3:
-      u8g2.setFont(u8g2_font_helvB14_tr);
-      u8g2.setCursor(0, 25);
-      u8g2.print("RAM: ");
-      u8g2.print(ramUsed, 1);
-      u8g2.setCursor(0, 55);
-      u8g2.print("VID: ");
-      u8g2.print(vramUsed, 1);
+      drawMemory();
       break;
     case 4:
       drawPlayer();
       break;
     case 5:
       drawEqualizer();
+      break;
+    case 6:
+      drawPower();
       break;
     }
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.drawStr(70, 8, "Reconnect");
   } else {
-    // Normal Drawing
     switch (currentScreen) {
     case 0:
       drawMain();
       break;
     case 1:
-      // CPU Cores (Old code simplified)
-      u8g2.setFont(u8g2_font_micro_tr);
-      u8g2.drawStr(0, 10, "CORES");
-      for (int i = 0; i < 6; i++) {
-        int h = map(cores[i], 3000, 4850, 2, 40);
-        u8g2.drawBox(i * 20 + 5, 60 - h, 15, h);
-      }
+      drawCores();
       break;
     case 2:
-      // GPU Details
-      u8g2.setFont(u8g2_font_helvB10_tr);
-      u8g2.setCursor(0, 20);
-      u8g2.print("GPU: ");
-      u8g2.print(gpuClk);
-      u8g2.print(" MHz");
-      drawBar(0, 30, 128, 10, vramUsed, vramTotal);
-      u8g2.setCursor(0, 55);
-      u8g2.print("FAN: ");
-      u8g2.print(fanGpu);
+      drawGpu();
       break;
     case 3:
-      // Memory
-      u8g2.setFont(u8g2_font_helvB14_tr);
-      u8g2.setCursor(0, 25);
-      u8g2.print("RAM: ");
-      u8g2.print(ramUsed, 1);
-      u8g2.setCursor(0, 55);
-      u8g2.print("VID: ");
-      u8g2.print(vramUsed, 1);
+      drawMemory();
       break;
     case 4:
       drawPlayer();
       break;
     case 5:
       drawEqualizer();
+      break;
+    case 6:
+      drawPower();
       break;
     }
     u8g2.setFont(u8g2_font_6x10_tr);
