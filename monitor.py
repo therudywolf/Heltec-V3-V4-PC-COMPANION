@@ -231,17 +231,23 @@ def get_core_loads():
         return [0] * 6
 
 
+_CPU_TOP_EXCLUDE_NAMES = frozenset({"system idle process", "idle", "system"})
+
+
 def get_top_processes():
-    """Получить топ-3 процесса по CPU (interval для корректного расчёта %)"""
+    """Получить топ-3 процесса по CPU (interval для корректного расчёта %), без System Idle."""
     try:
         psutil.cpu_percent(interval=0.1)
         procs = []
         for p in psutil.process_iter(['name', 'cpu_percent']):
             try:
                 info = p.info
+                name_raw = (info.get('name') or '').strip()
+                if name_raw.lower() in _CPU_TOP_EXCLUDE_NAMES:
+                    continue
                 cpu = info.get('cpu_percent', 0.0)
                 if cpu and cpu > 0:
-                    name = info.get('name', '')[:12]
+                    name = name_raw[:12]
                     procs.append({"n": name, "c": int(cpu)})
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
@@ -252,18 +258,30 @@ def get_top_processes():
         return []
 
 
+_SYSTEM_PROCESS_NAMES = frozenset({
+    "system", "idle", "system idle process", "svchost.exe", "registry",
+    "csrss.exe", "wininit.exe", "services.exe", "lsass.exe", "winlogon.exe",
+    "dwm.exe", "font driver host.exe", "runtime broker.exe", "searchhost.exe",
+    "security health service.exe", "system interrupts", "memory compression",
+    "ntoskrnl.exe", "smss.exe", "conhost.exe", "sihost.exe",
+    "ctfmon.exe", "audiodg.exe", "dllhost.exe", "background task host.exe",
+})
+
 def get_top_processes_ram():
-    """Топ-2 процесса по ОЗУ (RSS в MB)."""
+    """Топ-2 процесса по ОЗУ (RSS в MB), только пользовательские (без системных)."""
     try:
         procs = []
         for p in psutil.process_iter(['name', 'memory_info']):
             try:
                 info = p.info
+                name_raw = (info.get('name') or '').strip()
+                if name_raw.lower() in _SYSTEM_PROCESS_NAMES:
+                    continue
                 mem = info.get('memory_info')
                 if mem is not None:
                     rss_mb = int(mem.rss / (1024 * 1024))
                     if rss_mb > 0:
-                        name = (info.get('name') or '')[:16]
+                        name = name_raw[:16]
                         procs.append({"n": name, "r": rss_mb})
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
