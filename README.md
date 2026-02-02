@@ -1,95 +1,116 @@
-# Heltec v4 — монитор ПК на дисплее
+# rudywolf · Heltec PC Monitor
 
-Метрики компьютера, плеер (Spotify, YouTube и др.) и эквалайзер на дисплее **Heltec WiFi Kit 32** (ESP32 + SSD1306 128×64). Данные с ПК по **Serial (USB)** или по **WiFi**.
+**Метрики ПК, плеер, погода и эквалайзер** на дисплее **Heltec WiFi Kit 32** (ESP32 + SSD1306 128×64). Данные с компьютера по **WiFi**.
 
 ---
 
-## Что это
+## Возможности
 
-- **monitor.py** — сервер на ПК: опрашивает [LibHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) и Windows Media (текущий трек), отправляет JSON по COM-порту и/или по TCP.
-- **main.cpp** — прошивка для Heltec: 6 экранов (сводка, ядра CPU, GPU, память, плеер с обложкой, эквалайзер), меню по долгому нажатию (LED, карусель), выбор источника: WiFi или Serial.
+| Экран         | Описание                                                       |
+| ------------- | -------------------------------------------------------------- |
+| **Main**      | CPU/GPU температура, RAM/VRAM, загрузка CPU и GPU              |
+| **Cores**     | Частоты 6 ядер CPU (столбики)                                  |
+| **GPU**       | Частота, VRAM bar, вентилятор, Hot Spot                        |
+| **Memory**    | RAM и VRAM (used/total, %) с прогресс-барами                   |
+| **Player**    | Обложка трека, исполнитель, название, прогресс воспроизведения |
+| **Equalizer** | Визуализация: Bars / Wave / Circle (переключение в меню)       |
+| **Power**     | Vcore, мощность CPU/GPU, температура NVMe                      |
+| **Weather**   | Погода в Москве (wttr.in), иконка и температура                |
+| **Top 3 CPU** | Топ-3 процесса по загрузке CPU                                 |
+| **Network**   | Скорость сети (↑/↓ KB/s), диски (R/W MB/s)                     |
 
-Подключение к репозиторию — все чувствительные данные в `.env` и `config_private.h`, в Git не попадают.
+**Меню** (долгое нажатие кнопки): LED, автосмена экранов, стиль эквалайзера, выход. Меню закрывается само через 5 минут бездействия.
 
 ---
 
 ## Требования
 
-**На ПК:**
+**На ПК (Windows):**
 
 - Python 3.10+
-- [LibHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) с веб-сервером на `http://localhost:8085` (или свой URL в `.env`)
+- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) с веб-сервером на `http://localhost:8085`
 - Зависимости: `pip install -r requirements.txt`
 
 **Плата:**
 
-- Heltec WiFi Kit 32 (или совместимая ESP32 + SSD1306 128×64)
-- Arduino/PlatformIO: ESP32, U8g2, ArduinoJson, WiFi
+- Heltec WiFi Kit 32 (или ESP32 + SSD1306 128×64)
+- Arduino IDE или PlatformIO: ESP32, U8g2, ArduinoJson, WiFi
 
 ---
 
-## Быстрый старт
+## Структура проекта
+
+```
+rudywolf/
+├── main.cpp                 # Прошивка для Heltec (дисплей, WiFi, меню)
+├── monitor.py               # Сервер на ПК: LHM, медиа, погода, топ процессов, TCP
+├── requirements.txt        # Зависимости Python
+├── .env.example             # Шаблон конфига ПК → скопировать в .env
+├── config_private.h.example # Шаблон WiFi для платы → скопировать в config_private.h
+├── run_monitor.bat          # Запуск монитора (с консолью)
+├── run_monitor.vbs          # Запуск монитора без окна
+├── build_exe.bat           # Сборка одного monitor.exe (PyInstaller)
+├── README.md               # Этот файл
+├── FIRST_START.md          # Пошаговый первый запуск
+└── AUTOSTART.md             # Автозапуск в Windows
+```
+
+**Не коммитить в Git:** `.env`, `config_private.h`, папки сборки и exe.
+
+---
+
+## Первый запуск
+
+**Подробный пошаговый гайд:** [FIRST_START.md](FIRST_START.md)
+
+Ниже — краткая инструкция.
 
 ### 1. Конфиг на ПК
 
 ```bash
-cp .env.example .env
-# Отредактируй .env: SERIAL_PORT (например COM6), LHM_URL, при WiFi — TCP_PORT, TRANSPORT=both
+copy .env.example .env
 ```
 
-### 2. Запуск сервера
+Отредактируй `.env`: `LHM_URL` (если LHM не на 8085), `TCP_PORT` (по умолчанию 8888), `PC_IP` — IP твоего ПК в сети (его укажешь в плату).
+
+### 2. Зависимости и запуск монитора
 
 ```bash
+pip install -r requirements.txt
 python monitor.py
 ```
 
-Или двойной клик по **run_monitor.bat** (с консолью) или **run_monitor.vbs** (без окна).  
-Один exe: `build_exe.bat` → `dist\monitor.exe`, положи рядом с `.env`.
+Должно появиться: `[*] TCP: 0.0.0.0:8888`. Монитор ждёт подключения платы.
 
-### 3. Плата (Serial)
+### 3. Плата: WiFi
 
-Подключи Heltec по USB, в `.env` укажи нужный `SERIAL_PORT`. Данные пойдут по проводу.
+1. Скопируй конфиг: `copy config_private.h.example config_private.h`
+2. Впиши в `config_private.h`: **WIFI_SSID**, **WIFI_PASS**, **PC_IP** (IP ПК, например `192.168.1.2`), **TCP_PORT** (8888).
+3. Собери и залей **main.cpp** в Heltec (Arduino/PlatformIO).
+4. Плата подключится к WiFi и к TCP-серверу на ПК — на дисплее появятся данные.
 
-### 4. Плата (WiFi)
+### 4. Управление на плате
 
-Скопируй и заполни конфиг WiFi:
+- **Короткое нажатие** — следующий экран (10 экранов по кругу).
+- **Долгое нажатие** — открыть меню. В меню: короткое — следующий пункт (LED → AUTO → EQ Style → EXIT), долгое на пункте — вкл/выкл или смена стиля эквалайзера / выход.
 
-```bash
-cp config_private.h.example config_private.h
-# Впиши в config_private.h: WIFI_SSID, WIFI_PASS, PC_IP (IP ПК, например 192.168.1.2), TCP_PORT (8888)
-```
-
-Собери и залей **main.cpp** в плату. На ПК запусти монитор с `TRANSPORT=tcp` или `TRANSPORT=both`. Плата сама выберет WiFi или Serial (если USB подключён).
+Настройки LED, карусели и стиля эквалайзера сохраняются в NVS.
 
 ---
 
 ## Автозапуск в Windows
 
-Ярлык на **run_monitor.vbs** или **monitor.exe** положи в папку «Автозагрузка» (Win+R → `shell:startup`).  
-Подробнее: [AUTOSTART.md](AUTOSTART.md).
+Ярлык на **run_monitor.vbs** или **monitor.exe** положи в папку автозагрузки (Win+R → `shell:startup`). Подробнее: [AUTOSTART.md](AUTOSTART.md).
 
 ---
 
-## Управление на плате
+## Сборка одного EXE
 
-- **Короткое нажатие** — следующий экран (сводка → ядра → GPU → память → плеер → эквалайзер).
-- **Долгое нажатие** — открыть/закрыть меню. В меню: короткое — переход по пунктам (LED → карусель → выход), долгое на пункте — вкл/выкл (LED, карусель) или выход.
+```bash
+build_exe.bat
+```
 
-Настройки LED и карусели сохраняются в NVS и переживают перезагрузку.
-
----
-
-## Файлы проекта
-
-| Файл                                  | Назначение                                                  |
-| ------------------------------------- | ----------------------------------------------------------- |
-| `monitor.py`                          | Сервер: LHM + медиа, отправка JSON (Serial/TCP)             |
-| `main.cpp`                            | Прошивка Heltec: дисплей, кнопка, WiFi/Serial               |
-| `.env.example`                        | Шаблон конфига ПК (скопировать в `.env`)                    |
-| `config_private.h.example`            | Шаблон WiFi/IP для платы (скопировать в `config_private.h`) |
-| `run_monitor.bat` / `run_monitor.vbs` | Запуск монитора с/без консоли                               |
-| `build_exe.bat`                       | Сборка одного exe (PyInstaller)                             |
-| `AUTOSTART.md`                        | Как добавить в автозапуск Windows                           |
+Готовый `dist\monitor.exe` положи в каталог с `.env` и при необходимости добавь в автозагрузку.
 
 ---
 
