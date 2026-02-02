@@ -223,6 +223,7 @@ void setup() {
   delay(50);
   Wire.begin(SDA_PIN, SCL_PIN);
   u8g2.begin();
+  u8g2.enableUTF8Print();
   u8g2.setContrast(255);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -295,6 +296,14 @@ void drawBar(int x, int y, int w, int h, float val, float max) {
   drawProgressBar(x, y, w, h, pct);
 }
 
+// Проверка: строка только ASCII (для выбора латинского шрифта в плейере)
+static bool isOnlyAscii(const String &s) {
+  for (unsigned int i = 0; i < s.length(); i++)
+    if ((unsigned char)s.charAt(i) > 127)
+      return false;
+  return true;
+}
+
 // Контент с верха экрана, отступы по краям
 const int CONTENT_TOP = 0;
 const int MARGIN = 2;
@@ -304,15 +313,21 @@ const int MARGIN = 2;
 // --- SPLASH ---
 void drawSplash() {
   if (splashPhase == 0) {
-    u8g2.setFont(u8g2_font_7x13B_tf);
-    u8g2.drawStr(36, 26, "Forest");
-    u8g2.drawStr(54, 48, "OS");
+    u8g2.setFont(FONT_TITLE);
+    const char *line1 = "Forest";
+    const char *line2 = "OS";
+    int w1 = u8g2.getStrWidth(line1);
+    int w2 = u8g2.getStrWidth(line2);
+    u8g2.drawStr((DISP_W - w1) / 2, 26, line1);
+    u8g2.drawStr((DISP_W - w2) / 2, 48, line2);
   } else if (splashPhase == 1) {
     u8g2.setFont(FONT_MAIN);
-    u8g2.drawStr(32, 10, "By RudyWolf");
-    u8g2.drawXBMP(52, 20, 24, 24, wolfFace);
+    const char *credits = "By Rudy Wolf";
+    int cw = u8g2.getStrWidth(credits);
+    u8g2.drawStr((DISP_W - cw) / 2, 12, credits);
+    u8g2.drawXBMP((DISP_W - 24) / 2, 20, 24, 24, wolfFace);
     u8g2.setFont(FONT_SMALL);
-    u8g2.drawStr(96, 8, "ONLINE");
+    u8g2.drawStr(DISP_W - 32, DISP_H - 10, "Online");
   } else {
     for (int i = 0; i < 80; i++)
       u8g2.drawPixel(random(0, DISP_W), random(0, DISP_H));
@@ -518,7 +533,7 @@ void drawWeather() {
     u8g2.setCursor(42, iconY + 10);
     u8g2.print(noData ? "--" : String(weatherTemp));
     u8g2.print((char)0xB0);
-    u8g2.setFont(FONT_SMALL);
+    u8g2.setFont(isOnlyAscii(weatherDesc) ? FONT_SMALL : FONT_MEDIA);
     u8g2.setCursor(42, iconY + 26);
     u8g2.print(noData ? "..." : weatherDesc.substring(0, 16));
     return;
@@ -566,7 +581,7 @@ void drawTopProcs() {
   bool any = false;
   for (int i = 0; i < 3; i++) {
     int y = MARGIN + 12 + i * rowH;
-    u8g2.setFont(FONT_MAIN);
+    u8g2.setFont(isOnlyAscii(procNames[i]) ? FONT_MAIN : FONT_MEDIA);
     u8g2.setCursor(MARGIN, y);
     if (procNames[i].length() > 0) {
       u8g2.print(procNames[i].substring(0, 18));
@@ -757,7 +772,9 @@ void drawPlayer() {
     u8g2.drawLine(MARGIN, coverY, MARGIN + COVER_SIZE, coverY + COVER_SIZE);
     u8g2.drawLine(MARGIN + COVER_SIZE, coverY, MARGIN, coverY + COVER_SIZE);
   }
-  u8g2.setFont(FONT_MEDIA);
+  bool artistAscii = isOnlyAscii(artist);
+  bool trackAscii = isOnlyAscii(track);
+  u8g2.setFont(artistAscii ? FONT_MAIN : FONT_MEDIA);
   const int maxArtistChars = 12;
   const int maxTrackChars = 14;
   int y1 = 10, y2 = 26;
@@ -772,7 +789,7 @@ void drawPlayer() {
     for (int i = 0; i < maxArtistChars; i++)
       u8g2.print(ext.charAt((off + i) % len));
   }
-  u8g2.setFont(FONT_SMALL);
+  u8g2.setFont(trackAscii ? FONT_MAIN : FONT_MEDIA);
   if (track.length() <= (unsigned)maxTrackChars) {
     u8g2.setCursor(xText, y2);
     u8g2.print(track.substring(0, maxTrackChars));
@@ -784,6 +801,7 @@ void drawPlayer() {
     for (int i = 0; i < maxTrackChars; i++)
       u8g2.print(ext.charAt((off + i) % len));
   }
+  u8g2.setFont(FONT_SMALL);
   int iconY = 36;
   if (isPlaying) {
     u8g2.drawTriangle(xText, iconY, xText, iconY + 8, xText + 6, iconY + 4);
