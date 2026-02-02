@@ -1,11 +1,10 @@
 /*
- * Heltec PC Monitor v2.0
- * Display firmware for Heltec WiFi LoRa 32 V3 (128x64 OLED).
- * Data source: TCP JSON from monitor.py (host PC). One line per update.
- * Screens (0-10): Main, Cores, CPU Details, GPU Details, Memory, Storage,
- *   Media, Cooling, Weather (3 subpages), Top CPU, Equalizer.
- * Controls: short press = next screen; long press = open/close menu;
- *   carousel (if enabled) auto-cycles screens.
+ * Heltec PC Monitor v3.0 — Cyber-Terminal
+ * Heltec WiFi LoRa 32 V3 (ESP32-S3) + SSD1306 128x64.
+ * Data: TCP JSON from monitor.py (2-char keys). Screens: SYS.OP, NET.IO,
+ * THERMAL, STORAGE, ATMOS, MEDIA. Anti-ghosting: drawMetric() clears
+ * value area before drawing. Fonts: 6x12 (data), micro (labels), haxrcorp
+ * (headers).
  */
 
 #include <Arduino.h>
@@ -17,7 +16,7 @@
 #include <Wire.h>
 
 // ============================================================================
-// CONFIGURATION — WiFi, PC, alerts (override alerts via platformio build_flags)
+// CONFIG
 // ============================================================================
 #define WIFI_SSID "Forest"
 #define WIFI_PASS ""
@@ -30,16 +29,7 @@
 #ifndef GPU_TEMP_ALERT
 #define GPU_TEMP_ALERT 85
 #endif
-#ifndef CPU_LOAD_ALERT
-#define CPU_LOAD_ALERT 95
-#endif
-#ifndef GPU_LOAD_ALERT
-#define GPU_LOAD_ALERT 95
-#endif
 
-// ============================================================================
-// HARDWARE PINOUT (Heltec WiFi LoRa 32 V3)
-// ============================================================================
 #define SDA_PIN 17
 #define SCL_PIN 18
 #define RST_PIN 21
@@ -47,96 +37,50 @@
 #define LED_PIN 35
 #define BUTTON_PIN 0
 
-// ============================================================================
-// DISPLAY — dimensions, margins, TCP/cover buffer limits
-// ============================================================================
 #define DISP_W 128
 #define DISP_H 64
-#define MARGIN 8
-#define CARD_PADDING 3
-#define TCP_LINE_MAX 2048
+#define MARGIN 2
+#define TCP_LINE_MAX 4096
 #define COVER_BITMAP_BYTES 288
-#define COVER_B64_MAX_LEN 600
+#define COVER_B64_MAX_LEN 800
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 
 // ============================================================================
-// UNIFIED FONT SYSTEM — readable, safe U8g2 fonts for 128x64 (digits, %, °,
-// Latin/Cyrillic)
+// FONTS — Cyber-terminal
 // ============================================================================
-#define FONT_TITLE u8g2_font_7x13B_tf // Bold headers
-#define FONT_MAIN u8g2_font_7x13_tf   // Main data
-#define FONT_SMALL u8g2_font_6x10_tf  // Small text (readable, predictable)
-#define FONT_TINY u8g2_font_4x6_tf    // Tiny (C1-C6, menu; 6px line fit)
-#define FONT_LARGE u8g2_font_9x15B_tf // Large numbers
-#define FONT_MEDIA                                                             \
-  u8g2_font_7x13_t_cyrillic // Latin + Cyrillic (media, weather)
+#define FONT_MAIN u8g2_font_6x12_tf
+#define FONT_TINY u8g2_font_micro_tr
+#define FONT_HEADER u8g2_font_haxrcorp4089_tr
+#define FONT_WEATHER_ICON u8g2_font_open_iconic_weather_4x_t
+
+#define LINE_H_MAIN 12
+#define LINE_H_TINY 5
+#define LINE_H_HEADER 10
 
 // ============================================================================
-// GLOBAL DATA STRUCTURES
+// GLOBAL DATA (2-char keys from monitor.py)
 // ============================================================================
-
-// Hardware Monitoring Data
 struct HardwareData {
-  // Temperatures (C)
-  int cpuTemp = 0;
-  int gpuTemp = 0;
-  int gpuHotSpot = 0;
-  int nvme2Temp = 0;
-  int chipsetTemp = 0;
-  int diskTemp[4] = {0};
-
-  // Loads & Power (%)
-  int cpuLoad = 0;
-  int cpuPwr = 0;
-  int gpuLoad = 0;
-  int gpuPwr = 0;
-
-  // Fans (RPM)
-  int fanPump = 0;
-  int fanRad = 0;
-  int fanCase = 0;
-  int fanGpu = 0;
-
-  // Clock & Cores
-  int gpuClk = 0;
-  int cores[6] = {0};
-  int cpuMhzFallback = 0;
-  int coreLoad[6] = {0};
-
-  // Memory
-  int ramPct = 0;
-  float ramUsed = 0.0;
-  float ramTotal = 0.0;
-  float vramUsed = 0.0;
-  float vramTotal = 0.0;
-
-  // Disks
-  float diskUsed[4] = {0};
-  float diskTotal[4] = {0};
-
-  // Network & Disk I/O
-  int netUp = 0;
-  int netDown = 0;
-  int diskRead = 0;
-  int diskWrite = 0;
+  int ct = 0, gt = 0, cl = 0, gl = 0;
+  float ru = 0.0f, ra = 0.0f;
+  int nd = 0, nu = 0;
+  int cf = 0, s1 = 0, s2 = 0, gf = 0;
+  int su = 0, du = 0;
+  float vu = 0.0f, vt = 0.0f;
+  int ch = 0;
+  int dr = 0, dw = 0;
 } hw;
 
-// Weather Data
 struct WeatherData {
   int temp = 0;
   String desc = "";
   int icon = 0;
-  int dayHigh = 0;
-  int dayLow = 0;
-  int dayCode = 0;
   int weekHigh[7] = {0};
   int weekLow[7] = {0};
   int weekCode[7] = {0};
-  int page = 0; // 0=Now, 1=Today, 2=Week
 } weather;
 
-// Process Data
 struct ProcessData {
   String cpuNames[3] = {"", "", ""};
   int cpuPercent[3] = {0};
@@ -144,120 +88,97 @@ struct ProcessData {
   int ramMb[2] = {0};
 } procs;
 
-// Media Player Data
 struct MediaData {
-  String artist = "No Data";
-  String track = "Waiting...";
+  String artist = "";
+  String track = "";
   bool isPlaying = false;
   uint8_t coverBitmap[COVER_BITMAP_BYTES];
   bool hasCover = false;
 } media;
 
-// ============================================================================
-// SETTINGS & STATE
-// ============================================================================
 struct Settings {
   bool ledEnabled = true;
   bool carouselEnabled = false;
   int carouselIntervalSec = 10;
-  int displayContrast = 255;
-  int eqStyle = 0; // 0=Bars, 1=Wave, 2=Circle
+  int displayContrast = 128;
   bool displayInverted = false;
 } settings;
 
-// UI State — screen order must match JSON usage: 0=Main, 1=Cores, 2=CPU, 3=GPU,
-// 4=Memory, 5=Storage, 6=Media, 7=Cooling, 8=Weather, 9=Top CPU, 10=Equalizer
+// ============================================================================
+// STATE
+// ============================================================================
+const int TOTAL_SCREENS = 6;
 int currentScreen = 0;
-const int TOTAL_SCREENS = 11;
 bool inMenu = false;
 int menuItem = 0;
-const int MENU_ITEMS = 7;
+const int MENU_ITEMS = 5;
 
-// Button State
 unsigned long btnPressTime = 0;
 bool btnHeld = false;
 bool menuHoldHandled = false;
-bool wasInMenuOnPress = false;
 unsigned long lastMenuActivity = 0;
 const unsigned long MENU_TIMEOUT_MS = 5 * 60 * 1000;
 
-// Timers
 unsigned long lastUpdate = 0;
 unsigned long lastCarousel = 0;
 unsigned long lastBlink = 0;
-unsigned long lastEqUpdate = 0;
 unsigned long lastWifiRetry = 0;
+unsigned long bootTime = 0;
 bool blinkState = false;
 const unsigned long SIGNAL_TIMEOUT_MS = 10000;
-const unsigned long EQ_UPDATE_MS = 28;
 const unsigned long WIFI_RETRY_INTERVAL = 30000;
 
-// Equalizer
-const int EQ_BARS = 16;
-uint8_t eqHeights[EQ_BARS] = {0};
-uint8_t eqTargets[EQ_BARS] = {0};
+int scrollOffset = 0;
+unsigned long lastScrollUpdate = 0;
+const unsigned long SCROLL_INTERVAL = 50;
 
-// Splash Screen
 bool splashDone = false;
 unsigned long splashStart = 0;
 const unsigned long SPLASH_MS = 1500;
 
-// WiFi & TCP
 WiFiClient tcpClient;
-unsigned long wifiConnectStart = 0;
-const unsigned long WIFI_TRY_MS = 8000;
 String tcpLineBuffer;
 int lastSentScreen = -1;
 bool wifiConnected = false;
 int wifiRssi = 0;
 
-// Animation
-int scrollOffset = 0;
-unsigned long lastScrollUpdate = 0;
-const unsigned long SCROLL_INTERVAL = 50;
+// ============================================================================
+// ANTI-GHOSTING — clear value area then draw (MANDATORY for dynamic text)
+// ============================================================================
+void drawMetric(int x, int y, const char *label, const char *value) {
+  u8g2.setFont(FONT_MAIN);
+  int vw = value ? u8g2.getUTF8Width(value) : 0;
+  if (vw < 1)
+    vw = 24;
+  int maxW = DISP_W - x - MARGIN;
+  if (vw > maxW)
+    vw = maxW;
+
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(x, y - LINE_H_MAIN + 1, vw + 2, LINE_H_MAIN);
+  u8g2.setDrawColor(1);
+  if (label && strlen(label) > 0) {
+    u8g2.setFont(FONT_TINY);
+    u8g2.drawStr(x, y - LINE_H_MAIN - 1, label);
+    u8g2.setFont(FONT_MAIN);
+  }
+  if (value)
+    u8g2.drawUTF8(x, y, value);
+}
+
+void drawMetricStr(int x, int y, const char *label, const String &value) {
+  drawMetric(x, y, label, value.c_str());
+}
 
 // ============================================================================
-// WEATHER ICONS (16x16 bitmaps)
+// HELPERS
 // ============================================================================
-const uint8_t iconSunny[32] PROGMEM = {
-    0x01, 0x80, 0x01, 0x80, 0x00, 0x00, 0x04, 0x20, 0x0C, 0x30, 0x3F,
-    0xFC, 0x7F, 0xFE, 0x7F, 0xFE, 0x7F, 0xFE, 0x3F, 0xFC, 0x0C, 0x30,
-    0x04, 0x20, 0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00};
-
-const uint8_t iconCloudy[32] PROGMEM = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x09, 0x80, 0x11,
-    0xC0, 0x21, 0xC0, 0x7F, 0xE0, 0x7F, 0xF0, 0xFF, 0xF8, 0xFF, 0xF8,
-    0xFF, 0xF8, 0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-const uint8_t iconRain[32] PROGMEM = {
-    0x00, 0x00, 0x07, 0x00, 0x09, 0x80, 0x11, 0xC0, 0x7F, 0xE0, 0xFF,
-    0xF0, 0xFF, 0xF8, 0x7F, 0xF0, 0x00, 0x00, 0x22, 0x44, 0x22, 0x44,
-    0x22, 0x44, 0x44, 0x22, 0x44, 0x22, 0x44, 0x22, 0x00, 0x00};
-
-const uint8_t iconSnow[32] PROGMEM = {
-    0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x11, 0x88, 0x0A, 0x50, 0x04,
-    0x20, 0xE7, 0xCE, 0x04, 0x20, 0x0A, 0x50, 0x11, 0x88, 0x01, 0x80,
-    0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-// ============================================================================
-// FORWARD DECLARATIONS
-// ============================================================================
-String _weatherDescFromCode(int code);
-void parseHardwareBasic(JsonDocument &doc);
-void parseFullPayload(JsonDocument &doc);
-void parseMediaFromDoc(JsonDocument &doc, bool useDefaults);
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
 void VextON() {
   pinMode(VEXT_PIN, OUTPUT);
   digitalWrite(VEXT_PIN, LOW);
   delay(100);
 }
 
-// Base64 Decoder for album covers
 static int b64Decode(const char *in, size_t inLen, uint8_t *out,
                      size_t outMax) {
   static const char tbl[] =
@@ -269,11 +190,11 @@ static int b64Decode(const char *in, size_t inLen, uint8_t *out,
     const char *p = strchr(tbl, in[i]);
     if (!p)
       continue;
-    val = (val << 6) | (p - tbl);
+    val = (val << 6) | (int)(p - tbl);
     bits += 6;
     if (bits >= 8) {
       bits -= 8;
-      *out++ = (val >> bits) & 0xFF;
+      *out++ = (uint8_t)((val >> bits) & 0xFF);
       n++;
       outMax--;
     }
@@ -281,87 +202,69 @@ static int b64Decode(const char *in, size_t inLen, uint8_t *out,
   return n;
 }
 
-// Check if string is ASCII only
-static bool isOnlyAscii(const String &s) {
-  for (unsigned int i = 0; i < s.length(); i++) {
-    if ((unsigned char)s.charAt(i) > 127)
-      return false;
-  }
-  return true;
+void drawProgressBar(int x, int y, int w, int h, float pct) {
+  if (pct > 100.0f)
+    pct = 100.0f;
+  if (pct < 0.0f)
+    pct = 0.0f;
+  u8g2.drawRFrame(x, y, w, h, 1);
+  int fillW = (int)((w - 2) * (pct / 100.0f));
+  if (fillW > 0)
+    u8g2.drawRBox(x + 1, y + 1, fillW, h - 2, 1);
 }
 
-// Parse basic hardware and play state (heartbeat / any payload).
-// Keys match monitor.py build_payload; values are numbers (LHM parsed by
-// clean_val on server).
-void parseHardwareBasic(JsonDocument &doc) {
-  hw.cpuTemp = doc["ct"] | 0;
-  hw.gpuTemp = doc["gt"] | 0;
-  hw.gpuHotSpot = doc["gth"] | 0;
-  hw.cpuLoad = doc["cpu_load"] | 0;
-  hw.cpuPwr = doc["cpu_pwr"] | 0;
-  hw.gpuLoad = doc["gpu_load"] | 0;
-  hw.gpuPwr = doc["gpu_pwr"] | 0;
-  hw.fanPump = doc["p"] | 0;
-  hw.fanRad = doc["r"] | 0;
-  hw.fanCase = doc["c"] | 0;
-  hw.fanGpu = doc["gf"] | 0;
-  hw.gpuClk = doc["gck"] | 0;
-  hw.cpuMhzFallback = doc["cpu_mhz"] | 0;
-  hw.nvme2Temp = doc["nvme2_t"] | 0;
-  hw.chipsetTemp = doc["chipset_t"] | 0;
-  media.isPlaying = doc["play"] | false;
-}
-
-// Parse full payload: cores, memory, disks, network, weather, processes, media.
-// Disk indices: 0=nvme/2, 1=nvme/3, 2=hdd/0, 3=ssd/1 (match TARGETS d1..d4 in
-// monitor.py).
-void parseFullPayload(JsonDocument &doc) {
-  JsonArray c_arr = doc["c_arr"];
-  for (int i = 0; i < 6; i++) {
-    hw.cores[i] = (i < c_arr.size()) ? (c_arr[i] | 0) : 0;
-  }
-  JsonArray cl_arr = doc["cl_arr"];
-  for (int i = 0; i < 6; i++) {
-    hw.coreLoad[i] = (i < cl_arr.size()) ? (cl_arr[i] | 0) : 0;
-  }
-
-  float ramAvail = doc["ram_a"] | 0.0;
-  hw.ramUsed = doc["ram_u"] | 0.0;
-  hw.ramTotal = hw.ramUsed + ramAvail;
-  hw.ramPct = doc["ram_pct"] | 0;
-  hw.vramUsed = doc["vram_u"] | 0.0;
-  hw.vramTotal = doc["vram_t"] | 0.0;
-
+void drawWiFiIcon(int x, int y, int rssi) {
+  int bars = (rssi >= -50)   ? 4
+             : (rssi >= -60) ? 3
+             : (rssi >= -70) ? 2
+             : (rssi >= -80) ? 1
+                             : 0;
   for (int i = 0; i < 4; i++) {
-    char tk[10], uk[10], fk[10];
-    snprintf(tk, sizeof(tk), "d%d_t", i + 1);
-    snprintf(uk, sizeof(uk), "d%d_u", i + 1);
-    snprintf(fk, sizeof(fk), "d%d_f", i + 1);
-    hw.diskTemp[i] = doc[tk] | 0;
-    hw.diskUsed[i] = doc[uk] | 0.0;
-    float free = doc[fk] | 0.0;
-    hw.diskTotal[i] = hw.diskUsed[i] + free;
+    int h = (i + 1) * 2;
+    if (i < bars)
+      u8g2.drawBox(x + i * 3, y + 8 - h, 2, h);
+    else
+      u8g2.drawFrame(x + i * 3, y + 8 - h, 2, h);
   }
+}
 
-  hw.netUp = doc["net_up"] | 0;
-  hw.netDown = doc["net_down"] | 0;
-  hw.diskRead = doc["disk_r"] | 0;
-  hw.diskWrite = doc["disk_w"] | 0;
+// ============================================================================
+// PARSING (2-char keys)
+// ============================================================================
+void parsePayload(JsonDocument &doc) {
+  hw.ct = doc["ct"] | 0;
+  hw.gt = doc["gt"] | 0;
+  hw.cl = doc["cl"] | 0;
+  hw.gl = doc["gl"] | 0;
+  hw.ru = doc["ru"] | 0.0f;
+  hw.ra = doc["ra"] | 0.0f;
+  hw.nd = doc["nd"] | 0;
+  hw.nu = doc["nu"] | 0;
+  hw.cf = doc["cf"] | 0;
+  hw.s1 = doc["s1"] | 0;
+  hw.s2 = doc["s2"] | 0;
+  hw.gf = doc["gf"] | 0;
+  hw.su = doc["su"] | 0;
+  hw.du = doc["du"] | 0;
+  hw.vu = doc["vu"] | 0.0f;
+  hw.vt = doc["vt"] | 0.0f;
+  hw.ch = doc["ch"] | 0;
+  hw.dr = doc["dr"] | 0;
+  hw.dw = doc["dw"] | 0;
 
-  weather.temp = doc["wt"] | 0;
-  const char *wd = doc["wd"];
-  weather.desc = String(wd ? wd : "");
-  weather.icon = doc["wi"] | 0;
-  weather.dayHigh = doc["w_dh"] | 0;
-  weather.dayLow = doc["w_dl"] | 0;
-  weather.dayCode = doc["w_dc"] | 0;
-  JsonArray wh = doc["w_wh"];
-  JsonArray wl = doc["w_wl"];
-  JsonArray wc = doc["w_wc"];
-  for (int i = 0; i < 7; i++) {
-    weather.weekHigh[i] = (i < wh.size()) ? (wh[i] | 0) : 0;
-    weather.weekLow[i] = (i < wl.size()) ? (wl[i] | 0) : 0;
-    weather.weekCode[i] = (i < wc.size()) ? (wc[i] | 0) : 0;
+  if (doc.containsKey("wt")) {
+    weather.temp = doc["wt"] | 0;
+    const char *wd = doc["wd"];
+    weather.desc = String(wd ? wd : "");
+    weather.icon = doc["wi"] | 0;
+    JsonArray wh = doc["w_wh"];
+    JsonArray wl = doc["w_wl"];
+    JsonArray wc = doc["w_wc"];
+    for (int i = 0; i < 7; i++) {
+      weather.weekHigh[i] = (i < wh.size()) ? (wh[i] | 0) : 0;
+      weather.weekLow[i] = (i < wl.size()) ? (wl[i] | 0) : 0;
+      weather.weekCode[i] = (i < wc.size()) ? (wc[i] | 0) : 0;
+    }
   }
 
   JsonArray tp = doc["tp"];
@@ -387,22 +290,12 @@ void parseFullPayload(JsonDocument &doc) {
     }
   }
 
-  parseMediaFromDoc(doc, true);
-}
-
-// Parse artist, track, cover from doc; useDefaults = true for full payload
-void parseMediaFromDoc(JsonDocument &doc, bool useDefaults) {
   const char *art = doc["art"];
   const char *trk = doc["trk"];
-  if (useDefaults) {
-    media.artist = String(art ? art : "No Data");
-    media.track = String(trk ? trk : "Waiting...");
-  } else {
-    if (art)
-      media.artist = String(art);
-    if (trk)
-      media.track = String(trk);
-  }
+  media.artist = String(art ? art : "");
+  media.track = String(trk ? trk : "");
+  media.isPlaying = doc["play"] | false;
+
   const char *cov = doc["cover_b64"];
   if (!cov || strlen(cov) == 0) {
     media.hasCover = false;
@@ -416,720 +309,317 @@ void parseMediaFromDoc(JsonDocument &doc, bool useDefaults) {
 }
 
 // ============================================================================
-// DRAWING HELPERS
+// SCREENS
 // ============================================================================
 
-// Modern rounded progress bar
-void drawProgressBar(int x, int y, int w, int h, float pct) {
-  if (pct > 100.0f)
-    pct = 100.0f;
-  if (pct < 0.0f)
-    pct = 0.0f;
+// [SYS.OP] — 2x2 grid: CPU temp+load, GPU temp+load, RAM, VRAM or Uptime
+void drawScreenSysOp() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(MARGIN, MARGIN + LINE_H_HEADER, "[SYS.OP]");
 
-  u8g2.drawRFrame(x, y, w, h, 2);
-  int fillW = (int)((w - 4) * (pct / 100.0f));
-  if (fillW > 0) {
-    u8g2.drawRBox(x + 2, y + 2, fillW, h - 4, 1);
-  }
-}
+  int gx = MARGIN;
+  int gy = MARGIN + LINE_H_HEADER + 2;
+  int halfW = (DISP_W - 2 * MARGIN - 2) / 2;
+  int halfH = (DISP_H - gy - MARGIN - 2) / 2;
+  char buf[24];
 
-// Legacy bar for compatibility
-void drawBar(int x, int y, int w, int h, float val, float max) {
-  float pct = (max > 0.0f) ? (val / max * 100.0f) : 0.0f;
-  drawProgressBar(x, y, w, h, pct);
-}
+  // Top-Left: CPU Temp + Load bar
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(gx, gy + LINE_H_TINY, "CPU");
+  snprintf(buf, sizeof(buf), "%dC %d%%", hw.ct, hw.cl);
+  drawMetric(gx + halfW - 36, gy + LINE_H_MAIN + 2, nullptr, buf);
+  drawProgressBar(gx, gy + LINE_H_MAIN + 4, halfW - 2, 5, (float)hw.cl);
 
-// Draw card with title and content area (FONT_SMALL 6x10: 10px title height)
-void drawCard(int x, int y, int w, int h, const char *title) {
-  u8g2.drawRFrame(x, y, w, h, 3);
-  if (title && strlen(title) > 0) {
-    u8g2.setFont(FONT_SMALL);
-    int tw = u8g2.getStrWidth(title);
-    u8g2.setDrawColor(0);
-    u8g2.drawBox(x + 4, y - 4, tw + 4, 10);
-    u8g2.setDrawColor(1);
-    u8g2.drawStr(x + 6, y + 5, title);
-  }
-}
+  // Top-Right: GPU Temp + Load bar
+  int rx = gx + halfW + 2;
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(rx, gy + LINE_H_TINY, "GPU");
+  snprintf(buf, sizeof(buf), "%dC %d%%", hw.gt, hw.gl);
+  drawMetric(rx + halfW - 36, gy + LINE_H_MAIN + 2, nullptr, buf);
+  drawProgressBar(rx, gy + LINE_H_MAIN + 4, halfW - 2, 5, (float)hw.gl);
 
-// Draw WiFi signal strength indicator
-void drawWiFiIcon(int x, int y, int rssi) {
-  int bars = 0;
-  if (rssi >= -50)
-    bars = 4;
-  else if (rssi >= -60)
-    bars = 3;
-  else if (rssi >= -70)
-    bars = 2;
-  else if (rssi >= -80)
-    bars = 1;
+  int by = gy + halfH + 2;
+  // Bot-Left: RAM Used/Total
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(gx, by + LINE_H_TINY, "RAM");
+  snprintf(buf, sizeof(buf), "%.1f/%.1fG", hw.ru, hw.ra);
+  drawMetric(gx, by + LINE_H_MAIN + 2, nullptr, buf);
 
-  for (int i = 0; i < 4; i++) {
-    int h = (i + 1) * 2;
-    if (i < bars) {
-      u8g2.drawBox(x + i * 3, y + 8 - h, 2, h);
-    } else {
-      u8g2.drawFrame(x + i * 3, y + 8 - h, 2, h);
-    }
-  }
-}
-
-// Scrolling text for long strings
-void drawScrollingText(int x, int y, int maxW, const String &text,
-                       const uint8_t *font) {
-  u8g2.setFont(font);
-  int textW = u8g2.getUTF8Width(text.c_str());
-
-  if (textW <= maxW) {
-    u8g2.drawUTF8(x, y, text.c_str());
+  // Bot-Right: VRAM or Uptime
+  u8g2.setFont(FONT_TINY);
+  if (hw.vt > 0.0f) {
+    u8g2.drawStr(rx, by + LINE_H_TINY, "VRAM");
+    snprintf(buf, sizeof(buf), "%.1f/%.1fG", hw.vu, hw.vt);
+    drawMetric(rx, by + LINE_H_MAIN + 2, nullptr, buf);
   } else {
-    int offset = scrollOffset % (textW + 20);
-    u8g2.setClipWindow(x, 0, x + maxW, DISP_H);
-    u8g2.drawUTF8(x - offset, y, text.c_str());
-    u8g2.setMaxClipWindow();
+    u8g2.drawStr(rx, by + LINE_H_TINY, "UPTM");
+    unsigned long s = (millis() - bootTime) / 1000;
+    int m = s / 60, h = m / 60;
+    snprintf(buf, sizeof(buf), "%d:%02d", h, m % 60);
+    drawMetric(rx, by + LINE_H_MAIN + 2, nullptr, buf);
   }
 }
 
-// ============================================================================
-// SCREEN DRAWING FUNCTIONS
-// ============================================================================
+// [NET.IO] — DOWN/UP big, graph-like bars, IP at bottom
+void drawScreenNetIo() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(MARGIN, MARGIN + LINE_H_HEADER, "[NET.IO]");
 
-void drawSplash() {
-  u8g2.setFont(u8g2_font_9x15B_tf);
-  u8g2.drawStr(25, 25, "HELTEC");
-  u8g2.setFont(FONT_MAIN);
-  u8g2.drawStr(20, 40, "PC Monitor");
-  u8g2.setFont(FONT_SMALL);
-  u8g2.drawStr(35, 55, "v2.0");
-
-  // Animation
-  int barW = (int)((millis() - splashStart) * 128.0 / SPLASH_MS);
-  if (barW > 128)
-    barW = 128;
-  u8g2.drawBox(0, DISP_H - 2, barW, 2);
-}
-
-void drawMainScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "SYSTEM");
-
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 11;
-
-  // CPU — temp + load right-aligned before bar so they never overflow
-  u8g2.drawStr(4, y, "CPU");
+  int y = MARGIN + LINE_H_HEADER + 4;
   char buf[20];
-  snprintf(buf, sizeof(buf), "%d%cC ", hw.cpuTemp, (char)0xB0);
-  int twTemp = u8g2.getStrWidth(buf);
-  snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
+  int downK = hw.nd;
+  int upK = hw.nu;
+  if (downK >= 1024)
+    snprintf(buf, sizeof(buf), "DN %.1fM", downK / 1024.0f);
+  else
+    snprintf(buf, sizeof(buf), "DN %dK", downK);
+  drawMetricStr(MARGIN, y + LINE_H_MAIN, "DOWN", String(buf));
+  y += LINE_H_MAIN + 4;
+  if (upK >= 1024)
+    snprintf(buf, sizeof(buf), "UP %.1fM", upK / 1024.0f);
+  else
+    snprintf(buf, sizeof(buf), "UP %dK", upK);
+  drawMetricStr(MARGIN, y + LINE_H_MAIN, "UP", String(buf));
+
+  int barW = DISP_W - 2 * MARGIN - 4;
+  int barY = y + LINE_H_MAIN + 6;
+  int maxVal = (downK > upK) ? downK : (upK > 0 ? upK : 1);
+  if (maxVal > 0) {
+    float pctD = (downK * 100.0f) / (maxVal > 0 ? maxVal : 1);
+    float pctU = (upK * 100.0f) / (maxVal > 0 ? maxVal : 1);
+    drawProgressBar(MARGIN, barY, barW, 4, pctD > 100.0f ? 100.0f : pctD);
+    drawProgressBar(MARGIN, barY + 6, barW, 4, pctU > 100.0f ? 100.0f : pctU);
+  }
+
   u8g2.setFont(FONT_TINY);
-  int twLoad = u8g2.getStrWidth(buf);
-  u8g2.setFont(FONT_SMALL);
-  int startX = 80 - twTemp - twLoad - 2;
-  if (startX < 30)
-    startX = 30;
-  snprintf(buf, sizeof(buf), "%d%cC ", hw.cpuTemp, (char)0xB0);
-  u8g2.drawStr(startX, y, buf);
-  snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(startX + twTemp, y, buf);
-  u8g2.setFont(FONT_SMALL);
-  drawProgressBar(80, y - 6, 44, 8, hw.cpuLoad);
-
-  // GPU — same
-  y += 12;
-  u8g2.drawStr(4, y, "GPU");
-  snprintf(buf, sizeof(buf), "%d%cC ", hw.gpuTemp, (char)0xB0);
-  twTemp = u8g2.getStrWidth(buf);
-  snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
-  u8g2.setFont(FONT_TINY);
-  twLoad = u8g2.getStrWidth(buf);
-  u8g2.setFont(FONT_SMALL);
-  startX = 80 - twTemp - twLoad - 2;
-  if (startX < 30)
-    startX = 30;
-  snprintf(buf, sizeof(buf), "%d%cC ", hw.gpuTemp, (char)0xB0);
-  u8g2.drawStr(startX, y, buf);
-  snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(startX + twTemp, y, buf);
-  u8g2.setFont(FONT_SMALL);
-  drawProgressBar(80, y - 6, 44, 8, hw.gpuLoad);
-
-  // RAM — value right-aligned before bar so it never overflows
-  y += 12;
-  u8g2.drawStr(4, y, "RAM");
-  snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.ramUsed, hw.ramTotal);
-  {
-    int tw = u8g2.getStrWidth(buf);
-    u8g2.drawStr(80 - tw - 2, y, buf);
-  }
-  drawProgressBar(80, y - 6, 44, 8, hw.ramPct);
-
-  // Network — value right-aligned before bar
-  y += 12;
-  u8g2.drawStr(4, y, "NET");
-  if (hw.netDown < 1000) {
-    snprintf(buf, sizeof(buf), "↓%dK ↑%dK", hw.netDown, hw.netUp);
-  } else {
-    snprintf(buf, sizeof(buf), "↓%.1fM ↑%.1fM", hw.netDown / 1024.0,
-             hw.netUp / 1024.0);
-  }
-  {
-    int tw = u8g2.getStrWidth(buf);
-    u8g2.drawStr(80 - tw - 2, y, buf);
-  }
+  String ip = WiFi.localIP().toString();
+  if (ip.length() > 18)
+    ip = ip.substring(0, 18);
+  u8g2.drawStr(MARGIN, DISP_H - MARGIN - 2, ip.c_str());
 }
 
-void drawCoresScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "CPU CORES");
+// [THERMAL] — Fans: CPU, SYS1, SYS2, GPU + Chipset temp
+void drawScreenThermal() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(MARGIN, MARGIN + LINE_H_HEADER, "[THERMAL]");
 
-  int y = MARGIN + 11;
-
-  for (int i = 0; i < 6; i++) {
-    int x = (i % 2 == 0) ? 4 : 66;
-    if (i % 2 == 0 && i > 0)
-      y += 12;
-
-    char buf[20];
-    snprintf(buf, sizeof(buf), "C%d", i + 1);
-    u8g2.setFont(FONT_TINY);
-    u8g2.drawStr(x, y, buf);
-
-    int mhz = (hw.cores[i] > 0) ? hw.cores[i] : hw.cpuMhzFallback;
-    snprintf(buf, sizeof(buf), "%dMHz", mhz);
-    u8g2.setFont(FONT_SMALL);
-    {
-      int tw = u8g2.getStrWidth(buf);
-      u8g2.drawStr(x + 56 - tw, y, buf);
-    }
-
-    // Load bar
-    drawProgressBar(x, y + 2, 56, 6, hw.coreLoad[i]);
-  }
-}
-
-void drawCPUScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "CPU DETAILS");
-
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 11;
-
-  char buf[30];
-  int valX = DISP_W - 4;
-
-  // Temperature
-  u8g2.drawStr(4, y, "Temp:");
-  snprintf(buf, sizeof(buf), "%d%cC", hw.cpuTemp, (char)0xB0);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  // Load
-  y += 8;
-  u8g2.drawStr(4, y, "Load:");
-  snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-  u8g2.setFont(FONT_SMALL);
-  drawProgressBar(65, y - 6, 58, 6, hw.cpuLoad);
-
-  // Power
-  y += 8;
-  u8g2.drawStr(4, y, "Power:");
-  snprintf(buf, sizeof(buf), "%dW", hw.cpuPwr);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  // CPU frequency
-  y += 8;
-  u8g2.drawStr(4, y, "Freq:");
-  snprintf(buf, sizeof(buf), "%d MHz", hw.cpuMhzFallback);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  // Cores (threads) — separate row with 6 mini load bars
-  y += 8;
-  u8g2.drawStr(4, y, "Cores:");
-  int barW = 12;
-  int barH = 5;
-  int barGap = 1;
-  int barStartX = 42;
-  for (int i = 0; i < 6; i++) {
-    int x = barStartX + i * (barW + barGap);
-    if (x + barW > DISP_W - 4)
-      break;
-    drawProgressBar(x, y - 4, barW, barH, hw.coreLoad[i]);
-  }
-}
-
-void drawGPUScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "GPU DETAILS");
-
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 11;
-
-  char buf[30];
-  int valX = DISP_W - 4;
-
-  // Temperature
-  u8g2.drawStr(4, y, "Core:");
-  snprintf(buf, sizeof(buf), "%d%cC", hw.gpuTemp, (char)0xB0);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  // Hot Spot
-  y += 10;
-  u8g2.drawStr(4, y, "Hot:");
-  snprintf(buf, sizeof(buf), "%d%cC", hw.gpuHotSpot, (char)0xB0);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  // Load
-  y += 10;
-  u8g2.drawStr(4, y, "Load:");
-  snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-  u8g2.setFont(FONT_SMALL);
-  drawProgressBar(65, y - 6, 58, 8, hw.gpuLoad);
-
-  // Clock
-  y += 10;
-  u8g2.drawStr(4, y, "Clock:");
-  snprintf(buf, sizeof(buf), "%dMHz", hw.gpuClk);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  // Power
-  y += 10;
-  u8g2.drawStr(4, y, "Power:");
-  snprintf(buf, sizeof(buf), "%dW", hw.gpuPwr);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-}
-
-void drawMemoryScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "MEMORY");
-
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 11;
-
-  char buf[30];
-
-  // RAM — value right-aligned so long numbers stay on screen
-  u8g2.drawStr(4, y, "RAM:");
-  snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.ramUsed, hw.ramTotal);
-  u8g2.drawStr(124 - u8g2.getStrWidth(buf), y, buf);
-  y += 2;
-  drawProgressBar(4, y, 120, 8, hw.ramPct);
-
-  // Top RAM processes — name truncated, MB right-aligned
-  y += 12;
-  u8g2.drawStr(4, y, "Top Processes:");
-
-  for (int i = 0; i < 2; i++) {
-    y += 10;
-    if (y + 2 > DISP_H - 4)
-      break;
-    if (procs.ramNames[i].length() > 0) {
-      String name = procs.ramNames[i];
-      if (name.length() > 12)
-        name = name.substring(0, 10) + "..";
-      u8g2.setClipWindow(4, y - 8, DISP_W - 4, y + 6);
-      u8g2.drawStr(6, y, name.c_str());
-      u8g2.setMaxClipWindow();
-
-      snprintf(buf, sizeof(buf), "%dMB", procs.ramMb[i]);
-      int tw = u8g2.getStrWidth(buf);
-      u8g2.drawStr(DISP_W - tw - 4, y, buf);
-    }
-  }
-
-  // VRAM — only if fits on screen
-  y += 10;
-  if (y + 8 <= DISP_H - 2) {
-    u8g2.drawStr(4, y, "VRAM:");
-    snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.vramUsed, hw.vramTotal);
-    u8g2.drawStr(124 - u8g2.getStrWidth(buf), y, buf);
-  }
-}
-
-void drawDisksScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "STORAGE");
-
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 11;
-  const int rowH = 11;
-
-  char buf[30];
-  const char *diskNames[] = {"NVMe1", "NVMe2", "HDD", "SSD"};
-
-  for (int i = 0; i < 4; i++) {
-    if (y + rowH > DISP_H - 4)
-      break;
-    if (hw.diskTotal[i] > 0) {
-      u8g2.drawStr(4, y, diskNames[i]);
-
-      float pct = (hw.diskUsed[i] / hw.diskTotal[i]) * 100.0;
-      snprintf(buf, sizeof(buf), "%.0fG %d%cC",
-               hw.diskTotal[i] - hw.diskUsed[i], hw.diskTemp[i], (char)0xB0);
-      int tw = u8g2.getStrWidth(buf);
-      u8g2.drawStr(DISP_W - tw - 4, y, buf);
-
-      y += 2;
-      drawProgressBar(4, y, 120, 5, pct);
-      y += rowH - 2;
-    }
-  }
-}
-
-void drawPlayerScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "MEDIA");
-
-  // Cover frame; draw bitmap when available
-  u8g2.drawRFrame(4, MARGIN + 8, 48, 48, 3);
-  if (media.hasCover) {
-    u8g2.drawXBM(4, MARGIN + 8, 48, 48, media.coverBitmap);
-  } else {
-    u8g2.setFont(FONT_SMALL);
-    u8g2.drawStr(12, MARGIN + 32, "No");
-    u8g2.drawStr(8, MARGIN + 44, "Cover");
-  }
-
-  // Artist and track — clip per line to avoid overlap
-  int textX = 56;
-  int textW = DISP_W - textX - 4;
-  int lineH = 12;
-  int y = MARGIN + 16;
-  u8g2.setFont(FONT_MEDIA);
-  u8g2.setClipWindow(textX, y - 10, textX + textW, y + 5);
-  drawScrollingText(textX, y, textW, media.artist, FONT_MEDIA);
-  u8g2.setMaxClipWindow();
-  y += lineH;
-  u8g2.setClipWindow(textX, y - 10, textX + textW, y + 5);
-  drawScrollingText(textX, y, textW, media.track, FONT_MEDIA);
-  u8g2.setMaxClipWindow();
-  y += 14;
-  if (y + 8 <= DISP_H - 2) {
-    u8g2.setFont(FONT_SMALL);
-    if (media.isPlaying) {
-      u8g2.drawStr(textX, y, "Playing");
-    } else {
-      u8g2.drawStr(textX, y, "Paused");
-    }
-  }
-}
-
-void drawFansScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "COOLING");
-
-  u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 11;
-  const int lineH = 10;
-
+  int y = MARGIN + LINE_H_HEADER + 4;
   char buf[20];
-  int valX = DISP_W - 4;
-
-  // Pump
-  u8g2.drawStr(4, y, "Pump:");
-  snprintf(buf, sizeof(buf), "%d RPM", hw.fanPump);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  y += lineH;
-  u8g2.drawStr(4, y, "Rad:");
-  snprintf(buf, sizeof(buf), "%d RPM", hw.fanRad);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  y += lineH;
-  u8g2.drawStr(4, y, "Case:");
-  snprintf(buf, sizeof(buf), "%d RPM", hw.fanCase);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  y += lineH;
-  u8g2.drawStr(4, y, "GPU:");
-  snprintf(buf, sizeof(buf), "%d RPM", hw.fanGpu);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  y += lineH;
-  if (y + 2 <= DISP_H - 4) {
-    u8g2.drawStr(4, y, "Chipset:");
-    snprintf(buf, sizeof(buf), "%d%cC", hw.chipsetTemp, (char)0xB0);
-    u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
+  const char *labels[] = {"PUMP", "RAD ", "SYS2", "GPU "};
+  int vals[] = {hw.cf, hw.s1, hw.s2, hw.gf};
+  for (int i = 0; i < 4 && y + LINE_H_MAIN <= DISP_H - MARGIN; i++) {
+    snprintf(buf, sizeof(buf), "%d RPM", vals[i]);
+    drawMetricStr(MARGIN + 32, y + LINE_H_MAIN, labels[i], String(buf));
+    y += LINE_H_MAIN + 2;
   }
-  y += lineH;
-  if (y + 2 <= DISP_H - 4) {
-    u8g2.drawStr(4, y, "NVMe:");
-    snprintf(buf, sizeof(buf), "%d%cC", hw.nvme2Temp, (char)0xB0);
-    u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
+  if (y + LINE_H_MAIN <= DISP_H - MARGIN && hw.ch > 0) {
+    snprintf(buf, sizeof(buf), "%dC", hw.ch);
+    drawMetricStr(MARGIN + 32, y + LINE_H_MAIN, "CHIP", String(buf));
   }
 }
 
-void drawWeatherScreen() {
-  const uint8_t *icon = iconCloudy;
+// [STORAGE] — NVMe / HDD bars, SYS (C:), DATA (D:), % usage
+void drawScreenStorage() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(MARGIN, MARGIN + LINE_H_HEADER, "[STORAGE]");
+
+  int y = MARGIN + LINE_H_HEADER + 4;
+  char buf[16];
+  int pctSys = (hw.su > 100) ? 100 : (hw.su < 0 ? 0 : hw.su);
+  int pctData = (hw.du > 100) ? 100 : (hw.du < 0 ? 0 : hw.du);
+
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(MARGIN, y + LINE_H_TINY, "SYS (C:)");
+  snprintf(buf, sizeof(buf), "%d%%", pctSys);
+  drawMetric(DISP_W - MARGIN - 28, y + LINE_H_MAIN, nullptr, buf);
+  drawProgressBar(MARGIN, y + LINE_H_MAIN + 2, DISP_W - 2 * MARGIN - 4, 5,
+                  (float)pctSys);
+  y += LINE_H_MAIN + 10;
+
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(MARGIN, y + LINE_H_TINY, "DATA (D:)");
+  snprintf(buf, sizeof(buf), "%d%%", pctData);
+  drawMetric(DISP_W - MARGIN - 28, y + LINE_H_MAIN, nullptr, buf);
+  drawProgressBar(MARGIN, y + LINE_H_MAIN + 2, DISP_W - 2 * MARGIN - 4, 5,
+                  (float)pctData);
+}
+
+// [ATMOS] — Weather icon (open_iconic_weather: 69=sun, 65=sun_cloud, 64=cloud,
+// 67=rain)
+void drawScreenAtmos() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(MARGIN, MARGIN + LINE_H_HEADER, "[ATMOS]");
+
+  int iconX = MARGIN + 2;
+  int iconY = MARGIN + LINE_H_HEADER + 4;
+  u8g2.setFont(FONT_WEATHER_ICON);
   int code = weather.icon;
-
+  uint8_t glyph = 64; // cloud
   if (code == 0)
-    icon = iconSunny;
-  else if (code >= 71 && code <= 86)
-    icon = iconSnow;
+    glyph = 69;
+  else if (code >= 1 && code <= 3)
+    glyph = 65;
   else if (code >= 51)
-    icon = iconRain;
+    glyph = 67;
+  else if (code >= 71 && code <= 86)
+    glyph = 67;
+  u8g2.drawGlyph(iconX, iconY + 16, glyph);
 
-  if (weather.page == 0) {
-    // Current weather
-    drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "WEATHER NOW");
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%dC", weather.temp);
+  u8g2.setFont(FONT_MAIN);
+  int tw = u8g2.getUTF8Width(buf);
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(38, iconY, tw + 2, LINE_H_MAIN);
+  u8g2.setDrawColor(1);
+  u8g2.drawUTF8(40, iconY + LINE_H_MAIN - 1, buf);
 
-    u8g2.drawXBM(6, MARGIN + 10, 16, 16, icon);
-
-    u8g2.setFont(FONT_LARGE);
-    char buf[20];
-    snprintf(buf, sizeof(buf), "%d%cC", weather.temp, (char)0xB0);
-    u8g2.drawStr(28, MARGIN + 22, buf);
-
-    u8g2.setFont(isOnlyAscii(weather.desc) ? FONT_SMALL : FONT_MEDIA);
-    u8g2.setClipWindow(6, MARGIN + 30, DISP_W - 6, MARGIN + 50);
-    u8g2.drawUTF8(6, MARGIN + 38, weather.desc.c_str());
+  int descW = DISP_W - 42 - MARGIN;
+  u8g2.setFont(FONT_TINY);
+  String d = weather.desc.length() > 0 ? weather.desc : "—";
+  if (d.length() > 12)
+    d = d.substring(0, 12);
+  int textW = u8g2.getUTF8Width(d.c_str());
+  if (textW <= descW) {
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(38, iconY + LINE_H_MAIN + 2, descW, LINE_H_TINY);
+    u8g2.setDrawColor(1);
+    u8g2.drawUTF8(40, iconY + LINE_H_MAIN + LINE_H_TINY + 1, d.c_str());
+  } else {
+    int offset = (scrollOffset / 4) % (textW + 24);
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(38, iconY + LINE_H_MAIN + 2, descW, LINE_H_TINY);
+    u8g2.setDrawColor(1);
+    u8g2.setClipWindow(38, iconY + LINE_H_MAIN + 2, 38 + descW,
+                       iconY + LINE_H_MAIN + LINE_H_TINY + 4);
+    u8g2.drawUTF8(40 - offset, iconY + LINE_H_MAIN + LINE_H_TINY + 1,
+                  d.c_str());
     u8g2.setMaxClipWindow();
+  }
 
-  } else if (weather.page == 1) {
-    // Today forecast
-    drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "TODAY");
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(MARGIN, DISP_H - MARGIN - 2, "LOCATION");
+}
 
+// [MEDIA] — STANDBY or Artist / Track + progress
+void drawScreenMedia() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(MARGIN, MARGIN + LINE_H_HEADER, "[MEDIA]");
+
+  int y = MARGIN + LINE_H_HEADER + 4;
+  if (!media.isPlaying) {
     u8g2.setFont(FONT_MAIN);
-    char buf[30];
-    snprintf(buf, sizeof(buf), "High: %d%cC", weather.dayHigh, (char)0xB0);
-    u8g2.drawStr(6, MARGIN + 18, buf);
-
-    snprintf(buf, sizeof(buf), "Low:  %d%cC", weather.dayLow, (char)0xB0);
-    u8g2.drawStr(6, MARGIN + 32, buf);
-
-    u8g2.setFont(FONT_SMALL);
-    String desc = "Today: " + String(_weatherDescFromCode(weather.dayCode));
-    u8g2.setClipWindow(6, MARGIN + 42, DISP_W - 6, DISP_H);
-    u8g2.drawStr(6, MARGIN + 48, desc.c_str());
-    u8g2.setMaxClipWindow();
-
-  } else {
-    // Week forecast
-    drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "WEEK");
-
-    u8g2.setFont(FONT_SMALL);
-    int y = MARGIN + 14;
-
-    for (int i = 0; i < min(5, 7); i++) {
-      if (i < (int)(sizeof(weather.weekHigh) / sizeof(weather.weekHigh[0]))) {
-        char buf[25];
-        snprintf(buf, sizeof(buf), "D%d: %d/%d%cC", i + 1, weather.weekHigh[i],
-                 weather.weekLow[i], (char)0xB0);
-        u8g2.drawStr(6, y, buf);
-        y += 10;
-      }
-    }
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(MARGIN, y, DISP_W - 2 * MARGIN, LINE_H_MAIN);
+    u8g2.setDrawColor(1);
+    u8g2.drawStr(MARGIN + 2, y + LINE_H_MAIN - 2, "STANDBY");
+    return;
   }
+
+  String art = media.artist.length() > 0 ? media.artist : "—";
+  if (art.length() > 18)
+    art = art.substring(0, 18);
+  String trk = media.track.length() > 0 ? media.track : "—";
+  if (trk.length() > 18)
+    trk = trk.substring(0, 18);
+
+  u8g2.setFont(FONT_MAIN);
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(MARGIN, y, DISP_W - 2 * MARGIN, LINE_H_MAIN);
+  u8g2.setDrawColor(1);
+  u8g2.drawUTF8(MARGIN + 2, y + LINE_H_MAIN - 2, art.c_str());
+  y += LINE_H_MAIN + 2;
+
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(MARGIN, y, DISP_W - 2 * MARGIN, LINE_H_MAIN);
+  u8g2.setDrawColor(1);
+  u8g2.drawUTF8(MARGIN + 2, y + LINE_H_MAIN - 2, trk.c_str());
+  y += LINE_H_MAIN + 4;
+
+  drawProgressBar(MARGIN, y, DISP_W - 2 * MARGIN, 4, 50.0f);
 }
 
-void drawTopProcsScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "TOP CPU");
-
-  u8g2.setFont(FONT_SMALL);
-  const int lineH = 14;
-  int y = MARGIN + 12;
-
-  for (int i = 0; i < 3; i++) {
-    if (y + 10 > DISP_H - 4)
-      break;
-    if (procs.cpuNames[i].length() > 0) {
-      int pct = procs.cpuPercent[i];
-      if (pct > 100)
-        pct = 100;
-
-      char buf[25];
-      String name = procs.cpuNames[i];
-      if (name.length() > 12)
-        name = name.substring(0, 10) + "..";
-
-      snprintf(buf, sizeof(buf), "%d%%", pct);
-      u8g2.setFont(FONT_TINY);
-      int tw = u8g2.getStrWidth(buf);
-      u8g2.setFont(FONT_SMALL);
-
-      int nameMaxW = DISP_W - 6 - tw - 8;
-      if (nameMaxW > 0) {
-        u8g2.setClipWindow(6, y - 8, 6 + nameMaxW, y + 6);
-        u8g2.drawStr(6, y, name.c_str());
-        u8g2.setMaxClipWindow();
-      }
-      u8g2.setFont(FONT_TINY);
-      u8g2.drawStr(DISP_W - tw - 6, y, buf);
-      u8g2.setFont(FONT_SMALL);
-
-      if (i < 2)
-        u8g2.drawLine(6, y + 4, DISP_W - 6, y + 4);
-    }
-    y += lineH;
-  }
-}
-
-void drawEqualizerScreen() {
-  drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "EQUALIZER");
-
-  int barW = (DISP_W - 8) / EQ_BARS;
-  int maxH = DISP_H - MARGIN - 12;
-
-  if (settings.eqStyle == 0) {
-    // Bars style
-    for (int i = 0; i < EQ_BARS; i++) {
-      int x = 4 + i * barW;
-      int h = map(eqHeights[i], 0, 48, 0, maxH);
-      if (h > 0) {
-        u8g2.drawBox(x, DISP_H - 4 - h, barW - 1, h);
-      }
-    }
-  } else if (settings.eqStyle == 1) {
-    // Wave style
-    for (int i = 0; i < EQ_BARS - 1; i++) {
-      int x1 = 4 + i * barW;
-      int x2 = 4 + (i + 1) * barW;
-      int y1 = DISP_H - 4 - map(eqHeights[i], 0, 48, 0, maxH);
-      int y2 = DISP_H - 4 - map(eqHeights[i + 1], 0, 48, 0, maxH);
-      u8g2.drawLine(x1, y1, x2, y2);
-    }
-  } else {
-    // Circle style
-    int cx = DISP_W / 2;
-    int cy = DISP_H / 2;
-    int baseR = 8;
-
-    for (int i = 0; i < EQ_BARS; i++) {
-      float angle = i * 2.0 * PI / EQ_BARS;
-      int r = baseR + map(eqHeights[i], 0, 48, 0, 20);
-      int x = cx + r * cos(angle);
-      int y = cy + r * sin(angle);
-      u8g2.drawLine(cx, cy, x, y);
-    }
-  }
-}
-
+// ============================================================================
+// DISPATCH
+// ============================================================================
 void drawScreen(int screen) {
   switch (screen) {
   case 0:
-    drawMainScreen();
+    drawScreenSysOp();
     break;
   case 1:
-    drawCoresScreen();
+    drawScreenNetIo();
     break;
   case 2:
-    drawCPUScreen();
+    drawScreenThermal();
     break;
   case 3:
-    drawGPUScreen();
+    drawScreenStorage();
     break;
   case 4:
-    drawMemoryScreen();
+    drawScreenAtmos();
     break;
   case 5:
-    drawDisksScreen();
+    drawScreenMedia();
     break;
-  case 6:
-    drawPlayerScreen();
-    break;
-  case 7:
-    drawFansScreen();
-    break;
-  case 8:
-    drawWeatherScreen();
-    break;
-  case 9:
-    drawTopProcsScreen();
-    break;
-  case 10:
-    drawEqualizerScreen();
+  default:
+    drawScreenSysOp();
     break;
   }
 }
 
-// Helper function for weather description
-String _weatherDescFromCode(int code) {
-  if (code == 0)
-    return "Clear";
-  if (code >= 1 && code <= 3)
-    return "Cloudy";
-  if (code >= 45 && code <= 48)
-    return "Fog";
-  if (code >= 51 && code <= 67)
-    return "Rain";
-  if (code >= 71 && code <= 77)
-    return "Snow";
-  if (code >= 80 && code <= 82)
-    return "Showers";
-  if (code >= 85 && code <= 86)
-    return "Snow";
-  if (code >= 95)
-    return "Storm";
-  return "Cloudy";
+void drawSplash() {
+  u8g2.setFont(FONT_HEADER);
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(MARGIN, 8, DISP_W - 2 * MARGIN, LINE_H_HEADER);
+  u8g2.setDrawColor(1);
+  u8g2.drawStr(24, 18, "[HELTEC]");
+  u8g2.setFont(FONT_MAIN);
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(MARGIN, 24, 70, LINE_H_MAIN);
+  u8g2.setDrawColor(1);
+  u8g2.drawStr(24, 34, "PC MON v3");
+  int barW =
+      (int)((millis() - splashStart) * (DISP_W - 2 * MARGIN) / SPLASH_MS);
+  if (barW > DISP_W - 2 * MARGIN)
+    barW = DISP_W - 2 * MARGIN;
+  u8g2.drawBox(MARGIN, DISP_H - 2 - MARGIN, barW, 2);
 }
 
 void drawMenu() {
-  // Overlay: all items must fit in DISP_H (64px)
   u8g2.setDrawColor(0);
-  u8g2.drawBox(8, 6, DISP_W - 16, DISP_H - 12);
+  u8g2.drawBox(MARGIN + 4, MARGIN + 2, DISP_W - 2 * MARGIN - 8,
+               DISP_H - 2 * MARGIN - 4);
   u8g2.setDrawColor(1);
-  u8g2.drawRFrame(8, 6, DISP_W - 16, DISP_H - 12, 2);
-
+  u8g2.drawRFrame(MARGIN + 4, MARGIN + 2, DISP_W - 2 * MARGIN - 8,
+                  DISP_H - 2 * MARGIN - 4, 2);
   u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(12, 12, "SETTINGS");
-
-  // Menu values: Contrast 128|192|255; Interval 5|10|15 s; EQ
-  // 0=Bars|1=Wave|2=Circle; Display 0|180
-  const char *labels[] = {"LED", "Carousel", "Contrast", "Interval",
-                          "EQ",  "Display",  "Exit"};
-  const int lineH = 6;
-  const int startY = 14; // 7 items * 6px = 42, 14+42=56, fits in 64
-
+  u8g2.drawStr(MARGIN + 6, MARGIN + 8, "SET");
+  const char *labels[] = {"LED", "Carousel", "Contrast", "Display", "Exit"};
+  int startY = MARGIN + 12;
   for (int i = 0; i < MENU_ITEMS; i++) {
-    int y = startY + i * lineH;
-    if (y + 6 > DISP_H - 5)
+    int y = startY + i * 6;
+    if (y + 6 > DISP_H - MARGIN - 4)
       break;
-
     if (i == menuItem) {
-      u8g2.drawBox(10, y - 5, DISP_W - 20, lineH);
+      u8g2.drawBox(MARGIN + 6, y - 5, DISP_W - 2 * MARGIN - 12, 6);
       u8g2.setDrawColor(0);
     }
-
-    char buf[28];
-    if (i == 6) {
-      strcpy(buf, "> Exit");
+    if (i == 4) {
+      u8g2.drawStr(MARGIN + 8, y, "> Exit");
     } else {
-      snprintf(buf, sizeof(buf), "%s:", labels[i]);
-      if (i == 0)
-        strcat(buf, settings.ledEnabled ? " ON" : " OFF");
-      else if (i == 1)
-        strcat(buf, settings.carouselEnabled ? " ON" : " OFF");
-      else if (i == 2) {
-        char t[8];
-        snprintf(t, sizeof(t), " %d", settings.displayContrast);
-        strcat(buf, t);
-      } else if (i == 3) {
-        char t[8];
-        snprintf(t, sizeof(t), " %ds", settings.carouselIntervalSec);
-        strcat(buf, t);
-      } else if (i == 4) {
-        const char *s[] = {" Bars", " Wave", " Circle"};
-        strcat(buf, s[settings.eqStyle % 3]);
-      } else if (i == 5)
-        strcat(buf, settings.displayInverted ? " 180" : " 0");
+      u8g2.drawStr(MARGIN + 8, y, labels[i]);
     }
-
-    u8g2.setClipWindow(10, 8, DISP_W - 10, DISP_H - 6);
-    u8g2.drawStr(12, y, buf);
-    u8g2.setMaxClipWindow();
-
     if (i == menuItem)
       u8g2.setDrawColor(1);
   }
-
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(12, DISP_H - 4, "Hold=Select");
 }
 
 // ============================================================================
 // SETUP
 // ============================================================================
-
 void setup() {
-  // Hardware init
+  bootTime = millis();
   VextON();
   pinMode(RST_PIN, OUTPUT);
   digitalWrite(RST_PIN, LOW);
@@ -1144,59 +634,45 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  // Load settings from flash
   Preferences prefs;
   prefs.begin("heltec", true);
   settings.ledEnabled = prefs.getBool("led", true);
   settings.carouselEnabled = prefs.getBool("carousel", false);
-  // Valid: carousel 5|10|15 s; contrast 0–255
   settings.carouselIntervalSec = prefs.getInt("carouselSec", 10);
   if (settings.carouselIntervalSec != 5 && settings.carouselIntervalSec != 10 &&
-      settings.carouselIntervalSec != 15) {
+      settings.carouselIntervalSec != 15)
     settings.carouselIntervalSec = 10;
-  }
-  settings.displayContrast = prefs.getInt("contrast", 255);
+  settings.displayContrast = prefs.getInt("contrast", 128);
   if (settings.displayContrast > 255)
     settings.displayContrast = 255;
   if (settings.displayContrast < 0)
     settings.displayContrast = 0;
-  settings.eqStyle = prefs.getInt("eqStyle", 0);
   settings.displayInverted = prefs.getBool("inverted", false);
   prefs.end();
 
   u8g2.setContrast((uint8_t)settings.displayContrast);
   u8g2.setFlipMode(settings.displayInverted ? 1 : 0);
 
-  // WiFi setup
   if (strlen(WIFI_PASS) > 0) {
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
-    wifiConnectStart = millis();
   }
 }
 
 // ============================================================================
-// MAIN LOOP
+// LOOP
 // ============================================================================
-
 void loop() {
   unsigned long now = millis();
 
-  // ============================================================================
-  // 1. WiFi CONNECTION MANAGEMENT
-  // ============================================================================
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiConnected) {
       wifiConnected = true;
       wifiRssi = WiFi.RSSI();
     }
-
-    // Update RSSI periodically
-    if (now % 5000 < 100) {
+    if (now % 5000 < 100)
       wifiRssi = WiFi.RSSI();
-    }
 
-    // TCP connection
     if (!tcpClient.connected()) {
       tcpClient.connect(PC_IP, TCP_PORT);
       if (tcpClient.connected()) {
@@ -1206,8 +682,6 @@ void loop() {
     }
   } else {
     wifiConnected = false;
-
-    // Retry connection periodically
     if (now - lastWifiRetry > WIFI_RETRY_INTERVAL) {
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -1215,165 +689,92 @@ void loop() {
     }
   }
 
-  // ============================================================================
-  // 2. DATA RECEPTION
-  // ============================================================================
   if (tcpClient.connected()) {
     while (tcpClient.available()) {
       char c = tcpClient.read();
       if (c == '\n') {
         if (tcpLineBuffer.length() > 0) {
-          // Parse JSON
           JsonDocument doc;
           DeserializationError err = deserializeJson(doc, tcpLineBuffer);
-
           if (!err) {
             lastUpdate = now;
-            // Full payload: server sends weather + media/cover; detect by key
-            // presence
-            bool fullPayload = (tcpLineBuffer.length() >= 350 &&
-                                (tcpLineBuffer.indexOf("cover_b64") >= 0 ||
-                                 tcpLineBuffer.indexOf("\"wt\"") >= 0));
-
-            parseHardwareBasic(doc);
-            if (fullPayload)
-              parseFullPayload(doc);
-            else
-              parseMediaFromDoc(doc, false);
+            parsePayload(doc);
           }
-
           tcpLineBuffer = "";
         }
       } else {
         tcpLineBuffer += c;
-        if (tcpLineBuffer.length() > TCP_LINE_MAX) {
+        if (tcpLineBuffer.length() >= TCP_LINE_MAX)
           tcpLineBuffer = "";
-        }
       }
     }
   }
 
-  // ============================================================================
-  // 3. BUTTON HANDLING
-  // ============================================================================
-  int btnState = digitalRead(BUTTON_PIN); // Active LOW
-
+  int btnState = digitalRead(BUTTON_PIN);
   if (btnState == LOW && !btnHeld) {
     btnHeld = true;
     btnPressTime = now;
     menuHoldHandled = false;
-    wasInMenuOnPress = inMenu;
   }
-
   if (btnState == HIGH && btnHeld) {
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
-
     if (duration > 800) {
-      // Long press - open/close menu
-      if (!wasInMenuOnPress) {
+      if (!inMenu) {
         inMenu = true;
         menuItem = 0;
         lastMenuActivity = now;
       }
     } else {
-      // Short press
       if (inMenu) {
         lastMenuActivity = now;
         menuItem++;
         if (menuItem >= MENU_ITEMS)
           menuItem = 0;
       } else {
-        // Navigate screens
-        if (currentScreen == 8) {
-          weather.page++;
-          if (weather.page >= 3) {
-            weather.page = 0;
-            currentScreen++;
-            if (currentScreen >= TOTAL_SCREENS)
-              currentScreen = 0;
-            lastCarousel = now;
-          }
-        } else {
-          currentScreen++;
-          if (currentScreen >= TOTAL_SCREENS)
-            currentScreen = 0;
-          lastCarousel = now;
-        }
+        currentScreen = (currentScreen + 1) % TOTAL_SCREENS;
+        lastCarousel = now;
       }
     }
   }
 
-  // Menu selection (long press while in menu)
   if (inMenu && btnState == LOW && (now - btnPressTime > 800) &&
       !menuHoldHandled) {
     menuHoldHandled = true;
     lastMenuActivity = now;
-
-    Preferences p;
-    p.begin("heltec", false);
-
+    Preferences prefs;
+    prefs.begin("heltec", false);
     switch (menuItem) {
-    case 0: // LED
+    case 0:
       settings.ledEnabled = !settings.ledEnabled;
-      p.putBool("led", settings.ledEnabled);
+      prefs.putBool("led", settings.ledEnabled);
       break;
-
-    case 1: // Carousel
+    case 1:
       settings.carouselEnabled = !settings.carouselEnabled;
-      p.putBool("carousel", settings.carouselEnabled);
+      prefs.putBool("carousel", settings.carouselEnabled);
       break;
-
-    case 2: // Contrast
-      if (settings.displayContrast <= 128)
-        settings.displayContrast = 192;
-      else if (settings.displayContrast <= 192)
-        settings.displayContrast = 255;
-      else
-        settings.displayContrast = 128;
+    case 2:
+      settings.displayContrast = (settings.displayContrast <= 128)   ? 192
+                                 : (settings.displayContrast <= 192) ? 255
+                                                                     : 128;
       u8g2.setContrast((uint8_t)settings.displayContrast);
-      p.putInt("contrast", settings.displayContrast);
+      prefs.putInt("contrast", settings.displayContrast);
       break;
-
-    case 3: // Interval
-      if (settings.carouselIntervalSec == 5)
-        settings.carouselIntervalSec = 10;
-      else if (settings.carouselIntervalSec == 10)
-        settings.carouselIntervalSec = 15;
-      else
-        settings.carouselIntervalSec = 5;
-      p.putInt("carouselSec", settings.carouselIntervalSec);
-      break;
-
-    case 4: // EQ Style
-      settings.eqStyle = (settings.eqStyle + 1) % 3;
-      p.putInt("eqStyle", settings.eqStyle);
-      break;
-
-    case 5: // Display rotation
+    case 3:
       settings.displayInverted = !settings.displayInverted;
       u8g2.setFlipMode(settings.displayInverted ? 1 : 0);
-      p.putBool("inverted", settings.displayInverted);
+      prefs.putBool("inverted", settings.displayInverted);
       break;
-
-    case 6: // Exit
+    case 4:
       inMenu = false;
       break;
     }
-
-    p.end();
+    prefs.end();
   }
 
-  // ============================================================================
-  // 4. MENU AUTO-CLOSE
-  // ============================================================================
-  if (inMenu && (now - lastMenuActivity > MENU_TIMEOUT_MS)) {
+  if (inMenu && (now - lastMenuActivity > MENU_TIMEOUT_MS))
     inMenu = false;
-  }
 
-  // ============================================================================
-  // 5. CAROUSEL
-  // ============================================================================
   if (settings.carouselEnabled && !inMenu) {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
@@ -1383,9 +784,6 @@ void loop() {
     }
   }
 
-  // ============================================================================
-  // 6. SEND CURRENT SCREEN TO PC
-  // ============================================================================
   if (tcpClient.connected() && lastSentScreen != currentScreen) {
     tcpClient.print("screen:");
     tcpClient.print(currentScreen);
@@ -1393,74 +791,21 @@ void loop() {
     lastSentScreen = currentScreen;
   }
 
-  // ============================================================================
-  // 7. EQUALIZER ANIMATION
-  // ============================================================================
-  if (now - lastEqUpdate >= EQ_UPDATE_MS) {
-    lastEqUpdate = now;
-
-    if (media.isPlaying) {
-      for (int i = 0; i < EQ_BARS; i++) {
-        if (random(0, 4) == 0) {
-          eqTargets[i] = (uint8_t)random(4, 48);
-        }
-
-        int step = 2;
-        if (eqHeights[i] < eqTargets[i]) {
-          eqHeights[i] += step;
-          if (eqHeights[i] > DISP_H - 4)
-            eqHeights[i] = DISP_H - 4;
-          if (eqHeights[i] > (int)eqTargets[i])
-            eqHeights[i] = eqTargets[i];
-        } else if (eqHeights[i] > eqTargets[i]) {
-          if (eqHeights[i] > step)
-            eqHeights[i] -= step;
-          else
-            eqHeights[i] = 0;
-          if (eqHeights[i] < (int)eqTargets[i])
-            eqHeights[i] = eqTargets[i];
-        }
-      }
-    } else {
-      for (int i = 0; i < EQ_BARS; i++) {
-        eqTargets[i] = 0;
-        if (eqHeights[i] > 2)
-          eqHeights[i] -= 3;
-        else if (eqHeights[i] > 0)
-          eqHeights[i] = 0;
-      }
-    }
-  }
-
-  // ============================================================================
-  // 8. SCROLLING TEXT ANIMATION
-  // ============================================================================
   if (now - lastScrollUpdate >= SCROLL_INTERVAL) {
     scrollOffset++;
     lastScrollUpdate = now;
   }
 
-  // ============================================================================
-  // 9. ALARM & LED
-  // ============================================================================
   if (now - lastBlink > 500) {
     blinkState = !blinkState;
     lastBlink = now;
   }
-
-  bool anyAlarm =
-      (hw.cpuTemp >= CPU_TEMP_ALERT) || (hw.gpuTemp >= GPU_TEMP_ALERT) ||
-      (hw.cpuLoad >= CPU_LOAD_ALERT) || (hw.gpuLoad >= GPU_LOAD_ALERT);
-
-  if (settings.ledEnabled && anyAlarm && blinkState) {
+  bool anyAlarm = (hw.ct >= CPU_TEMP_ALERT) || (hw.gt >= GPU_TEMP_ALERT);
+  if (settings.ledEnabled && anyAlarm && blinkState)
     digitalWrite(LED_PIN, HIGH);
-  } else {
+  else
     digitalWrite(LED_PIN, LOW);
-  }
 
-  // ============================================================================
-  // 10. SPLASH SCREEN
-  // ============================================================================
   if (!splashDone) {
     if (splashStart == 0)
       splashStart = now;
@@ -1468,64 +813,39 @@ void loop() {
       splashDone = true;
   }
 
-  // ============================================================================
-  // 11. RENDERING
-  // ============================================================================
   u8g2.clearBuffer();
-
   bool signalLost = (now - lastUpdate > SIGNAL_TIMEOUT_MS);
 
   if (!splashDone) {
     drawSplash();
   } else if (signalLost) {
-    drawScreen(currentScreen);
-    u8g2.setFont(FONT_MAIN);
-    u8g2.drawStr((DISP_W - 70) / 2, DISP_H / 2, "Reconnect");
-
-    // WiFi status
-    if (wifiConnected) {
-      drawWiFiIcon(DISP_W - 16, 2, wifiRssi);
-    } else {
-      u8g2.setFont(FONT_SMALL);
-      u8g2.drawStr(DISP_W - 20, 8, "WiFi");
+    if (tcpClient.connected()) {
+      tcpClient.stop();
+      tcpLineBuffer = "";
+      lastSentScreen = -1;
     }
+    u8g2.setFont(FONT_MAIN);
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(MARGIN, (DISP_H - LINE_H_MAIN) / 2 - 2, DISP_W - 2 * MARGIN,
+                 LINE_H_MAIN + 4);
+    u8g2.setDrawColor(1);
+    u8g2.drawStr((DISP_W - 56) / 2, DISP_H / 2 + 4, "RECONNECT");
+    if (wifiConnected)
+      drawWiFiIcon(DISP_W - MARGIN - 14, MARGIN, wifiRssi);
   } else {
     drawScreen(currentScreen);
-
-    // WiFi indicator
-    if (currentScreen != 1) {
-      if (wifiConnected) {
-        drawWiFiIcon(DISP_W - 16, 2, wifiRssi);
-      } else {
-        u8g2.setFont(FONT_SMALL);
-        u8g2.drawStr(DISP_W - 10, MARGIN + 6, "X");
-      }
-    }
-
-    // Alert indicator
-    if (anyAlarm) {
-      if (blinkState) {
-        u8g2.drawFrame(0, 0, DISP_W, DISP_H);
-      }
-      u8g2.setFont(FONT_SMALL);
-      u8g2.drawStr(DISP_W - 38, MARGIN + 6, "ALERT");
-    }
-
-    // Menu overlay
-    if (inMenu) {
+    if (wifiConnected)
+      drawWiFiIcon(DISP_W - 16, 2, wifiRssi);
+    if (anyAlarm && blinkState)
+      u8g2.drawFrame(0, 0, DISP_W, DISP_H);
+    if (inMenu)
       drawMenu();
-    }
-
-    // Screen indicators (dots)
-    if (!inMenu) {
-      for (int i = 0; i < TOTAL_SCREENS; i++) {
-        int x = DISP_W / 2 - (TOTAL_SCREENS * 3) + (i * 6);
-        if (i == currentScreen) {
-          u8g2.drawBox(x, DISP_H - 2, 2, 2);
-        } else {
-          u8g2.drawPixel(x + 1, DISP_H - 1);
-        }
-      }
+    for (int i = 0; i < TOTAL_SCREENS; i++) {
+      int x = DISP_W / 2 - (TOTAL_SCREENS * 3) + (i * 6);
+      if (i == currentScreen)
+        u8g2.drawBox(x, DISP_H - 2, 2, 2);
+      else
+        u8g2.drawPixel(x + 1, DISP_H - 1);
     }
   }
 
