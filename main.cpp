@@ -833,6 +833,9 @@ void drawMenu() {
   }
 }
 
+// Forward: drawScreen определена ниже
+void drawScreen(int screen);
+
 // Киберпанк-глитч при смене экрана: полосы/шум поверх текущего экрана
 void drawGlitchTransition() {
   drawScreen(currentScreen);
