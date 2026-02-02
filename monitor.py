@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """
 Heltec PC Monitor Server v2.0
-Собирает данные с ПК и отправляет на Heltec ESP32
+
+Collects PC data (hardware, weather, media, processes) and sends JSON over TCP
+to Heltec ESP32 (WiFi LoRa 32 V3). One JSON line per update; device sends
+screen:N to request screen-specific data.
+
+Dependencies: LHM (LibHardwareMonitor HTTP), Open-Meteo API, winsdk (media),
+pystray (tray), PIL (cover resize). Main flows: TCP server, weather_updater
+task, main loop (LHM + media + payload broadcast).
 """
 
 import asyncio
@@ -43,16 +50,20 @@ except ImportError:
     HAS_PIL = False
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION — .env overrides; see .env.example
 # ============================================================================
 
 load_dotenv()
 
+# LHM (LibHardwareMonitor) HTTP endpoint
 LHM_URL = os.getenv("LHM_URL", "http://localhost:8085/data.json")
+
+# TCP server (device connects to this host/port)
 TCP_HOST = os.getenv("TCP_HOST", "0.0.0.0")
 TCP_PORT = int(os.getenv("TCP_PORT", "8888"))
 PC_IP = os.getenv("PC_IP", "192.168.1.2")
 
+# Open-Meteo weather
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
 WEATHER_LON = os.getenv("WEATHER_LON", "37.6173")
 WEATHER_URL = (
@@ -65,9 +76,14 @@ WEATHER_URL = (
 WEATHER_TIMEOUT = 10
 WEATHER_UPDATE_INTERVAL = 10 * 60  # 10 minutes
 
+# Album cover: 48x48 monochrome bitmap
 COVER_SIZE = 48
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
 COVER_INTERVAL = 60  # Send cover max once per minute
+
+# Top processes: counts must match main.cpp (procs.cpuNames[3], procs.ramNames[2])
+TOP_PROCS_CPU_N = 3
+TOP_PROCS_RAM_N = 2
 
 # ============================================================================
 # GLOBAL STATE
@@ -147,7 +163,7 @@ last_track_key = ""
 top_procs_cache: List = []
 top_procs_ram_cache: List = []
 last_top_procs_time: float = 0.0
-TOP_PROCS_CACHE_TTL = 2.5
+TOP_PROCS_CACHE_TTL = 2.5  # seconds
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -529,8 +545,7 @@ def build_payload(
     core_loads: List,
     screen: int,
 ) -> Dict:
-    """Build JSON payload to send to Heltec."""
-    
+    """Build JSON payload to send to Heltec. Keys must match main.cpp parsing."""
     payload = {
         # Hardware
         "ct": int(hw.get("ct", 0)),
@@ -729,8 +744,8 @@ async def run():
             # Use weather from cache (updated by weather_updater); do not call get_weather() every tick
             weather = weather_cache
             if now_f - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
-                top_procs_cache = get_top_processes_cpu(3)
-                top_procs_ram_cache = get_top_processes_ram(2)
+                top_procs_cache = get_top_processes_cpu(TOP_PROCS_CPU_N)
+                top_procs_ram_cache = get_top_processes_ram(TOP_PROCS_RAM_N)
                 last_top_procs_time = now_f
             top_procs = top_procs_cache
             top_procs_ram = top_procs_ram_cache
