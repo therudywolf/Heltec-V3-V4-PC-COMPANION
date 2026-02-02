@@ -71,11 +71,19 @@ TARGETS = {
     "c5": "/amdcpu/0/clock/11", "c6": "/amdcpu/0/clock/13",
     "nvme2_t": "/nvme/2/temperature/0",    # NVMe temp (opt)
     "chipset_t": "/lpc/it8688e/0/temperature/0",  # Chipset temp
-    # Температуры 4 дисков (SSD/HDD) — подставь свои SensorId из LHM
-    "d1_t": "/nvme/0/temperature/0",
-    "d2_t": "/nvme/1/temperature/0",
-    "d3_t": "/nvme/2/temperature/0",
-    "d4_t": "/nvme/3/temperature/0",
+    # 4 диска по serverpars: nvme/2, nvme/3, hdd/0, ssd/1 — темп + free/total GB
+    "d1_t": "/nvme/2/temperature/0",
+    "d1_free": "/nvme/2/data/31",
+    "d1_total": "/nvme/2/data/32",
+    "d2_t": "/nvme/3/temperature/0",
+    "d2_free": "/nvme/3/data/31",
+    "d2_total": "/nvme/3/data/32",
+    "d3_t": "/hdd/0/temperature/0",
+    "d3_free": "/hdd/0/data/31",
+    "d3_total": "/hdd/0/data/32",
+    "d4_t": "/ssd/1/temperature/0",
+    "d4_free": "/ssd/1/data/31",
+    "d4_total": "/ssd/1/data/32",
 }
 
 def clean_val(v):
@@ -224,8 +232,9 @@ def get_core_loads():
 
 
 def get_top_processes():
-    """Получить топ-3 процесса по CPU"""
+    """Получить топ-3 процесса по CPU (interval для корректного расчёта %)"""
     try:
+        psutil.cpu_percent(interval=0.1)
         procs = []
         for p in psutil.process_iter(['name', 'cpu_percent']):
             try:
@@ -357,8 +366,9 @@ _SCREEN_KEYS = {
     7: ("p", "r", "c", "gf"),  # Fans: Pump, Rad, Case, GPU
     8: ("wt", "wd", "wi"),
     9: ("tp",),
-    10: ("nu", "nd", "dr", "dw"),
-    11: (),  # Wolf Game: только heartbeat
+    10: ("nu", "nd"),
+    11: ("disk_t", "disk_used", "disk_total"),  # Disks
+    12: (),  # Wolf Game: только heartbeat
 }
 _COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play", "wt", "wd", "wi")
 
@@ -409,6 +419,18 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
             int(hw.get("d3_t", 0)),
             int(hw.get("d4_t", 0)),
         ],
+        "disk_used": [
+            round(max(0, hw.get("d1_total", 0) - hw.get("d1_free", 0)), 1),
+            round(max(0, hw.get("d2_total", 0) - hw.get("d2_free", 0)), 1),
+            round(max(0, hw.get("d3_total", 0) - hw.get("d3_free", 0)), 1),
+            round(max(0, hw.get("d4_total", 0) - hw.get("d4_free", 0)), 1),
+        ],
+        "disk_total": [
+            round(hw.get("d1_total", 0), 1),
+            round(hw.get("d2_total", 0), 1),
+            round(hw.get("d3_total", 0), 1),
+            round(hw.get("d4_total", 0), 1),
+        ],
         "nu": net.get("up", 0), "nd": net.get("down", 0),
         "dr": disk.get("read", 0), "dw": disk.get("write", 0),
         "wt": weather.get("temp", 0), "wd": weather.get("desc", ""), "wi": weather.get("icon", 0),
@@ -453,7 +475,7 @@ async def run_serial(ser, cache, send_fn):
     send_fn(data_str.encode("utf-8"))
 
 
-# Клиенты TCP: writer -> last screen (0–11)
+# Клиенты TCP: writer -> last screen (0–12: Disks=11, Game=12)
 tcp_clients = []
 client_screens = {}  # writer -> int
 client_buffers = {}  # writer -> str
@@ -464,7 +486,7 @@ def _parse_screen_line(line: str) -> int | None:
     if s.startswith("screen:") and len(s) < 20:
         try:
             n = int(s.split(":")[1].strip())
-            if 0 <= n <= 11:
+            if 0 <= n <= 12:
                 return n
         except (ValueError, IndexError):
             pass
