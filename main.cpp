@@ -623,25 +623,39 @@ void drawCPUScreen() {
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Load
-  y += 10;
+  y += 8;
   u8g2.drawStr(4, y, "Load:");
   snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
   u8g2.setFont(FONT_TINY);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
   u8g2.setFont(FONT_SMALL);
-  drawProgressBar(65, y - 6, 58, 8, hw.cpuLoad);
+  drawProgressBar(65, y - 6, 58, 6, hw.cpuLoad);
 
   // Power
-  y += 10;
+  y += 8;
   u8g2.drawStr(4, y, "Power:");
   snprintf(buf, sizeof(buf), "%dW", hw.cpuPwr);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // CPU frequency
-  y += 10;
+  y += 8;
   u8g2.drawStr(4, y, "Freq:");
   snprintf(buf, sizeof(buf), "%d MHz", hw.cpuMhzFallback);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
+
+  // Cores (threads) — separate row with 6 mini load bars
+  y += 8;
+  u8g2.drawStr(4, y, "Cores:");
+  int barW = 12;
+  int barH = 5;
+  int barGap = 1;
+  int barStartX = 42;
+  for (int i = 0; i < 6; i++) {
+    int x = barStartX + i * (barW + barGap);
+    if (x + barW > DISP_W - 4)
+      break;
+    drawProgressBar(x, y - 4, barW, barH, hw.coreLoad[i]);
+  }
 }
 
 void drawGPUScreen() {
@@ -702,16 +716,20 @@ void drawMemoryScreen() {
   drawProgressBar(4, y, 120, 8, hw.ramPct);
 
   // Top RAM processes — name truncated, MB right-aligned
-  y += 14;
+  y += 12;
   u8g2.drawStr(4, y, "Top Processes:");
 
   for (int i = 0; i < 2; i++) {
     y += 10;
+    if (y + 2 > DISP_H - 4)
+      break;
     if (procs.ramNames[i].length() > 0) {
       String name = procs.ramNames[i];
       if (name.length() > 12)
         name = name.substring(0, 10) + "..";
+      u8g2.setClipWindow(4, y - 8, DISP_W - 4, y + 6);
       u8g2.drawStr(6, y, name.c_str());
+      u8g2.setMaxClipWindow();
 
       snprintf(buf, sizeof(buf), "%dMB", procs.ramMb[i]);
       int tw = u8g2.getStrWidth(buf);
@@ -719,11 +737,13 @@ void drawMemoryScreen() {
     }
   }
 
-  // VRAM — value right-aligned
-  y += 12;
-  u8g2.drawStr(4, y, "VRAM:");
-  snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.vramUsed, hw.vramTotal);
-  u8g2.drawStr(124 - u8g2.getStrWidth(buf), y, buf);
+  // VRAM — only if fits on screen
+  y += 10;
+  if (y + 8 <= DISP_H - 2) {
+    u8g2.drawStr(4, y, "VRAM:");
+    snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.vramUsed, hw.vramTotal);
+    u8g2.drawStr(124 - u8g2.getStrWidth(buf), y, buf);
+  }
 }
 
 void drawDisksScreen() {
@@ -731,11 +751,14 @@ void drawDisksScreen() {
 
   u8g2.setFont(FONT_SMALL);
   int y = MARGIN + 11;
+  const int rowH = 11;
 
   char buf[30];
   const char *diskNames[] = {"NVMe1", "NVMe2", "HDD", "SSD"};
 
   for (int i = 0; i < 4; i++) {
+    if (y + rowH > DISP_H - 4)
+      break;
     if (hw.diskTotal[i] > 0) {
       u8g2.drawStr(4, y, diskNames[i]);
 
@@ -746,8 +769,8 @@ void drawDisksScreen() {
       u8g2.drawStr(DISP_W - tw - 4, y, buf);
 
       y += 2;
-      drawProgressBar(4, y, 120, 6, pct);
-      y += 10;
+      drawProgressBar(4, y, 120, 5, pct);
+      y += rowH - 2;
     }
   }
 }
@@ -765,20 +788,27 @@ void drawPlayerScreen() {
     u8g2.drawStr(8, MARGIN + 44, "Cover");
   }
 
-  // Artist and track — always use readable 7x13 Cyrillic font
+  // Artist and track — clip per line to avoid overlap
   int textX = 56;
   int textW = DISP_W - textX - 4;
+  int lineH = 12;
   int y = MARGIN + 16;
   u8g2.setFont(FONT_MEDIA);
+  u8g2.setClipWindow(textX, y - 10, textX + textW, y + 5);
   drawScrollingText(textX, y, textW, media.artist, FONT_MEDIA);
-  y += 12;
+  u8g2.setMaxClipWindow();
+  y += lineH;
+  u8g2.setClipWindow(textX, y - 10, textX + textW, y + 5);
   drawScrollingText(textX, y, textW, media.track, FONT_MEDIA);
+  u8g2.setMaxClipWindow();
   y += 14;
-  u8g2.setFont(FONT_SMALL);
-  if (media.isPlaying) {
-    u8g2.drawStr(textX, y, "Playing");
-  } else {
-    u8g2.drawStr(textX, y, "Paused");
+  if (y + 8 <= DISP_H - 2) {
+    u8g2.setFont(FONT_SMALL);
+    if (media.isPlaying) {
+      u8g2.drawStr(textX, y, "Playing");
+    } else {
+      u8g2.drawStr(textX, y, "Paused");
+    }
   }
 }
 
@@ -787,9 +817,9 @@ void drawFansScreen() {
 
   u8g2.setFont(FONT_SMALL);
   int y = MARGIN + 11;
+  const int lineH = 10;
 
   char buf[20];
-
   int valX = DISP_W - 4;
 
   // Pump
@@ -797,34 +827,33 @@ void drawFansScreen() {
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanPump);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
-  // Radiator
-  y += 12;
+  y += lineH;
   u8g2.drawStr(4, y, "Rad:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanRad);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
-  // Case
-  y += 12;
+  y += lineH;
   u8g2.drawStr(4, y, "Case:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanCase);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
-  // GPU
-  y += 12;
+  y += lineH;
   u8g2.drawStr(4, y, "GPU:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanGpu);
   u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
-  // Additional temps
-  y += 14;
-  u8g2.drawStr(4, y, "Chipset:");
-  snprintf(buf, sizeof(buf), "%d%cC", hw.chipsetTemp, (char)0xB0);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
-
-  y += 10;
-  u8g2.drawStr(4, y, "NVMe:");
-  snprintf(buf, sizeof(buf), "%d%cC", hw.nvme2Temp, (char)0xB0);
-  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
+  y += lineH;
+  if (y + 2 <= DISP_H - 4) {
+    u8g2.drawStr(4, y, "Chipset:");
+    snprintf(buf, sizeof(buf), "%d%cC", hw.chipsetTemp, (char)0xB0);
+    u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
+  }
+  y += lineH;
+  if (y + 2 <= DISP_H - 4) {
+    u8g2.drawStr(4, y, "NVMe:");
+    snprintf(buf, sizeof(buf), "%d%cC", hw.nvme2Temp, (char)0xB0);
+    u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
+  }
 }
 
 void drawWeatherScreen() {
@@ -895,37 +924,41 @@ void drawTopProcsScreen() {
   drawCard(0, MARGIN, DISP_W, DISP_H - MARGIN - 6, "TOP CPU");
 
   u8g2.setFont(FONT_SMALL);
-  int y = MARGIN + 13;
+  const int lineH = 14;
+  int y = MARGIN + 12;
 
   for (int i = 0; i < 3; i++) {
+    if (y + 10 > DISP_H - 4)
+      break;
     if (procs.cpuNames[i].length() > 0) {
+      int pct = procs.cpuPercent[i];
+      if (pct > 100)
+        pct = 100;
+
       char buf[25];
       String name = procs.cpuNames[i];
-      if (name.length() > 14)
-        name = name.substring(0, 11) + "...";
+      if (name.length() > 12)
+        name = name.substring(0, 10) + "..";
 
-      snprintf(buf, sizeof(buf), "%d%%", procs.cpuPercent[i]);
+      snprintf(buf, sizeof(buf), "%d%%", pct);
       u8g2.setFont(FONT_TINY);
       int tw = u8g2.getStrWidth(buf);
       u8g2.setFont(FONT_SMALL);
-      int nameMaxX = DISP_W - tw - 10;
-      if (nameMaxX > 10) {
-        u8g2.setClipWindow(6, y - 6, nameMaxX, y + 8);
+
+      int nameMaxW = DISP_W - 6 - tw - 8;
+      if (nameMaxW > 0) {
+        u8g2.setClipWindow(6, y - 8, 6 + nameMaxW, y + 6);
         u8g2.drawStr(6, y, name.c_str());
         u8g2.setMaxClipWindow();
-      } else {
-        u8g2.drawStr(6, y, name.c_str());
       }
-
       u8g2.setFont(FONT_TINY);
       u8g2.drawStr(DISP_W - tw - 6, y, buf);
       u8g2.setFont(FONT_SMALL);
 
-      y += 12;
-      if (i < 2) {
-        u8g2.drawLine(6, y - 5, DISP_W - 6, y - 5);
-      }
+      if (i < 2)
+        u8g2.drawLine(6, y + 4, DISP_W - 6, y + 4);
     }
+    y += lineH;
   }
 }
 
