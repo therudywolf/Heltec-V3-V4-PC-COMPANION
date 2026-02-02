@@ -123,9 +123,10 @@ uint8_t eqTargets[EQ_BARS] = {0};
 // Splash
 bool splashDone = false;
 unsigned long splashStart = 0;
-int splashPhase = 0; // 0 = Forest OS, 1 = By RudyWolf
+int splashPhase = 0; // 0 = Forest OS, 1 = By RudyWolf, 2 = глитч перед выходом
 const unsigned long SPLASH_PHASE0_MS = 3200;
 const unsigned long SPLASH_PHASE1_MS = 3200;
+const unsigned long SPLASH_GLITCH_MS = 120; // 1–2 кадра шума
 const unsigned long SPLASH_FRAME_MS = 180;
 unsigned long lastSplashFrame = 0;
 int splashFrame = 0;
@@ -136,6 +137,14 @@ unsigned long wifiConnectStart = 0;
 const unsigned long WIFI_TRY_MS = 8000;
 String tcpLineBuffer;    // накопление строки до \n
 int lastSentScreen = -1; // для отправки screen:N при смене экрана
+
+// Киберпанк-глитч при смене экрана (3–6 кадров)
+int transitionGlitchPhase = 0; // 0 = нет, 1..5 = кадры глитча
+// Game Over: 2–3 кадра глитча перед "GAME OVER"
+int gameOverGlitchPhase = 0; // 0 = показывать GAME OVER, 1..3 = глитч
+// Индикатор экранов: мерцание текущей точки каждые 1–2 с
+unsigned long lastDotBlink = 0;
+bool dotBlinkOn = true;
 
 // Wolf Runner (screen GAME_SCREEN_INDEX): волк прыгает через препятствия
 const int GAME_WOLF_X = 20;
@@ -274,21 +283,31 @@ void drawHeader(const char *title) {
   u8g2.drawStr(2, 7, title);
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, HEADER_H, 128, HEADER_H);
+  u8g2.drawLine(0, HEADER_H + 1, 128, HEADER_H + 1);
 }
 
 // --- SCREENS ---
 
-// --- SPLASH: Forest OS, затем By RudyWolf + иконка волка (чистый Apple-стиль)
+// --- SPLASH: Forest OS, затем By RudyWolf + иконка волка, затем 1–2 кадра шума
 // ---
 void drawSplash() {
   if (splashPhase == 0) {
     u8g2.setFont(u8g2_font_helvB14_tr);
     u8g2.drawStr(28, 30, "Forest");
     u8g2.drawStr(52, 50, "OS");
-  } else {
+  } else if (splashPhase == 1) {
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.drawStr(34, 12, "By RudyWolf");
     u8g2.drawXBMP(52, 22, 24, 24, wolfFace);
+    u8g2.setFont(u8g2_font_5x7_tr);
+    u8g2.drawStr(98, 8, "ONLINE");
+  } else {
+    for (int i = 0; i < 80; i++)
+      u8g2.drawPixel(random(0, 128), random(0, 64));
+    u8g2.setDrawColor(0);
+    for (int y = 0; y < 64; y += 4)
+      u8g2.drawBox(0, y, 128, 1);
+    u8g2.setDrawColor(1);
   }
 }
 
@@ -297,6 +316,7 @@ void drawSplash() {
 void drawMain() {
   drawHeader("MAIN");
   u8g2.drawFrame(0, HEADER_H + 1, 128, 12);
+  u8g2.drawFrame(1, HEADER_H + 2, 126, 10);
   u8g2.setFont(u8g2_font_helvB08_tr);
   u8g2.setCursor(2, HEADER_H + 10);
   u8g2.print("CPU ");
@@ -412,6 +432,8 @@ void drawMemory() {
 // Power: только питание (Vcore, CPU W, GPU W)
 void drawPower() {
   drawHeader("POWER");
+  u8g2.drawFrame(0, HEADER_H + 2, 128, 38);
+  u8g2.drawFrame(1, HEADER_H + 3, 126, 36);
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.setCursor(0, HEADER_H + 6);
   u8g2.print("Vcore ");
@@ -562,6 +584,8 @@ void drawNetwork() {
 // Disks: D1..D4 — темп °C, занято/всего GB
 void drawDisks() {
   drawHeader("DISKS");
+  u8g2.drawFrame(0, HEADER_H + 2, 128, 54);
+  u8g2.drawFrame(1, HEADER_H + 3, 126, 52);
   u8g2.setFont(u8g2_font_5x7_tr);
   for (int i = 0; i < 4; i++) {
     int y = HEADER_H + 4 + i * 14;
@@ -588,6 +612,16 @@ void drawWolfGame() {
   u8g2.setCursor(70, 7);
   u8g2.print(gameScore);
   if (gameOver) {
+    if (gameOverGlitchPhase > 0) {
+      u8g2.setDrawColor(0);
+      for (int y = 0; y < 64; y += 2)
+        u8g2.drawBox(0, y, 128, 1);
+      u8g2.setDrawColor(1);
+      for (int i = 0; i < 40; i++)
+        u8g2.drawPixel(random(0, 128), random(0, 64));
+      gameOverGlitchPhase--;
+      return;
+    }
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.setCursor(28, 36);
     u8g2.print("GAME OVER");
@@ -761,6 +795,7 @@ void drawMenu() {
   u8g2.drawBox(8, 8, 112, 48);
   u8g2.setDrawColor(1);
   u8g2.drawFrame(8, 8, 112, 48);
+  u8g2.drawFrame(9, 9, 110, 46);
 
   u8g2.setFont(u8g2_font_5x7_tr);
   u8g2.drawStr(48, 16, "Menu");
@@ -796,6 +831,24 @@ void drawMenu() {
       u8g2.print("EXIT");
     }
   }
+}
+
+// Киберпанк-глитч при смене экрана: полосы/шум поверх текущего экрана
+void drawGlitchTransition() {
+  drawScreen(currentScreen);
+  if (transitionGlitchPhase <= 0)
+    return;
+  // Чётные/нечётные строки — чёрные полосы (артефакт)
+  if (transitionGlitchPhase >= 4) {
+    u8g2.setDrawColor(0);
+    for (int y = 0; y < 64; y += 2)
+      u8g2.drawBox(0, y, 128, 1);
+  } else if (transitionGlitchPhase >= 2) {
+    u8g2.setDrawColor(0);
+    for (int y = 1; y < 64; y += 2)
+      u8g2.drawBox(0, y, 128, 1);
+  }
+  // Фаза 1 — без полос (мягкий выход)
 }
 
 void drawScreen(int screen) {
@@ -1026,6 +1079,7 @@ void loop() {
     if (wasInGameOnPress && duration > 800) {
       currentScreen = (currentScreen + 1) % TOTAL_SCREENS;
       lastCarousel = now;
+      transitionGlitchPhase = 5;
     } else if (duration > 800) {
       if (!wasInMenuOnPress) {
         inMenu = true;
@@ -1048,6 +1102,7 @@ void loop() {
             if (currentScreen >= TOTAL_SCREENS)
               currentScreen = 0;
             lastCarousel = now;
+            transitionGlitchPhase = 5;
           }
         } else if (currentScreen == GAME_SCREEN_INDEX) {
           if (gameOver) {
@@ -1067,6 +1122,7 @@ void loop() {
           if (currentScreen >= TOTAL_SCREENS)
             currentScreen = 0;
           lastCarousel = now;
+          transitionGlitchPhase = 5;
         }
       }
     }
@@ -1148,6 +1204,7 @@ void loop() {
         next = (next + 1) % TOTAL_SCREENS;
       currentScreen = next;
       lastCarousel = now;
+      transitionGlitchPhase = 5;
     }
   }
 
@@ -1178,6 +1235,7 @@ void loop() {
     unsigned long gameElapsed = now - gameStartTime;
     if (gameElapsed >= GAME_DURATION_MS) {
       gameOver = true;
+      gameOverGlitchPhase = 3;
     } else {
       gameWolfY += gameWolfVy;
       gameWolfVy += GAME_GRAVITY;
@@ -1199,6 +1257,7 @@ void loop() {
             gameObstacleX[i] + GAME_OBSTACLE_W > GAME_WOLF_X &&
             gameWolfY + GAME_WOLF_H > oy && gameWolfY < oy + GAME_OBSTACLE_H) {
           gameOver = true;
+          gameOverGlitchPhase = 3;
         }
       }
     }
@@ -1265,6 +1324,9 @@ void loop() {
       splashPhase = 1;
       splashStart = now;
     } else if (splashPhase == 1 && elapsed >= SPLASH_PHASE1_MS) {
+      splashPhase = 2;
+      splashStart = now;
+    } else if (splashPhase == 2 && elapsed >= SPLASH_GLITCH_MS) {
       splashDone = true;
     }
     if (now - lastSplashFrame >= SPLASH_FRAME_MS) {
@@ -1284,7 +1346,12 @@ void loop() {
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.drawStr(70, 8, "Reconnect");
   } else if (splashDone) {
-    drawScreen(currentScreen);
+    if (transitionGlitchPhase > 0) {
+      drawGlitchTransition();
+      transitionGlitchPhase--;
+    } else {
+      drawScreen(currentScreen);
+    }
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.setCursor(118, 8);
     u8g2.print("W");
@@ -1300,11 +1367,18 @@ void loop() {
       drawMenu();
 
     if (!inMenu) {
+      if (now - lastDotBlink > 1500) {
+        lastDotBlink = now;
+        dotBlinkOn = !dotBlinkOn;
+      }
       for (int i = 0; i < TOTAL_SCREENS; i++) {
         int x = 64 - (TOTAL_SCREENS * 3) + (i * 6);
-        if (i == currentScreen)
-          u8g2.drawBox(x, 62, 2, 2);
-        else
+        if (i == currentScreen) {
+          if (dotBlinkOn)
+            u8g2.drawBox(x, 62, 2, 2);
+          else
+            u8g2.drawFrame(x, 62, 2, 2);
+        } else
           u8g2.drawPixel(x + 1, 63);
       }
     }
