@@ -251,6 +251,29 @@ def get_top_processes():
         log_err(f"Top processes: {e}", e, trace=False)
         return []
 
+
+def get_top_processes_ram():
+    """Топ-2 процесса по ОЗУ (RSS в MB)."""
+    try:
+        procs = []
+        for p in psutil.process_iter(['name', 'memory_info']):
+            try:
+                info = p.info
+                mem = info.get('memory_info')
+                if mem is not None:
+                    rss_mb = int(mem.rss / (1024 * 1024))
+                    if rss_mb > 0:
+                        name = (info.get('name') or '')[:16]
+                        procs.append({"n": name, "r": rss_mb})
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        procs.sort(key=lambda x: x["r"], reverse=True)
+        return procs[:2]
+    except Exception as e:
+        log_err(f"Top RAM processes: {e}", e, trace=False)
+        return []
+
+
 def get_net_speed():
     """Получить скорость сети (upload/download KB/s)"""
     global last_net_bytes
@@ -354,31 +377,30 @@ async def get_media():
         log_err(f"Media session: {e}", e, trace=False)
     return {"art": "", "trk": "Stopped", "play": 0, "cover_b64": ""}
 
-# Поля по экранам для полного пакета (0=Main .. 9=Network); общие (алерты) всегда
+# Поля по экранам (0=Main .. 9=TopProcs); общие (алерты) всегда
 _SCREEN_KEYS = {
     0: ("gth", "vt", "ru", "rt", "rp", "vu", "vt_tot"),
     1: ("cl1", "cl2", "cl3", "cl4", "cl5", "cl6"),
-    2: ("gck", "gf", "gth", "vu", "vt_tot", "gpu_pwr"),
-    3: ("ru", "rt", "rp", "vu", "vt_tot"),
-    4: ("art", "trk", "cover_b64"),
-    5: (),  # Equalizer: play уже в общих
-    6: ("vcore", "cpu_pwr", "gpu_pwr", "nvme2_t"),
-    7: ("p", "r", "c", "gf"),  # Fans: Pump, Rad, Case, GPU
-    8: ("wt", "wd", "wi"),
+    2: ("ct", "cpu_pwr", "cpu_load", "c1", "c2", "c3", "c4", "c5", "c6"),
+    3: ("gck", "gf", "gt", "vu", "vt_tot", "gpu_pwr"),
+    4: ("ru", "rt", "rp", "tp_ram"),
+    5: ("disk_t", "disk_used", "disk_total"),
+    6: ("art", "trk", "cover_b64"),
+    7: ("p", "r", "c", "gf"),
+    8: ("wt", "wd", "wi", "wday_high", "wday_low", "wday_code", "week_high", "week_low", "week_code"),
     9: ("tp",),
-    10: ("nu", "nd"),
-    11: ("disk_t", "disk_used", "disk_total"),  # Disks
-    12: (),  # Wolf Game: только heartbeat
 }
 _COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play", "wt", "wd", "wi")
 
 
-def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None, core_loads=None, screen=None):
+def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, top_procs_ram=None, net=None, disk=None, core_loads=None, screen=None):
     """Сборка JSON. screen=N — только поля для экрана N + общие (алерты). Иначе полный пакет."""
     if weather is None:
         weather = {"temp": 0, "desc": "", "icon": 0}
     if top_procs is None:
         top_procs = []
+    if top_procs_ram is None:
+        top_procs_ram = []
     if net is None:
         net = {"up": 0, "down": 0}
     if disk is None:
@@ -440,6 +462,7 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "week_low": weather.get("week_low", [])[:7],
         "week_code": weather.get("week_code", [])[:7],
         "tp": top_procs,
+        "tp_ram": top_procs_ram,
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "play": media.get("play", 0),
@@ -447,7 +470,7 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
 
     # Всегда отправляем полный пакет, чтобы на устройстве не было пустых экранов
     payload = dict(full)
-    if (screen is not None and screen == 4) or include_cover:
+    if (screen is not None and screen == 6) or include_cover:
         if media.get("cover_b64"):
             payload["cover_b64"] = media["cover_b64"]
     return payload
@@ -475,7 +498,7 @@ async def run_serial(ser, cache, send_fn):
     send_fn(data_str.encode("utf-8"))
 
 
-# Клиенты TCP: writer -> last screen (0–12: Disks=11, Game=12)
+# Клиенты TCP: writer -> last screen (0–9: Main..TopProcs)
 tcp_clients = []
 client_screens = {}  # writer -> int
 client_buffers = {}  # writer -> str
@@ -486,7 +509,7 @@ def _parse_screen_line(line: str) -> int | None:
     if s.startswith("screen:") and len(s) < 20:
         try:
             n = int(s.split(":")[1].strip())
-            if 0 <= n <= 12:
+            if 0 <= n <= 9:
                 return n
         except (ValueError, IndexError):
             pass
@@ -568,6 +591,8 @@ async def run():
     MEDIA_FULL_INTERVAL = 0.28  # чаще полный пакет для экранов Player/EQ
     last_heartbeat = 0.0
     last_full = 0.0
+    full_tick = 0
+    last_top_procs = []
 
     # Первый тик: заполнить cache для heartbeat
     hw0 = get_lhm_data()
@@ -618,14 +643,20 @@ async def run():
             }
             await send_all((json.dumps(hb) + "\n").encode("utf-8"))
 
-        any_media_screen = any(client_screens.get(w, 0) in (4, 5) for w in tcp_clients)
+        any_media_screen = any(client_screens.get(w, 0) == 6 for w in tcp_clients)
         full_interval = MEDIA_FULL_INTERVAL if any_media_screen else FULL_INTERVAL
         if now_sec - last_full >= full_interval:
             last_full = now_sec
+            full_tick += 1
             hw = get_lhm_data()
             media = await get_media()
             weather = weather_cache
-            top_procs = get_top_processes()
+            if full_tick % 3 == 0 or not last_top_procs:
+                top_procs = get_top_processes()
+                last_top_procs = top_procs
+            else:
+                top_procs = last_top_procs
+            top_procs_ram = get_top_processes_ram()
             core_loads = get_core_loads()
             net = get_net_speed()
             disk = get_disk_speed()
@@ -655,7 +686,8 @@ async def run():
             for w in list(tcp_clients):
                 screen = client_screens.get(w, 0)
                 payload = build_payload(hw, media, hw_ok, include_cover=include_cover, weather=weather,
-                                        top_procs=top_procs, net=net, disk=disk, core_loads=core_loads, screen=screen)
+                                        top_procs=top_procs, top_procs_ram=top_procs_ram, net=net, disk=disk,
+                                        core_loads=core_loads, screen=screen)
                 try:
                     w.write((json.dumps(payload) + "\n").encode("utf-8"))
                     await w.drain()
