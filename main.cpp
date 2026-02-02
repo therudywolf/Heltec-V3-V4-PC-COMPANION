@@ -14,6 +14,18 @@
 #define PC_IP "192.168.1.2"
 #define TCP_PORT 8888
 #endif
+#ifndef CPU_TEMP_ALERT
+#define CPU_TEMP_ALERT 80
+#endif
+#ifndef GPU_TEMP_ALERT
+#define GPU_TEMP_ALERT 85
+#endif
+#ifndef CPU_LOAD_ALERT
+#define CPU_LOAD_ALERT 95
+#endif
+#ifndef GPU_LOAD_ALERT
+#define GPU_LOAD_ALERT 95
+#endif
 
 // --- PINOUT ---
 #define SDA_PIN 17
@@ -31,7 +43,8 @@ int cpuTemp = 0, gpuTemp = 0, gpuHotSpot = 0, vrmTemp = 0;
 int cpuLoad = 0, cpuPwr = 0, gpuLoad = 0, gpuPwr = 0;
 int fanPump = 0, fanRad = 0, fanCase = 0, fanGpu = 0;
 int gpuClk = 0;
-int cores[6] = {0};
+int cores[6] = {0};    // legacy clock (c1-c6)
+int coreLoad[6] = {0}; // per-core load % (cl1-cl6)
 int ramPct = 0;
 float ramUsed = 0.0, ramTotal = 0.0;
 float vramUsed = 0.0, vramTotal = 0.0;
@@ -63,8 +76,9 @@ bool carouselEnabled = false; // Настройка: Авто-смена экр�
 int eqStyle = 0;              // Стиль эквалайзера: 0=Bars, 1=Wave, 2=Circle
 
 int currentScreen = 0;
-// 0=Main .. 9=Network, 10=Wolf Game
-const int TOTAL_SCREENS = 11;
+// 0=Main 1=Cores 2=GPU 3=Memory 4=Player 5=EQ 6=Power 7=Fans 8=Weather
+// 9=TopProcs 10=Network 11=Wolf Game
+const int TOTAL_SCREENS = 12;
 
 bool inMenu = false; // Мы в меню?
 int menuItem = 0;    // Пункт меню (0=LED, 1=Carousel, 2=EQ Style, 3=Exit)
@@ -75,6 +89,7 @@ bool btnHeld = false;
 bool menuHoldHandled = false; // один раз за удержание в меню
 bool wasInMenuOnPress =
     false; // были в меню в момент нажатия (чтобы EXIT не открывал снова)
+bool wasInGameOnPress = false;      // были на экране игры (long press = выход)
 unsigned long lastMenuActivity = 0; // для авто-закрытия меню через 5 мин
 const unsigned long MENU_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -87,11 +102,7 @@ bool blinkState = false;
 const unsigned long SIGNAL_TIMEOUT_MS = 10000; // 10 sec
 const unsigned long EQ_UPDATE_MS = 28;
 
-// Пороги алертов (температура °C, нагрузка %)
-const int CPU_TEMP_ALERT = 80;
-const int GPU_TEMP_ALERT = 85;
-const int CPU_LOAD_ALERT = 95;
-const int GPU_LOAD_ALERT = 95;
+// Пороги алертов заданы в config_private.h или дефолтами выше
 
 // Equalizer: 16 bars, smooth interpolation
 const int EQ_BARS = 16;
@@ -102,9 +113,9 @@ uint8_t eqTargets[EQ_BARS] = {0};
 bool splashDone = false;
 unsigned long splashStart = 0;
 int splashPhase = 0; // 0 = Forest OS, 1 = By RudyWolf
-const unsigned long SPLASH_PHASE0_MS = 2500;
-const unsigned long SPLASH_PHASE1_MS = 2500;
-const unsigned long SPLASH_FRAME_MS = 250;
+const unsigned long SPLASH_PHASE0_MS = 3200;
+const unsigned long SPLASH_PHASE1_MS = 3200;
+const unsigned long SPLASH_FRAME_MS = 180;
 unsigned long lastSplashFrame = 0;
 int splashFrame = 0;
 
@@ -115,7 +126,7 @@ const unsigned long WIFI_TRY_MS = 8000;
 String tcpLineBuffer;    // накопление строки до \n
 int lastSentScreen = -1; // для отправки screen:N при смене экрана
 
-// Wolf & Moon game (screen 10)
+// Wolf & Moon game (screen 11)
 int gameMoonX = 64, gameMoonY = 10;
 int gameWolfX = 56, gameWolfY = 52;
 int gameWolfVy = 0;
@@ -123,11 +134,13 @@ int gameScore = 0;
 unsigned long gameStartTime = 0;
 const int GAME_DURATION_MS = 30000;
 const int GAME_TARGET_SCORE = 5;
-const unsigned long GAME_TICK_MS = 50;
-const int MOON_R = 4;
-const int WOLF_W = 16, WOLF_H = 10;
-const int JUMP_VY = -8;
+const unsigned long GAME_TICK_MS = 60;
+const int MOON_R = 5;
+const int MOON_HIT_R = 8;
+const int WOLF_W = 18, WOLF_H = 10;
+const int JUMP_VY = -9;
 const int GRAVITY = 1;
+const int MOON_FALL_STEP = 1;
 unsigned long lastGameTick = 0;
 
 // Weather icons (16x16, 32 bytes)
@@ -229,22 +242,32 @@ void drawBar(int x, int y, int w, int h, float val, float max) {
 
 // --- SCREENS ---
 
-// --- SPLASH ---
+// --- SPLASH (волчья тема) ---
 void drawSplash() {
   if (splashPhase == 0) {
     u8g2.setFont(u8g2_font_helvB14_tr);
-    u8g2.drawStr(20, 28, "Forest");
-    u8g2.drawStr(28, 48, "OS");
+    u8g2.drawStr(18, 26, "Forest");
+    u8g2.drawStr(26, 46, "OS");
+    int o = (splashFrame % 8);
+    for (int i = 0; i < 5; i++) {
+      int x = 8 + (i * 28 + o) % 112;
+      u8g2.drawPixel(x, 58);
+      u8g2.drawPixel(x + 2, 58);
+      u8g2.drawPixel(x + 1, 60);
+    }
   } else {
     u8g2.setFont(u8g2_font_6x10_tr);
-    u8g2.drawStr(28, 18, "By RudyWolf");
-    u8g2.drawXBMP(52, 28, 24, 24, wolfFace);
-    // Лапки — точки по углам, сдвиг по кадру
-    int o = (splashFrame % 4) * 4;
-    u8g2.drawPixel(8 + o, 56);
-    u8g2.drawPixel(120 - o, 56);
-    u8g2.drawPixel(8 + o, 8);
-    u8g2.drawPixel(120 - o, 8);
+    u8g2.drawStr(24, 16, "By RudyWolf");
+    u8g2.drawXBMP(52, 24, 24, 24, wolfFace);
+    int o = (splashFrame % 6) * 3;
+    u8g2.drawPixel(6 + o, 58);
+    u8g2.drawPixel(8 + o, 58);
+    u8g2.drawPixel(7 + o, 60);
+    u8g2.drawPixel(122 - o, 58);
+    u8g2.drawPixel(120 - o, 58);
+    u8g2.drawPixel(121 - o, 60);
+    u8g2.drawPixel(6 + o, 6);
+    u8g2.drawPixel(122 - o, 6);
   }
 }
 
@@ -253,6 +276,9 @@ void drawSplash() {
 void drawMain() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "MAIN");
+  u8g2.drawPixel(124, 6);
+  u8g2.drawPixel(126, 6);
+  u8g2.drawPixel(125, 8);
 
   u8g2.setCursor(0, 20);
   u8g2.print("CPU ");
@@ -287,14 +313,14 @@ void drawMain() {
   u8g2.print("%");
 }
 
-// Cores: зона заголовка y=0..11, столбики y=12..63
+// Cores: per-core load 0–100% (столбики)
 void drawCores() {
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(0, 10, "CORES");
+  u8g2.drawStr(0, 10, "CORES %");
   const int barTop = 14;
   const int barH = 48;
   for (int i = 0; i < 6; i++) {
-    int h = map(cores[i], 3000, 4850, 2, barH);
+    int h = map(coreLoad[i], 0, 100, 2, barH);
     if (h < 0)
       h = 0;
     if (h > barH)
@@ -304,24 +330,36 @@ void drawCores() {
   }
 }
 
-// GPU: заголовок, частота, VRAM bar, вентилятор, нагрузка, мощность
+// GPU: Core/HotSpot temp, VRAM bar, частота, вентилятор, мощность, Alert
 void drawGpu() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "GPU");
+  if (gpuTemp >= GPU_TEMP_ALERT)
+    u8g2.drawStr(90, 10, "ALERT");
   u8g2.setCursor(0, 22);
+  u8g2.print("Core ");
+  u8g2.print(gpuTemp);
+  u8g2.print((char)0xB0);
+  u8g2.print(" Hot ");
+  u8g2.print(gpuHotSpot);
+  u8g2.print((char)0xB0);
+  drawBar(0, 26, 128, 8, vramUsed, vramTotal > 0 ? vramTotal : 1);
+  u8g2.setCursor(0, 38);
   u8g2.print(gpuClk);
-  u8g2.print(" MHz ");
+  u8g2.print("MHz ");
   u8g2.print(gpuLoad);
   u8g2.print("% ");
   u8g2.print(gpuPwr);
   u8g2.print("W");
-  drawBar(0, 26, 128, 8, vramUsed, vramTotal > 0 ? vramTotal : 1);
-  u8g2.setCursor(0, 42);
-  u8g2.print("Fan:");
+  u8g2.setCursor(0, 50);
+  u8g2.print("Fan ");
   u8g2.print(fanGpu);
-  u8g2.print(" Hot:");
-  u8g2.print(gpuHotSpot);
-  u8g2.print((char)0xB0);
+  u8g2.setCursor(70, 50);
+  u8g2.print("VRAM ");
+  u8g2.print(vramUsed, 1);
+  u8g2.print("/");
+  u8g2.print((int)vramTotal);
+  u8g2.print("G");
 }
 
 // Memory: RAM и VRAM (used/total, %)
@@ -367,12 +405,43 @@ void drawPower() {
   u8g2.print("C");
 }
 
-// Weather: Moscow weather display
+// Fans: Pump, Rad, Case, GPU (RPM or %)
+void drawFans() {
+  u8g2.setFont(u8g2_font_6x10_tr);
+  u8g2.drawStr(0, 10, "FANS");
+  u8g2.setCursor(0, 24);
+  u8g2.print("Pump: ");
+  u8g2.print(fanPump);
+  u8g2.setCursor(0, 36);
+  u8g2.print("Rad:  ");
+  u8g2.print(fanRad);
+  u8g2.setCursor(0, 48);
+  u8g2.print("Case: ");
+  u8g2.print(fanCase);
+  u8g2.setCursor(0, 60);
+  u8g2.print("GPU:  ");
+  u8g2.print(fanGpu);
+}
+
+// Weather: display with loading fallback
 void drawWeather() {
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(0, 10, "WEATHER MSK");
+  u8g2.drawStr(0, 10, "WEATHER");
 
-  // Icon (16x16) — Open-Meteo WMO weather_code 0–99
+  bool noData = (weatherTemp == 0 && weatherDesc.length() == 0);
+  if (noData) {
+    u8g2.drawXBMP(4, 20, 16, 16, iconCloudy);
+    u8g2.setFont(u8g2_font_helvB10_tr);
+    u8g2.setCursor(26, 28);
+    u8g2.print("--");
+    u8g2.print((char)0xB0);
+    u8g2.print("C");
+    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.setCursor(26, 40);
+    u8g2.print("Loading...");
+    return;
+  }
+
   const uint8_t *icon = iconCloudy;
   if (weatherIcon == 0)
     icon = iconSunny;
@@ -393,7 +462,6 @@ void drawWeather() {
 
   u8g2.drawXBMP(4, 20, 16, 16, icon);
 
-  // Температура и описание справа
   u8g2.setFont(u8g2_font_helvB10_tr);
   u8g2.setCursor(26, 28);
   u8g2.print(weatherTemp);
@@ -476,6 +544,9 @@ void drawWolfGame() {
   u8g2.setCursor(90, 8);
   u8g2.print(left);
   u8g2.print("s");
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.setCursor(0, 62);
+  u8g2.print("Long=Exit");
 }
 
 // Equalizer Bars (столбики)
@@ -599,7 +670,7 @@ void drawMenu() {
   u8g2.drawFrame(12, 12, 104, 48);
 
   u8g2.setFont(u8g2_font_6x10_tr);
-  u8g2.drawStr(42, 20, "- MENU -");
+  u8g2.drawStr(36, 20, "Forest Menu");
 
   // Item 0: LED
   u8g2.setCursor(16, 30);
@@ -664,7 +735,7 @@ void loop() {
     StaticJsonDocument<3600> doc;
     DeserializationError error = deserializeJson(doc, input);
     if (!error) {
-      bool isHeartbeat = input.indexOf("art") < 0 || input.length() < 200;
+      bool isHeartbeat = input.length() < 350 && input.indexOf("cover_b64") < 0;
 
       cpuTemp = doc["ct"];
       gpuTemp = doc["gt"];
@@ -672,6 +743,23 @@ void loop() {
       gpuLoad = doc["gpu_load"];
       isPlaying = (doc["play"] | 0) == 1;
       lastUpdate = now;
+
+      if (doc.containsKey("wt")) {
+        weatherTemp = doc["wt"];
+        const char *wd = doc["wd"];
+        if (wd)
+          weatherDesc = String(wd);
+        if (doc.containsKey("wi"))
+          weatherIcon = doc["wi"];
+      }
+      if (doc.containsKey("art")) {
+        const char *a = doc["art"];
+        artist = String(a ? a : "");
+      }
+      if (doc.containsKey("trk")) {
+        const char *t = doc["trk"];
+        track = String(t ? t : "");
+      }
 
       if (isHeartbeat) {
         // Только алерты — остальные поля не трогаем
@@ -692,6 +780,12 @@ void loop() {
         cores[3] = doc["c4"];
         cores[4] = doc["c5"];
         cores[5] = doc["c6"];
+        coreLoad[0] = doc["cl1"] | 0;
+        coreLoad[1] = doc["cl2"] | 0;
+        coreLoad[2] = doc["cl3"] | 0;
+        coreLoad[3] = doc["cl4"] | 0;
+        coreLoad[4] = doc["cl5"] | 0;
+        coreLoad[5] = doc["cl6"] | 0;
 
         ramUsed = doc["ru"];
         ramTotal = doc["rt"];
@@ -734,9 +828,8 @@ void loop() {
           size_t covLen = strlen(cov);
           if (covLen > 0 && covLen <= 512) {
             int n = b64Decode(cov, covLen, coverBitmap, COVER_BYTES);
-            hasCover = (n == (int)COVER_BYTES);
-          } else {
-            hasCover = false;
+            if (n == (int)COVER_BYTES)
+              hasCover = true;
           }
         } else {
           hasCover = false;
@@ -753,16 +846,17 @@ void loop() {
     btnPressTime = now;
     menuHoldHandled = false;
     wasInMenuOnPress = inMenu;
+    wasInGameOnPress = (currentScreen == 11);
   }
 
   if (btnState == HIGH && btnHeld) {
-    // Button Released
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
 
-    if (duration > 800) {
-      // --- LONG PRESS: открыть меню только если при нажатии мы НЕ были в меню
-      // ---
+    if (wasInGameOnPress && duration > 1500) {
+      currentScreen = 10;
+      lastCarousel = now;
+    } else if (duration > 800) {
       if (!wasInMenuOnPress) {
         inMenu = true;
         menuItem = 0;
@@ -776,7 +870,7 @@ void loop() {
         if (menuItem > 3)
           menuItem = 0;
       } else {
-        if (currentScreen == 10) {
+        if (currentScreen == 11) {
           gameWolfVy = JUMP_VY;
         } else {
           currentScreen++;
@@ -843,7 +937,7 @@ void loop() {
     tcpClient.print(currentScreen);
     tcpClient.print("\n");
     lastSentScreen = currentScreen;
-    if (currentScreen == 10) {
+    if (currentScreen == 11) {
       gameStartTime = now;
       gameScore = 0;
       gameMoonX = 64;
@@ -855,7 +949,7 @@ void loop() {
   }
 
   // --- 4c. Wolf & Moon game physics (screen 10), tick every GAME_TICK_MS ---
-  if (currentScreen == 10 && splashDone &&
+  if (currentScreen == 11 && splashDone &&
       (now - lastGameTick >= GAME_TICK_MS)) {
     lastGameTick = now;
     if (gameStartTime == 0) {
@@ -863,7 +957,7 @@ void loop() {
     }
     unsigned long gameElapsed = now - gameStartTime;
     if (gameElapsed < GAME_DURATION_MS && gameScore < GAME_TARGET_SCORE) {
-      gameMoonY += 2;
+      gameMoonY += MOON_FALL_STEP;
       if (gameMoonY > 64 + MOON_R) {
         gameMoonY = 10;
         gameMoonX = 20 + (now % 88);
@@ -880,8 +974,8 @@ void loop() {
       int moonCx = gameMoonX, moonCy = gameMoonY;
       int wolfLeft = gameWolfX, wolfRight = gameWolfX + WOLF_W;
       int wolfTop = gameWolfY, wolfBot = gameWolfY + WOLF_H;
-      if (moonCy + MOON_R >= wolfTop && moonCy - MOON_R <= wolfBot &&
-          moonCx + MOON_R >= wolfLeft && moonCx - MOON_R <= wolfRight) {
+      if (moonCy + MOON_HIT_R >= wolfTop && moonCy - MOON_HIT_R <= wolfBot &&
+          moonCx + MOON_HIT_R >= wolfLeft && moonCx - MOON_HIT_R <= wolfRight) {
         gameScore++;
         gameMoonY = 10;
         gameMoonX = 20 + (now % 88);
@@ -984,15 +1078,18 @@ void loop() {
       drawPower();
       break;
     case 7:
-      drawWeather();
+      drawFans();
       break;
     case 8:
-      drawTopProcs();
+      drawWeather();
       break;
     case 9:
-      drawNetwork();
+      drawTopProcs();
       break;
     case 10:
+      drawNetwork();
+      break;
+    case 11:
       drawWolfGame();
       break;
     }
@@ -1022,15 +1119,18 @@ void loop() {
       drawPower();
       break;
     case 7:
-      drawWeather();
+      drawFans();
       break;
     case 8:
-      drawTopProcs();
+      drawWeather();
       break;
     case 9:
-      drawNetwork();
+      drawTopProcs();
       break;
     case 10:
+      drawNetwork();
+      break;
+    case 11:
       drawWolfGame();
       break;
     }

@@ -95,13 +95,16 @@ def get_lhm_data():
 COVER_SIZE = 48
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
 
-# Погода (Open-Meteo, кэш 30 мин)
-WEATHER_URL = "https://api.open-meteo.com/v1/forecast?latitude=55.7558&longitude=37.6173&current=temperature_2m,weather_code"
+# Погода (Open-Meteo). Координаты из .env или Москва по умолчанию
+WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
+WEATHER_LON = os.getenv("WEATHER_LON", "37.6173")
+WEATHER_URL = f"https://api.open-meteo.com/v1/forecast?latitude={WEATHER_LAT}&longitude={WEATHER_LON}&current=temperature_2m,weather_code"
 WEATHER_TIMEOUT = 10
-WEATHER_UPDATE_INTERVAL = 30 * 60  # 30 минут
+WEATHER_UPDATE_INTERVAL = 10 * 60  # 10 минут (фоновая задача)
 weather_cache = {"temp": 0, "desc": "", "icon": 0}
 last_weather_update = 0.0
-_last_weather_log_time = 0.0  # не логировать каждый тик
+_last_weather_log_time = 0.0
+_weather_first_ok = False  # лог при первой успешной загрузке
 
 # Сеть и диски (для расчёта скорости)
 last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
@@ -121,12 +124,9 @@ def _weather_desc_from_code(code):
 
 
 def get_weather():
-    """Погода в Москве (Open-Meteo, без ключа). Кэш 30 мин, retry при ошибке."""
-    global weather_cache, last_weather_update, _last_weather_log_time
+    """Синхронный запрос погоды (Open-Meteo). Обновляет weather_cache при успехе; при ошибке кэш не затирается."""
+    global weather_cache, last_weather_update, _last_weather_log_time, _weather_first_ok
     now = time.time()
-    if now - last_weather_update < WEATHER_UPDATE_INTERVAL and (weather_cache["temp"] != 0 or last_weather_update > 0):
-        return weather_cache
-
     for attempt in range(2):
         try:
             r = requests.get(WEATHER_URL, timeout=WEATHER_TIMEOUT)
@@ -138,14 +138,31 @@ def get_weather():
                 desc = _weather_desc_from_code(code)[:20]
                 weather_cache = {"temp": temp, "desc": desc, "icon": code}
                 last_weather_update = now
+                if not _weather_first_ok:
+                    _weather_first_ok = True
+                    print(f"[Weather] OK: {temp} C, {desc}", flush=True)
                 return weather_cache
         except Exception as e:
             if attempt == 1 and (now - _last_weather_log_time) > 60:
                 log_err(f"Weather fetch failed after retry: {e}", e, trace=False)
                 _last_weather_log_time = now
             continue
-
     return weather_cache
+
+def get_core_loads():
+    """Per-core CPU load 0–100% (до 6 ядер)."""
+    try:
+        per = psutil.cpu_percent(percpu=True, interval=None)
+        if not per:
+            return [0] * 6
+        loads = [int(min(100, max(0, round(x)))) for x in per[:6]]
+        while len(loads) < 6:
+            loads.append(0)
+        return loads[:6]
+    except Exception as e:
+        log_err(f"Core loads: {e}", e, trace=False)
+        return [0] * 6
+
 
 def get_top_processes():
     """Получить топ-3 процесса по CPU"""
@@ -226,7 +243,8 @@ async def get_media():
             trk = (props.title or "No Title")[:25]
             play = 1 if info.playback_status == 4 else 0
             out = {"art": art, "trk": trk, "play": play}
-            if HAS_PIL and props and getattr(props, "thumbnail", None):
+            has_thumb = bool(HAS_PIL and props and getattr(props, "thumbnail", None))
+            if has_thumb:
                 try:
                     thumb_ref = props.thumbnail
                     if thumb_ref:
@@ -239,7 +257,7 @@ async def get_media():
                         if raw:
                             img = Image.open(io.BytesIO(raw)).convert("RGB")
                             img = img.resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
-                            img = img.convert("1")
+                            img = img.convert("1")  # 0=black, 255=white; bit 7=left pixel for U8g2
                             pixels = img.load()
                             out_arr = bytearray(COVER_BYTES)
                             for y in range(COVER_SIZE):
@@ -264,21 +282,22 @@ async def get_media():
 # Поля по экранам для полного пакета (0=Main .. 9=Network); общие (алерты) всегда
 _SCREEN_KEYS = {
     0: ("gth", "vt", "ru", "rt", "rp", "vu", "vt_tot"),
-    1: ("c1", "c2", "c3", "c4", "c5", "c6"),
+    1: ("cl1", "cl2", "cl3", "cl4", "cl5", "cl6"),
     2: ("gck", "gf", "gth", "vu", "vt_tot", "gpu_pwr"),
     3: ("ru", "rt", "rp", "vu", "vt_tot"),
     4: ("art", "trk", "cover_b64"),
     5: (),  # Equalizer: play уже в общих
     6: ("vcore", "cpu_pwr", "gpu_pwr", "nvme2_t"),
-    7: ("wt", "wd", "wi"),
-    8: ("tp",),
-    9: ("nu", "nd", "dr", "dw"),
-    10: (),  # Wolf Game: только heartbeat
+    7: ("p", "r", "c", "gf"),  # Fans: Pump, Rad, Case, GPU
+    8: ("wt", "wd", "wi"),
+    9: ("tp",),
+    10: ("nu", "nd", "dr", "dw"),
+    11: (),  # Wolf Game: только heartbeat
 }
 _COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play")
 
 
-def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None, screen=None):
+def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None, core_loads=None, screen=None):
     """Сборка JSON. screen=N — только поля для экрана N + общие (алерты). Иначе полный пакет."""
     if weather is None:
         weather = {"temp": 0, "desc": "", "icon": 0}
@@ -288,6 +307,12 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         net = {"up": 0, "down": 0}
     if disk is None:
         disk = {"read": 0, "write": 0}
+    if core_loads is None:
+        core_loads = [0] * 6
+
+    cl = core_loads[:6]
+    while len(cl) < 6:
+        cl.append(0)
 
     full = {
         "hw_ok": 1 if hw_ok else 0,
@@ -301,6 +326,7 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "gpu_pwr": round(hw.get("gpu_pwr", 0), 1),
         "p": int(hw.get("p", 0)), "r": int(hw.get("r", 0)), "c": int(hw.get("c", 0)),
         "gf": int(hw.get("gf", 0)), "gck": int(hw.get("gck", 0)),
+        "cl1": cl[0], "cl2": cl[1], "cl3": cl[2], "cl4": cl[3], "cl5": cl[4], "cl6": cl[5],
         "c1": int(hw.get("c1", 0)), "c2": int(hw.get("c2", 0)), "c3": int(hw.get("c3", 0)),
         "c4": int(hw.get("c4", 0)), "c5": int(hw.get("c5", 0)), "c6": int(hw.get("c6", 0)),
         "ru": round(hw.get("ram_u", 0), 1),
@@ -320,7 +346,7 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "play": media.get("play", 0),
     }
 
-    if screen is not None and 0 <= screen <= 10:
+    if screen is not None and 0 <= screen <= 11:
         keys = set(_COMMON_KEYS) | set(_SCREEN_KEYS.get(screen, ()))
         if screen == 4 and include_cover and media.get("cover_b64"):
             keys.add("cover_b64")
@@ -355,7 +381,7 @@ async def run_serial(ser, cache, send_fn):
     send_fn(data_str.encode("utf-8"))
 
 
-# Клиенты TCP: writer -> last screen (0–10)
+# Клиенты TCP: writer -> last screen (0–11)
 tcp_clients = []
 client_screens = {}  # writer -> int
 client_buffers = {}  # writer -> str
@@ -366,7 +392,7 @@ def _parse_screen_line(line: str) -> int | None:
     if s.startswith("screen:") and len(s) < 20:
         try:
             n = int(s.split(":")[1].strip())
-            if 0 <= n <= 10:
+            if 0 <= n <= 11:
                 return n
         except (ValueError, IndexError):
             pass
@@ -430,12 +456,22 @@ async def run():
         log_err("TCP server failed to start. Exit.")
         return
 
+    async def weather_loop():
+        """Фоновая задача: обновление погоды каждые 10 мин, не блокирует основной цикл."""
+        await asyncio.sleep(2)  # дать серверу стартовать
+        while True:
+            await asyncio.to_thread(get_weather)
+            await asyncio.sleep(WEATHER_UPDATE_INTERVAL)
+
+    asyncio.create_task(weather_loop())
+
     cache = {}
     last_track_key = ""
     last_cover_sent = 0.0
     COVER_INTERVAL = 8.0
     HEARTBEAT_INTERVAL = 0.3
     FULL_INTERVAL = 0.8
+    MEDIA_FULL_INTERVAL = 0.28  # чаще полный пакет для экранов Player/EQ
     last_heartbeat = 0.0
     last_full = 0.0
 
@@ -445,6 +481,7 @@ async def run():
         cache.update(hw0)
     media0 = await get_media()
     cache.update(media0)
+    await asyncio.to_thread(get_weather)  # первая загрузка погоды в фоне
 
     async def send_all(data: bytes):
         dead = []
@@ -468,7 +505,7 @@ async def run():
     while True:
         now_sec = time.time()
 
-        # Heartbeat каждые 0.3 s — только алерты (температуры, нагрузки, play)
+        # Heartbeat каждые 0.3 s — алерты + медиа (art, trk, play) для быстрого обновления плеера/эквалайзера
         if now_sec - last_heartbeat >= HEARTBEAT_INTERVAL:
             last_heartbeat = now_sec
             hw_c = cache if cache else {"ct": 0, "gt": 0, "cpu_load": 0, "gpu_load": 0}
@@ -480,16 +517,20 @@ async def run():
                 "cpu_load": int(hw_c.get("cpu_load", 0)),
                 "gpu_load": int(hw_c.get("gpu_load", 0)),
                 "play": media_c.get("play", 0),
+                "art": (media_c.get("art") or "")[:18],
+                "trk": (media_c.get("trk") or "")[:28],
             }
             await send_all((json.dumps(hb) + "\n").encode("utf-8"))
 
-        # Полный пакет по экрану каждые 0.8 s
-        if now_sec - last_full >= FULL_INTERVAL:
+        any_media_screen = any(client_screens.get(w, 0) in (4, 5) for w in tcp_clients)
+        full_interval = MEDIA_FULL_INTERVAL if any_media_screen else FULL_INTERVAL
+        if now_sec - last_full >= full_interval:
             last_full = now_sec
             hw = get_lhm_data()
             media = await get_media()
-            weather = get_weather()
+            weather = weather_cache
             top_procs = get_top_processes()
+            core_loads = get_core_loads()
             net = get_net_speed()
             disk = get_disk_speed()
             hw_ok = bool(hw)
@@ -507,6 +548,9 @@ async def run():
                 media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
             track_key = (media.get("art", "") or "") + "|" + (media.get("trk", "") or "")
             include_cover = (track_key != last_track_key) or (now_sec - last_cover_sent >= COVER_INTERVAL)
+            if track_key != last_track_key and last_track_key:
+                cov_len = len(media.get("cover_b64") or "")
+                print(f"[Cover] track change, cover_b64 len={cov_len}" + (" (install PIL for cover)" if not HAS_PIL and not cov_len else ""), flush=True)
             if include_cover and media.get("cover_b64"):
                 last_cover_sent = now_sec
             last_track_key = track_key
@@ -515,7 +559,7 @@ async def run():
             for w in list(tcp_clients):
                 screen = client_screens.get(w, 0)
                 payload = build_payload(hw, media, hw_ok, include_cover=include_cover, weather=weather,
-                                        top_procs=top_procs, net=net, disk=disk, screen=screen)
+                                        top_procs=top_procs, net=net, disk=disk, core_loads=core_loads, screen=screen)
                 try:
                     w.write((json.dumps(payload) + "\n").encode("utf-8"))
                     await w.drain()
@@ -534,8 +578,64 @@ async def run():
 
         await asyncio.sleep(0.05)
 
+def _is_in_autostart() -> bool:
+    """Проверить, добавлен ли уже в автозапуск Windows (реестр Run)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_READ,
+        )
+        try:
+            winreg.QueryValueEx(key, "HeltecMonitor")
+            return True
+        except OSError:
+            return False
+        finally:
+            winreg.CloseKey(key)
+    except Exception:
+        return False
+
+
+def _add_to_autostart() -> bool:
+    """Добавить в автозапуск Windows (реестр Run)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        exe_path = sys.executable
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_SET_VALUE,
+        )
+        winreg.SetValueEx(key, "HeltecMonitor", 0, winreg.REG_SZ, exe_path)
+        winreg.CloseKey(key)
+        return True
+    except Exception as e:
+        log_err(f"Autostart add failed: {e}", e, trace=False)
+        return False
+
+
 if __name__ == "__main__":
     print("[INIT] Запуск мониторинга...", flush=True)
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
+        if not _is_in_autostart():
+            try:
+                print("Поместить сервер в автозапуск Windows? (Y/N): ", end="", flush=True)
+                ans = input().strip().upper()
+                if ans in ("Y", "YES", "Д", "ДА"):
+                    if _add_to_autostart():
+                        print("[OK] Добавлено в автозапуск.", flush=True)
+                    else:
+                        print("[!] Не удалось добавить в автозапуск.", flush=True)
+            except Exception:
+                pass
     try:
         asyncio.run(run())
     except Exception as e:
