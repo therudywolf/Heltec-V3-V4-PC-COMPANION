@@ -81,8 +81,10 @@ def get_lhm_data():
                 elif isinstance(node, dict):
                     sid = node.get("SensorId")
                     if sid in TARGETS.values():
+                        raw = node.get("Value") or node.get("RawValue") or ""
                         for k, v in TARGETS.items():
-                            if sid == v: results[k] = clean_val(node["Value"])
+                            if sid == v:
+                                results[k] = clean_val(raw)
                     if "Children" in node: walk(node["Children"])
             walk(r.json())
             return results
@@ -294,7 +296,7 @@ _SCREEN_KEYS = {
     10: ("nu", "nd", "dr", "dw"),
     11: (),  # Wolf Game: только heartbeat
 }
-_COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play")
+_COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play", "wt", "wd", "wi")
 
 
 def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=None, net=None, disk=None, core_loads=None, screen=None):
@@ -348,7 +350,7 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
 
     if screen is not None and 0 <= screen <= 11:
         keys = set(_COMMON_KEYS) | set(_SCREEN_KEYS.get(screen, ()))
-        if screen == 4 and include_cover and media.get("cover_b64"):
+        if screen == 4 and media.get("cover_b64"):
             keys.add("cover_b64")
         payload = {k: full[k] for k in keys if k in full}
         return payload

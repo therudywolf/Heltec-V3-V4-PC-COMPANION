@@ -73,6 +73,8 @@ bool hasCover = false;
 // --- SETTINGS & STATE ---
 bool ledEnabled = true;       // Настройка: Диод вкл/выкл
 bool carouselEnabled = false; // Настройка: Авто-смена экранов
+int carouselIntervalSec = 10; // Интервал карусели: 5, 10 или 15 сек
+int displayContrast = 255;    // Контраст дисплея 0–255
 int eqStyle = 0;              // Стиль эквалайзера: 0=Bars, 1=Wave, 2=Circle
 
 int currentScreen = 0;
@@ -81,7 +83,9 @@ int currentScreen = 0;
 const int TOTAL_SCREENS = 12;
 
 bool inMenu = false; // Мы в меню?
-int menuItem = 0;    // Пункт меню (0=LED, 1=Carousel, 2=EQ Style, 3=Exit)
+int menuItem =
+    0; // Пункт меню (0=LED, 1=Carousel, 2=Contrast, 3=Interval, 4=EQ, 5=Exit)
+const int MENU_ITEMS = 6;
 
 // Button Logic
 unsigned long btnPressTime = 0;
@@ -196,8 +200,16 @@ void setup() {
   prefs.begin("heltec", true);
   ledEnabled = prefs.getBool("led", true);
   carouselEnabled = prefs.getBool("carousel", false);
+  carouselIntervalSec = prefs.getInt("carouselSec", 10);
+  if (carouselIntervalSec != 5 && carouselIntervalSec != 10 &&
+      carouselIntervalSec != 15)
+    carouselIntervalSec = 10;
+  displayContrast = prefs.getInt("contrast", 255);
+  if (displayContrast > 255)
+    displayContrast = 255;
   eqStyle = prefs.getInt("eqStyle", 0);
   prefs.end();
+  u8g2.setContrast((uint8_t)displayContrast);
 
   // WiFi: пробуем подключиться (в loop будем проверять и подключаться к TCP)
   if (strlen(WIFI_PASS) > 0) {
@@ -272,7 +284,7 @@ void drawSplash() {
 }
 
 // --- SCREEN ZONES: header y=0..13, content y>=14 ---
-// 1. Main (сводка): отступ от верха, блоки CPU/GPU, RAM, VRAM, Load
+// 1. Main (сводка): блоки CPU/GPU, RAM, VRAM, Load с подписями
 void drawMain() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "MAIN");
@@ -280,7 +292,8 @@ void drawMain() {
   u8g2.drawPixel(126, 6);
   u8g2.drawPixel(125, 8);
 
-  u8g2.setCursor(0, 20);
+  u8g2.drawLine(0, 12, 128, 12);
+  u8g2.setCursor(0, 21);
   u8g2.print("CPU ");
   u8g2.print(cpuTemp);
   u8g2.print((char)0xB0);
@@ -289,7 +302,7 @@ void drawMain() {
   u8g2.print((char)0xB0);
   u8g2.print("C");
 
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, 32);
   u8g2.print("RAM ");
   u8g2.print(ramUsed, 1);
   u8g2.print("/");
@@ -298,14 +311,14 @@ void drawMain() {
   u8g2.print(ramPct);
   u8g2.print("%");
 
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, 43);
   u8g2.print("VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print("G");
 
-  u8g2.setCursor(0, 50);
+  u8g2.setCursor(0, 54);
   u8g2.print("Load CPU ");
   u8g2.print(cpuLoad);
   u8g2.print("% GPU ");
@@ -317,8 +330,9 @@ void drawMain() {
 void drawCores() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "CORES %");
+  u8g2.drawLine(0, 12, 128, 12);
   const int barTop = 14;
-  const int barH = 48;
+  const int barH = 46;
   for (int i = 0; i < 6; i++) {
     int h = map(coreLoad[i], 0, 100, 2, barH);
     if (h < 0)
@@ -326,47 +340,49 @@ void drawCores() {
     if (h > barH)
       h = barH;
     int x = i * 20 + 4;
-    u8g2.drawBox(x, barTop + barH - h, 15, h);
+    u8g2.drawFrame(x, barTop, 15, barH);
+    u8g2.drawBox(x + 1, barTop + barH - h, 13, h);
   }
 }
 
-// GPU: Core/HotSpot temp, VRAM bar, частота, вентилятор, мощность, Alert
+// GPU: зоны — темпы, VRAM bar, частота/нагрузка/мощность, вентилятор
 void drawGpu() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "GPU");
   if (gpuTemp >= GPU_TEMP_ALERT)
     u8g2.drawStr(90, 10, "ALERT");
-  u8g2.setCursor(0, 22);
-  u8g2.print("Core ");
+  u8g2.drawLine(0, 12, 128, 12);
+  u8g2.setCursor(0, 21);
+  u8g2.print("T: ");
   u8g2.print(gpuTemp);
-  u8g2.print((char)0xB0);
-  u8g2.print(" Hot ");
+  u8g2.print("/");
   u8g2.print(gpuHotSpot);
   u8g2.print((char)0xB0);
-  drawBar(0, 26, 128, 8, vramUsed, vramTotal > 0 ? vramTotal : 1);
-  u8g2.setCursor(0, 38);
+  u8g2.print("C");
+  drawBar(0, 25, 128, 6, vramUsed, vramTotal > 0 ? vramTotal : 1);
+  u8g2.setCursor(0, 35);
   u8g2.print(gpuClk);
   u8g2.print("MHz ");
   u8g2.print(gpuLoad);
   u8g2.print("% ");
   u8g2.print(gpuPwr);
   u8g2.print("W");
-  u8g2.setCursor(0, 50);
+  u8g2.setCursor(0, 47);
   u8g2.print("Fan ");
   u8g2.print(fanGpu);
-  u8g2.setCursor(70, 50);
-  u8g2.print("VRAM ");
+  u8g2.print("  VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
   u8g2.print((int)vramTotal);
   u8g2.print("G");
 }
 
-// Memory: RAM и VRAM (used/total, %)
+// Memory: RAM и VRAM (used/total, %) с подписями и барами
 void drawMemory() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "MEMORY");
-  u8g2.setCursor(0, 24);
+  u8g2.drawLine(0, 12, 128, 12);
+  u8g2.setCursor(0, 22);
   u8g2.print("RAM ");
   u8g2.print(ramUsed, 1);
   u8g2.print("/");
@@ -374,8 +390,8 @@ void drawMemory() {
   u8g2.print("G ");
   u8g2.print(ramPct);
   u8g2.print("%");
-  drawBar(0, 28, 128, 6, ramUsed, ramTotal > 0 ? ramTotal : 1);
-  u8g2.setCursor(0, 42);
+  drawBar(0, 26, 128, 6, ramUsed, ramTotal > 0 ? ramTotal : 1);
+  u8g2.setCursor(0, 40);
   u8g2.print("VRAM ");
   u8g2.print(vramUsed, 1);
   u8g2.print("/");
@@ -388,6 +404,7 @@ void drawMemory() {
 void drawPower() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "POWER");
+  u8g2.drawLine(0, 12, 128, 12);
   u8g2.setCursor(0, 24);
   u8g2.print("Vcore ");
   u8g2.print(vcore, 2);
@@ -409,6 +426,7 @@ void drawPower() {
 void drawFans() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "FANS");
+  u8g2.drawLine(0, 12, 128, 12);
   u8g2.setCursor(0, 24);
   u8g2.print("Pump: ");
   u8g2.print(fanPump);
@@ -423,10 +441,11 @@ void drawFans() {
   u8g2.print(fanGpu);
 }
 
-// Weather: display with loading fallback
+// Weather: display with icon and simple animated effects
 void drawWeather() {
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(0, 10, "WEATHER");
+  u8g2.drawLine(0, 12, 128, 12);
 
   bool noData = (weatherTemp == 0 && weatherDesc.length() == 0);
   if (noData) {
@@ -442,25 +461,48 @@ void drawWeather() {
     return;
   }
 
-  const uint8_t *icon = iconCloudy;
-  if (weatherIcon == 0)
-    icon = iconSunny;
-  else if (weatherIcon >= 1 && weatherIcon <= 3)
-    icon = iconCloudy;
-  else if (weatherIcon >= 45 && weatherIcon <= 48)
-    icon = iconCloudy;
-  else if (weatherIcon >= 51 && weatherIcon <= 67)
-    icon = iconRain;
-  else if (weatherIcon >= 71 && weatherIcon <= 77)
-    icon = iconSnow;
-  else if (weatherIcon >= 80 && weatherIcon <= 82)
-    icon = iconRain;
-  else if (weatherIcon >= 85 && weatherIcon <= 86)
-    icon = iconSnow;
-  else if (weatherIcon >= 95 && weatherIcon <= 99)
-    icon = iconRain;
+  bool isRain = (weatherIcon >= 51 && weatherIcon <= 67) ||
+                (weatherIcon >= 80 && weatherIcon <= 82) ||
+                (weatherIcon >= 95 && weatherIcon <= 99);
+  bool isSnow = (weatherIcon >= 71 && weatherIcon <= 77) ||
+                (weatherIcon >= 85 && weatherIcon <= 86);
+  bool isSunny = (weatherIcon == 0);
+  bool isCloudy = (weatherIcon >= 1 && weatherIcon <= 3) ||
+                  (weatherIcon >= 45 && weatherIcon <= 48);
 
-  u8g2.drawXBMP(4, 20, 16, 16, icon);
+  const uint8_t *icon = iconCloudy;
+  if (isSunny)
+    icon = iconSunny;
+  else if (isRain)
+    icon = iconRain;
+  else if (isSnow)
+    icon = iconSnow;
+  else
+    icon = iconCloudy;
+
+  int anim = (millis() / 100) % 16;
+  int iconX = 4;
+  if (isCloudy && !isSunny)
+    iconX = 4 + ((millis() / 200) % 3);
+
+  u8g2.drawXBMP(iconX, 20, 16, 16, icon);
+
+  if (isRain) {
+    for (int i = 0; i < 4; i++) {
+      int y = 20 + (anim + i * 4) % 16;
+      u8g2.drawVLine(8 + i * 3, y, 2);
+      u8g2.drawVLine(10 + i * 3, y + 4, 2);
+    }
+  } else if (isSnow) {
+    for (int i = 0; i < 4; i++) {
+      int y = 20 + (anim + i * 4) % 16;
+      u8g2.drawPixel(8 + i * 3, y);
+      u8g2.drawPixel(9 + i * 3, y + 1);
+      u8g2.drawPixel(8 + i * 3, y + 2);
+    }
+  } else if (isSunny && blinkState) {
+    u8g2.drawDisc(12, 28, 2, U8G2_DRAW_ALL);
+  }
 
   u8g2.setFont(u8g2_font_helvB10_tr);
   u8g2.setCursor(26, 28);
@@ -630,8 +672,7 @@ void drawEqualizer() {
 void drawPlayer() {
   int textX = 42;
   if (hasCover) {
-    u8g2.drawBitmap(0, (64 - COVER_SIZE) / 2, COVER_SIZE / 8, COVER_SIZE,
-                    coverBitmap);
+    u8g2.drawXBM(0, (64 - COVER_SIZE) / 2, COVER_SIZE, COVER_SIZE, coverBitmap);
     textX = COVER_SIZE + 4;
   } else {
     u8g2.drawDisc(20, 32, 14, U8G2_DRAW_ALL);
@@ -671,30 +712,81 @@ void drawMenu() {
 
   u8g2.setFont(u8g2_font_6x10_tr);
   u8g2.drawStr(36, 20, "Forest Menu");
+  u8g2.drawLine(16, 22, 108, 22);
 
-  // Item 0: LED
-  u8g2.setCursor(16, 30);
-  u8g2.print(menuItem == 0 ? "> LED: " : "  LED: ");
+  int y = 26;
+  u8g2.setCursor(16, y);
+  u8g2.print(menuItem == 0 ? ">" : " ");
+  u8g2.print(" LED ");
   u8g2.print(ledEnabled ? "ON" : "OFF");
-
-  // Item 1: Carousel
-  u8g2.setCursor(16, 40);
-  u8g2.print(menuItem == 1 ? "> AUTO: " : "  AUTO: ");
+  y += 6;
+  u8g2.setCursor(16, y);
+  u8g2.print(menuItem == 1 ? ">" : " ");
+  u8g2.print(" AUTO ");
   u8g2.print(carouselEnabled ? "ON" : "OFF");
+  y += 6;
+  u8g2.setCursor(16, y);
+  u8g2.print(menuItem == 2 ? ">" : " ");
+  u8g2.print(" Bright ");
+  u8g2.print(displayContrast);
+  y += 6;
+  u8g2.setCursor(16, y);
+  u8g2.print(menuItem == 3 ? ">" : " ");
+  u8g2.print(" Intvl ");
+  u8g2.print(carouselIntervalSec);
+  u8g2.print("s");
+  y += 6;
+  u8g2.setCursor(16, y);
+  u8g2.print(menuItem == 4 ? ">" : " ");
+  u8g2.print(" EQ ");
+  u8g2.print(eqStyle == 0 ? "Bars" : (eqStyle == 1 ? "Wave" : "Circle"));
+  y += 6;
+  u8g2.setCursor(16, y);
+  u8g2.print(menuItem == 5 ? "> EXIT" : "  EXIT");
+}
 
-  // Item 2: EQ Style
-  u8g2.setCursor(16, 50);
-  u8g2.print(menuItem == 2 ? "> EQ: " : "  EQ: ");
-  if (eqStyle == 0)
-    u8g2.print("Bars");
-  else if (eqStyle == 1)
-    u8g2.print("Wave");
-  else
-    u8g2.print("Circle");
-
-  // Item 3: Exit
-  u8g2.setCursor(16, 58);
-  u8g2.print(menuItem == 3 ? "> EXIT" : "  EXIT");
+void drawScreen(int screen) {
+  switch (screen) {
+  case 0:
+    drawMain();
+    break;
+  case 1:
+    drawCores();
+    break;
+  case 2:
+    drawGpu();
+    break;
+  case 3:
+    drawMemory();
+    break;
+  case 4:
+    drawPlayer();
+    break;
+  case 5:
+    drawEqualizer();
+    break;
+  case 6:
+    drawPower();
+    break;
+  case 7:
+    drawFans();
+    break;
+  case 8:
+    drawWeather();
+    break;
+  case 9:
+    drawTopProcs();
+    break;
+  case 10:
+    drawNetwork();
+    break;
+  case 11:
+    drawWolfGame();
+    break;
+  default:
+    drawMain();
+    break;
+  }
 }
 
 void loop() {
@@ -732,9 +824,9 @@ void loop() {
   }
 
   if (input.length() > 0 && input.length() < 4096) {
-    StaticJsonDocument<3600> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, input);
-    if (!error) {
+    if (!error && !doc.overflowed()) {
       bool isHeartbeat = input.length() < 350 && input.indexOf("cover_b64") < 0;
 
       cpuTemp = doc["ct"];
@@ -744,19 +836,19 @@ void loop() {
       isPlaying = (doc["play"] | 0) == 1;
       lastUpdate = now;
 
-      if (doc.containsKey("wt")) {
+      if (doc["wt"].is<int>()) {
         weatherTemp = doc["wt"];
         const char *wd = doc["wd"];
         if (wd)
           weatherDesc = String(wd);
-        if (doc.containsKey("wi"))
+        if (doc["wi"].is<int>())
           weatherIcon = doc["wi"];
       }
-      if (doc.containsKey("art")) {
+      if (doc["art"].is<const char *>()) {
         const char *a = doc["art"];
         artist = String(a ? a : "");
       }
-      if (doc.containsKey("trk")) {
+      if (doc["trk"].is<const char *>()) {
         const char *t = doc["trk"];
         track = String(t ? t : "");
       }
@@ -826,7 +918,7 @@ void loop() {
         const char *cov = doc["cover_b64"];
         if (cov) {
           size_t covLen = strlen(cov);
-          if (covLen > 0 && covLen <= 512) {
+          if (covLen > 0 && covLen <= 600) {
             int n = b64Decode(cov, covLen, coverBitmap, COVER_BYTES);
             if (n == (int)COVER_BYTES)
               hasCover = true;
@@ -854,7 +946,7 @@ void loop() {
     btnHeld = false;
 
     if (wasInGameOnPress && duration > 1500) {
-      currentScreen = 10;
+      currentScreen = (currentScreen + 1) % TOTAL_SCREENS;
       lastCarousel = now;
     } else if (duration > 800) {
       if (!wasInMenuOnPress) {
@@ -867,7 +959,7 @@ void loop() {
       if (inMenu) {
         lastMenuActivity = now;
         menuItem++;
-        if (menuItem > 3)
+        if (menuItem >= MENU_ITEMS)
           menuItem = 0;
       } else {
         if (currentScreen == 11) {
@@ -891,28 +983,49 @@ void loop() {
       !menuHoldHandled) {
     menuHoldHandled = true;
     lastMenuActivity = now;
+    Preferences p;
     if (menuItem == 0) {
       ledEnabled = !ledEnabled;
-      Preferences p;
       p.begin("heltec", false);
       p.putBool("led", ledEnabled);
       p.end();
     }
     if (menuItem == 1) {
       carouselEnabled = !carouselEnabled;
-      Preferences p;
       p.begin("heltec", false);
       p.putBool("carousel", carouselEnabled);
       p.end();
     }
     if (menuItem == 2) {
+      if (displayContrast <= 128)
+        displayContrast = 192;
+      else if (displayContrast <= 192)
+        displayContrast = 255;
+      else
+        displayContrast = 128;
+      u8g2.setContrast((uint8_t)displayContrast);
+      p.begin("heltec", false);
+      p.putInt("contrast", displayContrast);
+      p.end();
+    }
+    if (menuItem == 3) {
+      if (carouselIntervalSec == 5)
+        carouselIntervalSec = 10;
+      else if (carouselIntervalSec == 10)
+        carouselIntervalSec = 15;
+      else
+        carouselIntervalSec = 5;
+      p.begin("heltec", false);
+      p.putInt("carouselSec", carouselIntervalSec);
+      p.end();
+    }
+    if (menuItem == 4) {
       eqStyle = (eqStyle + 1) % 3;
-      Preferences p;
       p.begin("heltec", false);
       p.putInt("eqStyle", eqStyle);
       p.end();
     }
-    if (menuItem == 3)
+    if (menuItem == 5)
       inMenu = false;
   }
 
@@ -923,7 +1036,8 @@ void loop() {
 
   // --- 4. CAROUSEL LOGIC ---
   if (carouselEnabled && !inMenu) {
-    if (now - lastCarousel > 4000) { // 4 sec per screen
+    unsigned long intervalMs = (unsigned long)carouselIntervalSec * 1000;
+    if (now - lastCarousel > intervalMs) {
       currentScreen++;
       if (currentScreen >= TOTAL_SCREENS)
         currentScreen = 0;
@@ -1055,85 +1169,11 @@ void loop() {
   if (!splashDone) {
     drawSplash();
   } else if (signalLost) {
-    switch (currentScreen) {
-    case 0:
-      drawMain();
-      break;
-    case 1:
-      drawCores();
-      break;
-    case 2:
-      drawGpu();
-      break;
-    case 3:
-      drawMemory();
-      break;
-    case 4:
-      drawPlayer();
-      break;
-    case 5:
-      drawEqualizer();
-      break;
-    case 6:
-      drawPower();
-      break;
-    case 7:
-      drawFans();
-      break;
-    case 8:
-      drawWeather();
-      break;
-    case 9:
-      drawTopProcs();
-      break;
-    case 10:
-      drawNetwork();
-      break;
-    case 11:
-      drawWolfGame();
-      break;
-    }
+    drawScreen(currentScreen);
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.drawStr(70, 8, "Reconnect");
   } else if (splashDone) {
-    switch (currentScreen) {
-    case 0:
-      drawMain();
-      break;
-    case 1:
-      drawCores();
-      break;
-    case 2:
-      drawGpu();
-      break;
-    case 3:
-      drawMemory();
-      break;
-    case 4:
-      drawPlayer();
-      break;
-    case 5:
-      drawEqualizer();
-      break;
-    case 6:
-      drawPower();
-      break;
-    case 7:
-      drawFans();
-      break;
-    case 8:
-      drawWeather();
-      break;
-    case 9:
-      drawTopProcs();
-      break;
-    case 10:
-      drawNetwork();
-      break;
-    case 11:
-      drawWolfGame();
-      break;
-    }
+    drawScreen(currentScreen);
     u8g2.setFont(u8g2_font_6x10_tr);
     u8g2.setCursor(118, 8);
     u8g2.print("W");
