@@ -41,7 +41,7 @@ void DataManager::parsePayload(JsonDocument &doc) {
   hw_.dr = doc["dr"] | 0;
   hw_.dw = doc["dw"] | 0;
 
-  if (doc.containsKey("wt")) {
+  if (!doc["wt"].isNull()) {
     weather_.temp = doc["wt"] | 0;
     const char *wd = doc["wd"];
     weather_.desc = String(wd ? wd : "");
