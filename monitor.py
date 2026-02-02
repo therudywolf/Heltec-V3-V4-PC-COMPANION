@@ -149,11 +149,16 @@ last_cover_sent = 0
 # ============================================================================
 
 def log_err(msg: str, exc: Optional[BaseException] = None, trace: bool = True):
-    """Print error to stderr with optional traceback."""
-    print(f"[ERROR] {msg}", file=sys.stderr, flush=True)
-    if exc is not None and trace:
-        traceback.print_exc(file=sys.stderr)
-        sys.stderr.flush()
+    """Print error to stderr with optional traceback. Safe when stderr is None (e.g. frozen app)."""
+    err_stream = sys.stderr if sys.stderr is not None else sys.stdout
+    try:
+        print(f"[ERROR] {msg}", file=err_stream, flush=True)
+        if exc is not None and trace:
+            traceback.print_exc(file=err_stream)
+            if getattr(err_stream, "flush", None) is not None:
+                err_stream.flush()
+    except (OSError, AttributeError):
+        pass  # headless/frozen: avoid secondary crash
 
 
 def log_info(msg: str):
@@ -678,7 +683,18 @@ async def run():
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
     
     # Start TCP server
-    server = await asyncio.start_server(handle_client, TCP_HOST, TCP_PORT)
+    try:
+        server = await asyncio.start_server(handle_client, TCP_HOST, TCP_PORT)
+    except OSError as e:
+        if "bind" in str(e).lower() or "address" in str(e).lower():
+            log_err(
+                f"Cannot bind to {TCP_HOST}:{TCP_PORT}. "
+                f"Check that TCP_HOST is an address on this machine (e.g. 0.0.0.0 for all interfaces) "
+                f"and that port {TCP_PORT} is not in use.",
+                e,
+                trace=True,
+            )
+        raise
     
     # Start background tasks
     asyncio.create_task(weather_updater())
