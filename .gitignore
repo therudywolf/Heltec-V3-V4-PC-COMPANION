@@ -1,0 +1,31 @@
+# Секреты и конфиг (не коммитить)
+.env
+config_private.h
+
+# Python
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.egg-info/
+.eggs/
+
+# Сборка exe (PyInstaller)
+dist/
+build/
+*.spec
+*.exe
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Логи (если появятся)
+*.log
+monitor.log

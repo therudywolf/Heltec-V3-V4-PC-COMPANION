@@ -1,0 +1,6 @@
+// Скопируй в config_private.h и подставь свои значения. config_private.h не коммитить!
+
+#define WIFI_SSID     "Forest"
+#define WIFI_PASS     "YourPassword"
+#define PC_IP         "192.168.1.2"
+#define TCP_PORT      8888
