@@ -3,6 +3,7 @@ import base64
 import io
 import os
 import sys
+import threading
 import traceback
 import json
 import time
@@ -11,6 +12,13 @@ import psutil
 from dotenv import load_dotenv
 from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
 from winsdk.windows.storage.streams import Buffer, InputStreamOptions
+
+try:
+    import pystray
+    from pystray import Menu, MenuItem
+    HAS_PYSTRAY = True
+except ImportError:
+    HAS_PYSTRAY = False
 
 
 def log_err(msg: str, exc: BaseException | None = None, trace: bool = True):
@@ -27,6 +35,9 @@ except ImportError:
     HAS_PIL = False
 
 load_dotenv()
+
+# Флаг остановки по запросу из трея (пункт «Выход»)
+stop_requested = False
 
 # --- КОНФИГ (из .env, см. .env.example) ---
 LHM_URL = os.getenv("LHM_URL", "http://localhost:8085/data.json")
@@ -553,6 +564,8 @@ async def run():
                 log_err(f"TCP close: {e}", trace=False)
 
     while True:
+        if stop_requested:
+            break
         now_sec = time.time()
 
         # Heartbeat каждые 0.3 s — алерты + медиа (art, trk, play) для быстрого обновления плеера/эквалайзера
@@ -628,6 +641,63 @@ async def run():
 
         await asyncio.sleep(0.05)
 
+    # Выход по запросу из трея (Выход): закрыть сервер и отменить фоновые задачи
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for t in tasks:
+        t.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    if server:
+        server.close()
+        await server.wait_closed()
+    return
+
+
+def _make_tray_icon_image():
+    """Создать изображение иконки 32x32 для трея (PIL)."""
+    if not HAS_PIL:
+        return None
+    try:
+        from PIL import ImageDraw
+        img = Image.new("RGBA", (32, 32), (30, 30, 40, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((4, 4, 28, 28), fill=(80, 140, 220), outline=(200, 200, 220))
+        return img
+    except Exception:
+        return None
+
+
+def _run_tray_thread(icon):
+    """Запуск иконки трея в текущем потоке (вызывается из потока)."""
+    try:
+        icon.run()
+    except Exception as e:
+        log_err(f"Tray icon: {e}", e, trace=False)
+
+
+def _start_tray():
+    """Запустить иконку в трее в отдельном потоке. Возвращает объект Icon или None."""
+    global stop_requested
+    if sys.platform != "win32" or not HAS_PYSTRAY:
+        return None
+    img = _make_tray_icon_image()
+    if img is None and HAS_PIL:
+        img = Image.new("RGBA", (32, 32), (80, 80, 80, 255))
+    if img is None:
+        return None
+
+    def on_quit(icon, item):
+        global stop_requested
+        stop_requested = True
+        icon.stop()
+
+    menu = Menu(MenuItem("Выход", on_quit, default=True))
+    icon = pystray.Icon("heltec", img, "Heltec Monitor", menu=menu)
+    t = threading.Thread(target=_run_tray_thread, args=(icon,), daemon=True)
+    t.start()
+    return icon
+
+
 def _is_in_autostart() -> bool:
     """Проверить, добавлен ли уже в автозапуск Windows (реестр Run)."""
     if sys.platform != "win32":
@@ -674,7 +744,8 @@ def _add_to_autostart() -> bool:
 
 if __name__ == "__main__":
     print("[INIT] Запуск мониторинга...", flush=True)
-    if getattr(sys, "frozen", False) and sys.platform == "win32":
+    # Автозапуск: только при запуске не из EXE (есть консоль); в EXE без консоли не спрашиваем
+    if sys.platform == "win32" and not getattr(sys, "frozen", False):
         if not _is_in_autostart():
             try:
                 print("Поместить сервер в автозапуск Windows? (Y/N): ", end="", flush=True)
@@ -686,10 +757,17 @@ if __name__ == "__main__":
                         print("[!] Не удалось добавить в автозапуск.", flush=True)
             except Exception:
                 pass
+    tray_icon = None
+    if sys.platform == "win32":
+        tray_icon = _start_tray()
     try:
         asyncio.run(run())
     except Exception as e:
         log_err(f"Fatal: {e}", e)
-        if getattr(sys, "frozen", False):
-            input("Нажми Enter для выхода...")
+        if getattr(sys, "frozen", False) and sys.platform == "win32":
+            try:
+                ctypes = __import__("ctypes")
+                ctypes.windll.user32.MessageBoxW(None, str(e), "Heltec Monitor", 0x10)
+            except Exception:
+                pass
         sys.exit(1)
