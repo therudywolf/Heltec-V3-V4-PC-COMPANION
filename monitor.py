@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
 """
-Heltec PC Monitor Server v7.0 [NEURAL LINK] — Cyberpunk Cyberdeck Edition
+NOCTURNE_OS — PC Monitor Server (Cyberdeck backend)
 
 ARCHITECTURE:
-- asyncio main loop (non-blocking TCP stream)
-- ThreadPoolExecutor for blocking tasks (LHM polling, Weather API, Ping)
-- 2-char JSON keys for bandwidth efficiency
-- Exact Hardware IDs from LibreHardwareMonitor
-
-v7.0 CHANGES:
-- FIXED: Immediate data send on client connect (prevents disconnect loop)
-- FIXED: Connection stability with heartbeat/handshake handling
-- IMPROVED: Faster initial data transmission
-- IMPROVED: Better error handling and logging
+- True async: aiohttp for LHM and Weather (no blocking HTTP)
+- ThreadPoolExecutor only for blocking ops (ping, psutil deltas, top processes)
+- Smart polling: send full payload only when values change beyond hysteresis threshold
+- Heartbeat every 2s to keep connection alive
+- Media: "idle" when Spotify/session paused (show IDLE + sleep icon on deck)
 
 DATA SOURCES:
-- LibreHardwareMonitor HTTP JSON (localhost:8085)
-- Open-Meteo Weather API
-- psutil (Network speed delta calculation)
-- winsdk (Windows Media Info)
-- ping (Google DNS 8.8.8.8 for latency)
+- LibreHardwareMonitor (aiohttp)
+- Open-Meteo Weather (aiohttp)
+- psutil, winsdk, ping (executor or async)
 """
 
 import asyncio
@@ -33,10 +26,10 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
+import aiohttp
 import psutil
-import requests
 from dotenv import load_dotenv
 
 try:
@@ -93,8 +86,12 @@ TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
 TOP_PROCS_CACHE_TTL = 2.5
 
-# v7: Faster data send interval
-DATA_SEND_INTERVAL = 0.5  # Send data every 500ms
+# NOCTURNE_OS: poll interval and send logic
+POLL_INTERVAL = 0.5          # Collect data every 500ms
+HEARTBEAT_INTERVAL = 2.0    # Must send at least something every 2s to keep link alive
+HYSTERESIS_TEMP = 2         # Send if temp changed by >= 2°C
+HYSTERESIS_LOAD = 5         # Send if load changed by >= 5%
+HYSTERESIS_NET_KB = 100     # Send if net changed by >= 100 KB/s
 
 # ============================================================================
 # DATA MAPPING — EXACT Sensor IDs from serverpars.txt, 2-char JSON keys
@@ -164,17 +161,20 @@ last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
 last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
 ping_latency_ms = 0
 
-# v7: Global cache for immediate send to new clients
+# Global cache for immediate send to new clients
 global_data_cache: Dict = {
     "hw": {},
     "weather": {},
-    "media": {"art": "", "trk": "", "play": False, "cover_b64": ""},
+    "media": {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""},
     "top_procs": [],
     "top_procs_ram": [],
     "net": (0, 0),
     "disk": (0, 0),
     "ping": 0,
 }
+# For hysteresis: last payload snapshot we sent (so we only send when changed enough)
+_last_sent_snapshot: Optional[Tuple] = None
+_last_heartbeat_time: float = 0.0
 
 # ============================================================================
 # UTILITIES
@@ -217,53 +217,47 @@ def clean_val(v: Any) -> float:
 
 
 # ============================================================================
-# DATA COLLECTION (blocking — run in ThreadPoolExecutor)
+# DATA COLLECTION — aiohttp for HTTP (non-blocking), executor for the rest
 # ============================================================================
 
-def get_lhm_data() -> Dict[str, float]:
-    """
-    Fetch LibreHardwareMonitor JSON and extract values for TARGETS.
-    Blocking operation - MUST run in executor.
-    """
+def _parse_lhm_json(data: Dict) -> Dict[str, float]:
+    results = {}
+    targets_set = set(TARGETS.values())
+
+    def walk(node):
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, dict):
+            sid = node.get("SensorId") or node.get("SensorID")
+            if sid and sid in targets_set:
+                raw = node.get("Value") or node.get("RawValue") or ""
+                for k, v in TARGETS.items():
+                    if v == sid:
+                        results[k] = clean_val(raw)
+                        break
+            if "Children" in node:
+                walk(node["Children"])
+
+    walk(data)
+    if "ru" in results and "ra" in results:
+        results["ra"] = results["ru"] + results["ra"]
+    if "vu" in results:
+        results["vu"] = round(results["vu"] / 1024.0, 1)
+    if "vt" in results:
+        results["vt"] = round(results["vt"] / 1024.0, 1)
+    return results
+
+
+async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, float]:
+    """Fetch LHM via aiohttp. If this fails, the user is likely offline or the API is dead."""
     for attempt in range(3):
         try:
-            r = requests.get(LHM_URL, timeout=2)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            results = {}
-            targets_set = set(TARGETS.values())
-
-            def walk(node):
-                if isinstance(node, list):
-                    for item in node:
-                        walk(item)
-                elif isinstance(node, dict):
-                    sid = node.get("SensorId") or node.get("SensorID")
-                    if sid and sid in targets_set:
-                        raw = node.get("Value") or node.get("RawValue") or ""
-                        for k, v in TARGETS.items():
-                            if v == sid:
-                                results[k] = clean_val(raw)
-                                break
-                    if "Children" in node:
-                        walk(node["Children"])
-
-            walk(data)
-            
-            # Calculate RAM Total from Used + Available
-            if "ru" in results and "ra" in results:
-                ram_used = results["ru"]
-                ram_avail = results["ra"]
-                results["ra"] = ram_used + ram_avail  # Now 'ra' = total
-            
-            # Convert VRAM from MB to GB for consistency
-            if "vu" in results:
-                results["vu"] = round(results["vu"] / 1024.0, 1)
-            if "vt" in results:
-                results["vt"] = round(results["vt"] / 1024.0, 1)
-            
-            return results
+            async with session.get(LHM_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
+                if r.status != 200:
+                    continue
+                data = await r.json()
+                return _parse_lhm_json(data)
         except Exception as e:
             if attempt == 2:
                 log_debug(f"LHM failed after 3 attempts: {e}")
@@ -292,19 +286,16 @@ def _weather_desc_from_code(code: int) -> str:
     return "Cloudy"
 
 
-def get_weather_sync() -> Dict:
-    """
-    Fetch weather from Open-Meteo API.
-    Never raises; returns cache on failure. Blocking.
-    """
+async def get_weather_async(session: aiohttp.ClientSession) -> Dict:
+    """Fetch weather from Open-Meteo. Never raises; returns cache on failure."""
     global weather_cache, _weather_first_ok, _last_weather_log_time
     now = time.time()
     for attempt in range(2):
         try:
-            r = requests.get(WEATHER_URL, timeout=WEATHER_TIMEOUT)
-            if r.status_code != 200:
-                continue
-            data = r.json()
+            async with session.get(WEATHER_URL, timeout=aiohttp.ClientTimeout(total=WEATHER_TIMEOUT)) as r:
+                if r.status != 200:
+                    continue
+                data = await r.json()
             cur = data.get("current") or {}
             temp = int(cur.get("temperature_2m", 0) or 0)
             code = int(cur.get("weather_code", 0) or 0)
@@ -482,21 +473,23 @@ def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
 
 async def get_media_info() -> Dict:
     """
-    Get Windows media info (Artist, Track, Playing status, Album cover).
-    Returns {art, trk, play, cover_b64}. Async (uses winsdk).
+    Get Windows media info (Artist, Track, Playing, Idle).
+    idle=True when session exists but paused — deck shows IDLE + sleep icon.
     """
     if not HAS_WINSDK:
-        return {"art": "", "trk": "", "play": False, "cover_b64": ""}
+        return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
     try:
         manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
         session = manager.get_current_session()
         if not session:
-            return {"art": "", "trk": "", "play": False, "cover_b64": ""}
+            return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
         info = await session.try_get_media_properties_async()
         playback = session.get_playback_info()
         artist = info.artist if info and info.artist else ""
         track = info.title if info and info.title else ""
         is_playing = playback and getattr(playback, "playback_status", 0) == 4
+        # Idle = we have a session (artist/track) but not playing — show IDLE + zzz on deck
+        is_idle = bool(artist or track) and not is_playing
         cover_b64 = ""
         if HAS_PIL and info:
             try:
@@ -528,9 +521,9 @@ async def get_media_info() -> Dict:
                             cover_b64 = base64.b64encode(bytes(bitmap)).decode("ascii")
             except Exception:
                 pass
-        return {"art": artist[:30], "trk": track[:30], "play": is_playing, "cover_b64": cover_b64}
+        return {"art": artist[:30], "trk": track[:30], "play": is_playing, "idle": is_idle, "cover_b64": cover_b64}
     except Exception:
-        return {"art": "", "trk": "", "play": False, "cover_b64": ""}
+        return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
 
 
 # ============================================================================
@@ -580,6 +573,7 @@ def build_payload(
     - art: Media artist
     - trk: Media track
     - mp: Media playing (bool)
+    - idle: True when paused / session exists but not playing (deck shows IDLE + sleep icon)
     - cov: Album cover (base64)
     """
     # Weather: after first success, always send cached; never 0/null for temp/desc
@@ -646,10 +640,45 @@ def build_payload(
         "art": media.get("art", ""),
         "trk": media.get("trk", ""),
         "mp": media.get("play", False),
+        "idle": media.get("idle", False),
         "cov": media.get("cover_b64", ""),
     }
     
     return payload
+
+
+def _payload_snapshot(payload: Dict) -> Tuple:
+    """Key values for hysteresis: only send when these change beyond threshold."""
+    return (
+        payload.get("ct", 0),
+        payload.get("gt", 0),
+        payload.get("cl", 0),
+        payload.get("gl", 0),
+        payload.get("nd", 0),
+        payload.get("nu", 0),
+        payload.get("ru", 0),
+        payload.get("ra", 0),
+    )
+
+
+def should_send_payload(payload: Dict, now: float) -> bool:
+    """True if we must send: heartbeat interval reached, or data changed beyond hysteresis."""
+    global _last_sent_snapshot, _last_heartbeat_time
+    if _last_sent_snapshot is None:
+        return True
+    if now - _last_heartbeat_time >= HEARTBEAT_INTERVAL:
+        return True
+    cur = _payload_snapshot(payload)
+    prev = _last_sent_snapshot
+    if abs(cur[0] - prev[0]) >= HYSTERESIS_TEMP or abs(cur[1] - prev[1]) >= HYSTERESIS_TEMP:
+        return True
+    if abs(cur[2] - prev[2]) >= HYSTERESIS_LOAD or abs(cur[3] - prev[3]) >= HYSTERESIS_LOAD:
+        return True
+    if abs(cur[4] - prev[4]) >= HYSTERESIS_NET_KB or abs(cur[5] - prev[5]) >= HYSTERESIS_NET_KB:
+        return True
+    if cur[6] != prev[6] or cur[7] != prev[7]:  # RAM changed
+        return True
+    return False
 
 
 # ============================================================================
@@ -757,21 +786,20 @@ async def handle_client(reader, writer):
 
 
 # ============================================================================
-# MAIN ASYNC LOOP — v7 with faster data collection and immediate sends
+# MAIN ASYNC LOOP — NOCTURNE_OS: aiohttp, heartbeat, hysteresis
 # ============================================================================
 
 async def run():
     """
-    Main async loop. Architecture:
-    - LHM polling runs in ThreadPoolExecutor (non-blocking)
-    - Weather API runs in ThreadPoolExecutor (non-blocking)
-    - Ping runs in ThreadPoolExecutor (non-blocking)
-    - TCP stream is never blocked
-    - v7: Faster initial data collection, immediate sends to new clients
+    Main async loop. True async:
+    - aiohttp for LHM and Weather (no blocking HTTP)
+    - Executor only for ping, psutil, top processes
+    - Send only when heartbeat (2s) or data changed beyond hysteresis
     """
     global executor, last_track_key, top_procs_cache, top_procs_ram_cache
     global last_top_procs_time, ping_latency_ms, global_data_cache
-    
+    global _last_sent_snapshot, _last_heartbeat_time
+
     executor = ThreadPoolExecutor(max_workers=6)
 
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
@@ -786,22 +814,21 @@ async def run():
     log_info("Server ready. Waiting for clients...")
 
     loop = asyncio.get_event_loop()
-    
     last_lhm_time = 0.0
     last_weather_time = 0.0
     last_ping_time = 0.0
-    last_send_time = 0.0
-    LHM_INTERVAL = 0.5  # v7: Faster polling (500ms)
     WEATHER_INTERVAL_F = float(WEATHER_UPDATE_INTERVAL)
-    PING_INTERVAL = 5.0  # Ping every 5 seconds
+    PING_INTERVAL = 5.0
 
-    # v7: Initial data collection before accepting clients
+    # One session for all HTTP (LHM, Weather) — non-blocking
+    session = aiohttp.ClientSession()
+
     log_info("Collecting initial data...")
     try:
-        global_data_cache["hw"] = await loop.run_in_executor(executor, get_lhm_data)
+        global_data_cache["hw"] = await get_lhm_data_async(session)
+        global_data_cache["weather"] = await get_weather_async(session)
         global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
         global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
-        global_data_cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
         global_data_cache["media"] = await get_media_info()
         top_procs_cache = await loop.run_in_executor(
             executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N)
@@ -812,25 +839,28 @@ async def run():
         global_data_cache["top_procs"] = top_procs_cache
         global_data_cache["top_procs_ram"] = top_procs_ram_cache
         last_top_procs_time = time.time()
+        ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
+        global_data_cache["ping"] = ping_latency_ms
         log_info("Initial data collected.")
     except Exception as e:
         log_err(f"Initial data collection failed: {e}", trace_bt=False)
 
-    while not stop_requested:
-        now = time.time()
+    try:
+        while not stop_requested:
+            now = time.time()
 
-        # Schedule LHM in executor (non-blocking)
-        if now - last_lhm_time >= LHM_INTERVAL:
-            last_lhm_time = now
-            try:
-                hw_data = await loop.run_in_executor(executor, get_lhm_data)
-                if hw_data:
-                    global_data_cache["hw"] = hw_data
-                global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
-                global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
-            except Exception as e:
-                log_debug(f"Data collection error: {e}")
-            
+            # Poll LHM + net + disk at POLL_INTERVAL
+            if now - last_lhm_time >= POLL_INTERVAL:
+                last_lhm_time = now
+                try:
+                    hw_data = await get_lhm_data_async(session)
+                    if hw_data:
+                        global_data_cache["hw"] = hw_data
+                    global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
+                    global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
+                except Exception as e:
+                    log_debug(f"Data collection error: {e}")
+
             if now - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
                 try:
                     top_procs_cache = await loop.run_in_executor(
@@ -845,67 +875,66 @@ async def run():
                 except Exception as e:
                     log_debug(f"Process collection error: {e}")
 
-        # Weather in executor (long interval)
-        if now - last_weather_time >= WEATHER_INTERVAL_F:
-            last_weather_time = now
-            try:
-                global_data_cache["weather"] = await loop.run_in_executor(executor, get_weather_sync)
-            except Exception as e:
-                log_debug(f"Weather collection error: {e}")
-
-        # Ping in executor (5 sec interval)
-        if now - last_ping_time >= PING_INTERVAL:
-            last_ping_time = now
-            try:
-                ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
-                global_data_cache["ping"] = ping_latency_ms
-            except Exception as e:
-                log_debug(f"Ping error: {e}")
-
-        # Media info (async, non-blocking)
-        try:
-            global_data_cache["media"] = await get_media_info()
-        except Exception as e:
-            log_debug(f"Media info error: {e}")
-
-        track_key = f"{global_data_cache['media'].get('art', '')}|{global_data_cache['media'].get('trk', '')}"
-        if track_key != last_track_key and last_track_key:
-            log_info("Track changed.")
-        last_track_key = track_key
-
-        # Send to all connected clients (at DATA_SEND_INTERVAL)
-        if now - last_send_time >= DATA_SEND_INTERVAL:
-            last_send_time = now
-            dead = []
-            for writer in list(tcp_clients):
-                payload = build_payload(
-                    hw=global_data_cache["hw"],
-                    media=global_data_cache["media"],
-                    weather=global_data_cache["weather"],
-                    top_procs=global_data_cache["top_procs"],
-                    top_procs_ram=global_data_cache["top_procs_ram"],
-                    net=global_data_cache["net"],
-                    disk=global_data_cache["disk"],
-                    ping_ms=global_data_cache["ping"],
-                )
-                success = await send_data_to_client(writer, payload)
-                if not success:
-                    dead.append(writer)
-
-            for writer in dead:
-                if writer in tcp_clients:
-                    tcp_clients.remove(writer)
-                client_screens.pop(writer, None)
-                client_buffers.pop(writer, None)
-                client_connect_times.pop(writer, None)
+            if now - last_weather_time >= WEATHER_INTERVAL_F:
+                last_weather_time = now
                 try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception:
-                    pass
+                    global_data_cache["weather"] = await get_weather_async(session)
+                except Exception as e:
+                    log_debug(f"Weather collection error: {e}")
 
-        # v7: Faster loop interval for responsiveness
-        await asyncio.sleep(0.1)
+            if now - last_ping_time >= PING_INTERVAL:
+                last_ping_time = now
+                try:
+                    ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
+                    global_data_cache["ping"] = ping_latency_ms
+                except Exception as e:
+                    log_debug(f"Ping error: {e}")
+
+            try:
+                global_data_cache["media"] = await get_media_info()
+            except Exception as e:
+                log_debug(f"Media info error: {e}")
+
+            track_key = f"{global_data_cache['media'].get('art', '')}|{global_data_cache['media'].get('trk', '')}"
+            if track_key != last_track_key and last_track_key:
+                log_info("Track changed.")
+            last_track_key = track_key
+
+            payload = build_payload(
+                hw=global_data_cache["hw"],
+                media=global_data_cache["media"],
+                weather=global_data_cache["weather"],
+                top_procs=global_data_cache["top_procs"],
+                top_procs_ram=global_data_cache["top_procs_ram"],
+                net=global_data_cache["net"],
+                disk=global_data_cache["disk"],
+                ping_ms=global_data_cache["ping"],
+            )
+
+            # Send only when heartbeat due or data changed beyond hysteresis
+            if should_send_payload(payload, now):
+                _last_heartbeat_time = now
+                _last_sent_snapshot = _payload_snapshot(payload)
+                dead = []
+                for writer in list(tcp_clients):
+                    success = await send_data_to_client(writer, payload)
+                    if not success:
+                        dead.append(writer)
+                for writer in dead:
+                    if writer in tcp_clients:
+                        tcp_clients.remove(writer)
+                    client_screens.pop(writer, None)
+                    client_buffers.pop(writer, None)
+                    client_connect_times.pop(writer, None)
+                    try:
+                        writer.close()
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+
+            await asyncio.sleep(0.1)
+    finally:
+        await session.close()
 
     if executor:
         executor.shutdown(wait=False)
@@ -969,7 +998,7 @@ def _start_tray():
         MenuItem("Remove from Autostart", on_remove_autostart),
         MenuItem("Exit", on_quit, default=True),
     )
-    icon = pystray.Icon("heltec", img, "Heltec Monitor v7.0 [NEURAL LINK]", menu=menu)
+    icon = pystray.Icon("nocturne", img, "NOCTURNE_OS Monitor", menu=menu)
     import threading
     t = threading.Thread(target=_run_tray_thread, args=(icon,), daemon=True)
     t.start()
@@ -1044,8 +1073,8 @@ def _remove_from_autostart() -> bool:
 
 if __name__ == "__main__":
     log_info("=" * 60)
-    log_info("Heltec PC Monitor Server v7.0 [NEURAL LINK]")
-    log_info("Cyberpunk Cyberdeck Edition")
+    log_info("NOCTURNE_OS — PC Monitor Server")
+    log_info("Cyberdeck backend (aiohttp, heartbeat, hysteresis)")
     log_info("=" * 60)
 
     if sys.platform == "win32" and not getattr(sys, "frozen", False) and not _is_in_autostart():
@@ -1067,7 +1096,7 @@ if __name__ == "__main__":
         if getattr(sys, "frozen", False) and sys.platform == "win32":
             try:
                 import ctypes
-                ctypes.windll.user32.MessageBoxW(None, str(e), "Heltec Monitor", 0x10)
+                ctypes.windll.user32.MessageBoxW(None, str(e), "NOCTURNE_OS Monitor", 0x10)
             except Exception:
                 pass
         sys.exit(1)
