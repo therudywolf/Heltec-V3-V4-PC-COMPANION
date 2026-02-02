@@ -61,14 +61,16 @@
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, RST_PIN);
 
 // ============================================================================
-// UNIFIED FONT SYSTEM
+// UNIFIED FONT SYSTEM — readable, safe U8g2 fonts for 128x64 (digits, %, °,
+// Latin/Cyrillic)
 // ============================================================================
-#define FONT_TITLE u8g2_font_7x13B_tf        // Bold headers
-#define FONT_MAIN u8g2_font_7x13_tf          // Main data
-#define FONT_SMALL u8g2_font_5x8_tf          // Small text
-#define FONT_TINY u8g2_font_4x6_tf           // Tiny (C1-C6 labels)
-#define FONT_LARGE u8g2_font_9x15B_tf        // Large numbers
-#define FONT_MEDIA u8g2_font_7x13_t_cyrillic // Readable Latin + Cyrillic (7x13)
+#define FONT_TITLE u8g2_font_7x13B_tf // Bold headers
+#define FONT_MAIN u8g2_font_7x13_tf   // Main data
+#define FONT_SMALL u8g2_font_6x10_tf  // Small text (readable, predictable)
+#define FONT_TINY u8g2_font_4x6_tf    // Tiny (C1-C6, menu; 6px line fit)
+#define FONT_LARGE u8g2_font_9x15B_tf // Large numbers
+#define FONT_MEDIA                                                             \
+  u8g2_font_7x13_t_cyrillic // Latin + Cyrillic (media, weather)
 
 // ============================================================================
 // GLOBAL DATA STRUCTURES
@@ -288,7 +290,9 @@ static bool isOnlyAscii(const String &s) {
   return true;
 }
 
-// Parse basic hardware and play state (heartbeat / any payload)
+// Parse basic hardware and play state (heartbeat / any payload).
+// Keys match monitor.py build_payload; values are numbers (LHM parsed by
+// clean_val on server).
 void parseHardwareBasic(JsonDocument &doc) {
   hw.cpuTemp = doc["ct"] | 0;
   hw.gpuTemp = doc["gt"] | 0;
@@ -308,7 +312,9 @@ void parseHardwareBasic(JsonDocument &doc) {
   media.isPlaying = doc["play"] | false;
 }
 
-// Parse full payload: cores, memory, disks, network, weather, processes, media
+// Parse full payload: cores, memory, disks, network, weather, processes, media.
+// Disk indices: 0=nvme/2, 1=nvme/3, 2=hdd/0, 3=ssd/1 (match TARGETS d1..d4 in
+// monitor.py).
 void parseFullPayload(JsonDocument &doc) {
   JsonArray c_arr = doc["c_arr"];
   for (int i = 0; i < 6; i++) {
@@ -433,16 +439,16 @@ void drawBar(int x, int y, int w, int h, float val, float max) {
   drawProgressBar(x, y, w, h, pct);
 }
 
-// Draw card with title and content area (baseline: y+4 for small font)
+// Draw card with title and content area (FONT_SMALL 6x10: 10px title height)
 void drawCard(int x, int y, int w, int h, const char *title) {
   u8g2.drawRFrame(x, y, w, h, 3);
   if (title && strlen(title) > 0) {
     u8g2.setFont(FONT_SMALL);
     int tw = u8g2.getStrWidth(title);
     u8g2.setDrawColor(0);
-    u8g2.drawBox(x + 4, y - 3, tw + 4, 8);
+    u8g2.drawBox(x + 4, y - 4, tw + 4, 10);
     u8g2.setDrawColor(1);
-    u8g2.drawStr(x + 6, y + 4, title);
+    u8g2.drawStr(x + 6, y + 5, title);
   }
 }
 
@@ -509,38 +515,57 @@ void drawMainScreen() {
   u8g2.setFont(FONT_SMALL);
   int y = MARGIN + 11;
 
-  // CPU
+  // CPU — temp + load right-aligned before bar so they never overflow
   u8g2.drawStr(4, y, "CPU");
   char buf[20];
   snprintf(buf, sizeof(buf), "%d%cC ", hw.cpuTemp, (char)0xB0);
-  u8g2.drawStr(30, y, buf);
-  int w = u8g2.getStrWidth(buf);
+  int twTemp = u8g2.getStrWidth(buf);
   snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
   u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(30 + w, y, buf);
+  int twLoad = u8g2.getStrWidth(buf);
+  u8g2.setFont(FONT_SMALL);
+  int startX = 80 - twTemp - twLoad - 2;
+  if (startX < 30)
+    startX = 30;
+  snprintf(buf, sizeof(buf), "%d%cC ", hw.cpuTemp, (char)0xB0);
+  u8g2.drawStr(startX, y, buf);
+  snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(startX + twTemp, y, buf);
   u8g2.setFont(FONT_SMALL);
   drawProgressBar(80, y - 6, 44, 8, hw.cpuLoad);
 
-  // GPU
+  // GPU — same
   y += 12;
   u8g2.drawStr(4, y, "GPU");
   snprintf(buf, sizeof(buf), "%d%cC ", hw.gpuTemp, (char)0xB0);
-  u8g2.drawStr(30, y, buf);
-  w = u8g2.getStrWidth(buf);
+  twTemp = u8g2.getStrWidth(buf);
   snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
   u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(30 + w, y, buf);
+  twLoad = u8g2.getStrWidth(buf);
+  u8g2.setFont(FONT_SMALL);
+  startX = 80 - twTemp - twLoad - 2;
+  if (startX < 30)
+    startX = 30;
+  snprintf(buf, sizeof(buf), "%d%cC ", hw.gpuTemp, (char)0xB0);
+  u8g2.drawStr(startX, y, buf);
+  snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
+  u8g2.setFont(FONT_TINY);
+  u8g2.drawStr(startX + twTemp, y, buf);
   u8g2.setFont(FONT_SMALL);
   drawProgressBar(80, y - 6, 44, 8, hw.gpuLoad);
 
-  // RAM
+  // RAM — value right-aligned before bar so it never overflows
   y += 12;
   u8g2.drawStr(4, y, "RAM");
   snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.ramUsed, hw.ramTotal);
-  u8g2.drawStr(30, y, buf);
+  {
+    int tw = u8g2.getStrWidth(buf);
+    u8g2.drawStr(80 - tw - 2, y, buf);
+  }
   drawProgressBar(80, y - 6, 44, 8, hw.ramPct);
 
-  // Network
+  // Network — value right-aligned before bar
   y += 12;
   u8g2.drawStr(4, y, "NET");
   if (hw.netDown < 1000) {
@@ -549,7 +574,10 @@ void drawMainScreen() {
     snprintf(buf, sizeof(buf), "↓%.1fM ↑%.1fM", hw.netDown / 1024.0,
              hw.netUp / 1024.0);
   }
-  u8g2.drawStr(30, y, buf);
+  {
+    int tw = u8g2.getStrWidth(buf);
+    u8g2.drawStr(80 - tw - 2, y, buf);
+  }
 }
 
 void drawCoresScreen() {
@@ -570,7 +598,10 @@ void drawCoresScreen() {
     int mhz = (hw.cores[i] > 0) ? hw.cores[i] : hw.cpuMhzFallback;
     snprintf(buf, sizeof(buf), "%dMHz", mhz);
     u8g2.setFont(FONT_SMALL);
-    u8g2.drawStr(x + 14, y, buf);
+    {
+      int tw = u8g2.getStrWidth(buf);
+      u8g2.drawStr(x + 56 - tw, y, buf);
+    }
 
     // Load bar
     drawProgressBar(x, y + 2, 56, 6, hw.coreLoad[i]);
@@ -584,18 +615,19 @@ void drawCPUScreen() {
   int y = MARGIN + 11;
 
   char buf[30];
+  int valX = DISP_W - 4;
 
   // Temperature
   u8g2.drawStr(4, y, "Temp:");
   snprintf(buf, sizeof(buf), "%d%cC", hw.cpuTemp, (char)0xB0);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Load
   y += 10;
   u8g2.drawStr(4, y, "Load:");
   snprintf(buf, sizeof(buf), "%d%%", hw.cpuLoad);
   u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
   u8g2.setFont(FONT_SMALL);
   drawProgressBar(65, y - 6, 58, 8, hw.cpuLoad);
 
@@ -603,13 +635,13 @@ void drawCPUScreen() {
   y += 10;
   u8g2.drawStr(4, y, "Power:");
   snprintf(buf, sizeof(buf), "%dW", hw.cpuPwr);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // CPU frequency
   y += 10;
   u8g2.drawStr(4, y, "Freq:");
   snprintf(buf, sizeof(buf), "%d MHz", hw.cpuMhzFallback);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 }
 
 void drawGPUScreen() {
@@ -619,24 +651,25 @@ void drawGPUScreen() {
   int y = MARGIN + 11;
 
   char buf[30];
+  int valX = DISP_W - 4;
 
   // Temperature
   u8g2.drawStr(4, y, "Core:");
   snprintf(buf, sizeof(buf), "%d%cC", hw.gpuTemp, (char)0xB0);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Hot Spot
   y += 10;
   u8g2.drawStr(4, y, "Hot:");
   snprintf(buf, sizeof(buf), "%d%cC", hw.gpuHotSpot, (char)0xB0);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Load
   y += 10;
   u8g2.drawStr(4, y, "Load:");
   snprintf(buf, sizeof(buf), "%d%%", hw.gpuLoad);
   u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
   u8g2.setFont(FONT_SMALL);
   drawProgressBar(65, y - 6, 58, 8, hw.gpuLoad);
 
@@ -644,13 +677,13 @@ void drawGPUScreen() {
   y += 10;
   u8g2.drawStr(4, y, "Clock:");
   snprintf(buf, sizeof(buf), "%dMHz", hw.gpuClk);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Power
   y += 10;
   u8g2.drawStr(4, y, "Power:");
   snprintf(buf, sizeof(buf), "%dW", hw.gpuPwr);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 }
 
 void drawMemoryScreen() {
@@ -661,14 +694,14 @@ void drawMemoryScreen() {
 
   char buf[30];
 
-  // RAM
+  // RAM — value right-aligned so long numbers stay on screen
   u8g2.drawStr(4, y, "RAM:");
   snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.ramUsed, hw.ramTotal);
-  u8g2.drawStr(30, y, buf);
+  u8g2.drawStr(124 - u8g2.getStrWidth(buf), y, buf);
   y += 2;
   drawProgressBar(4, y, 120, 8, hw.ramPct);
 
-  // Top RAM processes
+  // Top RAM processes — name truncated, MB right-aligned
   y += 14;
   u8g2.drawStr(4, y, "Top Processes:");
 
@@ -676,8 +709,8 @@ void drawMemoryScreen() {
     y += 10;
     if (procs.ramNames[i].length() > 0) {
       String name = procs.ramNames[i];
-      if (name.length() > 15)
-        name = name.substring(0, 12) + "...";
+      if (name.length() > 12)
+        name = name.substring(0, 10) + "..";
       u8g2.drawStr(6, y, name.c_str());
 
       snprintf(buf, sizeof(buf), "%dMB", procs.ramMb[i]);
@@ -686,11 +719,11 @@ void drawMemoryScreen() {
     }
   }
 
-  // VRAM
+  // VRAM — value right-aligned
   y += 12;
   u8g2.drawStr(4, y, "VRAM:");
   snprintf(buf, sizeof(buf), "%.1f/%.1fGB", hw.vramUsed, hw.vramTotal);
-  u8g2.drawStr(35, y, buf);
+  u8g2.drawStr(124 - u8g2.getStrWidth(buf), y, buf);
 }
 
 void drawDisksScreen() {
@@ -757,39 +790,41 @@ void drawFansScreen() {
 
   char buf[20];
 
+  int valX = DISP_W - 4;
+
   // Pump
   u8g2.drawStr(4, y, "Pump:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanPump);
-  u8g2.drawStr(45, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Radiator
   y += 12;
   u8g2.drawStr(4, y, "Rad:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanRad);
-  u8g2.drawStr(45, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Case
   y += 12;
   u8g2.drawStr(4, y, "Case:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanCase);
-  u8g2.drawStr(45, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // GPU
   y += 12;
   u8g2.drawStr(4, y, "GPU:");
   snprintf(buf, sizeof(buf), "%d RPM", hw.fanGpu);
-  u8g2.drawStr(45, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   // Additional temps
   y += 14;
   u8g2.drawStr(4, y, "Chipset:");
   snprintf(buf, sizeof(buf), "%d%cC", hw.chipsetTemp, (char)0xB0);
-  u8g2.drawStr(55, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 
   y += 10;
   u8g2.drawStr(4, y, "NVMe:");
   snprintf(buf, sizeof(buf), "%d%cC", hw.nvme2Temp, (char)0xB0);
-  u8g2.drawStr(55, y, buf);
+  u8g2.drawStr(valX - u8g2.getStrWidth(buf), y, buf);
 }
 
 void drawWeatherScreen() {
@@ -815,7 +850,9 @@ void drawWeatherScreen() {
     u8g2.drawStr(28, MARGIN + 22, buf);
 
     u8g2.setFont(isOnlyAscii(weather.desc) ? FONT_SMALL : FONT_MEDIA);
+    u8g2.setClipWindow(6, MARGIN + 30, DISP_W - 6, MARGIN + 50);
     u8g2.drawUTF8(6, MARGIN + 38, weather.desc.c_str());
+    u8g2.setMaxClipWindow();
 
   } else if (weather.page == 1) {
     // Today forecast
@@ -831,7 +868,9 @@ void drawWeatherScreen() {
 
     u8g2.setFont(FONT_SMALL);
     String desc = "Today: " + String(_weatherDescFromCode(weather.dayCode));
+    u8g2.setClipWindow(6, MARGIN + 42, DISP_W - 6, DISP_H);
     u8g2.drawStr(6, MARGIN + 48, desc.c_str());
+    u8g2.setMaxClipWindow();
 
   } else {
     // Week forecast
@@ -865,11 +904,20 @@ void drawTopProcsScreen() {
       if (name.length() > 14)
         name = name.substring(0, 11) + "...";
 
-      u8g2.drawStr(6, y, name.c_str());
-
       snprintf(buf, sizeof(buf), "%d%%", procs.cpuPercent[i]);
       u8g2.setFont(FONT_TINY);
       int tw = u8g2.getStrWidth(buf);
+      u8g2.setFont(FONT_SMALL);
+      int nameMaxX = DISP_W - tw - 10;
+      if (nameMaxX > 10) {
+        u8g2.setClipWindow(6, y - 6, nameMaxX, y + 8);
+        u8g2.drawStr(6, y, name.c_str());
+        u8g2.setMaxClipWindow();
+      } else {
+        u8g2.drawStr(6, y, name.c_str());
+      }
+
+      u8g2.setFont(FONT_TINY);
       u8g2.drawStr(DISP_W - tw - 6, y, buf);
       u8g2.setFont(FONT_SMALL);
 
@@ -1031,7 +1079,9 @@ void drawMenu() {
         strcat(buf, settings.displayInverted ? " 180" : " 0");
     }
 
+    u8g2.setClipWindow(10, 8, DISP_W - 10, DISP_H - 6);
     u8g2.drawStr(12, y, buf);
+    u8g2.setMaxClipWindow();
 
     if (i == menuItem)
       u8g2.setDrawColor(1);
@@ -1146,8 +1196,11 @@ void loop() {
 
           if (!err) {
             lastUpdate = now;
+            // Full payload: server sends weather + media/cover; detect by key
+            // presence
             bool fullPayload = (tcpLineBuffer.length() >= 350 &&
-                                tcpLineBuffer.indexOf("cover_b64") >= 0);
+                                (tcpLineBuffer.indexOf("cover_b64") >= 0 ||
+                                 tcpLineBuffer.indexOf("\"wt\"") >= 0));
 
             parseHardwareBasic(doc);
             if (fullPayload)
