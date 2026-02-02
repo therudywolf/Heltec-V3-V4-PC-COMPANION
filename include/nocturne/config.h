@@ -31,10 +31,10 @@
 #define NOCT_HEARTBEAT_INTERVAL_MS 2000
 
 #ifndef CPU_TEMP_ALERT
-#define CPU_TEMP_ALERT 80
+#define CPU_TEMP_ALERT 87
 #endif
 #ifndef GPU_TEMP_ALERT
-#define GPU_TEMP_ALERT 85
+#define GPU_TEMP_ALERT 72
 #endif
 
 // Scene indices

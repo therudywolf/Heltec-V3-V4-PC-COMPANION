@@ -10,7 +10,6 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 
-
 class NetLink {
 public:
   NetLink();
@@ -48,7 +47,7 @@ public:
 private:
   bool tryTcpConnect(unsigned long now);
 
-  WiFiClient client_;
+  mutable WiFiClient client_;
   String lineBuffer_;
   const char *serverIp_;
   uint16_t serverPort_;
