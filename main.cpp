@@ -55,8 +55,9 @@ int cpuTemp = 0, gpuTemp = 0, gpuHotSpot = 0, vrmTemp = 0;
 int cpuLoad = 0, cpuPwr = 0, gpuLoad = 0, gpuPwr = 0;
 int fanPump = 0, fanRad = 0, fanCase = 0, fanGpu = 0;
 int gpuClk = 0;
-int cores[6] = {0};    // legacy clock (c1-c6)
-int coreLoad[6] = {0}; // per-core load % (cl1-cl6)
+int cores[6] = {0};     // legacy clock (c1-c6)
+int cpuMhzFallback = 0; // LHM /amdcpu/0/clock/0 when per-core 0
+int coreLoad[6] = {0};  // per-core load % (cl1-cl6)
 int ramPct = 0;
 float ramUsed = 0.0, ramTotal = 0.0;
 float vramUsed = 0.0, vramTotal = 0.0;
@@ -100,8 +101,8 @@ bool displayInverted = false; // Ориентация: 0=обычный, 1=ин�
 
 int currentScreen = 0;
 // 0=Main 1=Cores 2=CPU 3=GPU 4=Memory 5=Disks 6=Player 7=Fans 8=Weather
-// 9=TopProcs
-const int TOTAL_SCREENS = 10;
+// 9=TopProcs 10=Equalizer
+const int TOTAL_SCREENS = 11;
 
 bool inMenu = false; // Мы в меню?
 int menuItem =
@@ -262,10 +263,10 @@ static bool isOnlyAscii(const String &s) {
   return true;
 }
 
-// --- CARD STYLE: единая карточка для всех экранов ---
+// --- CARD STYLE: тонкая рамка, больше контента ---
 const int MARGIN = 2;
-const int CARD_MARGIN = 3;
-const int CARD_PADDING = 2;
+const int CARD_MARGIN = 2;
+const int CARD_PADDING = 1;
 const int ROW_H = 14;
 #define CARD_W (DISP_W - 2 * CARD_MARGIN)
 #define CARD_H (DISP_H - 2 * CARD_MARGIN)
@@ -275,7 +276,7 @@ const int ROW_H = 14;
 #define CONTENT_BOTTOM (DISP_H - CARD_MARGIN - CARD_PADDING)
 
 static void drawCardFrame() {
-  u8g2.drawRFrame(CARD_MARGIN, CARD_MARGIN, CARD_W, CARD_H, 2);
+  u8g2.drawFrame(CARD_MARGIN, CARD_MARGIN, CARD_W, CARD_H);
 }
 
 // --- SCREENS ---
@@ -355,8 +356,8 @@ void drawCores() {
 // CPU only: watts, temperature, frequency, load
 void drawCpuOnly() {
   drawCardFrame();
-  int cpuMhz = cores[0];
-  for (int i = 1; i < 6; i++)
+  int cpuMhz = cpuMhzFallback;
+  for (int i = 0; i < 6; i++)
     if (cores[i] > cpuMhz)
       cpuMhz = cores[i];
   char buf[32];
@@ -838,6 +839,9 @@ void drawScreen(int screen) {
   case 9:
     drawTopProcs();
     break;
+  case 10:
+    drawEqualizer();
+    break;
   default:
     drawMain();
     break;
@@ -851,6 +855,8 @@ void loop() {
   if (strlen(WIFI_PASS) > 0) {
     if (WiFi.status() == WL_CONNECTED && !tcpClient.connected()) {
       tcpClient.connect(PC_IP, TCP_PORT, 2000);
+      if (tcpClient.connected())
+        tcpClient.setNoDelay(true);
     }
     if (WiFi.status() != WL_CONNECTED &&
         (now - wifiConnectStart < WIFI_TRY_MS)) {
@@ -921,6 +927,7 @@ void loop() {
         fanGpu = doc["gf"];
         gpuClk = doc["gck"];
 
+        cpuMhzFallback = doc["cpu_mhz"] | 0;
         cores[0] = doc["c1"];
         cores[1] = doc["c2"];
         cores[2] = doc["c3"];

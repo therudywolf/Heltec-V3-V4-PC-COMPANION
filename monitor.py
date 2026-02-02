@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import os
+import socket
 import sys
 import threading
 import traceback
@@ -53,6 +54,7 @@ TARGETS = {
     "vt": "/lpc/it8688e/0/temperature/4", # VRM MOS
     "cpu_load": "/amdcpu/0/load/0",        # CPU Total %
     "cpu_pwr": "/amdcpu/0/power/0",        # CPU Package W
+    "cpu_mhz": "/amdcpu/0/clock/0",        # CPU effective clock (fallback if per-core 0)
     "gpu_load": "/gpu-nvidia/0/load/0",    # GPU Core %
     "gpu_pwr": "/gpu-nvidia/0/power/0",    # GPU Package W
     "p": "/lpc/it8688e/0/fan/0",           # Pump
@@ -399,7 +401,7 @@ async def get_media():
 _SCREEN_KEYS = {
     0: ("gth", "vt", "ru", "rt", "rp", "vu", "vt_tot"),
     1: ("cl1", "cl2", "cl3", "cl4", "cl5", "cl6"),
-    2: ("ct", "cpu_pwr", "cpu_load", "c1", "c2", "c3", "c4", "c5", "c6"),
+    2: ("ct", "cpu_pwr", "cpu_load", "cpu_mhz", "c1", "c2", "c3", "c4", "c5", "c6"),
     3: ("gck", "gf", "gt", "vu", "vt_tot", "gpu_pwr"),
     4: ("ru", "rt", "rp", "tp_ram"),
     5: ("disk_t", "disk_used", "disk_total"),
@@ -407,6 +409,7 @@ _SCREEN_KEYS = {
     7: ("p", "r", "c", "gf"),
     8: ("wt", "wd", "wi", "wday_high", "wday_low", "wday_code", "week_high", "week_low", "week_code"),
     9: ("tp",),
+    10: (),  # Equalizer (local animation)
 }
 _COMMON_KEYS = ("hw_ok", "ct", "gt", "cpu_load", "gpu_load", "play", "wt", "wd", "wi")
 
@@ -443,6 +446,7 @@ def build_payload(hw, media, hw_ok, include_cover=True, weather=None, top_procs=
         "p": int(hw.get("p", 0)), "r": int(hw.get("r", 0)), "c": int(hw.get("c", 0)),
         "gf": int(hw.get("gf", 0)), "gck": int(hw.get("gck", 0)),
         "cl1": cl[0], "cl2": cl[1], "cl3": cl[2], "cl4": cl[3], "cl5": cl[4], "cl6": cl[5],
+        "cpu_mhz": int(hw.get("cpu_mhz", 0)),
         "c1": int(hw.get("c1", 0)), "c2": int(hw.get("c2", 0)), "c3": int(hw.get("c3", 0)),
         "c4": int(hw.get("c4", 0)), "c5": int(hw.get("c5", 0)), "c6": int(hw.get("c6", 0)),
         "ru": round(hw.get("ram_u", 0), 1),
@@ -506,9 +510,9 @@ async def run_serial(ser, cache, send_fn):
         hw = dict(cache)
         if not hw:
             hw = {"ct": 0, "gt": 0, "gth": 0, "vt": 0, "cpu_load": 0, "cpu_pwr": 0,
-                  "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
-                  "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
-                  "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
+                          "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
+                          "cpu_mhz": 0, "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
+                          "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
                   "vcore": 0, "nvme2_t": 0, "d1_t": 0, "d2_t": 0, "d3_t": 0, "d4_t": 0}
         media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play")}
     payload = build_payload(hw, media, hw_ok)
@@ -516,7 +520,7 @@ async def run_serial(ser, cache, send_fn):
     send_fn(data_str.encode("utf-8"))
 
 
-# Клиенты TCP: writer -> last screen (0–9: Main..TopProcs)
+# Клиенты TCP: writer -> last screen (0–10: Main..TopProcs, Equalizer)
 tcp_clients = []
 client_screens = {}  # writer -> int
 client_buffers = {}  # writer -> str
@@ -527,7 +531,7 @@ def _parse_screen_line(line: str) -> int | None:
     if s.startswith("screen:") and len(s) < 20:
         try:
             n = int(s.split(":")[1].strip())
-            if 0 <= n <= 9:
+            if 0 <= n <= 10:
                 return n
         except (ValueError, IndexError):
             pass
@@ -535,6 +539,12 @@ def _parse_screen_line(line: str) -> int | None:
 
 
 async def tcp_handler(reader, writer):
+    sock = writer.get_extra_info("socket")
+    if sock:
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
     addr = writer.get_extra_info("peername")
     tcp_clients.append(writer)
     client_screens[writer] = 0
@@ -604,9 +614,9 @@ async def run():
     last_track_key = ""
     last_cover_sent = 0.0
     COVER_INTERVAL = 8.0
-    HEARTBEAT_INTERVAL = 0.3
-    FULL_INTERVAL = 0.8
-    MEDIA_FULL_INTERVAL = 0.28  # чаще полный пакет для экранов Player/EQ
+    HEARTBEAT_INTERVAL = 0.2
+    FULL_INTERVAL = 0.5
+    MEDIA_FULL_INTERVAL = 0.25  # чаще полный пакет для экранов Player/EQ
     last_heartbeat = 0.0
     last_full = 0.0
     full_tick = 0
@@ -687,7 +697,7 @@ async def run():
                 if not hw:
                     hw = {"ct": 0, "gt": 0, "gth": 0, "vt": 0, "cpu_load": 0, "cpu_pwr": 0,
                           "gpu_load": 0, "gpu_pwr": 0, "p": 0, "r": 0, "c": 0, "gf": 0, "gck": 0,
-                          "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
+                          "cpu_mhz": 0, "c1": 0, "c2": 0, "c3": 0, "c4": 0, "c5": 0, "c6": 0,
                           "ram_u": 0, "ram_a": 0, "ram_pct": 0, "vram_u": 0, "vram_t": 0,
                           "vcore": 0, "nvme2_t": 0, "chipset_t": 0, "d1_t": 0, "d2_t": 0, "d3_t": 0, "d4_t": 0}
                 media = {k: cache.get(k, media.get(k)) for k in ("art", "trk", "play", "cover_b64")}
