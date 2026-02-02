@@ -11,11 +11,11 @@
 #define LINE_H_BIG 14
 
 DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
-    : u8g2_(U8G2_R0, rstPin), dataSpike_(false), lastGlitchApply_(0),
-      invertPhase_(false) {}
+    : sdaPin_(sdaPin), sclPin_(sclPin), u8g2_(U8G2_R0, rstPin),
+      dataSpike_(false), lastGlitchApply_(0), invertPhase_(false) {}
 
 void DisplayEngine::begin() {
-  Wire.begin(sdaPin, sclPin);
+  Wire.begin(sdaPin_, sclPin_);
   u8g2_.begin();
   u8g2_.enableUTF8Print();
 }

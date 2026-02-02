@@ -11,7 +11,6 @@
 #include "config.h"
 #include <U8g2lib.h>
 
-
 // Typography: system logs vs values
 #define FONT_LOG u8g2_font_tom_thumb_4x6_tr
 #define FONT_VAL u8g2_font_6x12_tf
@@ -56,6 +55,8 @@ public:
                         int maxVal);
 
 private:
+  int sdaPin_;
+  int sclPin_;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2_;
   bool dataSpike_;
   unsigned long lastGlitchApply_;
