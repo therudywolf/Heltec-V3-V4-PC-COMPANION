@@ -43,8 +43,11 @@ public:
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
+   * valueYOffset: extra pixels to move value baseline down (e.g. 6 for
+   * CPU/GPU/MB).
    */
-  void drawGridCell(int x, int y, const char *label, const char *value);
+  void drawGridCell(int x, int y, const char *label, const char *value,
+                    int valueYOffset = 0);
   void drawFanIconSmall(int x, int y, int frame);
   void drawWeatherIcon32(int x, int y, int wmoCode);
   void drawNoDataCross(int x, int y, int w, int h);
