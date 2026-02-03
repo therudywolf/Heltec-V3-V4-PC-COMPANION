@@ -147,7 +147,11 @@ void SceneManager::drawGpuDetail(int fanFrame) {
   snprintf(buf, sizeof(buf), "VRAM: %d%%", vramPct);
   u8g2.drawUTF8(2, 60, buf);
   int hotspot = (hw.ch > 0) ? hw.ch : 75;
-  snprintf(buf, sizeof(buf), "HOTSPOT: %d\xC2\xB0", hotspot);
+  snprintf(buf, sizeof(buf),
+           "HOTSPOT: %d"
+           "\xC2"
+           "\xB0",
+           hotspot);
   disp_.drawRightAligned(128, 60, TINY_FONT, buf);
 }
 
@@ -246,7 +250,12 @@ void SceneManager::drawAtmos() {
   drawWeatherIcon32(ICON_X, ICON_Y, w.wmoCode);
 
   char tempBuf[16];
-  snprintf(tempBuf, sizeof(tempBuf), "%d\xC2\xB0C", w.temp);
+  snprintf(tempBuf, sizeof(tempBuf),
+           "%d"
+           "\xC2"
+           "\xB0"
+           "C",
+           w.temp);
   u8g2.setFont(HUGE_FONT);
   u8g2.drawUTF8(RIGHT_X, 32, tempBuf);
 
