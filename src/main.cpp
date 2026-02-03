@@ -178,7 +178,7 @@ void loop() {
     needRedraw = true;
   }
 
-  if (settings.carouselEnabled && !predatorMode) {
+  if (settings.carouselEnabled && !predatorMode && !state.alertActive) {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
     if (now - lastCarousel > intervalMs) {
@@ -205,8 +205,7 @@ void loop() {
     lastBlink = now;
   }
 
-  bool anyAlarm =
-      (state.hw.ct >= CPU_TEMP_ALERT) || (state.hw.gt >= GPU_TEMP_ALERT);
+  bool anyAlarm = state.alertActive;
   if (predatorMode) {
     digitalWrite(NOCT_LED_PIN, LOW);
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -272,7 +271,7 @@ void loop() {
     static unsigned long lastAlertFlash = 0;
     static bool alertFlashInverted = false;
     if (state.alertActive) {
-      if (now - lastAlertFlash >= 500) {
+      if (now - lastAlertFlash >= 200) {
         lastAlertFlash = now;
         alertFlashInverted = !alertFlashInverted;
       }
@@ -292,7 +291,7 @@ void loop() {
     } else {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
       if (state.alertActive)
-        display.drawHazardBorder();
+        display.drawAlertBorder();
       static unsigned long lastGlitchMs = 0;
       if (now - lastGlitchMs >= (unsigned long)NOCT_GLITCH_INTERVAL_MS) {
         lastGlitchMs = now;

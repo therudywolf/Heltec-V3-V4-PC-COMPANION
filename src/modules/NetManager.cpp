@@ -148,8 +148,20 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
     hw.fans[i] = fansArr[i] | 0;
   JsonArray hddArr = doc["hdd"];
   for (int i = 0; i < NOCT_HDD_COUNT && i < (int)hddArr.size(); i++) {
-    hw.hdd[i].load = hddArr[i]["load"] | 0;
-    hw.hdd[i].temp = hddArr[i]["temp"] | 0;
+    const char *n = hddArr[i]["n"];
+    if (n && n[0]) {
+      hw.hdd[i].name[0] = n[0];
+      hw.hdd[i].name[1] = '\0';
+    } else {
+      hw.hdd[i].name[0] = (char)('C' + i);
+      hw.hdd[i].name[1] = '\0';
+    }
+    hw.hdd[i].load = hddArr[i]["u"] | hddArr[i]["load"] | 0;
+  }
+  for (int i = (int)hddArr.size(); i < NOCT_HDD_COUNT; i++) {
+    hw.hdd[i].name[0] = (char)('C' + i);
+    hw.hdd[i].name[1] = '\0';
+    hw.hdd[i].load = 0;
   }
   hw.vu = doc["vu"] | 0.0f;
   hw.vt = doc["vt"] | 0.0f;
@@ -205,11 +217,21 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   const char *target = doc["target_screen"];
   state->alertActive = (alert && strcmp(alert, "CRITICAL") == 0);
   if (state->alertActive && target) {
-    state->alertTargetScene =
-        (strcmp(target, "GPU") == 0) ? NOCT_SCENE_GPU : NOCT_SCENE_CPU;
-  } else {
-    state->alertActive = false;
+    if (strcmp(target, "THERMAL") == 0)
+      state->alertTargetScene = NOCT_SCENE_THERMAL;
+    else if (strcmp(target, "LOAD") == 0)
+      state->alertTargetScene = NOCT_SCENE_LOAD;
+    else if (strcmp(target, "MEMORY") == 0)
+      state->alertTargetScene = NOCT_SCENE_MEMORY;
+    else if (strcmp(target, "GPU") == 0)
+      state->alertTargetScene = NOCT_SCENE_LOAD;
+    else if (strcmp(target, "CPU") == 0)
+      state->alertTargetScene = NOCT_SCENE_THERMAL;
+    else
+      state->alertTargetScene = NOCT_SCENE_THERMAL;
   }
+  if (!state->alertActive)
+    state->alertTargetScene = NOCT_SCENE_THERMAL;
 
   return true;
 }

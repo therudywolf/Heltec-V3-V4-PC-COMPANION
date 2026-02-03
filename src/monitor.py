@@ -198,7 +198,7 @@ TOP_PROCS_CPU_N = 3
 TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
 TOP_PROCS_CACHE_TTL = 2.5
-POLL_INTERVAL = 1.0
+POLL_INTERVAL = 0.5
 HEARTBEAT_INTERVAL = 2.8  # Send at most every 2.8s when unchanged (reduces traffic)
 HYSTERESIS_TEMP = 2
 HYSTERESIS_LOAD = 5
@@ -358,13 +358,14 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
-    # HDD array: 4 drives, load/0 and temperature/0 each
-    hdd: List[Dict[str, int]] = []
-    for load_path, temp_path in HDD_PATHS:
-        hdd.append({
-            "load": int(path_to_val.get(load_path, 0)),
-            "temp": int(path_to_val.get(temp_path, 0)),
-        })
+    # HDD array: 4 drives from /hdd/0..3 — simple list [{n, u}] for display
+    drive_letters = ("C", "D", "E", "F")
+    hdd: List[Dict[str, Any]] = []
+    for idx, (load_path, _temp_path) in enumerate(HDD_PATHS):
+        u = int(path_to_val.get(load_path, 0))
+        if u < 0 or u > 100:
+            u = 0
+        hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": u})
     results["hdd"] = hdd
     return results
 
@@ -548,13 +549,17 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
     return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
+# Alert thresholds (RED ALERT when any is met)
+CPU_TEMP_ALERT = 87
+GPU_TEMP_ALERT = 68
+CPU_LOAD_ALERT = 99
+GPU_LOAD_ALERT = 99
+VRAM_LOAD_ALERT = 95
+
+
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
                   net: tuple, disk: tuple, ping_ms: int, now: float) -> Dict:
     global last_sent_track_key, _last_sent_snapshot, _last_heartbeat_time
-    cfg = load_config()
-    limits = cfg.get("limits", {})
-    gpu_limit = int(limits.get("gpu", 80))
-    cpu_limit = int(limits.get("cpu", 75))
 
     w = weather if _weather_first_ok else weather
     wt_val = w.get("temp", 0)
@@ -563,18 +568,36 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
     ram_total_f = round(float(hw.get("ra", 0)), 1)
     media_status = media.get("media_status", "PAUSED")
 
+    ct = int(hw.get("ct", 0))
+    gt = int(hw.get("gt", 0))
+    cl = int(hw.get("cl", 0))
+    gl = int(hw.get("gl", 0))
+    gv = int(hw.get("gv", 0))
+
+    raw_hdd = hw.get("hdd", [])
+    drive_letters = ("C", "D", "E", "F")
+    hdd_list = []
+    for i in range(4):
+        if i < len(raw_hdd):
+            e = raw_hdd[i]
+            n = e.get("n") or drive_letters[i]
+            u = e.get("u") if "u" in e else e.get("load", 0)
+            hdd_list.append({"n": n if isinstance(n, str) else drive_letters[i], "u": int(u)})
+        else:
+            hdd_list.append({"n": drive_letters[i], "u": 0})
+
     payload = {
-        "ct": int(hw.get("ct", 0)), "gt": int(hw.get("gt", 0)),
-        "cl": int(hw.get("cl", 0)), "gl": int(hw.get("gl", 0)),
+        "ct": ct, "gt": gt,
+        "cl": cl, "gl": gl,
         "pw": int(hw.get("pw", 0)), "cc": int(hw.get("cc", 0)),
-        "gh": int(hw.get("gh", 0)), "gv": int(hw.get("gv", 0)),
+        "gh": int(hw.get("gh", 0)), "gv": gv,
         "gclock": int(hw.get("gclock", 0)), "vclock": int(hw.get("vclock", 0)),
         "gtdp": int(hw.get("gtdp", 0)),
         "ru": ram_used_f, "ra": ram_total_f,
         "nd": net[1], "nu": net[0], "pg": ping_ms,
         "cf": int(hw.get("cf", 0)), "s1": int(hw.get("s1", 0)), "s2": int(hw.get("s2", 0)), "gf": int(hw.get("gf", 0)),
         "fans": hw.get("fans", [0, 0, 0, 0]),
-        "hdd": hw.get("hdd", [{"load": 0, "temp": 0} for _ in range(4)]),
+        "hdd": hdd_list,
         "vu": round(float(hw.get("vu", 0)), 1), "vt": round(float(hw.get("vt", 0)), 1),
         "ch": int(hw.get("ch", 0)), "dr": disk[0], "dw": disk[1],
         "wt": wt_val, "wd": wd_val, "wi": int(w.get("icon", 0)),
@@ -583,9 +606,18 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "mp": media.get("play", False), "idle": media.get("idle", False),
         "media_status": media_status,
     }
-    if payload["gt"] >= gpu_limit or payload["ct"] >= cpu_limit:
+
+    # RED ALERT: if ANY threshold met, set alert and target scene
+    alert_target = ""
+    if ct >= CPU_TEMP_ALERT or gt >= GPU_TEMP_ALERT:
+        alert_target = "THERMAL"
+    elif cl >= CPU_LOAD_ALERT or gl >= GPU_LOAD_ALERT:
+        alert_target = "LOAD"
+    elif gv >= VRAM_LOAD_ALERT:
+        alert_target = "MEMORY"
+    if alert_target:
         payload["alert"] = "CRITICAL"
-        payload["target_screen"] = "GPU" if payload["gt"] >= gpu_limit else "CPU"
+        payload["target_screen"] = alert_target
     else:
         payload["alert"] = ""
         payload["target_screen"] = ""
@@ -795,7 +827,7 @@ async def run():
                     except Exception:
                         pass
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
     finally:
         await session.close()
 
