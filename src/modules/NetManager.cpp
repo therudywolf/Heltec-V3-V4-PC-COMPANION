@@ -8,7 +8,6 @@
 #include <ArduinoJson.h>
 #include <string.h>
 
-
 NetManager::NetManager()
     : serverIp_(nullptr), serverPort_(0), lastTcpAttempt_(0),
       tcpConnectTime_(0), lastUpdate_(0), lastWifiRetry_(0),
@@ -132,6 +131,9 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   hw.pw = doc["pw"] | 0;
   hw.gh = doc["gh"] | 0;
   hw.gv = doc["gv"] | 0;
+  hw.gclock = doc["gclock"] | 0;
+  hw.vclock = doc["vclock"] | 0;
+  hw.gtdp = doc["gtdp"] | 0;
   hw.ru = doc["ru"] | 0.0f;
   hw.ra = doc["ra"] | 0.0f;
   hw.nd = doc["nd"] | 0;
@@ -141,8 +143,14 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   hw.s1 = doc["s1"] | 0;
   hw.s2 = doc["s2"] | 0;
   hw.gf = doc["gf"] | 0;
-  hw.su = doc["su"] | 0;
-  hw.du = doc["du"] | 0;
+  JsonArray fansArr = doc["fans"];
+  for (int i = 0; i < NOCT_FAN_COUNT && i < (int)fansArr.size(); i++)
+    hw.fans[i] = fansArr[i] | 0;
+  JsonArray hddArr = doc["hdd"];
+  for (int i = 0; i < NOCT_HDD_COUNT && i < (int)hddArr.size(); i++) {
+    hw.hdd[i].load = hddArr[i]["load"] | 0;
+    hw.hdd[i].temp = hddArr[i]["temp"] | 0;
+  }
   hw.vu = doc["vu"] | 0.0f;
   hw.vt = doc["vt"] | 0.0f;
   hw.ch = doc["ch"] | 0;
@@ -189,11 +197,9 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   state->media.track = String(trk ? trk : "");
   state->media.isPlaying = doc["mp"] | false;
   state->media.isIdle = doc["idle"] | false;
-  if (!doc["cov"].isNull()) {
-    const char *cov = doc["cov"];
-    state->media.coverB64 = String(cov ? cov : "");
-  }
-  // else: keep previous cover (server sends null when track unchanged)
+  const char *ms = doc["media_status"];
+  state->media.mediaStatus =
+      String(ms && strcmp(ms, "PLAYING") == 0 ? "PLAYING" : "PAUSED");
 
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];

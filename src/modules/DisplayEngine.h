@@ -9,10 +9,10 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- Font strategy (grid-perfect, monospaced feel) ---
-#define TINY_FONT u8g2_font_profont10_mr  // Labels: TDP, LOAD, GB (6–7px)
-#define MID_FONT u8g2_font_t0_11_tr       // Secondary values
-#define HUGE_FONT u8g2_font_logisoso16_tr // Main temperatures only (~18–20px)
+// --- Font strategy: HUGE = main temp, MID = secondary, TINY = labels ---
+#define TINY_FONT u8g2_font_profont10_mr  // Labels
+#define MID_FONT u8g2_font_helvB10_tr     // Secondary
+#define HUGE_FONT u8g2_font_logisoso24_tr // Main temperature
 
 // --- Legacy aliases for compatibility ---
 #define FONT_TINY TINY_FONT
@@ -61,9 +61,12 @@ public:
   void drawRollingGraph(int x, int y, int w, int h, RollingGraph &g,
                         int maxVal);
 
-  // --- WiFi / art ---
+  // --- WiFi / media ---
   void drawWiFiIcon(int x, int y, int rssi);
-  bool drawXBMArtFromBase64(int x, int y, int w, int h, const String &base64);
+  /** Cassette tape procedural animation (spools + moving pixels when PLAYING).
+   */
+  void drawCassetteAnimation(int x, int y, int w, int h, bool playing,
+                             unsigned long nowMs);
 
   // --- Startup sequence ---
   void drawBiosPost(unsigned long now, unsigned long bootTime, bool wifiOk,

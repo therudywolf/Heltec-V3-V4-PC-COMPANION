@@ -7,13 +7,23 @@
 
 #include <Arduino.h>
 
+#define NOCT_HDD_COUNT 4
+#define NOCT_FAN_COUNT 4
+
+struct HddEntry {
+  int load = 0;
+  int temp = 0;
+};
+
 struct HardwareData {
   int ct = 0, gt = 0, cl = 0, gl = 0;
   int cc = 0, pw = 0, gh = 0, gv = 0;
+  int gclock = 0, vclock = 0, gtdp = 0;
   float ru = 0.0f, ra = 0.0f;
   int nd = 0, nu = 0, pg = 0;
   int cf = 0, s1 = 0, s2 = 0, gf = 0;
-  int su = 0, du = 0;
+  int fans[NOCT_FAN_COUNT] = {0, 0, 0, 0};
+  HddEntry hdd[NOCT_HDD_COUNT] = {};
   float vu = 0.0f, vt = 0.0f;
   int ch = 0;
   int dr = 0, dw = 0;
@@ -37,7 +47,7 @@ struct MediaData {
   String track = "";
   bool isPlaying = false;
   bool isIdle = false;
-  String coverB64 = "";
+  String mediaStatus = "PAUSED"; // "PLAYING" | "PAUSED"
 };
 
 struct Settings {

@@ -31,7 +31,7 @@
 #define NOCT_BUTTON_SHORT_MS 500
 #define NOCT_BUTTON_LONG_MS 1000
 #define NOCT_BUTTON_PREDATOR_MS 2500
-#define NOCT_GLITCH_INTERVAL_MS 60000
+#define NOCT_GLITCH_INTERVAL_MS 10000 /* Glitch once every 10s, subtle */
 #define NOCT_GLITCH_DURATION_MS 100
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
@@ -43,14 +43,15 @@
 #define GPU_TEMP_ALERT 80
 #endif
 
-/* 7 screens: HUB, CPU, GPU, RAM, DISKS, ATMOS, MEDIA */
+/* 8 screens: HUB, CPU, GPU, RAM, DISKS, FANS, ATMOS, MEDIA */
 #define NOCT_SCENE_HUB 0
 #define NOCT_SCENE_CPU 1
 #define NOCT_SCENE_GPU 2
 #define NOCT_SCENE_RAM 3
 #define NOCT_SCENE_DISKS 4
-#define NOCT_SCENE_ATMOS 5
-#define NOCT_SCENE_MEDIA 6
-#define NOCT_TOTAL_SCENES 7
+#define NOCT_SCENE_FANS 5
+#define NOCT_SCENE_ATMOS 6
+#define NOCT_SCENE_MEDIA 7
+#define NOCT_TOTAL_SCENES 8
 
 #endif

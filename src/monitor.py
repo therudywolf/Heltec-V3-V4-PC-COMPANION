@@ -4,7 +4,7 @@ NOCTURNE_OS — PC monitor server (backend for ESP32 display).
 
 - Polls LHM (config.json lhm_url), weather, media (Windows SDK).
 - TCP server (host/port in config); sends JSON (hw, weather, media, …).
-- cover_b64 sent only on track change to save bandwidth.
+- Media: sends media_status (PLAYING|PAUSED) only; no cover art.
 - Tray: Add/Remove startup, Restart, Close. Logs: nocturne.log.
 """
 
@@ -204,34 +204,52 @@ HYSTERESIS_TEMP = 2
 HYSTERESIS_LOAD = 5
 HYSTERESIS_NET_KB = 100
 
-# Sensor paths (LHM); alias gpu-nvidia for some LHM versions
+# Sensor paths (LHM) — exact paths from serverpars.txt
+# CPU: Core #1 clock only (not package)
+# GPU: RTX 4070 — load/0=Graphics %, load/1=Memory %, clock/0=Core, clock/1=VRAM, power/0=TDP
+# Fans: it8688e fan/0=CPU, fan/1=Pump; nvidiagpu fan/0=GPU
 TARGETS = {
     "ct": "/amdcpu/0/temperature/2",
     "cl": "/amdcpu/0/load/0",
     "pw": "/amdcpu/0/power/0",
-    "cc": "/amdcpu/0/clock/1",
+    "cc": "/amdcpu/0/clock/1",  # Core #1 only
     "gt": "/nvidiagpu/0/temperature/0",
     "gh": "/nvidiagpu/0/temperature/1",
-    "gl": "/nvidiagpu/0/load/0",
+    "gl": "/nvidiagpu/0/load/0",   # Graphics %
+    "gv": "/nvidiagpu/0/load/1",   # VRAM %
+    "gclock": "/nvidiagpu/0/clock/0",   # Core MHz
+    "vclock": "/nvidiagpu/0/clock/1",   # VRAM MHz
+    "gtdp": "/nvidiagpu/0/power/0",
     "gf": "/nvidiagpu/0/fan/0",
-    "gv": "/nvidiagpu/0/load/1",
     "vu": "/nvidiagpu/0/smalldata/1",
     "vt": "/nvidiagpu/0/smalldata/2",
     "ru": "/ram/data/0",
     "ra": "/ram/data/1",
-    "su": "/hdd/0/load/0",
-    "du": "/hdd/1/load/0",
 }
+# HDD: fetched separately for /hdd/0..3 load/0 + temperature/0
+HDD_PATHS = [
+    ("/hdd/0/load/0", "/hdd/0/temperature/0"),
+    ("/hdd/1/load/0", "/hdd/1/temperature/0"),
+    ("/hdd/2/load/0", "/hdd/2/temperature/0"),
+    ("/hdd/3/load/0", "/hdd/3/temperature/0"),
+]
+FAN_PATHS = [
+    "/lpc/it8688e/0/fan/0",   # CPU
+    "/lpc/it8688e/0/fan/1",   # Pump
+    "/nvidiagpu/0/fan/0",     # GPU
+]
+# Optional 4th fan (case) — some boards have it8688e fan/2
+FAN_CASE_PATH = "/lpc/it8688e/0/fan/2"
+
 TARGETS_ALIAS = {
     "/gpu-nvidia/0/temperature/0": "gt",
     "/gpu-nvidia/0/temperature/1": "gh",
-    "/gpu-nvidia/0/temperature/2": "gh",
     "/gpu-nvidia/0/load/0": "gl",
-    "/gpu-nvidia/0/fan/0": "gf",
-    "/gpu-nvidia/0/fan/1": "gf",
     "/gpu-nvidia/0/load/1": "gv",
-    "/gpu-nvidia/0/smalldata/1": "vu",
-    "/gpu-nvidia/0/smalldata/2": "vt",
+    "/gpu-nvidia/0/clock/0": "gclock",
+    "/gpu-nvidia/0/clock/1": "vclock",
+    "/gpu-nvidia/0/power/0": "gtdp",
+    "/gpu-nvidia/0/fan/0": "gf",
 }
 IT8688E_PREFIX = "/lpc/it8688e/0"
 
@@ -243,7 +261,7 @@ _weather_first_ok = False
 tcp_clients: List = []
 client_screens: Dict = {}
 client_buffers: Dict = {}
-last_sent_track_key: str = ""   # CRITICAL: track for which we last sent cover_b64
+last_sent_track_key: str = ""
 top_procs_cache: List = []
 top_procs_ram_cache: List = []
 last_top_procs_time: float = 0.0
@@ -252,7 +270,7 @@ last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
 ping_latency_ms = 0
 global_data_cache: Dict = {
     "hw": {}, "weather": {},
-    "media": {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""},
+    "media": {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"},
     "top_procs": [], "top_procs_ram": [], "net": (0, 0), "disk": (0, 0), "ping": 0,
 }
 _last_sent_snapshot: Optional[Tuple] = None
@@ -286,8 +304,10 @@ def clean_val(v: Any) -> float:
         return 0.0
 
 
-def _parse_lhm_json(data: Dict) -> Dict[str, float]:
-    results: Dict[str, float] = {}
+def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
+    """Parse LHM JSON; returns dict with float values and 'hdd' / 'fans' arrays."""
+    results: Dict[str, Any] = {}
+    path_to_val: Dict[str, float] = {}
     targets_set = set(TARGETS.values())
     it8688e_fans: List[Tuple[str, float]] = []
     it8688e_temps: List[Tuple[str, float]] = []
@@ -301,6 +321,7 @@ def _parse_lhm_json(data: Dict) -> Dict[str, float]:
             raw = node.get("Value") or node.get("RawValue") or ""
             val = clean_val(raw)
             if sid:
+                path_to_val[sid] = val
                 if sid in targets_set:
                     for k, v in TARGETS.items():
                         if v == sid:
@@ -319,8 +340,16 @@ def _parse_lhm_json(data: Dict) -> Dict[str, float]:
     walk(data)
     it8688e_fans.sort(key=lambda x: x[0])
     it8688e_temps.sort(key=lambda x: x[0])
-    for i, (_, v) in enumerate(it8688e_fans[:3]):
-        results["cf" if i == 0 else "s1" if i == 1 else "s2"] = v
+    # Fans: CPU, Pump, GPU, Case (optional)
+    fans: List[int] = []
+    for path in FAN_PATHS:
+        fans.append(int(path_to_val.get(path, 0)))
+    fans.append(int(path_to_val.get(FAN_CASE_PATH, 0)))
+    results["fans"] = fans
+    results["cf"] = fans[0] if len(fans) > 0 else 0
+    results["s1"] = fans[1] if len(fans) > 1 else 0
+    results["gf"] = fans[2] if len(fans) > 2 else 0
+    results["s2"] = fans[3] if len(fans) > 3 else 0
     if it8688e_temps:
         results["ch"] = it8688e_temps[0][1]
     if "ru" in results and "ra" in results:
@@ -329,10 +358,18 @@ def _parse_lhm_json(data: Dict) -> Dict[str, float]:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
+    # HDD array: 4 drives, load/0 and temperature/0 each
+    hdd: List[Dict[str, int]] = []
+    for load_path, temp_path in HDD_PATHS:
+        hdd.append({
+            "load": int(path_to_val.get(load_path, 0)),
+            "temp": int(path_to_val.get(temp_path, 0)),
+        })
+    results["hdd"] = hdd
     return results
 
 
-async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, float]:
+async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
     for attempt in range(3):
         try:
             async with session.get(LHM_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
@@ -482,54 +519,24 @@ def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
 
 
 async def _get_media_info_async_impl() -> Dict:
+    """Media: no Base64 art; only status PLAYING|PAUSED for procedural cassette animation."""
     if not HAS_WINSDK:
-        return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
+        return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
     try:
         manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
         session = manager.get_current_session()
         if not session:
-            return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
+            return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
         info = await session.try_get_media_properties_async()
         playback = session.get_playback_info()
         artist = (info.artist if info and info.artist else "")[:30]
         track = (info.title if info and info.title else "")[:30]
         is_playing = playback and getattr(playback, "playback_status", 0) == 4
         is_idle = bool(artist or track) and not is_playing
-        cover_b64 = ""
-        if HAS_PIL and info:
-            try:
-                thumb_ref = getattr(info, "thumbnail", None)
-                if thumb_ref:
-                    thumb_stream = await thumb_ref.open_read_async()
-                    if thumb_stream:
-                        chunks = []
-                        while True:
-                            buf = Buffer(32768)
-                            n = await thumb_stream.read_async(buf, 32768, InputStreamOptions.READ_AHEAD)
-                            if n == 0:
-                                break
-                            chunks.append(bytes(buf)[:n])
-                        img_bytes = b"".join(chunks)
-                        if img_bytes:
-                            img = Image.open(io.BytesIO(img_bytes))
-                            img = img.convert("L")
-                            img = img.resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
-                            img = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
-                            # XBM: MSB first, 8 pixels per byte, row-major. 64x64 -> 512 bytes.
-                            bitmap = []
-                            for y in range(COVER_SIZE):
-                                for x in range(0, COVER_SIZE, 8):
-                                    byte = 0
-                                    for bit in range(8):
-                                        if img.getpixel((x + bit, y)):
-                                            byte |= 1 << (7 - bit)
-                                    bitmap.append(byte)
-                            cover_b64 = base64.b64encode(bytes(bitmap)).decode("ascii")
-            except Exception:
-                pass
-        return {"art": artist, "trk": track, "play": is_playing, "idle": is_idle, "cover_b64": cover_b64}
+        media_status = "PLAYING" if is_playing else "PAUSED"
+        return {"art": artist, "trk": track, "play": is_playing, "idle": is_idle, "media_status": media_status}
     except Exception:
-        return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
+        return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
 async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
@@ -538,7 +545,7 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
         return await _get_media_info_async_impl()
     except Exception as e:
         log_debug(f"Media: {e}")
-    return {"art": "", "trk": "", "play": False, "idle": False, "cover_b64": ""}
+    return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
@@ -549,36 +556,32 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
     gpu_limit = int(limits.get("gpu", 80))
     cpu_limit = int(limits.get("cpu", 75))
 
-    track_key = f"{media.get('art', '')}|{media.get('trk', '')}"
-    # PROTOCOL: Only send cover_b64 when track changed; else null
-    if track_key != last_sent_track_key:
-        cover_to_send = media.get("cover_b64") or ""
-        last_sent_track_key = track_key
-    else:
-        cover_to_send = None  # null in JSON
-
     w = weather if _weather_first_ok else weather
     wt_val = w.get("temp", 0)
     wd_val = (w.get("desc") or "")[:20]
     ram_used_f = round(float(hw.get("ru", 0)), 1)
     ram_total_f = round(float(hw.get("ra", 0)), 1)
+    media_status = media.get("media_status", "PAUSED")
 
     payload = {
         "ct": int(hw.get("ct", 0)), "gt": int(hw.get("gt", 0)),
         "cl": int(hw.get("cl", 0)), "gl": int(hw.get("gl", 0)),
         "pw": int(hw.get("pw", 0)), "cc": int(hw.get("cc", 0)),
         "gh": int(hw.get("gh", 0)), "gv": int(hw.get("gv", 0)),
+        "gclock": int(hw.get("gclock", 0)), "vclock": int(hw.get("vclock", 0)),
+        "gtdp": int(hw.get("gtdp", 0)),
         "ru": ram_used_f, "ra": ram_total_f,
         "nd": net[1], "nu": net[0], "pg": ping_ms,
         "cf": int(hw.get("cf", 0)), "s1": int(hw.get("s1", 0)), "s2": int(hw.get("s2", 0)), "gf": int(hw.get("gf", 0)),
-        "su": int(hw.get("su", 0)), "du": int(hw.get("du", 0)),
+        "fans": hw.get("fans", [0, 0, 0, 0]),
+        "hdd": hw.get("hdd", [{"load": 0, "temp": 0} for _ in range(4)]),
         "vu": round(float(hw.get("vu", 0)), 1), "vt": round(float(hw.get("vt", 0)), 1),
         "ch": int(hw.get("ch", 0)), "dr": disk[0], "dw": disk[1],
         "wt": wt_val, "wd": wd_val, "wi": int(w.get("icon", 0)),
         "tp": top_procs, "tr": top_procs_ram,
         "art": media.get("art", ""), "trk": media.get("trk", ""),
         "mp": media.get("play", False), "idle": media.get("idle", False),
-        "cov": cover_to_send,  # null when track unchanged
+        "media_status": media_status,
     }
     if payload["gt"] >= gpu_limit or payload["ct"] >= cpu_limit:
         payload["alert"] = "CRITICAL"
@@ -884,7 +887,7 @@ def run_with_tray() -> None:
 if __name__ == "__main__":
     use_console = "--no-tray" in sys.argv or "--console" in sys.argv
     _setup_logging(console=use_console)
-    log_info("NOCTURNE_OS — PC Monitor Server (cover_b64 only on track change)")
+    log_info("NOCTURNE_OS — PC Monitor Server (media_status only)")
     if not use_console:
         log_info(f"Log file: {_LOG_FILE}")
     try:

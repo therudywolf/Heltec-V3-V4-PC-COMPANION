@@ -4,14 +4,15 @@
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
+#include <math.h>
 
 // --- Grid: header Y=0..8, content Y=10..63. Vertical split at X=64 ---
 #define HEADER_H 9
 #define CONTENT_Y 10
 #define SPLIT_X 64
 
-const char *SceneManager::sceneNames_[] = {"HUB",   "CPU",   "GPU",  "RAM",
-                                           "DISKS", "ATMOS", "MEDIA"};
+const char *SceneManager::sceneNames_[] = {"HUB",   "CPU",  "GPU",   "RAM",
+                                           "DISKS", "FANS", "ATMOS", "MEDIA"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -39,6 +40,9 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
     break;
   case NOCT_SCENE_DISKS:
     drawDisks();
+    break;
+  case NOCT_SCENE_FANS:
+    drawFans(fanFrame);
     break;
   case NOCT_SCENE_ATMOS:
     drawAtmos();
@@ -88,71 +92,65 @@ void SceneManager::drawHub(unsigned long bootTime) {
   String gpuTemp = (hw.gt <= 0) ? "---" : (String(hw.gt) + "\xC2\xB0");
   disp_.drawRightAligned(126, 38, HUGE_FONT, gpuTemp.c_str());
   u8g2.setFont(TINY_FONT);
-  int vramGb = (hw.gv > 0) ? (hw.gv / 1024) : 8;
-  u8g2.drawUTF8(66, 48, (String(vramGb) + "GB").c_str());
-  int gpuPwr = 220; // GPU power (no separate field in payload)
+  int vramPct = (hw.gv >= 0 && hw.gv <= 100) ? hw.gv : 0;
+  u8g2.drawUTF8(66, 48, (String("VRAM: ") + String(vramPct) + "%").c_str());
+  int gpuPwr = (hw.gtdp > 0) ? hw.gtdp : 0;
   disp_.drawRightAligned(126, 48, TINY_FONT, (String(gpuPwr) + "W").c_str());
   int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
   disp_.drawProgressBar(66, 58, 60, 4, gpuLoad);
 }
 
 // ---------------------------------------------------------------------------
-// SCREEN 2: CPU DETAIL — Sparkline Y=10..40; stats grid bottom.
-// Row 1 (Y=50): FREQ: 4650 MHz. Row 2 (Y=60): LOAD: 45% | TDP: 80W
+// SCREEN 2: CPU DETAIL — Top: HUGE temp "55°". Middle: 4.6GHz | 65W. Bottom:
+// graph 14px
 // ---------------------------------------------------------------------------
 void SceneManager::drawCpuDetail(unsigned long bootTime) {
   HardwareData &hw = state_.hw;
   (void)bootTime;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  disp_.drawRollingGraph(0, CONTENT_Y, NOCT_DISP_W, 30, disp_.cpuGraph, 100);
+  u8g2.setFont(HUGE_FONT);
+  char tempBuf[16];
+  snprintf(tempBuf, sizeof(tempBuf), "%d\xC2\xB0", (hw.ct > 0) ? hw.ct : 0);
+  int tw = u8g2.getUTF8Width(tempBuf);
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, 32, tempBuf);
 
   u8g2.setFont(MID_FONT);
   char buf[32];
-  int mhz = (hw.cc > 0) ? hw.cc : 4650;
-  snprintf(buf, sizeof(buf), "FREQ: %d MHz", mhz);
-  u8g2.drawUTF8(2, 50, buf);
+  float ghz = (hw.cc > 0) ? (hw.cc / 1000.0f) : 4.6f;
+  snprintf(buf, sizeof(buf), "%.1fGHz", ghz);
+  u8g2.drawUTF8(2, 44, buf);
+  snprintf(buf, sizeof(buf), "%dW", (hw.pw > 0) ? hw.pw : 65);
+  disp_.drawRightAligned(128, 44, MID_FONT, buf);
 
-  u8g2.setFont(TINY_FONT);
-  snprintf(buf, sizeof(buf), "LOAD: %d%%",
-           (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0);
-  u8g2.drawUTF8(2, 60, buf);
-  snprintf(buf, sizeof(buf), "TDP: %dW", (hw.pw > 0) ? hw.pw : 80);
-  disp_.drawRightAligned(128, 60, TINY_FONT, buf);
+  disp_.drawRollingGraph(0, 50, NOCT_DISP_W, 14, disp_.cpuGraph, 100);
 }
 
 // ---------------------------------------------------------------------------
-// SCREEN 3: GPU DETAIL — Sparkline top half; Row 1: CORE: 1920 MHz; Row 2:
-// VRAM: 45% | HOTSPOT: 75°
+// SCREEN 3: GPU DETAIL — Top: HUGE temp. Middle: 1920MHz | VRAM: 80%. Bottom:
+// graph 14px
 // ---------------------------------------------------------------------------
 void SceneManager::drawGpuDetail(int fanFrame) {
   HardwareData &hw = state_.hw;
   (void)fanFrame;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  disp_.drawRollingGraph(0, CONTENT_Y, NOCT_DISP_W, 30, disp_.gpuGraph, 100);
+  u8g2.setFont(HUGE_FONT);
+  char tempBuf[16];
+  snprintf(tempBuf, sizeof(tempBuf), "%d\xC2\xB0", (hw.gt > 0) ? hw.gt : 0);
+  int tw = u8g2.getUTF8Width(tempBuf);
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, 32, tempBuf);
 
   u8g2.setFont(MID_FONT);
   char buf[32];
-  int coreMhz = (hw.gh > 0) ? hw.gh : 1920;
-  snprintf(buf, sizeof(buf), "CORE: %d MHz", coreMhz);
-  u8g2.drawUTF8(2, 50, buf);
-
-  u8g2.setFont(TINY_FONT);
-  int vramPct = (hw.vt > 0) ? (int)(hw.vu / hw.vt * 100.0f) : 45;
-  if (vramPct > 100)
-    vramPct = 100;
-  if (vramPct < 0)
-    vramPct = 0;
+  int coreMhz = (hw.gclock > 0) ? hw.gclock : 1920;
+  snprintf(buf, sizeof(buf), "%dMHz", coreMhz);
+  u8g2.drawUTF8(2, 44, buf);
+  int vramPct = (hw.gv >= 0 && hw.gv <= 100) ? hw.gv : 0;
   snprintf(buf, sizeof(buf), "VRAM: %d%%", vramPct);
-  u8g2.drawUTF8(2, 60, buf);
-  int hotspot = (hw.ch > 0) ? hw.ch : 75;
-  snprintf(buf, sizeof(buf),
-           "HOTSPOT: %d"
-           "\xC2"
-           "\xB0",
-           hotspot);
-  disp_.drawRightAligned(128, 60, TINY_FONT, buf);
+  disp_.drawRightAligned(128, 44, MID_FONT, buf);
+
+  disp_.drawRollingGraph(0, 50, NOCT_DISP_W, 14, disp_.gpuGraph, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,42 +189,83 @@ void SceneManager::drawRam() {
 }
 
 // ---------------------------------------------------------------------------
-// SCREEN 5: DISKS — List: C: [|||||.....] 45%, D: [||........] 10%, E:
-// [||||||||..] 80%
+// SCREEN 5: DISKS — 2x2 grid. Zones: (0,10), (64,10), (0,38), (64,38).
+// Cell: Tiny "C:" top-left, Mid "45°" top-right, progress bar bottom.
 // ---------------------------------------------------------------------------
 void SceneManager::drawDisks() {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  int pct1 = (hw.su >= 0 && hw.su <= 100) ? hw.su : 45;
-  int pct2 = (hw.du >= 0 && hw.du <= 100) ? hw.du : 10;
-  int pct3 = 80;
-
-  const int rowH = 15;
-  const int barX = 18;
-  const int barW = 80;
+  const char *labels[] = {"C:", "D:", "E:", "F:"};
+  const int cellW = 64;
+  const int cellH = 28;
+  const int row0 = 10;
+  const int row1 = 38;
+  const int col0 = 0;
+  const int col1 = 64;
   const int barH = 4;
+  const int barYOffset = 20;
 
-  u8g2.setFont(TINY_FONT);
-  u8g2.drawUTF8(2, 20, "C:");
-  disp_.drawProgressBar(barX, 16, barW, barH, pct1);
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%d%%", pct1);
-  disp_.drawRightAligned(128, 20, TINY_FONT, buf);
+  for (int i = 0; i < NOCT_HDD_COUNT; i++) {
+    int cx = (i % 2 == 0) ? col0 : col1;
+    int cy = (i < 2) ? row0 : row1;
+    int load =
+        (hw.hdd[i].load >= 0 && hw.hdd[i].load <= 100) ? hw.hdd[i].load : 0;
+    int temp = hw.hdd[i].temp;
 
-  u8g2.drawUTF8(2, 35, "D:");
-  disp_.drawProgressBar(barX, 31, barW, barH, pct2);
-  snprintf(buf, sizeof(buf), "%d%%", pct2);
-  disp_.drawRightAligned(128, 35, TINY_FONT, buf);
-
-  u8g2.drawUTF8(2, 50, "E:");
-  disp_.drawProgressBar(barX, 46, barW, barH, pct3);
-  snprintf(buf, sizeof(buf), "%d%%", pct3);
-  disp_.drawRightAligned(128, 50, TINY_FONT, buf);
+    u8g2.setFont(TINY_FONT);
+    u8g2.drawUTF8(cx + 2, cy + 8, labels[i]);
+    u8g2.setFont(MID_FONT);
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%d\xC2\xB0", temp);
+    disp_.drawRightAligned(cx + cellW - 2, cy + 8, MID_FONT, buf);
+    disp_.drawProgressBar(cx + 2, cy + barYOffset, cellW - 4, barH, load);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// SCREEN 6: WEATHER — Left: 32x32 icon (X=0..32). Right: -12°C (HUGE), MOSCOW
+// SCREEN 6: FANS — List: CPU FAN, PUMP, GPU FAN, CASE with RPM; rotating icon
+// ---------------------------------------------------------------------------
+void SceneManager::drawFanIconSmall(int x, int y, int frame) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  const int cx = x + 4;
+  const int cy = y + 4;
+  const int r = 3;
+  float angle = (frame % 8) * 3.14159f * 2.0f / 8.0f;
+  for (int i = 0; i < 4; i++) {
+    float a = angle + i * 3.14159f / 2.0f;
+    int x1 = cx + (int)(r * cos(a));
+    int y1 = cy + (int)(r * sin(a));
+    u8g2.drawLine(cx, cy, x1, y1);
+  }
+  u8g2.drawPixel(cx, cy);
+}
+
+void SceneManager::drawFans(int fanFrame) {
+  HardwareData &hw = state_.hw;
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  const char *names[] = {"CPU FAN:", "PUMP:", "GPU FAN:", "CASE:"};
+  const int rowH = 14;
+  const int startY = CONTENT_Y + 4;
+  const int iconX = 2;
+
+  for (int i = 0; i < NOCT_FAN_COUNT; i++) {
+    int y = startY + i * rowH;
+    int rpm = (i < NOCT_FAN_COUNT) ? hw.fans[i] : 0;
+    bool active = (rpm > 0);
+    if (active)
+      drawFanIconSmall(iconX, y - 2, fanFrame);
+    u8g2.setFont(TINY_FONT);
+    u8g2.drawUTF8(iconX + 12, y + 2, names[i]);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d RPM", rpm);
+    disp_.drawRightAligned(NOCT_DISP_W - 2, y + 2, TINY_FONT, buf);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SCREEN 7: WEATHER — Left: 32x32 icon (X=0..32). Right: -12°C (HUGE), MOSCOW
 // (Tiny), Snowfall (Tiny)
 // ---------------------------------------------------------------------------
 void SceneManager::drawAtmos() {
@@ -269,52 +308,38 @@ void SceneManager::drawAtmos() {
 }
 
 // ---------------------------------------------------------------------------
-// SCREEN 7: PLAYER — Left: 54x54 album art (dithered/base64). Right: Artist
-// (Tiny), Track (Mid, marquee), Time (Tiny). PAUSED overlay if paused.
+// SCREEN 8: MEDIA — Cassette animation (no cover art); scrolling track below
 // ---------------------------------------------------------------------------
 void SceneManager::drawMedia(bool blinkState) {
   MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  (void)blinkState;
 
-  const int ART_X = 0;
-  const int ART_Y = CONTENT_Y;
-  const int ART_SZ = 54;
-  const int RIGHT_X = 56;
+  const int CASS_X = 0;
+  const int CASS_Y = CONTENT_Y;
+  const int CASS_SZ = 44;
+  const int TRACK_Y = 56;
+  bool playing = (media.mediaStatus == "PLAYING");
 
-  if (media.coverB64.length() > 0 &&
-      disp_.drawXBMArtFromBase64(ART_X, ART_Y, ART_SZ, ART_SZ,
-                                 media.coverB64)) {
-    // drawn
-  } else {
-    drawNoisePattern(ART_X, ART_Y, ART_SZ, ART_SZ);
-    drawNoDataCross(ART_X + 8, ART_Y + 8, ART_SZ - 16, ART_SZ - 16);
-  }
-
-  if (!media.isPlaying && !media.isIdle) {
-    u8g2.setFont(TINY_FONT);
-    int pw = u8g2.getUTF8Width("PAUSED");
-    u8g2.drawUTF8(ART_X + (ART_SZ - pw) / 2, ART_Y + ART_SZ / 2 - 2, "PAUSED");
-  }
+  disp_.drawCassetteAnimation(CASS_X, CASS_Y, CASS_SZ, CASS_SZ, playing,
+                              (unsigned long)millis());
 
   u8g2.setFont(TINY_FONT);
-  String artist =
-      media.artist.length() > 14 ? media.artist.substring(0, 14) : media.artist;
-  if (artist.length() == 0)
-    artist = "—";
-  u8g2.drawUTF8(RIGHT_X, 18, artist.c_str());
-
-  u8g2.setFont(MID_FONT);
   String track = media.track;
-  if (track.length() > 18)
-    track = track.substring(0, 18);
   if (track.length() == 0)
-    track = media.isIdle ? (blinkState ? "IDLE" : "—") : "PLAY";
-  u8g2.drawUTF8(RIGHT_X, 32, track.c_str());
-
-  u8g2.setFont(TINY_FONT);
-  const char *status =
-      media.isPlaying ? "PLAYING" : (media.isIdle ? "IDLE" : "PAUSED");
-  u8g2.drawUTF8(RIGHT_X, 54, status);
+    track = media.isIdle ? "IDLE" : (playing ? "PLAY" : "PAUSED");
+  int trackW = u8g2.getUTF8Width(track.c_str());
+  int maxW = NOCT_DISP_W - 4;
+  if (trackW <= maxW) {
+    u8g2.drawUTF8(2, TRACK_Y, track.c_str());
+  } else {
+    int offset = ((int)(millis() / 200) % (trackW + 24)) - 12;
+    if (offset > 0)
+      offset = 0;
+    if (offset + trackW < maxW)
+      offset = maxW - trackW;
+    u8g2.drawUTF8(2 + offset, TRACK_Y, track.c_str());
+  }
 }
 
 // ---------------------------------------------------------------------------

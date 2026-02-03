@@ -293,7 +293,11 @@ void loop() {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
       if (state.alertActive)
         display.drawHazardBorder();
-      display.drawGlitch(1);
+      static unsigned long lastGlitchMs = 0;
+      if (now - lastGlitchMs >= (unsigned long)NOCT_GLITCH_INTERVAL_MS) {
+        lastGlitchMs = now;
+        display.drawGlitch(1);
+      }
     }
   }
 

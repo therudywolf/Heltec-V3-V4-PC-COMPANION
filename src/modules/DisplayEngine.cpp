@@ -100,7 +100,7 @@ void DisplayEngine::clearBuffer() { u8g2_.clearBuffer(); }
 void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 
 // ---------------------------------------------------------------------------
-// drawGlitch: shift horizontal slice by x+3; occasionally invert 10x10 block
+// drawGlitch: subtle — 1px max shift, no invert. Call only every ~10s.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlitch(int intensity) {
   if (intensity <= 0)
@@ -109,7 +109,7 @@ void DisplayEngine::drawGlitch(int intensity) {
   if (!buf)
     return;
   const int sliceH = 4;
-  const int shift = 3;
+  const int shift = 1;
   int y0 = 10 + (random(NOCT_DISP_H - sliceH - 12));
   if (y0 < 10)
     y0 = 10;
@@ -133,25 +133,6 @@ void DisplayEngine::drawGlitch(int intensity) {
       if (src >= 128)
         src -= 128;
       buf[p * 128 + c] = tmp[(p - p0) * 128 + src];
-    }
-  }
-  if (intensity >= 2 && random(4) == 0) {
-    int bx = 10 + random(NOCT_DISP_W - 20);
-    int by = 10 + random(NOCT_DISP_H - 20);
-    if (bx + 10 > NOCT_DISP_W)
-      bx = NOCT_DISP_W - 10;
-    if (by + 10 > NOCT_DISP_H)
-      by = NOCT_DISP_H - 10;
-    for (int dy = 0; dy < 10; dy++) {
-      int row = (by + dy) / 8;
-      int bit = (by + dy) % 8;
-      for (int dx = 0; dx < 10; dx++) {
-        int x = bx + dx;
-        if (x < 0 || x >= 128)
-          continue;
-        int byteIdx = row * 128 + x;
-        buf[byteIdx] ^= (1 << bit);
-      }
     }
   }
 }
@@ -284,6 +265,43 @@ void DisplayEngine::drawWiFiIcon(int x, int y, int rssi) {
   u8g2_.drawXBM(x, y, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 }
 
+// ---------------------------------------------------------------------------
+// Cassette tape: two spool circles + rectangle; moving pixels when playing
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawCassetteAnimation(int x, int y, int w, int h,
+                                          bool playing, unsigned long nowMs) {
+  const int cx = x + w / 2;
+  const int cy = y + h / 2;
+  const int r = (w < h ? w : h) / 4;
+  int leftCx = cx - r - 2;
+  int rightCx = cx + r + 2;
+  u8g2_.drawCircle(leftCx, cy, r);
+  u8g2_.drawCircle(rightCx, cy, r);
+  int rectLeft = leftCx - r - 1;
+  int rectW = (rightCx + r + 1) - rectLeft;
+  int rectTop = cy - 2;
+  u8g2_.drawFrame(rectLeft, rectTop, rectW, 5);
+  if (playing) {
+    int phase = (nowMs / 80) % 8;
+    for (int i = 0; i < 3; i++) {
+      int t = (phase + i * 3) % 8;
+      int px, py;
+      if (t < 4) {
+        px = rectLeft + 2 + (t * (rectW - 4) / 4);
+        py = cy;
+      } else {
+        px = rectLeft + rectW - 2 - ((t - 4) * (rectW - 4) / 4);
+        py = cy;
+      }
+      if (px >= rectLeft && px < rectLeft + rectW && py >= rectTop &&
+          py < rectTop + 5)
+        u8g2_.drawPixel(px, py);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy: Base64 XBM art (unused; media uses cassette animation)
 // ---------------------------------------------------------------------------
 bool DisplayEngine::drawXBMArtFromBase64(int x, int y, int w, int h,
                                          const String &base64) {
