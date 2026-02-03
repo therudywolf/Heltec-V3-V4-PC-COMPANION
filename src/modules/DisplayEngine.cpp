@@ -558,6 +558,71 @@ void DisplayEngine::drawPawIcon(int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
+// drawHexStream: 2–3 columns of random small hex (A4, 0F, 9C). Update every
+// ~100ms via millis()/100 seed.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawHexStream(int x, int y, int rows) {
+  u8g2_.setFont(HEXSTREAM_FONT);
+  const char hex[] = "0123456789ABCDEF";
+  unsigned long seed = millis() / 100;
+  const int colW = 18;
+  const int rowH = 8;
+  for (int row = 0; row < rows && (y + row * rowH) < NOCT_DISP_H; row++) {
+    for (int col = 0; col < 3; col++) {
+      int cx = x + col * colW;
+      if (cx + 14 > NOCT_DISP_W)
+        break;
+      char pair[4];
+      pair[0] = hex[(seed + row * 7 + col * 11) % 16];
+      pair[1] = hex[(seed + row * 13 + col * 17 + 3) % 16];
+      pair[2] = '\0';
+      u8g2_.drawUTF8(cx, y + row * rowH + 6, pair);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// drawCyberClaw: three parallel diagonal jagged lines (scratches / watermark).
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawCyberClaw(int x, int y) {
+  const int len = 20;
+  const int dx = 4;
+  const int dy = 6;
+  for (int line = 0; line < 3; line++) {
+    int lx = x + line * 3;
+    int ly = y + line * 2;
+    for (int i = 0; i < len; i += 2) {
+      int nx = lx + dx;
+      int ny = ly + dy;
+      u8g2_.drawLine(lx, ly, nx, ny);
+      lx = nx;
+      ly = ny;
+      if (i + 1 < len) {
+        nx = lx + 1;
+        ny = ly - 1;
+        u8g2_.drawLine(lx, ly, nx, ny);
+        lx = nx;
+        ly = ny;
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// drawActiveIndicator: small solid square blink every 500ms + "ACT" or "HUNT".
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawActiveIndicator(int x, int y) {
+  bool on = ((millis() / 500) & 1) == 0;
+  if (on)
+    u8g2_.drawBox(x, y, 4, 4);
+  else
+    u8g2_.drawFrame(x, y, 4, 4);
+  u8g2_.setFont(LABEL_FONT);
+  const char *label = (millis() / 1000) & 1 ? "HUNT" : "ACT";
+  u8g2_.drawUTF8(x + 6, y + 4, label);
+}
+
+// ---------------------------------------------------------------------------
 // Global header: Scene name at X=4, system status right-aligned at 128-width-4,
 // bottom separator line at Y=12. Never draw text at X<4.
 // ---------------------------------------------------------------------------
