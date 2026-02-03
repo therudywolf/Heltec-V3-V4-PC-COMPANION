@@ -37,7 +37,6 @@ bool inTransition = false;
 unsigned long btnPressTime = 0;
 bool btnHeld = false;
 unsigned long lastCarousel = 0;
-unsigned long lastBlink = 0;
 unsigned long lastFanAnim = 0;
 int fanAnimFrame = 0;
 bool blinkState = false;
@@ -53,8 +52,6 @@ int quickMenuItem = 0;
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
-static bool lastAlertActive = false;
-static int alertBlinkCounter = 0;
 
 static void VextON() {
   pinMode(NOCT_VEXT_PIN, OUTPUT);
@@ -79,6 +76,8 @@ void setup() {
   drawBootSequence(display);
   splashDone = true;
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
+  digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
+  delay(200);
   digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   pinMode(NOCT_BUTTON_PIN, INPUT_PULLUP);
 
@@ -234,13 +233,10 @@ void loop() {
     lastFanAnim = now;
   }
 
-  /* Stealth Alert: detect new alert -> reset blink counter */
-  if (state.alertActive && !lastAlertActive)
-    alertBlinkCounter = 0;
-  lastAlertActive = state.alertActive;
+  /* Screen blink state for NO SIGNAL / LINKING etc */
+  blinkState = (millis() / NOCT_ALERT_LED_BLINK_MS) % 2;
 
-  /* Alert LED: always blink on alert (ignore settings.ledEnabled). 175ms blink.
-   */
+  /* Alert LED: simplified — blink 200ms on/off when alert; predator breath. */
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   if (predatorMode) {
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -252,23 +248,9 @@ void loop() {
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   } else if (state.alertActive) {
-    if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS) {
-      lastBlink = now;
-      if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
-        blinkState = !blinkState;
-        alertBlinkCounter++;
-        digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
-      } else {
-        blinkState = false;
-        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-      }
-    }
+    digitalWrite(NOCT_LED_ALERT_PIN, (millis() / 200) % 2);
   } else {
     digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-    if (now - lastBlink > NOCT_ALERT_LED_BLINK_MS) {
-      blinkState = !blinkState;
-      lastBlink = now;
-    }
   }
 
   if (!splashDone) {

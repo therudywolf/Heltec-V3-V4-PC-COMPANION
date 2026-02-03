@@ -14,6 +14,7 @@
 #define LABEL_FONT u8g2_font_profont10_mr // Tiny tech labels (profont10)
 #define VALUE_FONT u8g2_font_helvB10_tr   // Bold readable values (no resize)
 #define HUGE_FONT u8g2_font_logisoso24_tr // Hero only (weather etc)
+#define WEATHER_TEMP_FONT u8g2_font_helvB24_tf // Weather temp (big, readable)
 #define SECONDARY_FONT VALUE_FONT
 #define CYRILLIC_FONT u8g2_font_6x10_tf
 #define TINY_FONT LABEL_FONT

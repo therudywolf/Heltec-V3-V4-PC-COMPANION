@@ -33,6 +33,31 @@ static const uint8_t icon_fan_8x8_f3[] = {0x00, 0x08, 0x0C, 0x7E,
 static const uint8_t *icon_fan_frames[] = {icon_fan_8x8_f0, icon_fan_8x8_f1,
                                            icon_fan_8x8_f2, icon_fan_8x8_f3};
 
+// 32x32 XBM Weather Icons
+static const unsigned char icon_sun_bits[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x80, 0x00,
+    0x00, 0x01, 0x80, 0x00, 0x00, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x08, 0x10, 0x00, 0x02, 0x18, 0x18, 0x40, 0x04, 0x30, 0x0c, 0x20,
+    0x08, 0x60, 0x06, 0x10, 0x00, 0xc0, 0x03, 0x00, 0x10, 0x80, 0x01, 0x08,
+    0x30, 0x00, 0x00, 0x0c, 0x30, 0x00, 0x00, 0x0c, 0x70, 0x00, 0x00, 0x0e,
+    0x30, 0x00, 0x00, 0x0c, 0x30, 0x00, 0x00, 0x0c, 0x10, 0x80, 0x01, 0x08,
+    0x00, 0xc0, 0x03, 0x00, 0x08, 0x60, 0x06, 0x10, 0x04, 0x30, 0x0c, 0x20,
+    0x02, 0x18, 0x18, 0x40, 0x00, 0x08, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x80, 0x00, 0x00, 0x01, 0x80, 0x00, 0x00, 0x01, 0x80, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+static const unsigned char icon_cloud_bits[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0xe0, 0x01, 0x00, 0x00, 0x18, 0x06, 0x00,
+    0x00, 0x04, 0x08, 0x00, 0x00, 0x04, 0x10, 0x00, 0x00, 0x02, 0x20, 0x1c,
+    0x00, 0x02, 0x40, 0x22, 0x00, 0x01, 0x80, 0x41, 0x80, 0x00, 0x80, 0x80,
+    0x40, 0x00, 0x00, 0x80, 0x40, 0x00, 0x00, 0x80, 0x20, 0x00, 0x00, 0x80,
+    0x20, 0x00, 0x00, 0x80, 0x10, 0x00, 0x00, 0xc0, 0x18, 0x00, 0x00, 0x40,
+    0x0c, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00, 0x60, 0x02, 0x00, 0x00, 0x20,
+    0x03, 0x00, 0x00, 0x30, 0xfe, 0xff, 0xff, 0x1f, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
 const char *SceneManager::sceneNames_[] = {
     "MAIN", "CPU", "GPU", "RAM", "DISKS", "MEDIA", "FANS", "MB", "WTHR"};
 
@@ -511,11 +536,13 @@ void SceneManager::drawMotherboard(int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 9: WEATHER — 40/60 split. Left: geometric primitive. Right: HUGE_FONT
-// temp top-right, LABEL_FONT description below. No bottom bar; centered in box.
+// SCENE 9: WEATHER — XBM icons left (32x32), temp right (helvB24 Y=52).
 // ---------------------------------------------------------------------------
 #define WTHR_LEFT_PCT 40
 #define WTHR_BOX_H (NOCT_DISP_H - NOCT_CONTENT_TOP - 2)
+#define WTHR_ICON_X 8
+#define WTHR_ICON_SIZE 32
+#define WTHR_TEMP_Y 52
 
 void SceneManager::drawWeather(int xOff) {
   WeatherData &weather = state_.weather;
@@ -525,7 +552,7 @@ void SceneManager::drawWeather(int xOff) {
   u8g2.setBitmapMode(0);
 
   const int boxX = X(NOCT_CARD_LEFT, xOff);
-  const int boxY = NOCT_CONTENT_TOP;
+  const int boxY = NOCT_CONTENT_TOP; /* Y=17 */
   const int boxW = NOCT_DISP_W - 2 * NOCT_CARD_LEFT;
   const int boxH = WTHR_BOX_H;
   const int leftW = (boxW * WTHR_LEFT_PCT) / 100;
@@ -540,40 +567,24 @@ void SceneManager::drawWeather(int xOff) {
     return;
   }
 
-  /* Left 40%: geometric weather primitive (centered vertically) */
-  const int iconW = 24, iconH = 24;
-  const int iconX = boxX + (leftW - iconW) / 2;
-  const int iconY = boxY + (boxH - iconH) / 2;
-  disp_.drawWeatherPrimitive(X(iconX, xOff), iconY, weather.wmoCode);
+  /* Left: 32x32 XBM icon at boxX+8, boxY+8 */
+  const unsigned char *iconBits = icon_cloud_bits;
+  if (weather.wmoCode <= 3)
+    iconBits = icon_sun_bits;
+  else if (weather.wmoCode >= 50)
+    iconBits = icon_weather_rain_32_bits;
+  else
+    iconBits = icon_cloud_bits;
+  u8g2.drawXBMP(boxX + WTHR_ICON_X, boxY + WTHR_ICON_X, WTHR_ICON_SIZE,
+                WTHR_ICON_SIZE, iconBits);
 
-  /* Right 60%: HUGE_FONT temp top-right, LABEL_FONT desc below; vertically
-   * centered as a group */
+  /* Right: temp in WEATHER_TEMP_FONT, Y=52 (baseline), right-aligned */
   static char buf[16];
   snprintf(buf, sizeof(buf), "%+d\xC2\xB0", weather.temp);
-  u8g2.setFont(HUGE_FONT);
+  u8g2.setFont(WEATHER_TEMP_FONT);
   int tw = u8g2.getUTF8Width(buf);
   int tempX = rightX + rightW - tw - 4;
-  const int tempY = boxY + (boxH / 2) - 10;
-  u8g2.drawUTF8(tempX, tempY, buf);
-
-  u8g2.setFont(LABEL_FONT);
-  const char *descStr = weather.desc.length() > 0 ? weather.desc.c_str() : "";
-  if (descStr[0]) {
-    static char descBuf[20];
-    size_t len = weather.desc.length();
-    if (len >= sizeof(descBuf))
-      len = sizeof(descBuf) - 1;
-    strncpy(descBuf, descStr, len);
-    descBuf[len] = '\0';
-    int dw = u8g2.getUTF8Width(descBuf);
-    if (dw > rightW - 4) {
-      descBuf[10] = '\0';
-      dw = u8g2.getUTF8Width(descBuf);
-    }
-    int descX = rightX + (rightW - dw) / 2;
-    int descY = boxY + (boxH / 2) + 4;
-    u8g2.drawUTF8(descX, descY, descBuf);
-  }
+  u8g2.drawUTF8(tempX, WTHR_TEMP_Y, buf);
 
   disp_.drawGreebles();
 }
