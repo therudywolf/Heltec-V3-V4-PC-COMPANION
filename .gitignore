@@ -18,6 +18,9 @@ build/
 *.exe
 # monitor.spec — в репозитории (нужен для build_oneclick.bat)
 
+# PlatformIO / Arduino
+.pio/
+
 # IDE / OS
 .idea/
 .vscode/

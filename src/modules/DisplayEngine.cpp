@@ -250,17 +250,17 @@ void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
 }
 
 // ---------------------------------------------------------------------------
-// Global header: 10px black bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
-// dotted at Y=10
+// Global header: 10px filled bar (color 1), [ SCENE ] left, WIFI + time right,
+// dotted at Y=10. Text/icon in color 0 on the bar.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
-  const int barH = 10; /* NOCT_HEADER_H */
+  const int barH = 10;
   const int textY = 7;
 
-  u8g2_.setDrawColor(0);
-  u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
   u8g2_.setDrawColor(1);
+  u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
+  u8g2_.setDrawColor(0);
 
   u8g2_.setFont(TINY_FONT);
   const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
@@ -278,6 +278,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   else if ((millis() / 200) % 2 == 0)
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 
+  u8g2_.setDrawColor(1);
   drawDottedHLine(0, NOCT_DISP_W - 1, 10);
 }
 

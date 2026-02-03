@@ -57,7 +57,7 @@
 #define VRAM_LOAD_ALERT 95
 #define RAM_LOAD_ALERT 90
 
-/* 9 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS, MOTHERBOARD, NETWORK */
+/* 10 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS, MB, NETWORK, WEATHER */
 #define NOCT_SCENE_MAIN 0
 #define NOCT_SCENE_CPU 1
 #define NOCT_SCENE_GPU 2
@@ -67,7 +67,8 @@
 #define NOCT_SCENE_FANS 6
 #define NOCT_SCENE_MOTHERBOARD 7
 #define NOCT_SCENE_NETWORK 8
-#define NOCT_TOTAL_SCENES 9
+#define NOCT_SCENE_WEATHER 9
+#define NOCT_TOTAL_SCENES 10
 
 /* alert_metric codes (match monitor.py: ct, gt, cl, gl, gv, ram) */
 #define NOCT_ALERT_CT 0

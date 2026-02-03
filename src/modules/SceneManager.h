@@ -1,6 +1,6 @@
 /*
- * NOCTURNE_OS — SceneManager: 9 screens. MAIN, CPU, GPU, RAM, DISKS, MEDIA,
- * FANS, MOTHERBOARD, NETWORK.
+ * NOCTURNE_OS — SceneManager: 10 screens. MAIN, CPU, GPU, RAM, DISKS, MEDIA,
+ * FANS, MOTHERBOARD, NETWORK, WEATHER.
  */
 #ifndef NOCTURNE_SCENE_MANAGER_H
 #define NOCTURNE_SCENE_MANAGER_H
@@ -18,7 +18,7 @@ public:
   const char *getSceneName(int sceneIndex) const;
   int totalScenes() const { return NOCT_TOTAL_SCENES; }
 
-  // --- 9 screens ---
+  // --- 10 screens ---
   void drawMain(bool blinkState);
   void drawCpu(bool blinkState);
   void drawGpu(bool blinkState);
@@ -28,6 +28,7 @@ public:
   void drawFans(int fanFrame);
   void drawMotherboard();
   void drawNetwork();
+  void drawWeather();
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
