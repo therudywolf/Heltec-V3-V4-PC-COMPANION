@@ -53,8 +53,8 @@ int quickMenuItem = 0;
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
-static unsigned long alertStartMs = 0;
 static bool lastAlertActive = false;
+static int alertBlinkCounter = 0;
 
 static void VextON() {
   pinMode(NOCT_VEXT_PIN, OUTPUT);
@@ -233,39 +233,43 @@ void loop() {
     fanAnimFrame = (fanAnimFrame + 1) % 12;
     lastFanAnim = now;
   }
-  if (now - lastBlink > 500) {
-    blinkState = !blinkState;
-    lastBlink = now;
-  }
 
+  /* Stealth Alert: detect new alert -> reset blink counter */
   if (state.alertActive && !lastAlertActive)
-    alertStartMs = now;
+    alertBlinkCounter = 0;
   lastAlertActive = state.alertActive;
-  if (!state.alertActive) {
-    digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-  } else {
-    unsigned long alertElapsed = now - alertStartMs;
-    bool withinBlinkWindow =
-        alertElapsed < (unsigned long)NOCT_ALERT_LED_BLINK_MAX_MS;
-    unsigned long phase = alertElapsed / NOCT_ALERT_LED_BLINK_MS;
-    int blinksSoFar = (int)(phase / 2); // one full blink = on + off
-    bool doFade = (blinksSoFar >= NOCT_ALERT_LED_BLINKS) || !withinBlinkWindow;
 
-    if (predatorMode) {
-      unsigned long t = (now - predatorEnterTime) / 20;
-      int breath = (int)(128 + 127 * sin(t * 0.1f));
-      if (breath < 0)
-        breath = 0;
-      if (settings.ledEnabled)
-        analogWrite(NOCT_LED_ALERT_PIN, breath);
-      else
-        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-    } else {
+  /* Alert LED + UI blink: exactly NOCT_ALERT_MAX_BLINKS times, then LED off &
+   * value solid */
+  if (predatorMode) {
+    unsigned long t = (now - predatorEnterTime) / 20;
+    int breath = (int)(128 + 127 * sin(t * 0.1f));
+    if (breath < 0)
+      breath = 0;
+    if (settings.ledEnabled)
+      analogWrite(NOCT_LED_ALERT_PIN, breath);
+    else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-      if (settings.ledEnabled && withinBlinkWindow && !doFade) {
-        bool on = (phase & 1) == 0;
-        digitalWrite(NOCT_LED_ALERT_PIN, on ? HIGH : LOW);
+  } else if (state.alertActive) {
+    if (now - lastBlink >= 500) {
+      lastBlink = now;
+      if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
+        blinkState = !blinkState;
+        alertBlinkCounter++;
+        if (settings.ledEnabled)
+          digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
+        else
+          digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+      } else {
+        blinkState = false; /* Post-blink: value stays visible */
+        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
       }
+    }
+  } else {
+    digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+    if (now - lastBlink > 500) {
+      blinkState = !blinkState;
+      lastBlink = now;
     }
   }
 
@@ -315,15 +319,6 @@ void loop() {
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
-    static unsigned long lastAlertFlash = 0;
-    if (state.alertActive && now - lastAlertFlash >= 1000) {
-      lastAlertFlash = now;
-      display.clearBuffer();
-      display.u8g2().drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-      display.sendBuffer();
-      delay(10);
-      return;
-    }
     display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
 
     display.drawGlobalHeader(
@@ -349,8 +344,6 @@ void loop() {
         inTransition = false;
     } else {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
-      if (state.alertActive)
-        display.drawAlertBorder();
     }
   }
 
