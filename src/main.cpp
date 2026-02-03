@@ -9,6 +9,7 @@
 #include <Preferences.h>
 #include <Wire.h>
 
+#include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
@@ -29,6 +30,9 @@ unsigned long bootTime = 0;
 unsigned long splashStart = 0;
 bool splashDone = false;
 int currentScene = 0;
+int previousScene = 0;
+unsigned long transitionStart = 0;
+bool inTransition = false;
 
 unsigned long btnPressTime = 0;
 bool btnHeld = false;
@@ -74,6 +78,7 @@ void setup() {
   delay(50);
 
   display.begin();
+  drawBootSequence(display);
   pinMode(NOCT_LED_CPU_PIN, OUTPUT);
   pinMode(NOCT_LED_GPU_PIN, OUTPUT);
   pinMode(NOCT_BUTTON_PIN, INPUT_PULLUP);
@@ -173,7 +178,12 @@ void loop() {
         quickMenuOpen = true;
         quickMenuItem = 0;
       } else if (!state.alertActive) {
+        previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
+        if (previousScene != currentScene) {
+          inTransition = true;
+          transitionStart = now;
+        }
         lastCarousel = now;
       }
     }
@@ -189,7 +199,12 @@ void loop() {
         (unsigned long)settings.carouselIntervalSec * 1000;
     if (now - lastCarousel > intervalMs) {
       needRedraw = true;
+      previousScene = currentScene;
       currentScene = (currentScene + 1) % sceneManager.totalScenes();
+      if (previousScene != currentScene) {
+        inTransition = true;
+        transitionStart = now;
+      }
       lastCarousel = now;
     }
   }
@@ -322,16 +337,29 @@ void loop() {
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
                             predatorMode);
+    } else if (inTransition) {
+      unsigned long elapsed = now - transitionStart;
+      int progress =
+          (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
+      if (progress > 128)
+        progress = 128;
+      int offsetA = -progress;
+      int offsetB = 128 - progress;
+      sceneManager.drawWithOffset(previousScene, offsetA, bootTime, blinkState,
+                                  fanAnimFrame);
+      sceneManager.drawWithOffset(currentScene, offsetB, bootTime, blinkState,
+                                  fanAnimFrame);
+      if (progress >= 128)
+        inTransition = false;
     } else {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
       if (state.alertActive)
         display.drawAlertBorder();
-      static unsigned long lastGlitchMs = 0;
-      if (now - lastGlitchMs >= (unsigned long)NOCT_GLITCH_INTERVAL_MS) {
-        lastGlitchMs = now;
-        display.drawGlitch(1);
-      }
     }
+
+    display.drawScanlines(true);
+    if (random(100) < 1)
+      display.drawGlitch(1);
   }
 
   display.sendBuffer();

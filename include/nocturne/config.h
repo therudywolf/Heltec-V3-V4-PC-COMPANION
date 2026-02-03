@@ -17,10 +17,10 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
-/* Header: zone Y 0..10 (Height 11); Content Area: 13..63 */
-#define NOCT_HEADER_H 11
+/* Header: zone Y 0..11 (Height 12); Content Area: 14..63 */
+#define NOCT_HEADER_H 12
 #define NOCT_HEADER_MARGIN 2
-#define NOCT_CONTENT_START 13
+#define NOCT_CONTENT_START 14
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
 #define NOCT_FOOTER_H 16
 /* Main scene: top block 13..45, RAM box 48..63 */
@@ -39,7 +39,8 @@
 #define FONT_BIG_HEIGHT 14 /* Legacy alias */
 #define FONT_LBL_HEIGHT 8
 #define ROW_GAP 2
-#define NOCT_ROW_DY 12 /* Prefer LINE_HEIGHT_TINY + ROW_GAP */
+#define NOCT_ROW_DY 14     /* Minimum for small fonts (grid law) */
+#define NOCT_ROW_DY_BIG 18 /* Minimum for large fonts */
 #define NOCT_CONTENT_MAX_ROWS 5
 /* Card grid: unified layout for all scene screens */
 #define NOCT_CARD_LEFT 2
@@ -56,7 +57,9 @@
 #define NOCT_SIGNAL_TIMEOUT_MS 5000
 #define NOCT_SIGNAL_GRACE_MS 8000
 #define NOCT_WIFI_RETRY_INTERVAL_MS 30000
-#define NOCT_SPLASH_MS 2000
+#define NOCT_SPLASH_MS 2500
+#define NOCT_TRANSITION_MS 180
+#define NOCT_TRANSITION_STEP 4
 #define NOCT_BUTTON_SHORT_MS 500
 #define NOCT_BUTTON_LONG_MS 1000
 #define NOCT_BUTTON_PREDATOR_MS 2500

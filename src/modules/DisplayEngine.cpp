@@ -100,7 +100,22 @@ void DisplayEngine::clearBuffer() { u8g2_.clearBuffer(); }
 void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 
 // ---------------------------------------------------------------------------
-// drawGlitch: subtle — 1px max shift, no invert. Call only every ~10s.
+// drawScanlines: full-screen CRT effect — black horizontal line every 2 (or 4)
+// pixels
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawScanlines(bool everyFourth) {
+  int step = everyFourth ? 4 : 2;
+  u8g2_.setDrawColor(0);
+  for (int y = 0; y < NOCT_DISP_H; y += step) {
+    for (int x = 0; x < NOCT_DISP_W; x++)
+      u8g2_.drawPixel(x, y);
+  }
+  u8g2_.setDrawColor(1);
+}
+
+// ---------------------------------------------------------------------------
+// drawGlitch: horizontal slice offset 2–5px + random invert block. intensity
+// 1–3.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlitch(int intensity) {
   if (intensity <= 0)
@@ -108,18 +123,18 @@ void DisplayEngine::drawGlitch(int intensity) {
   uint8_t *buf = u8g2_.getBufferPtr();
   if (!buf)
     return;
-  const int sliceH = 4;
-  const int shift = 1;
-  int y0 = 10 + (random(NOCT_DISP_H - sliceH - 12));
-  if (y0 < 10)
-    y0 = 10;
+  const int sliceH = 6;
+  int shift = 2 + (intensity >= 2 ? random(2, 6) : 2); // 2–5 px
+  int y0 = NOCT_HEADER_H + random(NOCT_DISP_H - sliceH - NOCT_HEADER_H - 4);
+  if (y0 < NOCT_HEADER_H)
+    y0 = NOCT_HEADER_H;
   if (y0 + sliceH >= NOCT_DISP_H)
     y0 = NOCT_DISP_H - sliceH - 1;
   int p0 = y0 / 8;
   int p1 = (y0 + sliceH - 1) / 8;
   if (p1 >= 8)
     p1 = 7;
-  uint8_t tmp[4 * 128];
+  uint8_t tmp[8 * 128];
   for (int p = p0; p <= p1; p++) {
     for (int c = 0; c < 128; c++)
       tmp[(p - p0) * 128 + c] = buf[p * 128 + c];
@@ -135,6 +150,21 @@ void DisplayEngine::drawGlitch(int intensity) {
       buf[p * 128 + c] = tmp[(p - p0) * 128 + src];
     }
   }
+  // Invert a random rectangular block
+  int bx = 4 + random(NOCT_DISP_W - 24);
+  int by = NOCT_HEADER_H + 2 + random(NOCT_DISP_H - NOCT_HEADER_H - 14);
+  int bw = 10 + random(20);
+  int bh = 6 + random(8);
+  if (bx + bw > NOCT_DISP_W)
+    bw = NOCT_DISP_W - bx;
+  if (by + bh > NOCT_DISP_H)
+    bh = NOCT_DISP_H - by;
+  int rowStart = by / 8;
+  int rowEnd = (by + bh - 1) / 8;
+  for (int row = rowStart; row <= rowEnd; row++) {
+    for (int col = bx; col < bx + bw && col < 128; col++)
+      buf[row * 128 + col] ^= 0xFF;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -143,8 +173,10 @@ void DisplayEngine::drawGlitch(int intensity) {
 void DisplayEngine::drawScanline(int y) {
   if (y < 0 || y >= NOCT_DISP_H)
     return;
+  u8g2_.setDrawColor(0);
   for (int x = 0; x < NOCT_DISP_W; x += 2)
     u8g2_.drawPixel(x, y);
+  u8g2_.setDrawColor(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +317,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
   u8g2_.setDrawColor(0);
 
-  u8g2_.setFont(TINY_FONT);
+  u8g2_.setFont(HEADER_FONT);
   const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
   char titleBuf[24];
   snprintf(titleBuf, sizeof(titleBuf), "[ %s ]", raw);
