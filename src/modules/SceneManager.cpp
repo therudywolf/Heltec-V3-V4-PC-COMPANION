@@ -10,6 +10,17 @@
 #define SPLIT_X 64
 #define X(x, off) ((x) + (off))
 
+// Unified 2x2 grid (CPU, GPU, MOTHERBOARD): same layout for all
+#define GRID_ROW1_Y 18
+#define GRID_ROW2_Y 42
+#define GRID_COL1_X 0
+#define GRID_COL2_X 64
+#define GRID_CELL_W 63
+#define GRID_CELL_H 22
+#define GRID_BRACKET_LEN 3
+#define GRID_LBL_INSET 3
+#define GRID_BASELINE_Y_OFF 8
+
 // 8x8 fan icon, 4 frames (0..3) for spin
 static const uint8_t icon_fan_8x8_f0[] = {0x18, 0x3C, 0x3C, 0xFF,
                                           0xFF, 0x3C, 0x3C, 0x18};
@@ -80,18 +91,19 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
 
 // ---------------------------------------------------------------------------
 // SCENE 1: MAIN (Tech-Wolf 2x2 Grid) — CPU/GPU brackets; RAM ChamferBox.
-// CPU: 0,16,63,32; GPU: 65,16,63,32; Lifebar inside at Y=42; RAM: 0,50,128,14.
+// CPU: 0,CONTENT_TOP,63,32; GPU: 65,CONTENT_TOP,63,32; Lifebar Y+26; RAM:
+// 0,50,128,14.
 // ---------------------------------------------------------------------------
 #define MAIN_CPU_X 0
-#define MAIN_CPU_Y 16
+#define MAIN_CPU_Y NOCT_CONTENT_TOP
 #define MAIN_CPU_W 63
 #define MAIN_CPU_H 32
 #define MAIN_GPU_X 65
-#define MAIN_GPU_Y 16
+#define MAIN_GPU_Y NOCT_CONTENT_TOP
 #define MAIN_GPU_W 63
 #define MAIN_GPU_H 32
 #define MAIN_BRACKET_LEN 4
-#define MAIN_LIFEBAR_Y 42
+#define MAIN_LIFEBAR_Y (NOCT_CONTENT_TOP + 26)
 #define MAIN_LIFEBAR_H 2
 #define MAIN_CPU_LIFEBAR_X 4
 #define MAIN_CPU_LIFEBAR_W 55
@@ -177,26 +189,28 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 2: CPU — Row1 Temp/MHz Y=28; Dotted HLine Y=38; Row2 Load/Pwr Y=54.
-// drawRightAligned for values.
+// drawGridCell: unified 2x2 cell — bracket (63x22, len 3), label top-left,
+// value right-aligned. (x,y) = top-left of cell (use X(col, xOff) for x).
 // ---------------------------------------------------------------------------
-#define CPU_ROW1_Y 28
-#define CPU_SEP_Y 38
-#define CPU_ROW2_Y 54
-#define CPU_LEFT_ANCHOR 62
-#define CPU_RIGHT_ANCHOR 126
+void SceneManager::drawGridCell(int x, int y, const char *label,
+                                const char *value) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  disp_.drawTechBracket(x, y, GRID_CELL_W, GRID_CELL_H, GRID_BRACKET_LEN);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(x + GRID_LBL_INSET, y + GRID_BASELINE_Y_OFF, label);
+  disp_.drawRightAligned(x + GRID_CELL_W - GRID_LBL_INSET,
+                         y + GRID_BASELINE_Y_OFF, VALUE_FONT, value);
+}
 
+// ---------------------------------------------------------------------------
+// SCENE 2: CPU — 2x2 grid (TEMP | CLOCK / LOAD | PWR). Same layout as GPU/MB.
+// ---------------------------------------------------------------------------
 void SceneManager::drawCpu(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  // FORCE RESET GRAPHICS STATE
-  u8g2.setDrawColor(1);  // Force White Color
-  u8g2.setFontMode(1);   // Transparent background mode
-  u8g2.setBitmapMode(0); // Normal bitmap rendering (No XOR)
-
-  disp_.drawDottedVLine(X(SPLIT_X, xOff), NOCT_CONTENT_TOP, NOCT_DISP_H - 1);
-  disp_.drawDottedHLine(X(NOCT_CARD_LEFT, xOff),
-                        X(NOCT_DISP_W - NOCT_CARD_LEFT, xOff), CPU_SEP_Y);
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
 
   int ct = (hw.ct > 0) ? hw.ct : 0;
   int cc = (hw.cc >= 0) ? hw.cc : 0;
@@ -209,92 +223,47 @@ void SceneManager::drawCpu(bool blinkState, int xOff) {
   bool blinkLoad =
       onAlertCpu && state_.alertMetric == NOCT_ALERT_CL && blinkState;
 
-  const int leftX = NOCT_CARD_LEFT;
-  const int rightX = SPLIT_X + 2;
   static char buf[16];
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(leftX, xOff), CPU_ROW1_Y, "Temp");
-  u8g2.drawUTF8(X(rightX, xOff), CPU_ROW1_Y, "MHz");
-  if (!blinkTemp) {
-    snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
-    disp_.drawRightAligned(X(CPU_LEFT_ANCHOR, xOff), CPU_ROW1_Y, VALUE_FONT,
-                           buf);
-  }
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
+  drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW1_Y, "TEMP", blinkTemp ? "" : buf);
   snprintf(buf, sizeof(buf), "%d", cc);
-  disp_.drawRightAligned(X(CPU_RIGHT_ANCHOR, xOff), CPU_ROW1_Y, VALUE_FONT,
-                         buf);
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(leftX, xOff), CPU_ROW2_Y, "ACT");
-  u8g2.drawUTF8(X(rightX, xOff), CPU_ROW2_Y, "Pwr");
-  if (!blinkLoad) {
-    snprintf(buf, sizeof(buf), "%d%%", cl);
-    disp_.drawRightAligned(X(CPU_LEFT_ANCHOR, xOff), CPU_ROW2_Y, VALUE_FONT,
-                           buf);
-  }
+  drawGridCell(X(GRID_COL2_X, xOff), GRID_ROW1_Y, "CLOCK", buf);
+  snprintf(buf, sizeof(buf), "%d%%", cl);
+  drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW2_Y, "LOAD", blinkLoad ? "" : buf);
   snprintf(buf, sizeof(buf), "%dW", pw);
-  disp_.drawRightAligned(X(CPU_RIGHT_ANCHOR, xOff), CPU_ROW2_Y, VALUE_FONT,
-                         buf);
+  drawGridCell(X(GRID_COL2_X, xOff), GRID_ROW2_Y, "PWR", buf);
   disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 3: GPU — Simplified. Row1 Temp/Clock Y=28; Dotted HLine Y=38;
-// Row2 TDP/VRAM Y=54. Left: TDP/120W; Right: VM/4.2 (no G suffix).
+// SCENE 3: GPU — 2x2 grid (TEMP | CLOCK / LOAD | VRAM). Same layout as CPU/MB.
+// VRAM = used only (e.g. 4.2G), no total.
 // ---------------------------------------------------------------------------
-#define GPU_ROW1_Y 28
-#define GPU_SEP_Y 38
-#define GPU_ROW2_Y 54
-#define GPU_LEFT_ANCHOR 62
-#define GPU_RIGHT_ANCHOR 126
-
 void SceneManager::drawGpu(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  // FORCE RESET GRAPHICS STATE
-  u8g2.setDrawColor(1);  // Force White Color
-  u8g2.setFontMode(1);   // Transparent background mode
-  u8g2.setBitmapMode(0); // Normal bitmap rendering (No XOR)
-
-  disp_.drawDottedVLine(X(SPLIT_X, xOff), NOCT_CONTENT_TOP, NOCT_DISP_H - 1);
-  disp_.drawDottedHLine(X(NOCT_CARD_LEFT, xOff),
-                        X(NOCT_DISP_W - NOCT_CARD_LEFT, xOff), GPU_SEP_Y);
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
 
   int gh = (hw.gh > 0) ? hw.gh : 0;
   int gclock = (hw.gclock >= 0) ? hw.gclock : 0;
-  int gtdp = (hw.gtdp >= 0) ? hw.gtdp : 0;
+  int gl = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
   float vu = hw.vu;
   bool onAlertGpu =
       state_.alertActive && state_.alertTargetScene == NOCT_SCENE_GPU;
   bool blinkHot =
       onAlertGpu && state_.alertMetric == NOCT_ALERT_GT && blinkState;
 
-  const int leftX = NOCT_CARD_LEFT;
-  const int rightX = SPLIT_X + 2;
   static char buf[24];
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(leftX, xOff), GPU_ROW1_Y, "Temp");
-  u8g2.drawUTF8(X(rightX, xOff), GPU_ROW1_Y, "Clock");
-  u8g2.setFont(VALUE_FONT);
-  if (!blinkHot) {
-    snprintf(buf, sizeof(buf), "%d\xC2\xB0", gh);
-    disp_.drawRightAligned(X(GPU_LEFT_ANCHOR, xOff), GPU_ROW1_Y, VALUE_FONT,
-                           buf);
-  }
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", gh);
+  drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW1_Y, "TEMP", blinkHot ? "" : buf);
   snprintf(buf, sizeof(buf), "%d", gclock);
-  disp_.drawRightAligned(X(GPU_RIGHT_ANCHOR, xOff), GPU_ROW1_Y, VALUE_FONT,
-                         buf);
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(leftX, xOff), GPU_ROW2_Y, "TDP");
-  u8g2.drawUTF8(X(rightX, xOff), GPU_ROW2_Y, "VM");
-  snprintf(buf, sizeof(buf), "%dW", gtdp);
-  disp_.drawRightAligned(X(GPU_LEFT_ANCHOR, xOff), GPU_ROW2_Y, VALUE_FONT, buf);
-  snprintf(buf, sizeof(buf), "%.1f", vu);
-  disp_.drawRightAligned(X(GPU_RIGHT_ANCHOR, xOff), GPU_ROW2_Y, VALUE_FONT,
-                         buf);
+  drawGridCell(X(GRID_COL2_X, xOff), GRID_ROW1_Y, "CLOCK", buf);
+  snprintf(buf, sizeof(buf), "%d%%", gl);
+  drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW2_Y, "LOAD", buf);
+  snprintf(buf, sizeof(buf), "%.1fG", vu);
+  drawGridCell(X(GRID_COL2_X, xOff), GRID_ROW2_Y, "VRAM", buf);
   disp_.drawGreebles();
 }
 
@@ -456,40 +425,30 @@ void SceneManager::drawFans(int fanFrame, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 8: MOTHERBOARD — 2 col x 2 row. Grid Y=18..63 (breathing room).
+// SCENE 8: MOTHERBOARD — 2x2 grid (SYS | VRM / SOC | CHIP). Same layout as
+// CPU/GPU.
 // ---------------------------------------------------------------------------
-#define MB_GRID_TOP 18
-#define MB_CELL_DX 64
-#define MB_CELL_DY 22
-#define MB_LBL_X_OFF 4
-#define MB_VAL_ANCHOR_OFF 58
-
 void SceneManager::drawMotherboard(int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  // FORCE RESET GRAPHICS STATE
-  u8g2.setDrawColor(1);  // Force White Color
-  u8g2.setFontMode(1);   // Transparent background mode
-  u8g2.setBitmapMode(0); // Normal bitmap rendering (No XOR)
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
 
-  const char *labels[] = {"SYS", "VRM", "SOC", "CHIP"};
-  int temps[] = {hw.mb_sys, hw.mb_vrm, hw.mb_vsoc, hw.mb_chipset};
+  int sys = (hw.mb_sys > 0) ? hw.mb_sys : 0;
+  int vrm = (hw.mb_vrm > 0) ? hw.mb_vrm : 0;
+  int soc = (hw.mb_vsoc > 0) ? hw.mb_vsoc : 0;
+  int chip = (hw.mb_chipset > 0) ? hw.mb_chipset : 0;
   static char buf[16];
 
-  for (int i = 0; i < 4; i++) {
-    int col = i % 2;
-    int row = i / 2;
-    int cx = X(col * MB_CELL_DX + MB_LBL_X_OFF, xOff);
-    int cy = MB_GRID_TOP + row * MB_CELL_DY + 4;
-    int anchorX = X((col + 1) * MB_CELL_DX - 4, xOff);
-
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(cx, cy + 6, labels[i]);
-    int t = (temps[i] > 0) ? temps[i] : 0;
-    snprintf(buf, sizeof(buf), "%d\xC2\xB0", t);
-    u8g2.setFont(VALUE_FONT);
-    disp_.drawRightAligned(anchorX, cy + 6, VALUE_FONT, buf);
-  }
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", sys);
+  drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW1_Y, "SYS", buf);
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", vrm);
+  drawGridCell(X(GRID_COL2_X, xOff), GRID_ROW1_Y, "VRM", buf);
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", soc);
+  drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW2_Y, "SOC", buf);
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", chip);
+  drawGridCell(X(GRID_COL2_X, xOff), GRID_ROW2_Y, "CHIP", buf);
   disp_.drawGreebles();
 }
 

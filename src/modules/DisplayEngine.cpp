@@ -646,8 +646,8 @@ void DisplayEngine::drawWolfEye(int x, int y, bool open) {
 }
 
 // ---------------------------------------------------------------------------
-// Global header (Tech-Wolf): Y=0..12, baseline Y=9. Scene name (X=4) + 3x3
-// blink | NET:OK (X=124 right). Separator at Y=12.
+// Global header (Tech-Wolf): Y=0..14, baseline Y=11. Scene name (X=4) + 3x3
+// blink | NET:OK (X=124 right). Separator at Y=13 (physical bezel fix).
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi,
@@ -655,7 +655,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   (void)timeStr;
   (void)rssi;
   const int barH = NOCT_HEADER_H;
-  const int baselineY = 9;
+  const int baselineY = 11;
   const int nameX = 4;
   const int rightAnchor = 124;
 
@@ -679,9 +679,9 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   int statusW = u8g2_.getUTF8Width(statusStr);
   u8g2_.drawUTF8(rightAnchor - statusW, baselineY, statusStr);
 
-  /* Separator at Y=12 */
+  /* Separator at Y=13 */
   u8g2_.setDrawColor(1);
-  const int sepY = 12;
+  const int sepY = 13;
   u8g2_.drawHLine(0, sepY, NOCT_DISP_W / 2);
   u8g2_.drawHLine(NOCT_DISP_W / 2 + 1, sepY, NOCT_DISP_W / 2 - 1);
   u8g2_.setDrawColor(1);
