@@ -16,6 +16,10 @@
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
 #define NOCT_HEADER_H 9 /* Grid: header 0..8, dotted line at Y=9 */
+/* Card grid: unified layout for all scene screens */
+#define NOCT_CARD_LEFT 2
+#define NOCT_CARD_TOP 12
+#define NOCT_CARD_ROW_DY 12
 #define NOCT_FOOTER_Y 50
 #define NOCT_LINE_H_DATA 12
 #define NOCT_LINE_H_LABEL 5
@@ -46,6 +50,7 @@
 #define CPU_LOAD_ALERT 99
 #define GPU_LOAD_ALERT 99
 #define VRAM_LOAD_ALERT 95
+#define RAM_LOAD_ALERT 90
 
 /* 6 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA */
 #define NOCT_SCENE_MAIN 0
