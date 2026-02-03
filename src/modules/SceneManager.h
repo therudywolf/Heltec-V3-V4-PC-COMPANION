@@ -28,9 +28,14 @@ public:
   void drawConnecting(int rssi, bool blinkState);
 
   int totalScenes() const { return NOCT_TOTAL_SCENES; }
+  const char *getSceneName(int sceneIndex) const;
 
 private:
-  void drawWmoIcon(int x, int y, int wmoCode);
+  void drawWmoIconXbm(int x, int y, int wmoCode);
+  void drawCassetteIcon(int x, int y);
+  void drawNoisePattern(int x, int y, int w, int h);
+
+  static const char *sceneNames_[];
 
   DisplayEngine &disp_;
   AppState &state_;

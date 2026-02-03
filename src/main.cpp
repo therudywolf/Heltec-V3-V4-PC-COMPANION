@@ -15,7 +15,6 @@
 #include "nocturne/config.h"
 #include "secrets.h"
 
-
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
@@ -237,11 +236,11 @@ void loop() {
       display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
     }
 
+    display.drawOverlay(
+        sceneManager.getSceneName(currentScene), netManager.rssi(),
+        netManager.isTcpConnected() && netManager.hasReceivedData());
     display.drawCornerCrosshairs();
     sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
-
-    if (netManager.isWifiConnected())
-      display.drawWiFiIcon(NOCT_DISP_W - 16, 2, netManager.rssi());
 
     display.drawLinkStatus(2, NOCT_DISP_H - 2,
                            netManager.isTcpConnected() &&
