@@ -6,6 +6,7 @@
 #include "../../include/nocturne/Types.h"
 #include "../../include/nocturne/config.h"
 #include <ArduinoJson.h>
+#include <esp_wifi.h>
 #include <string.h>
 
 NetManager::NetManager()
@@ -32,6 +33,7 @@ void NetManager::tick(unsigned long now) {
     if (!wifiConnected_) {
       wifiConnected_ = true;
       WiFi.setSleep(false); // MANDATORY: keep ping < 10ms for real-time graphs
+      esp_wifi_set_ps(WIFI_PS_NONE); // V4: disable aggressive S3 power saving
     }
     if (now % 5000 < 100)
       rssi_ = WiFi.RSSI();

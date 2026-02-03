@@ -32,12 +32,12 @@ public:
   void drawFans(int fanFrame, int xOff = 0);
   void drawMotherboard(int xOff = 0);
   void drawWeather(int xOff = 0);
-  void drawFire(int xOff = 0);
-  void drawWolfHunt(int xOff = 0);
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
-  void drawMenu(int menuItem, bool carouselOn, bool screenOff);
+  /** Wolf Menu: menuItem 0=5s, 1=10s, 2=OFF, 3=EXIT. carouselOn + carouselSec
+   * for display. */
+  void drawMenu(int menuItem, bool carouselOn, int carouselSec);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 

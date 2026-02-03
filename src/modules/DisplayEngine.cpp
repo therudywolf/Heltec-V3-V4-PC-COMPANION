@@ -92,6 +92,7 @@ DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
 
 void DisplayEngine::begin() {
   Wire.begin(sdaPin_, sclPin_);
+  Wire.setClock(400000); // V4: stable I2C for SSD1306 (SDA=17, SCL=18)
   u8g2_.begin();
   u8g2_.enableUTF8Print();
 }
@@ -609,29 +610,54 @@ void DisplayEngine::drawCyberClaw(int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
-// drawActiveIndicator: small solid square blink every 500ms + "ACT" or "HUNT".
+// drawActiveIndicator: 3x3 filled box blinks every 1000ms (heartbeat). Place
+// in header next to scene name.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawActiveIndicator(int x, int y) {
-  bool on = ((millis() / 500) & 1) == 0;
+  bool on = ((millis() / 1000) & 1) == 0;
   if (on)
-    u8g2_.drawBox(x, y, 4, 4);
+    u8g2_.drawBox(x, y, 3, 3);
   else
-    u8g2_.drawFrame(x, y, 4, 4);
-  u8g2_.setFont(LABEL_FONT);
-  const char *label = (millis() / 1000) & 1 ? "HUNT" : "ACT";
-  u8g2_.drawUTF8(x + 6, y + 4, label);
+    u8g2_.drawFrame(x, y, 3, 3);
 }
 
 // ---------------------------------------------------------------------------
-// Global header: Scene name at X=4, system status right-aligned at 128-width-4,
-// bottom separator line at Y=12. Never draw text at X<4.
+// drawWolfEye: pixel art eye. Open: < o > shape. Closed: - - shape.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawWolfEye(int x, int y, bool open) {
+  if (open) {
+    // < (left angle)
+    u8g2_.drawPixel(x, y);
+    u8g2_.drawPixel(x + 1, y - 1);
+    u8g2_.drawPixel(x + 1, y + 1);
+    // o (center dot)
+    u8g2_.drawPixel(x + 3, y);
+    // > (right angle)
+    u8g2_.drawPixel(x + 5, y);
+    u8g2_.drawPixel(x + 4, y - 1);
+    u8g2_.drawPixel(x + 4, y + 1);
+  } else {
+    // - - (two horizontal dashes)
+    u8g2_.drawPixel(x, y);
+    u8g2_.drawPixel(x + 1, y);
+    u8g2_.drawPixel(x + 3, y);
+    u8g2_.drawPixel(x + 4, y);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Global header (Tech-Wolf): Y=0..12, baseline Y=9. Scene name (X=4) + 3x3
+// blink | NET:OK (X=124 right). Separator at Y=12.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
-                                     const char *timeStr, int rssi) {
+                                     const char *timeStr, int rssi,
+                                     bool wifiConnected) {
+  (void)timeStr;
+  (void)rssi;
   const int barH = NOCT_HEADER_H;
-  const int textY = 8;
-  const int pad = 4;
-  const int rightAnchor = NOCT_DISP_W - pad; // 124
+  const int baselineY = 9;
+  const int nameX = 4;
+  const int rightAnchor = 124;
 
   u8g2_.setDrawColor(1);
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
@@ -641,22 +667,24 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
   char titleBuf[24];
   snprintf(titleBuf, sizeof(titleBuf), "%s", raw);
-  u8g2_.drawUTF8(pad, textY, titleBuf);
+  u8g2_.drawUTF8(nameX, baselineY, titleBuf);
 
-  static char statusBuf[16];
-  snprintf(statusBuf, sizeof(statusBuf), "%s",
-           (rssi > -70) ? "NOCT:ON" : "SYS:V3");
+  /* Blinking 3x3 pixel square next to scene name (heartbeat) */
+  int titleW = u8g2_.getUTF8Width(titleBuf);
+  drawActiveIndicator(nameX + titleW + 2, baselineY - 2);
+
+  /* Right side: NET:OK (connected) or NET:-- (offline), anchored at X=124 */
+  const char *statusStr = wifiConnected ? "NET:OK" : "NET:--";
   u8g2_.setFont(LABEL_FONT);
-  int statusW = u8g2_.getUTF8Width(statusBuf);
-  int statusX = rightAnchor - statusW;
-  if (statusX < pad)
-    statusX = pad;
-  u8g2_.drawUTF8(statusX, textY, statusBuf);
+  int statusW = u8g2_.getUTF8Width(statusStr);
+  u8g2_.drawUTF8(rightAnchor - statusW, baselineY, statusStr);
 
+  /* Separator at Y=12 */
   u8g2_.setDrawColor(1);
   const int sepY = 12;
-  u8g2_.drawHLine(0, sepY, NOCT_DISP_W);
-  u8g2_.setDrawColor(0);
+  u8g2_.drawHLine(0, sepY, NOCT_DISP_W / 2);
+  u8g2_.drawHLine(NOCT_DISP_W / 2 + 1, sepY, NOCT_DISP_W / 2 - 1);
+  u8g2_.setDrawColor(1);
 }
 
 // ---------------------------------------------------------------------------
