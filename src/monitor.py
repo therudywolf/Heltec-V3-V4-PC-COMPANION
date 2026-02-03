@@ -226,13 +226,20 @@ TARGETS = {
     "ru": "/ram/data/0",
     "ra": "/ram/data/1",
 }
-# HDD: fetched separately for /hdd/0..3 load/0 + temperature/0
+# HDD: try multiple path styles (LHM may use hdd, nvme, or drive)
+def _hdd_paths_for_slot(slot: int) -> List[Tuple[str, str]]:
+    return [
+        (f"/hdd/{slot}/load/0", f"/hdd/{slot}/temperature/0"),
+        (f"/nvme/{slot}/load/0", f"/nvme/{slot}/temperature/0"),
+        (f"/drive/{slot}/load/0", f"/drive/{slot}/temperature/0"),
+    ]
 HDD_PATHS = [
     ("/hdd/0/load/0", "/hdd/0/temperature/0"),
     ("/hdd/1/load/0", "/hdd/1/temperature/0"),
     ("/hdd/2/load/0", "/hdd/2/temperature/0"),
     ("/hdd/3/load/0", "/hdd/3/temperature/0"),
 ]
+HDD_PATH_ALTERNATIVES = [_hdd_paths_for_slot(i) for i in range(4)]
 FAN_PATHS = [
     "/lpc/it8688e/0/fan/0",   # CPU
     "/lpc/it8688e/0/fan/1",   # Pump
@@ -250,6 +257,10 @@ TARGETS_ALIAS = {
     "/gpu-nvidia/0/clock/1": "vclock",
     "/gpu-nvidia/0/power/0": "gtdp",
     "/gpu-nvidia/0/fan/0": "gf",
+    "/gpu-nvidia/0/smalldata/1": "vu",
+    "/gpu-nvidia/0/smalldata/2": "vt",
+    "/gpu-nvidia/0/data/1": "vu",
+    "/gpu-nvidia/0/data/2": "vt",
 }
 IT8688E_PREFIX = "/lpc/it8688e/0"
 
@@ -311,6 +322,21 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     targets_set = set(TARGETS.values())
     it8688e_fans: List[Tuple[str, float]] = []
     it8688e_temps: List[Tuple[str, float]] = []
+    gpu_memory_sensors: List[Tuple[str, float, str]] = []  # (sid, val, name_lower)
+    storage_loads: Dict[int, float] = {}   # slot -> load %
+    storage_temps: Dict[int, float] = {}   # slot -> temp
+
+    def _storage_slot(sid: str) -> Optional[int]:
+        parts = sid.split("/")
+        for prefix in ("hdd", "nvme", "drive"):
+            if prefix in parts:
+                try:
+                    i = parts.index(prefix)
+                    if i + 1 < len(parts):
+                        return int(parts[i + 1])
+                except (ValueError, IndexError):
+                    pass
+        return None
 
     def walk(node: Any) -> None:
         if isinstance(node, list):
@@ -335,9 +361,31 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                         it8688e_fans.append((sid, val))
                     elif "temperature" in stype or "temp" in stype:
                         it8688e_temps.append((sid, val))
+                # Collect GPU memory sensors for name-based fallback (vu/vt)
+                if ("/nvidiagpu/" in sid or "/gpu-nvidia/" in sid) and val > 0:
+                    stype = (node.get("Type") or "").lower()
+                    if "data" in stype or "smalldata" in stype:
+                        name = (node.get("Name") or node.get("Text") or "").lower()
+                        if "memory" in name or "used" in name or "total" in name or "limit" in name:
+                            gpu_memory_sensors.append((sid, val, name))
+                # Collect storage (HDD/NVMe) load and temperature for fallback
+                slot = _storage_slot(sid)
+                if slot is not None and 0 <= slot < 4:
+                    stype = (node.get("Type") or "").lower()
+                    if "load" in stype:
+                        storage_loads[slot] = val
+                    if "temperature" in stype or "temp" in stype:
+                        storage_temps[slot] = val
             if "Children" in node:
                 walk(node["Children"])
     walk(data)
+    # VRAM fallback: if vu/vt not set by path, try to match by sensor name (values in MB; /1024 applied below)
+    if "vu" not in results or "vt" not in results:
+        for _sid, val, name in gpu_memory_sensors:
+            if "used" in name and "vu" not in results:
+                results["vu"] = val
+            if ("total" in name or "limit" in name) and "vt" not in results:
+                results["vt"] = val
     it8688e_fans.sort(key=lambda x: x[0])
     it8688e_temps.sort(key=lambda x: x[0])
     # Fans: CPU, Pump, GPU, Case (optional)
@@ -358,14 +406,23 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
-    # HDD array: 4 drives from /hdd/0..3 — list [{n, u, t}] for display
+    # HDD array: 4 drives — try path alternatives then storage fallback
     drive_letters = ("C", "D", "E", "F")
     hdd: List[Dict[str, Any]] = []
-    for idx, (load_path, temp_path) in enumerate(HDD_PATHS):
-        u = int(path_to_val.get(load_path, 0))
-        if u < 0 or u > 100:
-            u = 0
-        t = int(path_to_val.get(temp_path, 0))
+    for idx in range(4):
+        u, t = 0, 0
+        for load_path, temp_path in HDD_PATH_ALTERNATIVES[idx]:
+            if load_path in path_to_val or temp_path in path_to_val:
+                u = int(path_to_val.get(load_path, 0))
+                t = int(path_to_val.get(temp_path, 0))
+                if u < 0 or u > 100:
+                    u = 0
+                break
+        else:
+            u = int(storage_loads.get(idx, 0))
+            t = int(storage_temps.get(idx, 0))
+            if u > 100:
+                u = 0
         hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": u, "t": t})
     results["hdd"] = hdd
     return results

@@ -57,14 +57,15 @@
 #define VRAM_LOAD_ALERT 95
 #define RAM_LOAD_ALERT 90
 
-/* 6 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA */
+/* 7 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS */
 #define NOCT_SCENE_MAIN 0
 #define NOCT_SCENE_CPU 1
 #define NOCT_SCENE_GPU 2
 #define NOCT_SCENE_RAM 3
 #define NOCT_SCENE_DISKS 4
 #define NOCT_SCENE_MEDIA 5
-#define NOCT_TOTAL_SCENES 6
+#define NOCT_SCENE_FANS 6
+#define NOCT_TOTAL_SCENES 7
 
 /* alert_metric codes (match monitor.py: ct, gt, cl, gl, gv, ram) */
 #define NOCT_ALERT_CT 0

@@ -232,6 +232,8 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
       state->alertTargetScene = NOCT_SCENE_DISKS;
     else if (strcmp(target, "MEDIA") == 0)
       state->alertTargetScene = NOCT_SCENE_MEDIA;
+    else if (strcmp(target, "FANS") == 0)
+      state->alertTargetScene = NOCT_SCENE_FANS;
     else
       state->alertTargetScene = NOCT_SCENE_MAIN;
   }
