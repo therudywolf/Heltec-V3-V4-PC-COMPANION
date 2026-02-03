@@ -268,14 +268,21 @@ void SceneManager::drawGpu(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 4: RAM (Protocol Alpha Wolf) — Top 3 processes. Row height 12px,
-// Y start 18. LABEL_FONT. Format "Name...... 1024M".
+// SCENE 4: RAM (Protocol Alpha Wolf) — Top 2 processes only. Row 0 Y=20,
+// Row 1 Y=38. drawTechBracket around each. Summary bar Y=54 (drawChamferBox).
 // ---------------------------------------------------------------------------
-#define RAM_ROW_Y_START 18
-#define RAM_ROW_DY 12
-#define RAM_NAME_X NOCT_CARD_LEFT
-#define RAM_VALUE_ANCHOR (NOCT_DISP_W - 2)
+#define RAM_ROW0_Y 20
+#define RAM_ROW1_Y 38
+#define RAM_ROW_H 16
+#define RAM_ROW_X NOCT_CARD_LEFT
+#define RAM_ROW_W (NOCT_DISP_W - 2 * NOCT_CARD_LEFT)
+#define RAM_BRACKET_LEN 3
+#define RAM_NAME_X (NOCT_CARD_LEFT + 4)
+#define RAM_VALUE_ANCHOR (NOCT_DISP_W - 4)
 #define RAM_MAX_NAMELEN 10
+#define RAM_SUMMARY_Y 54
+#define RAM_SUMMARY_H (NOCT_DISP_H - RAM_SUMMARY_Y)
+#define RAM_SUMMARY_CHAMFER 2
 
 void SceneManager::drawRam(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
@@ -290,35 +297,57 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
   bool blinkRam =
       onAlertRam && state_.alertMetric == NOCT_ALERT_RAM && blinkState;
 
-  u8g2.setFont(LABEL_FONT);
   static char buf[24];
-  int valueW = u8g2.getUTF8Width(" 1024M");
-  int nameEndX = RAM_VALUE_ANCHOR - valueW - 2;
+  static const int rowYs[] = {RAM_ROW0_Y, RAM_ROW1_Y};
 
-  for (int i = 0; i < 3; i++) {
-    int y = RAM_ROW_Y_START + i * RAM_ROW_DY;
-    if (y + RAM_ROW_DY > NOCT_DISP_H - 4)
-      break;
-    String name = (i < 2) ? proc.ramNames[i] : "";
-    int mb = (i < 2) ? proc.ramMb[i] : 0;
+  /* Process list: exactly 2 items with drawTechBracket around each */
+  for (int i = 0; i < 2; i++) {
+    int rowY = rowYs[i];
+    int bx = X(RAM_ROW_X, xOff);
+    int by = rowY;
+    disp_.drawTechBracket(bx, by, RAM_ROW_W, RAM_ROW_H, RAM_BRACKET_LEN);
+
+    int baselineY = rowY + 10; /* Text baseline within bracket */
+    String name = proc.ramNames[i];
+    int mb = proc.ramMb[i];
     if (name.length() > (unsigned)RAM_MAX_NAMELEN)
       name = name.substring(0, RAM_MAX_NAMELEN);
-    int nameW = name.length() > 0 ? u8g2.getUTF8Width(name.c_str()) : 0;
-    u8g2.drawUTF8(X(RAM_NAME_X, xOff), y + 6,
-                  name.length() > 0 ? name.c_str() : "-");
+
+    u8g2.setFont(LABEL_FONT);
+    const char *nameStr = name.length() > 0 ? name.c_str() : "-";
+    u8g2.drawUTF8(X(RAM_NAME_X, xOff), baselineY, nameStr);
+    int nameW = u8g2.getUTF8Width(nameStr);
+
+    /* Size value: VALUE_FONT (HelvB10) if it fits, else LABEL_FONT */
+    snprintf(buf, sizeof(buf), "%dM", mb);
+    u8g2.setFont(VALUE_FONT);
+    int valueW = u8g2.getUTF8Width(buf);
+    int availW = RAM_VALUE_ANCHOR - RAM_NAME_X - nameW - 8;
+    if (valueW <= availW) {
+      disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), baselineY, VALUE_FONT,
+                             buf);
+    } else {
+      u8g2.setFont(LABEL_FONT);
+      valueW = u8g2.getUTF8Width(buf);
+      disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), baselineY, LABEL_FONT,
+                             buf);
+    }
+
     /* Dots from end of name to value */
     int dotStartX = RAM_NAME_X + nameW + 2;
-    for (int px = dotStartX; px < nameEndX - 4 && px < NOCT_DISP_W; px += 3)
-      u8g2.drawPixel(X(px, xOff), y + 6);
-    snprintf(buf, sizeof(buf), "%dM", mb);
-    disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), y + 6, LABEL_FONT, buf);
+    int dotEndX = RAM_VALUE_ANCHOR - valueW - 4;
+    for (int px = dotStartX; px < dotEndX && px < NOCT_DISP_W; px += 3)
+      u8g2.drawPixel(X(px, xOff), baselineY);
   }
 
+  /* Summary bar: Y=54, drawChamferBox, "TOTAL: 8.2 / 16 GB" */
+  disp_.drawChamferBox(X(0, xOff), RAM_SUMMARY_Y, NOCT_DISP_W, RAM_SUMMARY_H,
+                       RAM_SUMMARY_CHAMFER);
   if (!blinkRam) {
-    float ru = hw.ru, ra = hw.ra;
-    snprintf(buf, sizeof(buf), "%.0f/%.0f GB", ru, ra > 0 ? ra : 0.0f);
-    disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), NOCT_DISP_H - 4,
-                           LABEL_FONT, buf);
+    float ru = hw.ru, ra = hw.ra > 0 ? hw.ra : 0.0f;
+    snprintf(buf, sizeof(buf), "TOTAL: %.1f / %.0f GB", ru, ra);
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(4, xOff), RAM_SUMMARY_Y + RAM_SUMMARY_H - 4, buf);
   }
   disp_.drawGreebles();
 }
