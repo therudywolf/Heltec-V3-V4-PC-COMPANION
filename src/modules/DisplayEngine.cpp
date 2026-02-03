@@ -73,7 +73,74 @@ void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 void DisplayEngine::setDataSpike(bool spike) { dataSpike_ = spike; }
 
 // ---------------------------------------------------------------------------
-// Grid Law helpers (MANDATORY)
+// Layout Engine: drawBlock (bounding box), drawProgressBar (segments + 1px gap)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawBlock(int x, int y, int w, int h, const String &label,
+                              const String &value, bool warning) {
+  const int PAD = 2;
+  const int LABEL_Y_OFFSET = 8;
+
+  u8g2_.setDrawColor(0);
+  u8g2_.drawBox(x, y, w, h);
+  u8g2_.setDrawColor(1);
+
+  if (warning) {
+    u8g2_.drawBox(x, y, w, h);
+    u8g2_.setDrawColor(0);
+  }
+
+  u8g2_.setFont(FONT_TINY);
+  if (label.length() > 0)
+    u8g2_.drawUTF8(x + PAD, y + LABEL_Y_OFFSET, label.c_str());
+
+  int valueRight = x + w - PAD;
+  int maxValueW = w - (PAD * 2);
+  if (value.length() > 0) {
+    u8g2_.setFont(FONT_VAL);
+    int needW = u8g2_.getUTF8Width(value.c_str());
+    if (needW > maxValueW) {
+      u8g2_.setFont(FONT_VAL_NARROW);
+      needW = u8g2_.getUTF8Width(value.c_str());
+    }
+    u8g2_.drawUTF8(valueRight - needW, y + LABEL_Y_OFFSET, value.c_str());
+  }
+
+  if (warning)
+    u8g2_.setDrawColor(1);
+
+  drawDottedHLine(x, x + w - 1, y);
+  drawDottedHLine(x, x + w - 1, y + h - 1);
+  drawDottedVLine(x, y, y + h - 1);
+  drawDottedVLine(x + w - 1, y, y + h - 1);
+}
+
+void DisplayEngine::drawProgressBar(int x, int y, int w, int h, float percent) {
+  if (percent > 100.0f)
+    percent = 100.0f;
+  if (percent < 0.0f)
+    percent = 0.0f;
+  const int SEG_GAP = 1;
+  const int INNER_PAD = 1;
+  int iw = w - 2 * INNER_PAD;
+  int ih = h - 2 * INNER_PAD;
+  if (iw < 2 || ih < 1)
+    return;
+  u8g2_.drawFrame(x, y, w, h);
+  int segW = 3;
+  int numSegs = (iw + SEG_GAP) / (segW + SEG_GAP);
+  if (numSegs < 1)
+    numSegs = 1;
+  int filled = (int)((percent / 100.0f) * numSegs + 0.5f);
+  if (filled > numSegs)
+    filled = numSegs;
+  for (int i = 0; i < filled; i++) {
+    int sx = x + INNER_PAD + i * (segW + SEG_GAP);
+    u8g2_.drawBox(sx, y + INNER_PAD, segW, ih);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy alignment helpers
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawRightAligned(int x, int y, const String &text) {
   if (text.length() == 0)
@@ -126,15 +193,14 @@ void DisplayEngine::drawValueOrNoise(int x_end, int y, const String &value) {
 }
 
 // ---------------------------------------------------------------------------
-// HUD: Header 0–12px solid black, INVERTED text. Footer 54–64 status.
-// Dotted line at Y=12. 2px safety margin.
+// HUD: Header 0–10px (strict grid). Title centered. Dotted line at Y=10.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk,
                                 const char *timeStr) {
   (void)linkOk;
   const int BAR_Y0 = 0;
-  const int BAR_H = 12;
-  const int DOTTED_Y = 12;
+  const int BAR_H = NOCT_HEADER_H;
+  const int DOTTED_Y = NOCT_HEADER_H;
 
   u8g2_.setDrawColor(0);
   u8g2_.drawBox(0, BAR_Y0, NOCT_DISP_W, BAR_H);
@@ -143,7 +209,8 @@ void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk,
   u8g2_.setFont(FONT_LABEL);
   char buf[20];
   snprintf(buf, sizeof(buf), "%s", sceneName ? sceneName : "");
-  u8g2_.drawUTF8(2, BAR_Y0 + BAR_H - 2, buf);
+  int tw = u8g2_.getUTF8Width(buf);
+  u8g2_.drawUTF8(NOCT_DISP_W / 2 - tw / 2, BAR_Y0 + BAR_H - 2, buf);
 
   u8g2_.setFont(FONT_TINY);
   const char *tstr = (timeStr && timeStr[0]) ? timeStr : "---";
@@ -277,17 +344,6 @@ void DisplayEngine::drawMetric(int x, int y, const char *label,
 void DisplayEngine::drawMetricStr(int x, int y, const char *label,
                                   const String &value) {
   drawMetric(x, y, label, value.c_str());
-}
-
-void DisplayEngine::drawProgressBar(int x, int y, int w, int h, float pct) {
-  if (pct > 100.0f)
-    pct = 100.0f;
-  if (pct < 0.0f)
-    pct = 0.0f;
-  u8g2_.drawFrame(x, y, w, h);
-  int fillW = (int)((w - 2) * (pct / 100.0f));
-  if (fillW > 0)
-    u8g2_.drawBox(x + 1, y + 1, fillW, h - 2);
 }
 
 void DisplayEngine::drawWiFiIcon(int x, int y, int rssi) {
