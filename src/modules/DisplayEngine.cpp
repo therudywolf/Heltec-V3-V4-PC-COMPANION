@@ -558,13 +558,15 @@ void DisplayEngine::drawPawIcon(int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
-// Global header: "The Wolf Collar" — Scene at X=4, status at 126,
-// separator with break [ ], paw + WiFi, subtle static pixel.
+// Global header: Scene name at X=4, system status right-aligned at 128-width-4,
+// bottom separator line at Y=12. Never draw text at X<4.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
   const int barH = NOCT_HEADER_H;
   const int textY = 8;
+  const int pad = 4;
+  const int rightAnchor = NOCT_DISP_W - pad; // 124
 
   u8g2_.setDrawColor(1);
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
@@ -573,41 +575,23 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   u8g2_.setFont(HEADER_FONT);
   const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
   char titleBuf[24];
-  snprintf(titleBuf, sizeof(titleBuf), "[ %s ]", raw);
-  u8g2_.drawUTF8(4, textY, titleBuf);
+  snprintf(titleBuf, sizeof(titleBuf), "%s", raw);
+  u8g2_.drawUTF8(pad, textY, titleBuf);
 
-  const char *tstr = (timeStr && timeStr[0]) ? timeStr : "--:--";
-  drawRightAligned(70, textY, TINY_FONT, tstr);
-
-  int iconX = 74;
-  int iconY = 2;
-  if (rssi > -70) {
-    drawPawIcon(iconX, iconY);
-    u8g2_.drawXBM(iconX + 6, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
-  } else if ((millis() / 200) % 2 == 0) {
-    u8g2_.drawXBM(iconX + 6, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
-  }
-
-  const char *statusStr = (rssi > -70) ? "NOCT_V3" : "SYS:OK";
-  drawRightAligned(126, textY, TINY_FONT, statusStr);
+  static char statusBuf[16];
+  snprintf(statusBuf, sizeof(statusBuf), "%s",
+           (rssi > -70) ? "NOCT:ON" : "SYS:V3");
+  u8g2_.setFont(LABEL_FONT);
+  int statusW = u8g2_.getUTF8Width(statusBuf);
+  int statusX = rightAnchor - statusW;
+  if (statusX < pad)
+    statusX = pad;
+  u8g2_.drawUTF8(statusX, textY, statusBuf);
 
   u8g2_.setDrawColor(1);
-  int sepY = barH - 1;
-  u8g2_.drawLine(0, sepY, 52, sepY);
+  const int sepY = 12;
+  u8g2_.drawHLine(0, sepY, NOCT_DISP_W);
   u8g2_.setDrawColor(0);
-  u8g2_.drawFrame(58, sepY - 2, 12, 4);
-  u8g2_.setDrawColor(1);
-  u8g2_.drawLine(76, sepY, NOCT_DISP_W - 1, sepY);
-  u8g2_.drawLine(0, barH - 1, 0, NOCT_CONTENT_TOP);
-  u8g2_.drawLine(NOCT_DISP_W - 1, barH - 1, NOCT_DISP_W - 1, NOCT_CONTENT_TOP);
-
-  // Subtle "alive" static: one pixel moving along top line
-  static int s_staticX = 0;
-  if ((millis() / 200) % 3 == 0)
-    s_staticX = (s_staticX + 17) % NOCT_DISP_W;
-  u8g2_.setDrawColor(0);
-  u8g2_.drawPixel(s_staticX, 1);
-  u8g2_.setDrawColor(1);
 }
 
 // ---------------------------------------------------------------------------
