@@ -428,7 +428,10 @@ def get_disk_speed_sync() -> tuple:
 def get_ping_latency_sync() -> int:
     try:
         cmd = ["ping", "-n", "1", "-w", str(PING_TIMEOUT * 1000), PING_TARGET] if platform.system().lower() == "windows" else ["ping", "-c", "1", "-W", str(PING_TIMEOUT), PING_TARGET]
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=PING_TIMEOUT + 1, text=True)
+        kw: Dict[str, Any] = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "timeout": PING_TIMEOUT + 1, "text": True}
+        if sys.platform == "win32":
+            kw["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        r = subprocess.run(cmd, **kw)
         if r.returncode != 0:
             return 0
         out = r.stdout or ""
