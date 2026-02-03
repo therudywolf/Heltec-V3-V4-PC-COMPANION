@@ -1,9 +1,11 @@
 /*
- * NOCTURNE_OS — DisplayEngine: Grid Law. Helpers, overlay, chamfered frames.
+ * NOCTURNE_OS — DisplayEngine: Grid Law. Alignment, glitch, XBM art.
  */
 #include "DisplayEngine.h"
+#include "../../include/nocturne/config.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <mbedtls/base64.h>
 
 // --- XBM bitmaps (1 = pixel on) ---
 const uint8_t icon_wifi_bits[] = {0x00, 0x00, 0x00, 0x00, 0x24, 0x00,
@@ -81,7 +83,16 @@ void DisplayEngine::drawRightAligned(int x, int y, const String &text) {
   u8g2_.drawUTF8(x - tw, y, text.c_str());
 }
 
-void DisplayEngine::drawCentered(int x, int y, int w, const String &text) {
+void DisplayEngine::drawCentered(int x_center, int y, const String &text) {
+  if (text.length() == 0)
+    return;
+  u8g2_.setFont(FONT_VAL);
+  int tw = u8g2_.getUTF8Width(text.c_str());
+  u8g2_.drawUTF8(x_center - tw / 2, y, text.c_str());
+}
+
+void DisplayEngine::drawCenteredInRect(int x, int y, int w, int h,
+                                       const String &text) {
   if (text.length() == 0)
     return;
   u8g2_.setFont(FONT_VAL);
@@ -89,7 +100,8 @@ void DisplayEngine::drawCentered(int x, int y, int w, const String &text) {
   if (tw > w)
     tw = w;
   int sx = x + (w - tw) / 2;
-  u8g2_.drawUTF8(sx, y, text.c_str());
+  int sy = y + (h - 10) / 2 + 8;
+  u8g2_.drawUTF8(sx, sy, text.c_str());
 }
 
 void DisplayEngine::drawSafeStr(int x, int y, const String &text) {
@@ -101,16 +113,28 @@ void DisplayEngine::drawSafeStr(int x, int y, const String &text) {
   u8g2_.drawUTF8(x, y, text.c_str());
 }
 
+void DisplayEngine::drawValueOrNoise(int x_end, int y, const String &value) {
+  if (value.length() == 0 || value == "0" || value == "N/A") {
+    int nx = x_end - 12;
+    if (nx < 0)
+      nx = 0;
+    for (int i = 0; i < 24; i++)
+      u8g2_.drawPixel(nx + (random(12)), y - 2 + (random(6)));
+    return;
+  }
+  drawRightAligned(x_end, y, value);
+}
+
 // ---------------------------------------------------------------------------
-// HUD: Top bar Y 0–10. Left: scene at x=2. Right: time at ~90, WiFi at 115.
-// Dotted line at Y=11.
+// HUD: Header 0–12px solid black, INVERTED text. Footer 54–64 status.
+// Dotted line at Y=12. 2px safety margin.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk,
                                 const char *timeStr) {
   (void)linkOk;
   const int BAR_Y0 = 0;
-  const int BAR_H = 10;
-  const int DOTTED_Y = 11;
+  const int BAR_H = 12;
+  const int DOTTED_Y = 12;
 
   u8g2_.setDrawColor(0);
   u8g2_.drawBox(0, BAR_Y0, NOCT_DISP_W, BAR_H);
@@ -118,7 +142,7 @@ void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk,
 
   u8g2_.setFont(FONT_LABEL);
   char buf[20];
-  snprintf(buf, sizeof(buf), "[%s]", sceneName ? sceneName : "");
+  snprintf(buf, sizeof(buf), "%s", sceneName ? sceneName : "");
   u8g2_.drawUTF8(2, BAR_Y0 + BAR_H - 2, buf);
 
   u8g2_.setFont(FONT_TINY);
@@ -317,28 +341,70 @@ void DisplayEngine::drawLinkStatus(int x, int y, bool linked) {
 }
 
 // ---------------------------------------------------------------------------
+// Glitch: offset a 10px-tall horizontal slice by 3 pixels (CRT-style)
+// ---------------------------------------------------------------------------
 void DisplayEngine::drawGlitchEffect() {
   unsigned long now = millis();
-  if (glitchUntil_ > 0 && now < glitchUntil_) {
-    int shift = 2 + (random(3));
-    if (random(2) == 0)
-      shift = -shift;
-    for (int band = 0; band < 4; band++) {
-      int y = random(2, NOCT_DISP_H - 4);
-      for (int x = 0; x < NOCT_DISP_W; x++) {
-        int sx = (x + shift + NOCT_DISP_W) % NOCT_DISP_W;
-        if (random(4) < 2)
-          u8g2_.drawPixel(sx, y);
-      }
-    }
-    return;
-  }
   if (glitchUntil_ > 0 && now >= glitchUntil_)
     glitchUntil_ = 0;
-  if (now - lastGlitchTrigger_ >= (unsigned long)NOCT_GLITCH_INTERVAL_MS) {
+  if (glitchUntil_ == 0 &&
+      now - lastGlitchTrigger_ < (unsigned long)NOCT_GLITCH_INTERVAL_MS)
+    return;
+  if (glitchUntil_ == 0) {
     lastGlitchTrigger_ = now;
     glitchUntil_ = now + NOCT_GLITCH_DURATION_MS;
   }
+  uint8_t *buf = u8g2_.getBufferPtr();
+  if (!buf)
+    return;
+  const int sliceH = 10;
+  const int shift = 3;
+  int y0 = 2 + (random(NOCT_DISP_H - sliceH - 4));
+  if (y0 < 2)
+    y0 = 2;
+  if (y0 + sliceH >= NOCT_DISP_H)
+    y0 = NOCT_DISP_H - sliceH - 1;
+  int p0 = y0 / 8;
+  int p1 = (y0 + sliceH - 1) / 8;
+  if (p1 >= 8)
+    p1 = 7;
+  uint8_t tmp[2 * 128];
+  for (int p = p0; p <= p1; p++) {
+    for (int c = 0; c < 128; c++)
+      tmp[(p - p0) * 128 + c] = buf[p * 128 + c];
+  }
+  int dir = (random(2) == 0) ? -shift : shift;
+  for (int p = p0; p <= p1; p++) {
+    for (int c = 0; c < 128; c++) {
+      int src = c - dir;
+      if (src < 0)
+        src += 128;
+      if (src >= 128)
+        src -= 128;
+      buf[p * 128 + c] = tmp[(p - p0) * 128 + src];
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Decode Base64 to XBM buffer and draw. 64x64 = 512 bytes.
+// ---------------------------------------------------------------------------
+bool DisplayEngine::drawXBMArtFromBase64(int x, int y, int w, int h,
+                                         const String &base64) {
+  if (base64.length() == 0)
+    return false;
+  size_t outLen = 0;
+  const size_t maxDec = (size_t)((w * h + 7) / 8);
+  if (maxDec > 1024)
+    return false;
+  uint8_t decoded[1024];
+  int ret = mbedtls_base64_decode(decoded, sizeof(decoded), &outLen,
+                                  (const unsigned char *)base64.c_str(),
+                                  base64.length());
+  if (ret != 0 || outLen != maxDec)
+    return false;
+  u8g2_.drawXBMP(x, y, (uint16_t)w, (uint16_t)h, decoded);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +412,8 @@ void DisplayEngine::drawRollingGraph(int x, int y, int w, int h,
                                      RollingGraph &g, int maxVal) {
   if (g.count < 2 || maxVal <= 0)
     return;
+  for (int ly = y; ly < y + h; ly += 2)
+    drawDottedHLine(x, x + w - 1, ly);
   float scale = (float)(h - 2) / (float)maxVal;
   int n = g.count < NOCT_GRAPH_SAMPLES ? g.count : NOCT_GRAPH_SAMPLES;
   int step = (n > 0 && w > n) ? w / n : 1;

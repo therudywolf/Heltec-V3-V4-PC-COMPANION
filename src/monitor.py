@@ -423,7 +423,7 @@ async def _get_media_info_async_impl() -> Dict:
         is_playing = playback and getattr(playback, "playback_status", 0) == 4
         is_idle = bool(artist or track) and not is_playing
         cover_b64 = ""
-        if HAS_PIL and info and is_playing:
+        if HAS_PIL and info:
             try:
                 thumb_ref = getattr(info, "thumbnail", None)
                 if thumb_ref:
@@ -439,15 +439,17 @@ async def _get_media_info_async_impl() -> Dict:
                         img_bytes = b"".join(chunks)
                         if img_bytes:
                             img = Image.open(io.BytesIO(img_bytes))
-                            img = img.convert("L").resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
+                            img = img.convert("L")
+                            img = img.resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
                             img = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
+                            # XBM: MSB first, 8 pixels per byte, row-major. 64x64 -> 512 bytes.
                             bitmap = []
                             for y in range(COVER_SIZE):
                                 for x in range(0, COVER_SIZE, 8):
                                     byte = 0
                                     for bit in range(8):
                                         if img.getpixel((x + bit, y)):
-                                            byte |= (1 << bit)
+                                            byte |= 1 << (7 - bit)
                                     bitmap.append(byte)
                             cover_b64 = base64.b64encode(bytes(bitmap)).decode("ascii")
             except Exception:
