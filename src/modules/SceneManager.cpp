@@ -536,13 +536,33 @@ void SceneManager::drawMotherboard(int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 9: WEATHER — XBM icons left (32x32), temp right (helvB24 Y=52).
+// SCENE 9: WEATHER — Stacked icon + desc left, temp right.
 // ---------------------------------------------------------------------------
 #define WTHR_LEFT_PCT 40
 #define WTHR_BOX_H (NOCT_DISP_H - NOCT_CONTENT_TOP - 2)
-#define WTHR_ICON_X 8
-#define WTHR_ICON_SIZE 32
+#define WTHR_ICON_W 22
+#define WTHR_ICON_H 22
+#define WTHR_DESC_PAD 4
+#define WTHR_DESC_BASELINE 6
 #define WTHR_TEMP_Y 52
+
+static bool readXbmBit(const uint8_t *bits, int w, int x, int y) {
+  int byteIndex = (x + y * w) / 8;
+  int bitIndex = x & 7;
+  return (bits[byteIndex] & (1 << bitIndex)) != 0;
+}
+
+static void drawXbmScaled(U8G2 &u8g2, int x, int y, int srcW, int srcH,
+                          const uint8_t *bits, int dstW, int dstH) {
+  for (int dy = 0; dy < dstH; dy++) {
+    int sy = (dy * srcH + (dstH / 2)) / dstH;
+    for (int dx = 0; dx < dstW; dx++) {
+      int sx = (dx * srcW + (dstW / 2)) / dstW;
+      if (readXbmBit(bits, srcW, sx, sy))
+        u8g2.drawPixel(x + dx, y + dy);
+    }
+  }
+}
 
 void SceneManager::drawWeather(int xOff) {
   WeatherData &weather = state_.weather;
@@ -567,7 +587,7 @@ void SceneManager::drawWeather(int xOff) {
     return;
   }
 
-  /* Left: 32x32 XBM icon at boxX+8, boxY+8 */
+  /* Left: scaled XBM icon + description stacked */
   const unsigned char *iconBits = icon_cloud_bits;
   if (weather.wmoCode <= 3)
     iconBits = icon_sun_bits;
@@ -575,8 +595,18 @@ void SceneManager::drawWeather(int xOff) {
     iconBits = icon_weather_rain_32_bits;
   else
     iconBits = icon_cloud_bits;
-  u8g2.drawXBMP(boxX + WTHR_ICON_X, boxY + WTHR_ICON_X, WTHR_ICON_SIZE,
-                WTHR_ICON_SIZE, iconBits);
+  const int stackH = WTHR_ICON_H + WTHR_DESC_PAD + WTHR_DESC_BASELINE;
+  const int iconX = boxX + (leftW - WTHR_ICON_W) / 2;
+  const int iconY = boxY + (boxH - stackH) / 2;
+  const int descY = iconY + WTHR_ICON_H + WTHR_DESC_PAD + WTHR_DESC_BASELINE;
+  u8g2.setClipWindow(boxX, boxY, boxX + leftW - 1, boxY + boxH - 1);
+  drawXbmScaled(u8g2, iconX, iconY, 32, 32, iconBits, WTHR_ICON_W, WTHR_ICON_H);
+  u8g2.setFont(LABEL_FONT);
+  const char *descStr = weather.desc.length() ? weather.desc.c_str() : "-";
+  int descW = u8g2.getUTF8Width(descStr);
+  int descX = iconX + (WTHR_ICON_W / 2) - (descW / 2);
+  u8g2.drawUTF8(descX, descY, descStr);
+  u8g2.setMaxClipWindow();
 
   /* Right: temp in WEATHER_TEMP_FONT, Y=52 (baseline), right-aligned */
   static char buf[16];
