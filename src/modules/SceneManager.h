@@ -1,6 +1,5 @@
 /*
- * NOCTURNE_OS — SceneManager: 7 screens, grid coordinates, cyberpunk layout.
- * HUB, CPU, GPU, RAM, DISKS, ATMOS, MEDIA.
+ * NOCTURNE_OS — SceneManager: 6 screens. MAIN, CPU, GPU, RAM, DISKS, MEDIA.
  */
 #ifndef NOCTURNE_SCENE_MANAGER_H
 #define NOCTURNE_SCENE_MANAGER_H
@@ -18,12 +17,13 @@ public:
   const char *getSceneName(int sceneIndex) const;
   int totalScenes() const { return NOCT_TOTAL_SCENES; }
 
-  // --- 5 brutalist screens (5m rule) ---
-  void drawThermal(bool blinkState);
-  void drawLoad();
-  void drawMemory();
-  void drawStorage();
-  void drawFans();
+  // --- 6 screens ---
+  void drawMain(bool blinkState);
+  void drawCpu();
+  void drawGpu();
+  void drawRam();
+  void drawDisks();
+  void drawPlayer();
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);

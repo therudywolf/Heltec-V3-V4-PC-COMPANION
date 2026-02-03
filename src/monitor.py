@@ -358,14 +358,15 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
-    # HDD array: 4 drives from /hdd/0..3 — simple list [{n, u}] for display
+    # HDD array: 4 drives from /hdd/0..3 — list [{n, u, t}] for display
     drive_letters = ("C", "D", "E", "F")
     hdd: List[Dict[str, Any]] = []
-    for idx, (load_path, _temp_path) in enumerate(HDD_PATHS):
+    for idx, (load_path, temp_path) in enumerate(HDD_PATHS):
         u = int(path_to_val.get(load_path, 0))
         if u < 0 or u > 100:
             u = 0
-        hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": u})
+        t = int(path_to_val.get(temp_path, 0))
+        hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": u, "t": t})
     results["hdd"] = hdd
     return results
 
@@ -582,9 +583,10 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
             e = raw_hdd[i]
             n = e.get("n") or drive_letters[i]
             u = e.get("u") if "u" in e else e.get("load", 0)
-            hdd_list.append({"n": n if isinstance(n, str) else drive_letters[i], "u": int(u)})
+            t = e.get("t", 0)
+            hdd_list.append({"n": n if isinstance(n, str) else drive_letters[i], "u": int(u), "t": int(t)})
         else:
-            hdd_list.append({"n": drive_letters[i], "u": 0})
+            hdd_list.append({"n": drive_letters[i], "u": 0, "t": 0})
 
     payload = {
         "ct": ct, "gt": gt,
@@ -607,14 +609,18 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "media_status": media_status,
     }
 
-    # RED ALERT: if ANY threshold met, set alert and target scene
+    # RED ALERT: if ANY threshold met, set alert and target scene (MAIN/CPU/GPU/RAM)
     alert_target = ""
-    if ct >= CPU_TEMP_ALERT or gt >= GPU_TEMP_ALERT:
-        alert_target = "THERMAL"
-    elif cl >= CPU_LOAD_ALERT or gl >= GPU_LOAD_ALERT:
-        alert_target = "LOAD"
+    if ct >= CPU_TEMP_ALERT:
+        alert_target = "CPU"
+    elif gt >= GPU_TEMP_ALERT:
+        alert_target = "GPU"
+    elif cl >= CPU_LOAD_ALERT:
+        alert_target = "CPU"
+    elif gl >= GPU_LOAD_ALERT:
+        alert_target = "GPU"
     elif gv >= VRAM_LOAD_ALERT:
-        alert_target = "MEMORY"
+        alert_target = "GPU"
     if alert_target:
         payload["alert"] = "CRITICAL"
         payload["target_screen"] = alert_target
