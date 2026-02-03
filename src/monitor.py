@@ -14,6 +14,7 @@ import os
 import platform
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -142,6 +143,7 @@ IT8688E_PREFIX = "/lpc/it8688e/0"
 
 stop_requested = False
 executor: Optional[ThreadPoolExecutor] = None
+_server_thread_holder: List[Optional[threading.Thread]] = [None]  # for Restart
 weather_cache: Dict = {"temp": 0, "desc": "", "icon": 0}
 _weather_first_ok = False
 tcp_clients: List = []
@@ -592,6 +594,7 @@ async def run():
     global last_top_procs_time, ping_latency_ms, global_data_cache
     global _last_sent_snapshot, _last_heartbeat_time
 
+    server = None
     executor = ThreadPoolExecutor(max_workers=6)
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
 
@@ -707,10 +710,78 @@ async def run():
         await server.wait_closed()
 
 
-if __name__ == "__main__":
-    log_info("NOCTURNE_OS — PC Monitor Server (cover_b64 only on track change)")
+def _run_async_worker() -> None:
+    """Background thread: runs the asyncio server loop."""
     try:
         asyncio.run(run())
+    except Exception as e:
+        log_err(f"Server thread: {e}", e)
+
+
+def _create_tray_image() -> "Image.Image":
+    """Programmatic 64x64 icon: black background, green 'W' / dot. No external .ico."""
+    if not HAS_PIL:
+        from PIL import Image
+    from PIL import ImageDraw
+    img = Image.new("RGB", (64, 64), (0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    green = (0, 255, 0)
+    # Simple "W" shape (4 strokes)
+    for i, (ax, ay, bx, by) in [
+        (12, 50, 22, 14), (22, 14, 32, 36), (32, 36, 42, 14), (42, 14, 52, 50),
+    ]:
+        draw.line([ax, ay, bx, by], fill=green, width=3)
+    # Center dot as "live" indicator
+    draw.ellipse([29, 29, 35, 35], fill=green)
+    return img
+
+
+def _on_restart(icon: "pystray.Icon", item: Any) -> None:
+    global stop_requested
+    stop_requested = True
+    t = _server_thread_holder[0]
+    if t and t.is_alive():
+        t.join(timeout=5.0)
+    stop_requested = False
+    _server_thread_holder[0] = threading.Thread(target=_run_async_worker, daemon=True)
+    _server_thread_holder[0].start()
+    log_info("Server restarted.")
+
+
+def _on_exit(icon: "pystray.Icon", item: Any) -> None:
+    global stop_requested
+    stop_requested = True
+    icon.stop()
+
+
+def run_with_tray() -> None:
+    """Main thread: pystray icon (blocking). Background thread: asyncio server."""
+    if not HAS_PYSTRAY or not HAS_PIL:
+        log_info("Tray skipped (pystray/Pillow missing); running in console.")
+        asyncio.run(run())
+        return
+    _server_thread_holder[0] = threading.Thread(target=_run_async_worker, daemon=True)
+    _server_thread_holder[0].start()
+    time.sleep(0.5)  # let server bind
+    menu = pystray.Menu(
+        pystray.MenuItem("Status: RUNNING", None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Restart Server", _on_restart),
+        pystray.MenuItem("Exit", _on_exit),
+    )
+    icon = pystray.Icon("nocturne", _create_tray_image(), "NOCTURNE_OS", menu)
+    log_info("NOCTURNE_OS — Server in system tray (no console). Exit via tray.")
+    icon.run()
+
+
+if __name__ == "__main__":
+    use_console = "--no-tray" in sys.argv or "--console" in sys.argv
+    log_info("NOCTURNE_OS — PC Monitor Server (cover_b64 only on track change)")
+    try:
+        if use_console:
+            asyncio.run(run())
+        else:
+            run_with_tray()
     except KeyboardInterrupt:
         log_info("Shutting down...")
     except Exception as e:
