@@ -271,6 +271,23 @@ void DisplayEngine::drawTechFrame(int x, int y, int w, int h) {
 }
 
 // ---------------------------------------------------------------------------
+// drawTechBracket (x,y,w,h,len): corner bracket frame [  ] / viewfinder
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawTechBracket(int x, int y, int w, int h, int len) {
+  u8g2_.drawHLine(x, y, len);
+  u8g2_.drawVLine(x, y, len);
+
+  u8g2_.drawHLine(x + w - len, y, len);
+  u8g2_.drawVLine(x + w - 1, y, len);
+
+  u8g2_.drawHLine(x, y + h - 1, len);
+  u8g2_.drawVLine(x, y + h - len, len);
+
+  u8g2_.drawHLine(x + w - len, y + h - 1, len);
+  u8g2_.drawVLine(x + w - 1, y + h - len, len);
+}
+
+// ---------------------------------------------------------------------------
 // drawTechBracket: vertical bracket [ or ] to group text
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawTechBracket(int x, int y, int h, bool facingLeft) {
@@ -476,23 +493,29 @@ void DisplayEngine::drawHexDecoration(int corner) {
 }
 
 // ---------------------------------------------------------------------------
-// drawWeatherPrimitive: fallback when font icons fail. 0-3 sun, 45-48 cloud,
-// 50+ rain.
+// drawWeatherPrimitive: geometric fallback (sun/cloud/rain). (x,y)=top-left
+// of icon area; center used for primitives.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawWeatherPrimitive(int x, int y, int wmoCode) {
-  const int sz = 24;
-  int cx = x + sz / 2;
-  int cy = y + sz / 2;
+  const int cx = x + 12;
+  const int cy = y + 12;
   if (wmoCode >= 0 && wmoCode <= 3) {
-    u8g2_.drawCircle(cx, cy, sz / 3);
+    // Sun: disc radius 6
+    u8g2_.drawDisc(cx, cy, 6);
   } else if (wmoCode >= 45 && wmoCode <= 48) {
-    u8g2_.drawRBox(x + 2, y + 6, sz - 4, 14, 4);
+    // Cloud: box + overlapping disc
+    u8g2_.drawBox(cx - 6, cy - 2, 12, 6);
+    u8g2_.drawDisc(cx - 2, cy - 4, 3);
   } else if (wmoCode >= 50) {
-    u8g2_.drawRFrame(x + 2, y + 4, sz - 4, 16, 3);
-    for (int i = 0; i < 5; i++)
-      u8g2_.drawLine(x + 6 + i * 4, y + 10, x + 6 + i * 4, y + 18);
+    // Rain: cloud + 3 dotted lines below
+    u8g2_.drawBox(cx - 6, cy - 2, 12, 6);
+    u8g2_.drawDisc(cx - 2, cy - 4, 3);
+    for (int i = -1; i <= 1; i++)
+      for (int dy = 0; dy < 6; dy += 2)
+        u8g2_.drawPixel(cx + i * 4, cy + 4 + dy);
   } else {
-    u8g2_.drawRBox(x + 2, y + 6, sz - 4, 14, 4);
+    u8g2_.drawBox(cx - 6, cy - 2, 12, 6);
+    u8g2_.drawDisc(cx - 2, cy - 4, 3);
   }
 }
 
@@ -515,8 +538,28 @@ void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
 }
 
 // ---------------------------------------------------------------------------
-// Global header: Inverted tab. Solid box (0,0,128,12), text black inside.
-// Connect lines from header bottom corners down to content. Strict Y=0..12.
+// drawClawMark: 3 diagonal parallel scratches (wolf identity)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawClawMark(int x, int y) {
+  for (int i = 0; i < 3; i++)
+    u8g2_.drawLine(x + i * 2, y, x + 6 + i * 2, y + 6);
+}
+
+// ---------------------------------------------------------------------------
+// drawPawIcon: 5x5 pixel paw (wolf vibe next to WiFi)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawPawIcon(int x, int y) {
+  u8g2_.drawPixel(x + 2, y);
+  u8g2_.drawPixel(x, y + 2);
+  u8g2_.drawPixel(x + 4, y + 2);
+  u8g2_.drawPixel(x + 1, y + 3);
+  u8g2_.drawPixel(x + 3, y + 3);
+  u8g2_.drawPixel(x + 2, y + 4);
+}
+
+// ---------------------------------------------------------------------------
+// Global header: "The Wolf Collar" — Scene at X=4, status at 126,
+// separator with break [ ], paw + WiFi, subtle static pixel.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
@@ -531,27 +574,40 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
   char titleBuf[24];
   snprintf(titleBuf, sizeof(titleBuf), "[ %s ]", raw);
-  u8g2_.drawUTF8(2, textY, titleBuf);
+  u8g2_.drawUTF8(4, textY, titleBuf);
 
   const char *tstr = (timeStr && timeStr[0]) ? timeStr : "--:--";
-  drawRightAligned(98, textY, TINY_FONT, tstr);
+  drawRightAligned(70, textY, TINY_FONT, tstr);
 
-  int iconX = 104;
-  int iconY = 1;
+  int iconX = 74;
+  int iconY = 2;
   if (rssi > -70) {
-    u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
-    if ((millis() / 800) % 2 == 0) {
-      u8g2_.setDrawColor(0);
-      u8g2_.drawBox(NOCT_DISP_W - 6, 3, 2, 2);
-      u8g2_.setDrawColor(1);
-    }
-  } else if ((millis() / 200) % 2 == 0)
-    u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
+    drawPawIcon(iconX, iconY);
+    u8g2_.drawXBM(iconX + 6, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
+  } else if ((millis() / 200) % 2 == 0) {
+    u8g2_.drawXBM(iconX + 6, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
+  }
+
+  const char *statusStr = (rssi > -70) ? "NOCT_V3" : "SYS:OK";
+  drawRightAligned(126, textY, TINY_FONT, statusStr);
 
   u8g2_.setDrawColor(1);
-  drawDottedHLine(0, NOCT_DISP_W - 1, barH - 1);
+  int sepY = barH - 1;
+  u8g2_.drawLine(0, sepY, 52, sepY);
+  u8g2_.setDrawColor(0);
+  u8g2_.drawFrame(58, sepY - 2, 12, 4);
+  u8g2_.setDrawColor(1);
+  u8g2_.drawLine(76, sepY, NOCT_DISP_W - 1, sepY);
   u8g2_.drawLine(0, barH - 1, 0, NOCT_CONTENT_TOP);
   u8g2_.drawLine(NOCT_DISP_W - 1, barH - 1, NOCT_DISP_W - 1, NOCT_CONTENT_TOP);
+
+  // Subtle "alive" static: one pixel moving along top line
+  static int s_staticX = 0;
+  if ((millis() / 200) % 3 == 0)
+    s_staticX = (s_staticX + 17) % NOCT_DISP_W;
+  u8g2_.setDrawColor(0);
+  u8g2_.drawPixel(s_staticX, 1);
+  u8g2_.setDrawColor(1);
 }
 
 // ---------------------------------------------------------------------------

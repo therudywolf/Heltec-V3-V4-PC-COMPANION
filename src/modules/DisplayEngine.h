@@ -23,6 +23,7 @@
 #define FONT_SECONDARY SECONDARY_FONT
 #define FONT_HEADER HEADER_FONT
 #define HEXDECOR_FONT u8g2_font_5x7_tf
+#define UNIT_FONT u8g2_font_4x6_tr /* Small % and units (Fans) */
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -79,6 +80,8 @@ public:
   void drawTechFrame(int x, int y, int w, int h);
   /** Vertical bracket [ or ] to group text. facingLeft: true = [ */
   void drawTechBracket(int x, int y, int h, bool facingLeft);
+  /** Corner bracket frame (L-shapes at corners). len = leg length. */
+  void drawTechBracket(int x, int y, int w, int h, int len);
   /** Small + crosshair at (x,y). */
   void drawCrosshair(int x, int y);
   /** Bracketed progress bar: [ ||||||||     ] percent 0..100. */
@@ -107,6 +110,10 @@ public:
   /** Fallback weather: 0-3=circle (sun), 45-48=rounded box (cloud),
    * 50+=box+dotted (rain). */
   void drawWeatherPrimitive(int x, int y, int wmoCode);
+  /** Wolf identity: 3 diagonal scratch lines at (x,y). */
+  void drawClawMark(int x, int y);
+  /** Small 5x5 paw icon (next to WiFi in header). */
+  void drawPawIcon(int x, int y);
 
   // --- Global header: 10px bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
   // dotted at Y=10 ---
