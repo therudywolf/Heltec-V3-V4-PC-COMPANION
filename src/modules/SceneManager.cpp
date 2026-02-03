@@ -79,30 +79,34 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 1: MAIN — Strict Baseline Grid. CPU/GPU: Labels Y=20, Values Y=32,
-// Load bars Y=36 H=4. RAM: Label Y=52, Bar box X=25 Y=46 W=75 H=6, Value Y=52
-// right-aligned. Tech brackets wrap CPU/GPU sections.
+// SCENE 1: MAIN — Grid layout. Vertical split at X=64. CPU left, GPU right.
+// Temp Y=30, separator HLine Y=36, segmented bar Y=40 H=6. RAM block Y=48..63.
 // ---------------------------------------------------------------------------
-#define MAIN_CPU_LEFT_W 64
-#define MAIN_CPU_LBL_Y 20
-#define MAIN_CPU_VAL_Y 32
-#define MAIN_LOAD_BAR_Y 36
-#define MAIN_LOAD_BAR_W 50
-#define MAIN_LOAD_BAR_H 4
-#define MAIN_RAM_LBL_Y 52
-#define MAIN_RAM_BAR_X 25
-#define MAIN_RAM_BAR_Y 46
-#define MAIN_RAM_BAR_W 75
-#define MAIN_RAM_BAR_H 6
-#define MAIN_RAM_VAL_Y 52
+#define MAIN_TEMP_Y 30
+#define MAIN_SEP_Y 36
+#define MAIN_BAR_Y 40
+#define MAIN_BAR_H 6
+#define MAIN_CPU_HLINE_X0 10
+#define MAIN_CPU_HLINE_X1 54
+#define MAIN_GPU_HLINE_X0 74
+#define MAIN_GPU_HLINE_X1 118
+#define MAIN_CPU_BAR_X 10
+#define MAIN_CPU_BAR_W 44
+#define MAIN_GPU_BAR_X 74
+#define MAIN_GPU_BAR_W 44
+#define MAIN_RAM_SEP_Y 48
+#define MAIN_RAM_LBL_X 4
+#define MAIN_RAM_LBL_Y 58
+#define MAIN_RAM_FRAME_X 30
+#define MAIN_RAM_FRAME_Y 50
+#define MAIN_RAM_FRAME_W 94
+#define MAIN_RAM_FRAME_H 10
 
 void SceneManager::drawMain(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  // Cyberdeck primitives: wrap CPU and GPU sections in tech brackets
-  disp_.drawTechBracket(X(0, xOff), 14, 63, 28, 8);
-  disp_.drawTechBracket(X(65, xOff), 14, 63, 28, 8);
+  disp_.drawDottedVLine(X(64, xOff), NOCT_CONTENT_TOP, NOCT_DISP_H - 1);
 
   int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
   int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
@@ -122,33 +126,50 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
       onAlertMain && state_.alertMetric == NOCT_ALERT_RAM && blinkState;
 
   static char tbuf[16];
-  int half = MAIN_CPU_LEFT_W / 2;
 
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(half - 6, xOff), MAIN_CPU_LBL_Y, "CPU");
+  /* CPU block (left X=0..63): Temp at Y=30, HLine 10..54 at Y=36, bar at Y=40
+   * H=6 */
   u8g2.setFont(VALUE_FONT);
   if (!blinkCpu) {
     snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", cpuTemp);
     int tw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(half - tw / 2, xOff), MAIN_CPU_VAL_Y, tbuf);
+    u8g2.drawUTF8(X(32 - tw / 2, xOff), MAIN_TEMP_Y, tbuf);
   }
-  int barLeft = X(half - MAIN_LOAD_BAR_W / 2, xOff);
-  if (!blinkCpu)
-    disp_.drawProgressBar(barLeft, MAIN_LOAD_BAR_Y, MAIN_LOAD_BAR_W,
-                          MAIN_LOAD_BAR_H, cpuLoad);
+  u8g2.drawHLine(X(MAIN_CPU_HLINE_X0, xOff), MAIN_SEP_Y,
+                 MAIN_CPU_HLINE_X1 - MAIN_CPU_HLINE_X0 + 1);
+  if (!blinkCpu) {
+    disp_.drawProgressBar(X(MAIN_CPU_BAR_X, xOff), MAIN_BAR_Y, MAIN_CPU_BAR_W,
+                          MAIN_BAR_H, cpuLoad);
+    u8g2.setFont(LABEL_FONT);
+    snprintf(tbuf, sizeof(tbuf), "%d%%", cpuLoad);
+    int lw = u8g2.getUTF8Width(tbuf);
+    u8g2.drawUTF8(X(32 - lw / 2, xOff), MAIN_BAR_Y - 1, tbuf);
+  }
 
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(64 + half - 6, xOff), MAIN_CPU_LBL_Y, "GPU");
+  /* GPU block (right X=64..127): mirror CPU */
   u8g2.setFont(VALUE_FONT);
   if (!blinkGpu) {
     snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", gpuTemp);
     int tw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(64 + half - tw / 2, xOff), MAIN_CPU_VAL_Y, tbuf);
+    u8g2.drawUTF8(X(96 - tw / 2, xOff), MAIN_TEMP_Y, tbuf);
   }
-  barLeft = X(64 + half - MAIN_LOAD_BAR_W / 2, xOff);
-  if (!blinkGpu)
-    disp_.drawProgressBar(barLeft, MAIN_LOAD_BAR_Y, MAIN_LOAD_BAR_W,
-                          MAIN_LOAD_BAR_H, gpuLoad);
+  u8g2.drawHLine(X(MAIN_GPU_HLINE_X0, xOff), MAIN_SEP_Y,
+                 MAIN_GPU_HLINE_X1 - MAIN_GPU_HLINE_X0 + 1);
+  if (!blinkGpu) {
+    disp_.drawProgressBar(X(MAIN_GPU_BAR_X, xOff), MAIN_BAR_Y, MAIN_GPU_BAR_W,
+                          MAIN_BAR_H, gpuLoad);
+    u8g2.setFont(LABEL_FONT);
+    snprintf(tbuf, sizeof(tbuf), "%d%%", gpuLoad);
+    int lw = u8g2.getUTF8Width(tbuf);
+    u8g2.drawUTF8(X(96 - lw / 2, xOff), MAIN_BAR_Y - 1, tbuf);
+  }
+
+  /* RAM block (Y=48..63): dotted HLine at Y=48, label RAM at 4,58, frame 30,50
+   * 94x10, fill, text */
+  disp_.drawDottedHLine(X(0, xOff), X(NOCT_DISP_W - 1, xOff), MAIN_RAM_SEP_Y);
+
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(X(MAIN_RAM_LBL_X, xOff), MAIN_RAM_LBL_Y, "RAM");
 
   float ru = hw.ru, ra = hw.ra;
   float raShow = ra > 0 ? ra : 0.0f;
@@ -156,17 +177,20 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
   if (pct > 100)
     pct = 100;
 
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(2, xOff), MAIN_RAM_LBL_Y, "RAM");
+  int rx = X(MAIN_RAM_FRAME_X, xOff);
+  u8g2.drawFrame(rx, MAIN_RAM_FRAME_Y, MAIN_RAM_FRAME_W, MAIN_RAM_FRAME_H);
   if (!blinkRam) {
-    disp_.drawProgressBar(X(MAIN_RAM_BAR_X, xOff), MAIN_RAM_BAR_Y,
-                          MAIN_RAM_BAR_W, MAIN_RAM_BAR_H, pct);
-    snprintf(tbuf, sizeof(tbuf), "%.1fG", ru);
+    int innerW = (MAIN_RAM_FRAME_W - 2) * pct / 100;
+    if (innerW > 0)
+      u8g2.drawBox(rx + 1, MAIN_RAM_FRAME_Y + 1, innerW, MAIN_RAM_FRAME_H - 2);
+    snprintf(tbuf, sizeof(tbuf), "%.1fGB", ru);
     u8g2.setFont(LABEL_FONT);
-    disp_.drawRightAligned(X(NOCT_DISP_W - 2, xOff), MAIN_RAM_VAL_Y, LABEL_FONT,
-                           tbuf);
+    int tw = u8g2.getUTF8Width(tbuf);
+    int tx = rx + (MAIN_RAM_FRAME_W - tw) / 2;
+    int ty = MAIN_RAM_FRAME_Y + 8;
+    u8g2.drawUTF8(tx, ty, tbuf);
   }
-  disp_.drawClawMark(X(2, xOff), MAIN_RAM_BAR_Y + MAIN_RAM_BAR_H + 2);
+
   disp_.drawGreebles();
 }
 
