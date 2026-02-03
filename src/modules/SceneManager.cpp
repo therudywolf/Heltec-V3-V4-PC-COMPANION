@@ -110,7 +110,7 @@ void SceneManager::drawMain(bool blinkState) {
 // ---------------------------------------------------------------------------
 // SCENE 2: CPU — Temperature, frequency, load %, watts.
 // ---------------------------------------------------------------------------
-void SceneManager::drawCpu() {
+void SceneManager::drawCpu(bool blinkState) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
