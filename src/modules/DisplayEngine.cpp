@@ -391,6 +391,91 @@ void DisplayEngine::drawCircuitTrace(int x1, int y1, int x2, int y2,
 }
 
 // ---------------------------------------------------------------------------
+// Netrunner decrypt: reveal finalStr from left; unrevealed = random hex.
+// speedMsPerChar = ms per character to reveal (e.g. 30 = ~500ms for 16 chars).
+// ---------------------------------------------------------------------------
+char DisplayEngine::scrambleBuf_[32];
+
+void DisplayEngine::drawDecryptedText(int x, int y, const char *finalStr,
+                                      int speedMsPerChar) {
+  if (!finalStr)
+    return;
+  static const char *s_lastStr = nullptr;
+  static unsigned long s_startMs = 0;
+  if (finalStr != s_lastStr) {
+    s_lastStr = finalStr;
+    s_startMs = millis();
+  }
+  size_t len = 0;
+  while (finalStr[len] != '\0' && len < sizeof(scrambleBuf_) - 1)
+    len++;
+  if (len == 0)
+    return;
+  unsigned long elapsed = millis() - s_startMs;
+  int revealed =
+      (int)(elapsed / (unsigned long)(speedMsPerChar > 0 ? speedMsPerChar : 1));
+  if (revealed > (int)len)
+    revealed = (int)len;
+  static const char hex[] = "0123456789ABCDEF#X";
+  for (size_t i = 0; i < len; i++) {
+    if (i < (size_t)revealed)
+      scrambleBuf_[i] = finalStr[i];
+    else
+      scrambleBuf_[i] = hex[random(0, (int)(sizeof(hex) - 1))];
+  }
+  scrambleBuf_[len] = '\0';
+  u8g2_.setFont(LABEL_FONT);
+  u8g2_.drawUTF8(x, y, scrambleBuf_);
+}
+
+// ---------------------------------------------------------------------------
+// drawCircuitLine: line + solid circle at start (edge), hollow diamond at end.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawCircuitLine(int x_start, int y_start, int x_end,
+                                    int y_end) {
+  u8g2_.drawLine(x_start, y_start, x_end, y_end);
+  const int r = 2;
+  u8g2_.drawDisc(x_start, y_start, r);
+  const int d = 2;
+  u8g2_.drawLine(x_end, y_end - d, x_end + d, y_end);
+  u8g2_.drawLine(x_end + d, y_end, x_end, y_end + d);
+  u8g2_.drawLine(x_end, y_end + d, x_end - d, y_end);
+  u8g2_.drawLine(x_end - d, y_end, x_end, y_end - d);
+}
+
+// ---------------------------------------------------------------------------
+// drawHexDecoration: 2 tiny rows of hex at bottom corner. corner 0=BL, 1=BR.
+// Values change every ~100ms (millis()/100).
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawHexDecoration(int corner) {
+  u8g2_.setFont(HEXDECOR_FONT);
+  unsigned long seed = millis() / 100;
+  const char hex[] = "0123456789ABCDEF";
+  char line1[12], line2[12];
+  for (int i = 0; i < 4; i++) {
+    line1[i * 2] = '0';
+    line1[i * 2 + 1] = hex[(seed + i * 7) % 16];
+  }
+  line1[8] = '\0';
+  for (int i = 0; i < 4; i++) {
+    line2[i * 2] = hex[(seed + 11 + i) % 16];
+    line2[i * 2 + 1] = hex[(seed + 13 + i * 3) % 16];
+  }
+  line2[8] = '\0';
+  int y1 = NOCT_DISP_H - 14;
+  int y2 = NOCT_DISP_H - 6;
+  if (corner == 0) {
+    u8g2_.drawUTF8(2, y1, line1);
+    u8g2_.drawUTF8(2, y2, line2);
+  } else {
+    int w1 = u8g2_.getUTF8Width(line1);
+    int w2 = u8g2_.getUTF8Width(line2);
+    u8g2_.drawUTF8(NOCT_DISP_W - 2 - w1, y1, line1);
+    u8g2_.drawUTF8(NOCT_DISP_W - 2 - w2, y2, line2);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // drawScrollIndicator: pixel-thin bar on right edge
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
