@@ -13,6 +13,7 @@
 struct HddEntry {
   char name[2] = {'C', '\0'}; /* Drive letter: C, D, E, F */
   int load = 0;               /* Usage percent (u in JSON) */
+  int temp = 0;               /* Temperature (t in JSON) */
 };
 
 struct HardwareData {
@@ -68,7 +69,7 @@ struct AppState {
   Settings settings;
   bool weatherReceived = false;
   bool alertActive = false;
-  int alertTargetScene = 0; /* NOCT_SCENE_THERMAL/LOAD/MEMORY */
+  int alertTargetScene = 0; /* NOCT_SCENE_MAIN/CPU/GPU/RAM/DISKS/MEDIA */
 };
 
 #endif

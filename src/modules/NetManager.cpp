@@ -157,11 +157,13 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
       hw.hdd[i].name[1] = '\0';
     }
     hw.hdd[i].load = hddArr[i]["u"] | hddArr[i]["load"] | 0;
+    hw.hdd[i].temp = hddArr[i]["t"] | 0;
   }
   for (int i = (int)hddArr.size(); i < NOCT_HDD_COUNT; i++) {
     hw.hdd[i].name[0] = (char)('C' + i);
     hw.hdd[i].name[1] = '\0';
     hw.hdd[i].load = 0;
+    hw.hdd[i].temp = 0;
   }
   hw.vu = doc["vu"] | 0.0f;
   hw.vt = doc["vt"] | 0.0f;
@@ -217,21 +219,23 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   const char *target = doc["target_screen"];
   state->alertActive = (alert && strcmp(alert, "CRITICAL") == 0);
   if (state->alertActive && target) {
-    if (strcmp(target, "THERMAL") == 0)
-      state->alertTargetScene = NOCT_SCENE_THERMAL;
-    else if (strcmp(target, "LOAD") == 0)
-      state->alertTargetScene = NOCT_SCENE_LOAD;
-    else if (strcmp(target, "MEMORY") == 0)
-      state->alertTargetScene = NOCT_SCENE_MEMORY;
-    else if (strcmp(target, "GPU") == 0)
-      state->alertTargetScene = NOCT_SCENE_LOAD;
+    if (strcmp(target, "MAIN") == 0)
+      state->alertTargetScene = NOCT_SCENE_MAIN;
     else if (strcmp(target, "CPU") == 0)
-      state->alertTargetScene = NOCT_SCENE_THERMAL;
+      state->alertTargetScene = NOCT_SCENE_CPU;
+    else if (strcmp(target, "GPU") == 0)
+      state->alertTargetScene = NOCT_SCENE_GPU;
+    else if (strcmp(target, "RAM") == 0)
+      state->alertTargetScene = NOCT_SCENE_RAM;
+    else if (strcmp(target, "DISKS") == 0)
+      state->alertTargetScene = NOCT_SCENE_DISKS;
+    else if (strcmp(target, "MEDIA") == 0)
+      state->alertTargetScene = NOCT_SCENE_MEDIA;
     else
-      state->alertTargetScene = NOCT_SCENE_THERMAL;
+      state->alertTargetScene = NOCT_SCENE_MAIN;
   }
   if (!state->alertActive)
-    state->alertTargetScene = NOCT_SCENE_THERMAL;
+    state->alertTargetScene = NOCT_SCENE_MAIN;
 
   return true;
 }
