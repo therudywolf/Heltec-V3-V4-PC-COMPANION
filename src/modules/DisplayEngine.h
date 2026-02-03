@@ -25,6 +25,8 @@
 #define HEXDECOR_FONT u8g2_font_5x7_tf
 #define HEXSTREAM_FONT u8g2_font_5x7_tf /* Small hex stream (micro_tr alt) */
 #define UNIT_FONT u8g2_font_4x6_tr      /* Small % and units (Fans) */
+#define RAM_PROCESS_FONT                                                       \
+  u8g2_font_6x12_tr /* Slightly taller for process names */
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
