@@ -15,11 +15,16 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
-#define NOCT_HEADER_H 9 /* Grid: header 0..8, dotted line at Y=9 */
+/* Header: zone Y 0..(NOCT_HEADER_H-1); dotted line at Y=NOCT_HEADER_H-1 */
+#define NOCT_HEADER_H 10
+#define NOCT_HEADER_MARGIN 2
+#define NOCT_CONTENT_TOP (NOCT_HEADER_H + NOCT_HEADER_MARGIN)
+#define NOCT_ROW_DY 10
+#define NOCT_CONTENT_MAX_ROWS 5
 /* Card grid: unified layout for all scene screens */
 #define NOCT_CARD_LEFT 2
-#define NOCT_CARD_TOP 12
-#define NOCT_CARD_ROW_DY 12
+#define NOCT_CARD_TOP NOCT_CONTENT_TOP
+#define NOCT_CARD_ROW_DY NOCT_ROW_DY
 #define NOCT_FOOTER_Y 50
 #define NOCT_LINE_H_DATA 12
 #define NOCT_LINE_H_LABEL 5

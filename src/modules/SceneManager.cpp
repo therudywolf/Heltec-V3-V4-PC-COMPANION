@@ -1,14 +1,13 @@
 /*
  * NOCTURNE_OS — SceneManager: 6 screens. 128x64, MAIN/CPU/GPU/RAM/DISKS/MEDIA.
- * Unified card style: NOCT_CARD_LEFT/TOP/ROW_DY everywhere; LABEL_FONT for
- * labels, STORAGE_FONT for values; no HUGE_FONT on cards.
+ * Unified: LABEL_FONT only for content; Y from NOCT_CONTENT_TOP, NOCT_ROW_DY.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
 #include <math.h>
 
 #define SPLIT_X 64
-#define CONTENT_Y NOCT_HEADER_H
+#define CONTENT_Y NOCT_CONTENT_TOP
 
 const char *SceneManager::sceneNames_[] = {"MAIN", "CPU",   "GPU",
                                            "RAM",  "DISKS", "MEDIA"};
@@ -130,7 +129,6 @@ void SceneManager::drawCpu(bool blinkState) {
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(NOCT_CARD_LEFT, y0, "TEMP");
   u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0, "MHz");
-  u8g2.setFont(STORAGE_FONT);
   char buf[16];
   if (!blinkTemp) {
     snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
@@ -139,10 +137,8 @@ void SceneManager::drawCpu(bool blinkState) {
   snprintf(buf, sizeof(buf), "%d", cc);
   u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + dy, buf);
 
-  u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, "LOAD");
   u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + 2 * dy, "PWR");
-  u8g2.setFont(STORAGE_FONT);
   if (!blinkLoad) {
     snprintf(buf, sizeof(buf), "%d%%", cl);
     u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
@@ -181,7 +177,6 @@ void SceneManager::drawGpu(bool blinkState) {
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(left, y0, "TEMP");
   u8g2.drawUTF8(rightCol, y0, "CORE");
-  u8g2.setFont(STORAGE_FONT);
   if (!blinkTemp) {
     snprintf(buf, sizeof(buf), "%d\xC2\xB0", gt);
     u8g2.drawUTF8(left, y0 + dy, buf);
@@ -189,10 +184,8 @@ void SceneManager::drawGpu(bool blinkState) {
   snprintf(buf, sizeof(buf), "%d", gclock);
   u8g2.drawUTF8(rightCol, y0 + dy, buf);
 
-  u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(left, y0 + 2 * dy, "LOAD");
   u8g2.drawUTF8(rightCol, y0 + 2 * dy, "VRAM");
-  u8g2.setFont(STORAGE_FONT);
   if (!blinkLoad) {
     snprintf(buf, sizeof(buf), "%d%%", gl);
     u8g2.drawUTF8(left, y0 + 3 * dy, buf);
@@ -202,7 +195,6 @@ void SceneManager::drawGpu(bool blinkState) {
     u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
   }
 
-  u8g2.setFont(STORAGE_FONT);
   snprintf(buf, sizeof(buf), "MEM %d", vclock);
   u8g2.drawUTF8(left, y0 + 4 * dy, buf);
   snprintf(buf, sizeof(buf), "PWR %dW", gtdp);
@@ -230,11 +222,9 @@ void SceneManager::drawRam(bool blinkState) {
   char buf[32];
   if (!blinkRam) {
     snprintf(buf, sizeof(buf), "%.1f / %.1f GB", ru, ra > 0 ? ra : 0.0f);
-    u8g2.setFont(STORAGE_FONT);
     u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
   }
 
-  u8g2.setFont(STORAGE_FONT);
   const int maxNameLen = 14;
   for (int i = 0; i < 2; i++) {
     int y = y0 + 2 * dy + i * dy;
@@ -261,7 +251,7 @@ void SceneManager::drawDisks() {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  u8g2.setFont(STORAGE_FONT);
+  u8g2.setFont(LABEL_FONT);
   int y0 = NOCT_CARD_TOP;
   int dy = NOCT_CARD_ROW_DY;
   char buf[32];
@@ -345,13 +335,15 @@ void SceneManager::drawNoisePattern(int x, int y, int w, int h) {
 // ---------------------------------------------------------------------------
 void SceneManager::drawSearchMode(int scanPhase) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  int tw;
-  u8g2.setFont(MID_FONT);
-  tw = u8g2.getUTF8Width("SEARCH_MODE");
-  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H / 2 - 10, "SEARCH_MODE");
+  int y0 = NOCT_CONTENT_TOP;
+  int dy = NOCT_ROW_DY;
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawStr(2, NOCT_DISP_H / 2 + 4, "Scanning for host...");
-  int cx = NOCT_DISP_W / 2, cy = NOCT_DISP_H - 16, r = 14;
+  int tw = u8g2.getUTF8Width("SEARCH_MODE");
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, y0 + dy - 2, "SEARCH_MODE");
+  u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "Scanning for host...");
+  int cx = NOCT_DISP_W / 2;
+  int cy = NOCT_DISP_H - 16;
+  int r = 14;
   u8g2.drawCircle(cx, cy, r);
   int angle = (scanPhase * 30) % 360;
   float rad = angle * 3.14159f / 180.0f;
@@ -360,16 +352,18 @@ void SceneManager::drawSearchMode(int scanPhase) {
 
 void SceneManager::drawMenu(int menuItem, bool carouselOn, bool screenOff) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int boxX = 8, boxY = 10, boxW = NOCT_DISP_W - 16,
-            boxH = NOCT_DISP_H - 20;
-  const int menuRowDy = 10;
+  const int boxX = NOCT_MARGIN * 4;
+  const int boxY = NOCT_CONTENT_TOP;
+  const int boxW = NOCT_DISP_W - 2 * boxX;
+  const int boxH = NOCT_DISP_H - boxY - NOCT_MARGIN;
+  const int menuRowDy = NOCT_ROW_DY;
   u8g2.drawFrame(boxX, boxY, boxW, boxH);
   u8g2.setFont(LABEL_FONT);
   u8g2.drawStr(boxX + 6, boxY + 8, "QUICK MENU");
   const char *carouselStr = carouselOn ? "CAROUSEL: ON " : "CAROUSEL: OFF";
   const char *screenStr = screenOff ? "SCREEN: OFF" : "SCREEN: ON ";
   const char *lines[] = {carouselStr, screenStr, "EXIT"};
-  int startY = boxY + 18;
+  int startY = boxY + 8 + NOCT_ROW_DY;
   for (int i = 0; i < 3; i++) {
     int y = startY + i * menuRowDy;
     if (y + 8 > boxY + boxH - 4)
@@ -388,35 +382,34 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, bool screenOff) {
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
                                 bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  int tw;
-  u8g2.setFont(HUGE_FONT);
-  tw = u8g2.getUTF8Width("NO SIGNAL");
-  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H / 2 - 6, "NO SIGNAL");
+  int y0 = NOCT_CONTENT_TOP;
+  int dy = NOCT_ROW_DY;
   u8g2.setFont(LABEL_FONT);
+  int tw = u8g2.getUTF8Width("NO SIGNAL");
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, y0 + dy - 2, "NO SIGNAL");
   if (!wifiOk)
-    u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "WiFi: DISCONNECTED");
+    u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "WiFi: DISCONNECTED");
   else if (!tcpOk)
-    u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "TCP: CONNECTING...");
+    u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "TCP: CONNECTING...");
   else
-    u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "WAITING FOR DATA...");
-  drawNoisePattern(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-  if (wifiOk)
-    disp_.drawWiFiIcon(NOCT_DISP_W - 14, 2, rssi);
+    u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "WAITING FOR DATA...");
+  drawNoisePattern(0, NOCT_CONTENT_TOP, NOCT_DISP_W,
+                   NOCT_DISP_H - NOCT_CONTENT_TOP);
   if (blinkState)
-    u8g2.drawBox(NOCT_DISP_W / 2 + 40, NOCT_DISP_H / 2 - 8, 6, 12);
+    u8g2.drawBox(NOCT_DISP_W / 2 + 40, y0 + 2 * dy - 8, 6, 12);
 }
 
 void SceneManager::drawConnecting(int rssi, bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  (void)rssi;
   (void)blinkState;
-  int tw;
-  u8g2.setFont(MID_FONT);
-  tw = u8g2.getUTF8Width("LINKING...");
-  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H / 2 - 6, "LINKING...");
+  int y0 = NOCT_CONTENT_TOP;
+  int dy = NOCT_ROW_DY;
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "Establishing data link");
+  int tw = u8g2.getUTF8Width("LINKING...");
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, y0 + dy - 2, "LINKING...");
+  u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "Establishing data link");
   int dots = (millis() / 300) % 4;
   for (int i = 0; i < dots; i++)
-    u8g2.drawBox(NOCT_DISP_W / 2 + 36 + i * 6, NOCT_DISP_H / 2 + 8, 3, 3);
-  disp_.drawWiFiIcon(NOCT_DISP_W - 14, 2, rssi);
+    u8g2.drawBox(NOCT_DISP_W / 2 + 36 + i * 6, y0 + 2 * dy + 2, 3, 3);
 }

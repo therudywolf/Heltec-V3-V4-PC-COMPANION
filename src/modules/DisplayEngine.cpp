@@ -199,21 +199,23 @@ void DisplayEngine::drawDottedHLine(int x0, int x1, int y) {
 }
 
 // ---------------------------------------------------------------------------
-// Global header: black rect (0,0,128,9); dotted Y=9; left title, right
-// time+WiFi
+// Global header: black bar 0..(NOCT_HEADER_H-2), dotted at NOCT_HEADER_H-1
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
+  const int barH = NOCT_HEADER_H - 1;
+  const int textY = barH - 2;
+
   u8g2_.setDrawColor(0);
-  u8g2_.drawBox(0, 0, 128, 9);
+  u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
   u8g2_.setDrawColor(1);
 
   u8g2_.setFont(TINY_FONT);
   const char *title = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
-  u8g2_.drawUTF8(2, 7, title);
+  u8g2_.drawUTF8(2, textY, title);
 
   const char *tstr = (timeStr && timeStr[0]) ? timeStr : "---";
-  drawRightAligned(90, 7, TINY_FONT, tstr);
+  drawRightAligned(90, textY, TINY_FONT, tstr);
 
   int iconX = 118;
   int iconY = 0;
@@ -222,7 +224,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   else if ((millis() / 200) % 2 == 0)
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 
-  drawDottedHLine(0, NOCT_DISP_W - 1, 9);
+  drawDottedHLine(0, NOCT_DISP_W - 1, NOCT_HEADER_H - 1);
 }
 
 // ---------------------------------------------------------------------------
