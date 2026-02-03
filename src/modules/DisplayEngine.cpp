@@ -673,8 +673,8 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   int titleW = u8g2_.getUTF8Width(titleBuf);
   drawActiveIndicator(nameX + titleW + 2, baselineY - 2);
 
-  /* Right side: NET:OK (connected) or NET:-- (offline), anchored at X=124 */
-  const char *statusStr = wifiConnected ? "NET:OK" : "NET:--";
+  /* Right side: WOOF! (connected) or NET:-- (offline), anchored at X=124 */
+  const char *statusStr = wifiConnected ? "WOOF!" : "NET:--";
   u8g2_.setFont(LABEL_FONT);
   int statusW = u8g2_.getUTF8Width(statusStr);
   u8g2_.drawUTF8(rightAnchor - statusW, baselineY, statusStr);

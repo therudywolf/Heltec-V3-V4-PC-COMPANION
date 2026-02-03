@@ -11,8 +11,8 @@
 #define X(x, off) ((x) + (off))
 
 // Unified 2x2 grid (CPU, GPU, MOTHERBOARD): same layout for all
-#define GRID_ROW1_Y 18
-#define GRID_ROW2_Y 42
+#define GRID_ROW1_Y 23
+#define GRID_ROW2_Y 47
 #define GRID_COL1_X 0
 #define GRID_COL2_X 64
 #define GRID_CELL_W 63
@@ -268,11 +268,11 @@ void SceneManager::drawGpu(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 4: RAM (Protocol Alpha Wolf) — Top 2 processes only. Row 0 Y=20,
-// Row 1 Y=38. drawTechBracket around each. Summary bar Y=54 (drawChamferBox).
+// SCENE 4: RAM (Protocol Alpha Wolf) — Top 2 processes only. Row 0 Y=25,
+// Row 1 Y=43. drawTechBracket around each. Summary bar Y=54 (drawChamferBox).
 // ---------------------------------------------------------------------------
-#define RAM_ROW0_Y 20
-#define RAM_ROW1_Y 38
+#define RAM_ROW0_Y 25
+#define RAM_ROW1_Y 43
 #define RAM_ROW_H 16
 #define RAM_ROW_X NOCT_CARD_LEFT
 #define RAM_ROW_W (NOCT_DISP_W - 2 * NOCT_CARD_LEFT)
@@ -341,13 +341,18 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
   }
 
   /* Summary bar: Y=54, drawChamferBox, "TOTAL: 8.2 / 16 GB" */
-  disp_.drawChamferBox(X(0, xOff), RAM_SUMMARY_Y, NOCT_DISP_W, RAM_SUMMARY_H,
+  const int summaryX = X(0, xOff);
+  const int summaryY = RAM_SUMMARY_Y;
+  const int summaryW = NOCT_DISP_W;
+  const int summaryH = RAM_SUMMARY_H + 5;
+  disp_.drawChamferBox(summaryX, summaryY, summaryW, summaryH,
                        RAM_SUMMARY_CHAMFER);
   if (!blinkRam) {
     float ru = hw.ru, ra = hw.ra > 0 ? hw.ra : 0.0f;
     snprintf(buf, sizeof(buf), "TOTAL: %.1f / %.0f GB", ru, ra);
     u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(4, xOff), RAM_SUMMARY_Y + RAM_SUMMARY_H - 4, buf);
+    int textY = summaryY + summaryH / 2 + 3;
+    u8g2.drawUTF8(X(4, xOff), textY, buf);
   }
   disp_.drawGreebles();
 }
