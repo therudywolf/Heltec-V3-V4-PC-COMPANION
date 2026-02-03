@@ -1,7 +1,7 @@
 /*
- * NOCTURNE_OS — DisplayEngine: Nocturne Style (High-Tech Low-Life).
- * Typography: profont10 (labels), t0_11/haxrcorp4089 (values). Chamfered boxes,
- * segmented bars, dotted grid, XBM icons.
+ * NOCTURNE_OS — DisplayEngine: Grid Law. 128x64 OLED.
+ * Labels: profont10. Values: t0_11. Big temp: helvB10 only.
+ * Helpers: drawRightAligned, drawCentered, drawSafeStr.
  */
 #ifndef NOCTURNE_DISPLAY_ENGINE_H
 #define NOCTURNE_DISPLAY_ENGINE_H
@@ -10,15 +10,13 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- Typography (Nocturne: no proportional/Arial) ---
-#define FONT_SMALL u8g2_font_profont10_mr
-#define FONT_LABEL u8g2_font_profont10_mr
-#define FONT_TINY u8g2_font_profont10_mr
-#define FONT_HEAD u8g2_font_t0_11_tr
-#define FONT_VAL u8g2_font_t0_11_tr
-#define FONT_BIG u8g2_font_haxrcorp4089_tr
+// --- Font strategy (Grid Law) ---
+#define FONT_LABEL u8g2_font_profont10_mr // Labels (static), tiny 5–6px
+#define FONT_VAL u8g2_font_t0_11_tr       // Values (dynamic), bold small
+#define FONT_BIG u8g2_font_helvB10_tr     // Main temperature only
+#define FONT_TINY u8g2_font_profont10_mr  // Tiny text (city, desc)
 
-// --- XBM Icons (1 = pixel on). Width in bytes = (w+7)/8 ---
+// --- XBM Icons ---
 #define ICON_WIFI_W 12
 #define ICON_WIFI_H 8
 #define ICON_WOLF_W 32
@@ -29,6 +27,8 @@
 #define ICON_WARN_H 12
 #define ICON_WEATHER_W 16
 #define ICON_WEATHER_H 16
+#define ICON_DISCONNECT_W 16
+#define ICON_DISCONNECT_H 16
 
 extern const uint8_t icon_wifi_bits[];
 extern const uint8_t icon_wolf_bits[];
@@ -38,6 +38,7 @@ extern const uint8_t icon_weather_sun_bits[];
 extern const uint8_t icon_weather_cloud_bits[];
 extern const uint8_t icon_weather_rain_bits[];
 extern const uint8_t icon_weather_snow_bits[];
+extern const uint8_t icon_disconnect_bits[];
 
 class DisplayEngine {
 public:
@@ -48,9 +49,14 @@ public:
 
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2() { return u8g2_; }
 
-  // Global HUD: solid black header with inverted scene name, dotted footer,
-  // WiFi icon
-  void drawOverlay(const char *sceneName, int rssi, bool linkOk);
+  // --- Grid Law helpers (MANDATORY) ---
+  void drawRightAligned(int x, int y, const String &text);
+  void drawCentered(int x, int y, int w, const String &text);
+  void drawSafeStr(int x, int y, const String &text);
+
+  // --- HUD: Top bar Y 0–10, dotted line Y=11 ---
+  void drawOverlay(const char *sceneName, int rssi, bool linkOk,
+                   const char *timeStr = nullptr);
 
   void drawBiosPost(unsigned long now, unsigned long bootTime, bool wifiOk,
                     int rssi);
@@ -69,6 +75,7 @@ public:
   void drawCornerCrosshairs();
   void drawFanIcon(int x, int y, int frame);
   void drawLinkStatus(int x, int y, bool linked);
+  void drawDisconnectIcon(int x, int y);
 
   void setDataSpike(bool spike);
   void drawGlitchEffect();
