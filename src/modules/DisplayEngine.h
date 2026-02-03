@@ -9,14 +9,15 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- Font strategy: 5m rule — HUGE = main values, LABEL = readable labels ---
-#define HUGE_FONT u8g2_font_logisoso24_tr   // Main values (~24px)
-#define LABEL_FONT u8g2_font_profont12_tr   // Labels (~9px)
-#define STORAGE_FONT u8g2_font_profont11_tr // Storage list
+// --- NOCTURNE Design System: only these three fonts ---
+#define HUGE_FONT u8g2_font_logisoso24_tr   // Hero: main values (87°, 99%)
+#define LABEL_FONT u8g2_font_profont10_mr   // Meta: tiny, uppercase, tracking
+#define SECONDARY_FONT u8g2_font_helvB10_tr // Headers, list items
 #define TINY_FONT LABEL_FONT
-#define MID_FONT LABEL_FONT
+#define MID_FONT SECONDARY_FONT
 #define FONT_TINY TINY_FONT
 #define FONT_LABEL LABEL_FONT
+#define FONT_SECONDARY SECONDARY_FONT
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -53,8 +54,24 @@ public:
                         const char *text);
   /** Segmented progress bar: blocks [|||| ] with 1px gap. percent 0..100. */
   void drawProgressBar(int x, int y, int w, int h, int percent);
+  void drawSegmentedBar(int x, int y, int w, int h, int percent) {
+    drawProgressBar(x, y, w, h, percent);
+  }
 
-  // --- Global header (screens 1–5): black bar 0,0,128,9; dotted line Y=9 ---
+  /** Chamfered box (cut corners). chamferPx = corner cut size. */
+  void drawChamferBox(int x, int y, int w, int h, int chamferPx);
+  /** Dotted horizontal line from (x0,y) to (x1,y). Pattern 0x55. */
+  void drawDottedHLine(int x0, int x1, int y);
+  /** Dotted vertical line from (x,y0) to (x,y1). */
+  void drawDottedVLine(int x, int y0, int y1);
+  /** Scroll indicator on right edge: totalItems, visibleItems, firstVisible. */
+  void drawScrollIndicator(int y, int h, int totalItems, int visibleItems,
+                           int firstVisible);
+  /** Small static greebles (tiny squares/crosses) in content area corners. */
+  void drawGreebles();
+
+  // --- Global header: 10px bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
+  // dotted at Y=10 ---
   void drawGlobalHeader(const char *sceneTitle, const char *timeStr, int rssi);
 
   // --- Rolling sparkline (with scanlines in background) ---
@@ -88,7 +105,6 @@ public:
   RollingGraph netUpGraph;
 
 private:
-  void drawDottedHLine(int x0, int x1, int y);
   bool drawXBMArtFromBase64(int x, int y, int w, int h, const String &base64);
 
   int sdaPin_;
