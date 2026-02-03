@@ -1,5 +1,6 @@
 /*
- * NOCTURNE_OS — Shared data types (JSON 2-char keys from monitor)
+ * NOCTURNE_OS — Shared types: HardwareData (ct, gt, cl, gl, ru, ra, …),
+ * WeatherData, MediaData, AppState. Keys match monitor JSON (2-letter).
  */
 #ifndef NOCTURNE_TYPES_H
 #define NOCTURNE_TYPES_H

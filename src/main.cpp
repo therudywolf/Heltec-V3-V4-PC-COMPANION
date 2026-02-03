@@ -1,7 +1,8 @@
 /*
- * NOCTURNE_OS — Cyberdeck firmware
- * Modules: NetManager (WiFi + TCP + JSON), DisplayEngine, SceneManager.
- * Predator Mode: long press -> screen OFF, LED breathing.
+ * NOCTURNE_OS — Firmware entry (ESP32 Heltec).
+ * Loop: NetManager.tick (TCP/JSON) -> SceneManager.draw (current scene) ->
+ * sendBuffer. Button: short = next scene / menu; long = predator (screen off,
+ * LED breath). Config: NOCT_* in config.h; WiFi/PC in secrets.h.
  */
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -43,6 +44,11 @@ unsigned long predatorEnterTime = 0;
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
 #define QUICK_MENU_ITEMS 3
+
+#define NOCT_REDRAW_INTERVAL_MS                                                \
+  450 // Redraw at most every 450ms unless data/UI changed
+static unsigned long lastRedrawMs = 0;
+static bool needRedraw = true;
 
 static void VextON() {
   pinMode(NOCT_VEXT_PIN, OUTPUT);
@@ -109,6 +115,7 @@ void loop() {
           if (!err) {
             netManager.markDataReceived(now);
             if (netManager.parsePayload(buf, &state)) {
+              needRedraw = true;
               HardwareData &hw = state.hw;
               display.cpuGraph.push((float)hw.cl);
               display.gpuGraph.push((float)hw.gl);
@@ -137,6 +144,7 @@ void loop() {
     btnPressTime = now;
   }
   if (btnState == HIGH && btnHeld) {
+    needRedraw = true;
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
     if (quickMenuOpen) {
@@ -168,13 +176,16 @@ void loop() {
     }
   }
 
-  if (state.alertActive)
+  if (state.alertActive) {
     currentScene = state.alertTargetScene;
+    needRedraw = true;
+  }
 
   if (settings.carouselEnabled && !predatorMode) {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
     if (now - lastCarousel > intervalMs) {
+      needRedraw = true;
       currentScene = (currentScene + 1) % sceneManager.totalScenes();
       lastCarousel = now;
     }
@@ -216,17 +227,28 @@ void loop() {
   if (!splashDone) {
     if (splashStart == 0)
       splashStart = now;
-    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS)
+    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS) {
       splashDone = true;
+      needRedraw = true;
+    }
   }
 
-  // ----- Render -----
+  // ----- Render (throttle: only when needed or every NOCT_REDRAW_INTERVAL_MS)
+  // -----
   if (predatorMode) {
     display.clearBuffer();
     display.sendBuffer();
     delay(10);
     return;
   }
+
+  if (!needRedraw &&
+      (now - lastRedrawMs < (unsigned long)NOCT_REDRAW_INTERVAL_MS)) {
+    delay(10);
+    return;
+  }
+  lastRedrawMs = now;
+  needRedraw = false;
 
   display.clearBuffer();
   bool signalLost = splashDone && netManager.isSignalLost(now);
