@@ -1,23 +1,15 @@
 /*
- * NOCTURNE_OS — DisplayEngine: Nocturne Style. Chamfered boxes, segmented
- * bars, dotted grid, XBM icons, overlay, BIOS POST, rolling graph.
+ * NOCTURNE_OS — DisplayEngine: Grid Law. Helpers, overlay, chamfered frames.
  */
 #include "DisplayEngine.h"
 #include <Arduino.h>
 #include <Wire.h>
 
-#define LINE_H_DATA NOCT_LINE_H_DATA
-#define LINE_H_LABEL NOCT_LINE_H_LABEL
-#define LINE_H_HEAD NOCT_LINE_H_HEAD
-#define LINE_H_BIG NOCT_LINE_H_BIG
-
-// --- XBM bitmaps (row-major, MSB left). 1 = pixel on ---
-// WiFi 12x8: futuristic signal bars
+// --- XBM bitmaps (1 = pixel on) ---
 const uint8_t icon_wifi_bits[] = {0x00, 0x00, 0x00, 0x00, 0x24, 0x00,
                                   0x24, 0x00, 0x24, 0x00, 0x6C, 0x00,
                                   0x6C, 0x00, 0xEE, 0x0E};
 
-// Wolf head 32x32 (pixel-art). 4 bytes per row
 const uint8_t icon_wolf_bits[] = {
     0x00, 0x18, 0x18, 0x00, 0x00, 0x3C, 0x3C, 0x00, 0x00, 0x3C, 0x3C, 0x00,
     0x00, 0x7E, 0x7E, 0x00, 0x00, 0x7E, 0x7E, 0x00, 0x00, 0xFF, 0xFF, 0x00,
@@ -30,16 +22,13 @@ const uint8_t icon_wolf_bits[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-// Lock 8x8
 const uint8_t icon_lock_bits[] = {0x3C, 0x66, 0x42, 0x42,
                                   0xFF, 0x42, 0x42, 0x42};
 
-// Warning triangle 12x12. 2 bytes per row
 const uint8_t icon_warning_bits[] = {
     0x00, 0x80, 0x01, 0xC0, 0x01, 0xC0, 0x03, 0xE0, 0x03, 0xE0, 0x07, 0xF0,
     0x07, 0xF0, 0x0F, 0xF8, 0x0F, 0xF8, 0x1F, 0xFC, 0x1F, 0xFC, 0x3F, 0xF0};
 
-// Weather 16x16
 const uint8_t icon_weather_sun_bits[] = {
     0x01, 0x80, 0x01, 0x80, 0x11, 0x88, 0x01, 0x80, 0x49, 0x92, 0x01,
     0x80, 0x01, 0x80, 0x7D, 0xBE, 0x7D, 0xBE, 0x01, 0x80, 0x01, 0x80,
@@ -60,6 +49,12 @@ const uint8_t icon_weather_snow_bits[] = {
     0x9C, 0x01, 0x80, 0x7F, 0xFE, 0x01, 0x80, 0x39, 0x9C, 0x1D, 0xB8,
     0x0D, 0xB0, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00};
 
+// 16x16 disconnect / offline (X mark)
+const uint8_t icon_disconnect_bits[] = {
+    0x80, 0x01, 0x40, 0x02, 0x20, 0x04, 0x10, 0x08, 0x08, 0x10, 0x04,
+    0x20, 0x02, 0x40, 0x01, 0x80, 0x01, 0x80, 0x02, 0x40, 0x04, 0x20,
+    0x08, 0x10, 0x10, 0x08, 0x20, 0x04, 0x40, 0x02, 0x80, 0x01};
+
 // ---------------------------------------------------------------------------
 DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
     : sdaPin_(sdaPin), sclPin_(sclPin), u8g2_(U8G2_R0, rstPin),
@@ -76,49 +71,87 @@ void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 void DisplayEngine::setDataSpike(bool spike) { dataSpike_ = spike; }
 
 // ---------------------------------------------------------------------------
-// Global HUD: solid black header [ SCENE ], dotted footer, WiFi top-right
-// (blink if low RSSI)
+// Grid Law helpers (MANDATORY)
 // ---------------------------------------------------------------------------
-void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk) {
-  (void)linkOk;
-  const int HEADER_H = NOCT_HEADER_H;
-  u8g2_.setDrawColor(0);
-  u8g2_.drawBox(0, 0, NOCT_DISP_W, HEADER_H);
-  u8g2_.setDrawColor(1);
-  u8g2_.setFont(FONT_HEAD);
-  char buf[20];
-  snprintf(buf, sizeof(buf), "[ %s ]", sceneName ? sceneName : "");
-  int tw = u8g2_.getUTF8Width(buf);
-  u8g2_.drawUTF8((NOCT_DISP_W - tw) / 2, HEADER_H - 2, buf);
-
-  drawWiFiIconXbm(NOCT_DISP_W - ICON_WIFI_W - NOCT_MARGIN, NOCT_MARGIN, rssi,
-                  (rssi < -70));
-
-  drawDottedHLine(NOCT_MARGIN, NOCT_DISP_W - NOCT_MARGIN,
-                  NOCT_DISP_H - NOCT_MARGIN - 1);
+void DisplayEngine::drawRightAligned(int x, int y, const String &text) {
+  if (text.length() == 0)
+    return;
+  u8g2_.setFont(FONT_VAL);
+  int tw = u8g2_.getUTF8Width(text.c_str());
+  u8g2_.drawUTF8(x - tw, y, text.c_str());
 }
 
-// ---------------------------------------------------------------------------
-// Chamfered box: 45° cut corners (no drawRBox). chamfer = pixel length of cut
-// ---------------------------------------------------------------------------
-void DisplayEngine::drawChamferBox(int x, int y, int w, int h, int chamfer) {
-  if (chamfer <= 0 || chamfer * 2 >= w || chamfer * 2 >= h) {
-    u8g2_.drawFrame(x, y, w, h);
+void DisplayEngine::drawCentered(int x, int y, int w, const String &text) {
+  if (text.length() == 0)
+    return;
+  u8g2_.setFont(FONT_VAL);
+  int tw = u8g2_.getUTF8Width(text.c_str());
+  if (tw > w)
+    tw = w;
+  int sx = x + (w - tw) / 2;
+  u8g2_.drawUTF8(sx, y, text.c_str());
+}
+
+void DisplayEngine::drawSafeStr(int x, int y, const String &text) {
+  u8g2_.setFont(FONT_VAL);
+  if (text.length() == 0) {
+    u8g2_.drawUTF8(x, y, "---");
     return;
   }
-  int c = chamfer;
-  u8g2_.drawLine(x + c, y, x + w - 1 - c, y);
-  u8g2_.drawLine(x + w - 1, y + c, x + w - 1, y + h - 1 - c);
-  u8g2_.drawLine(x + w - 1 - c, y + h - 1, x + c, y + h - 1);
-  u8g2_.drawLine(x, y + h - 1 - c, x, y + c);
-  u8g2_.drawLine(x, y + c, x + c, y);
-  u8g2_.drawLine(x + w - 1 - c, y, x + w - 1, y + c);
-  u8g2_.drawLine(x + w - 1, y + h - 1 - c, x + w - 1 - c, y + h - 1);
-  u8g2_.drawLine(x + c, y + h - 1, x, y + h - 1 - c);
+  u8g2_.drawUTF8(x, y, text.c_str());
 }
 
 // ---------------------------------------------------------------------------
-// Segmented bar: blocks [|||||...] with 1px spacing
+// HUD: Top bar Y 0–10. Left: scene at x=2. Right: time at ~90, WiFi at 115.
+// Dotted line at Y=11.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk,
+                                const char *timeStr) {
+  (void)linkOk;
+  const int BAR_Y0 = 0;
+  const int BAR_H = 10;
+  const int DOTTED_Y = 11;
+
+  u8g2_.setDrawColor(0);
+  u8g2_.drawBox(0, BAR_Y0, NOCT_DISP_W, BAR_H);
+  u8g2_.setDrawColor(1);
+
+  u8g2_.setFont(FONT_LABEL);
+  char buf[20];
+  snprintf(buf, sizeof(buf), "[%s]", sceneName ? sceneName : "");
+  u8g2_.drawUTF8(2, BAR_Y0 + BAR_H - 2, buf);
+
+  u8g2_.setFont(FONT_TINY);
+  const char *tstr = (timeStr && timeStr[0]) ? timeStr : "---";
+  int tw = u8g2_.getUTF8Width(tstr);
+  u8g2_.drawUTF8(90 - tw, BAR_Y0 + BAR_H - 2, tstr);
+
+  drawWiFiIconXbm(115, BAR_Y0 + 1, rssi, (rssi < -70));
+
+  drawDottedHLine(0, NOCT_DISP_W - 1, DOTTED_Y);
+}
+
+// ---------------------------------------------------------------------------
+// Chamfered box: drawFrame then cut corners with drawPixel(0)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawChamferBox(int x, int y, int w, int h, int chamfer) {
+  u8g2_.drawFrame(x, y, w, h);
+  if (chamfer <= 0 || chamfer * 2 >= w || chamfer * 2 >= h)
+    return;
+  u8g2_.setDrawColor(0);
+  for (int c = 0; c < chamfer; c++) {
+    u8g2_.drawPixel(x + c, y);
+    u8g2_.drawPixel(x, y + c);
+    u8g2_.drawPixel(x + w - 1 - c, y);
+    u8g2_.drawPixel(x + w - 1, y + c);
+    u8g2_.drawPixel(x + c, y + h - 1);
+    u8g2_.drawPixel(x, y + h - 1 - c);
+    u8g2_.drawPixel(x + w - 1 - c, y + h - 1);
+    u8g2_.drawPixel(x + w - 1, y + h - 1 - c);
+  }
+  u8g2_.setDrawColor(1);
+}
+
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawSegmentedBar(int x, int y, int w, int h, float pct,
                                      int segments) {
@@ -145,9 +178,6 @@ void DisplayEngine::drawSegmentedBar(int x, int y, int w, int h, float pct,
   }
 }
 
-// ---------------------------------------------------------------------------
-// Dotted lines (every 2nd pixel)
-// ---------------------------------------------------------------------------
 void DisplayEngine::drawDottedHLine(int x0, int x1, int y) {
   if (x0 > x1) {
     int t = x0;
@@ -212,14 +242,12 @@ bool DisplayEngine::biosPostDone(unsigned long now, unsigned long bootTime) {
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawMetric(int x, int y, const char *label,
                                const char *value) {
+  u8g2_.setFont(FONT_LABEL);
+  if (label && strlen(label) > 0)
+    u8g2_.drawStr(x, y - 2, label);
   u8g2_.setFont(FONT_VAL);
-  if (label && strlen(label) > 0) {
-    u8g2_.setFont(FONT_LABEL);
-    u8g2_.drawStr(x, y - LINE_H_DATA - 1, label);
-    u8g2_.setFont(FONT_VAL);
-  }
   if (value)
-    u8g2_.drawUTF8(x, y, value);
+    u8g2_.drawUTF8(x, y + 10, value);
 }
 
 void DisplayEngine::drawMetricStr(int x, int y, const char *label,
@@ -246,6 +274,11 @@ void DisplayEngine::drawWiFiIconXbm(int x, int y, int rssi, bool blink) {
   if (blink && (millis() / 200) % 2 == 0)
     return;
   u8g2_.drawXBM(x, y, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
+}
+
+void DisplayEngine::drawDisconnectIcon(int x, int y) {
+  u8g2_.drawXBM(x, y, ICON_DISCONNECT_W, ICON_DISCONNECT_H,
+                icon_disconnect_bits);
 }
 
 void DisplayEngine::drawCornerCrosshairs() {
@@ -284,8 +317,6 @@ void DisplayEngine::drawLinkStatus(int x, int y, bool linked) {
 }
 
 // ---------------------------------------------------------------------------
-// Glitch: horizontal slice shift (bands displaced)
-// ---------------------------------------------------------------------------
 void DisplayEngine::drawGlitchEffect() {
   unsigned long now = millis();
   if (glitchUntil_ > 0 && now < glitchUntil_) {
@@ -310,9 +341,6 @@ void DisplayEngine::drawGlitchEffect() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Rolling graph: thicker line, cleaner. Reference grid (50%, 100%) drawn by
-// caller.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawRollingGraph(int x, int y, int w, int h,
                                      RollingGraph &g, int maxVal) {
