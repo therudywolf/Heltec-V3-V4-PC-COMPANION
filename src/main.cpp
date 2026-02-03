@@ -358,7 +358,6 @@ void loop() {
         display.drawAlertBorder();
     }
 
-    display.drawScanlines(true);
     if (random(100) < 1)
       display.drawGlitch(1);
   }

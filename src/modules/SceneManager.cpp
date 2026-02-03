@@ -14,9 +14,6 @@
 #define MAIN_SEP_Y 47        /* Dotted line above RAM */
 #define CONTENT_Y NOCT_CONTENT_TOP
 #define X(x, off) ((x) + (off))
-#define DISK_NAME_X 2
-#define DISK_TEMP_X 100
-#define DISK_ROW_DY 13
 
 // 8x8 fan icon, 4 frames (0..3) for spin
 static const uint8_t icon_fan_8x8_f0[] = {0x18, 0x3C, 0x3C, 0xFF,
@@ -87,9 +84,15 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 1: MAIN — CPU | GPU (split), corner brackets [ ]; RAM bar + text.
-// Grid: header 12px, content Y=14..63, dy=14/18. Value col X=64 or right.
+// SCENE 1: MAIN — CPU (Left) | GPU (Right). Fixed VALUE_FONT, no resize.
+// Truncate if too wide; RAM: bracketed bar [ |||| ] + "RAM: 14GB"
 // ---------------------------------------------------------------------------
+#define MAIN_CPU_ANCHOR 62
+#define MAIN_GPU_ANCHOR 126
+#define MAIN_RAM_BAR_X 2
+#define MAIN_RAM_BAR_W (NOCT_DISP_W - 4)
+#define MAIN_RAM_BAR_H 8
+
 void SceneManager::drawMain(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
@@ -117,58 +120,46 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
   u8g2.drawUTF8(X(2, xOff), MAIN_LBL_Y, "CPU");
   u8g2.drawUTF8(X(66, xOff), MAIN_LBL_Y, "GPU");
 
+  u8g2.setFont(VALUE_FONT);
+  static char tbuf[16], lbuf[16];
+  snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", cpuTemp);
+  snprintf(lbuf, sizeof(lbuf), "%d%%", cpuLoad);
+  int w1 = u8g2.getUTF8Width(tbuf);
+  int w2 = u8g2.getUTF8Width(lbuf);
   if (!blinkCpu) {
-    static char tbuf[16], lbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", cpuTemp);
-    snprintf(lbuf, sizeof(lbuf), "%d%%", cpuLoad);
-    u8g2.setFont(VALUE_FONT);
-    int w1 = u8g2.getUTF8Width(tbuf);
-    int sepW = u8g2.getUTF8Width("|");
-    u8g2.setFont(VALUE_FONT);
-    int w2 = u8g2.getUTF8Width(lbuf);
-    int total = w1 + 4 + sepW + 4 + w2;
-    if (total > 60)
-      u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(2, xOff), MAIN_VAL_BASELINE, tbuf);
-    w1 = u8g2.getUTF8Width(tbuf);
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(2 + w1 + 4, xOff), MAIN_VAL_BASELINE, "|");
-    u8g2.setFont(total > 60 ? LABEL_FONT : VALUE_FONT);
-    u8g2.drawUTF8(X(2 + w1 + 4 + sepW + 4, xOff), MAIN_VAL_BASELINE, lbuf);
+    disp_.drawTechBracket(X(2, xOff), MAIN_VAL_BASELINE - 10, 14, true);
+    disp_.drawTechBracket(X(59, xOff), MAIN_VAL_BASELINE - 10, 14, false);
+    u8g2.drawUTF8(X(6, xOff), MAIN_VAL_BASELINE, tbuf);
+    u8g2.drawUTF8(X(6 + w1 + 2, xOff), MAIN_VAL_BASELINE, lbuf);
   }
 
+  snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", gpuTemp);
+  snprintf(lbuf, sizeof(lbuf), "%d%%", gpuLoad);
+  w1 = u8g2.getUTF8Width(tbuf);
+  w2 = u8g2.getUTF8Width(lbuf);
   if (!blinkGpu) {
-    static char tbuf[16], lbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", gpuTemp);
-    snprintf(lbuf, sizeof(lbuf), "%d%%", gpuLoad);
-    u8g2.setFont(VALUE_FONT);
-    int w1 = u8g2.getUTF8Width(tbuf);
-    int sepW = u8g2.getUTF8Width("|");
-    int w2 = u8g2.getUTF8Width(lbuf);
-    int total = w1 + 4 + sepW + 4 + w2;
-    if (total > 60)
-      u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(66, xOff), MAIN_VAL_BASELINE, tbuf);
-    w1 = u8g2.getUTF8Width(tbuf);
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(66 + w1 + 4, xOff), MAIN_VAL_BASELINE, "|");
-    u8g2.setFont(total > 60 ? LABEL_FONT : VALUE_FONT);
-    u8g2.drawUTF8(X(66 + w1 + 4 + sepW + 4, xOff), MAIN_VAL_BASELINE, lbuf);
+    disp_.drawTechBracket(X(64, xOff), MAIN_VAL_BASELINE - 10, 14, true);
+    disp_.drawTechBracket(X(121, xOff), MAIN_VAL_BASELINE - 10, 14, false);
+    u8g2.drawUTF8(X(68, xOff), MAIN_VAL_BASELINE, tbuf);
+    u8g2.drawUTF8(X(68 + w1 + 2, xOff), MAIN_VAL_BASELINE, lbuf);
   }
 
   disp_.drawDottedHLine(X(0, xOff), X(NOCT_DISP_W - 1, xOff), MAIN_SEP_Y);
-  u8g2.drawFrame(X(0, xOff), MAIN_RAM_BOX_TOP, NOCT_DISP_W, MAIN_RAM_BOX_H);
+
   float ru = hw.ru, ra = hw.ra;
   float raShow = ra > 0 ? ra : 0.0f;
+  int pct = (raShow > 0) ? (int)((ru / raShow) * 100.0f) : 0;
+  if (pct > 100)
+    pct = 100;
+
+  int ramBarY = MAIN_RAM_BOX_TOP + 2;
   if (!blinkRam) {
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(2, xOff), MAIN_RAM_TEXT_Y, "RAM");
+    disp_.drawBracketedBar(X(MAIN_RAM_BAR_X, xOff), ramBarY, MAIN_RAM_BAR_W,
+                           MAIN_RAM_BAR_H, pct);
     static char buf[24];
-    int pct = (raShow > 0) ? (int)((ru / raShow) * 100.0f) : 0;
-    if (pct > 100)
-      pct = 100;
-    snprintf(buf, sizeof(buf), "%.0f/%.0f GB %d%%", ru, raShow, pct);
-    disp_.drawRightAligned(X(126, xOff), MAIN_RAM_TEXT_Y, VALUE_FONT, buf);
+    snprintf(buf, sizeof(buf), "%.0f/%.0f GB", ru, raShow > 0 ? raShow : 0.0f);
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(2, xOff), MAIN_RAM_TEXT_Y, buf);
   }
   disp_.drawGreebles();
 }
@@ -299,15 +290,15 @@ void SceneManager::drawGpu(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 4: RAM — Precise grid: header "RAM  used/total GB", then process list.
+// SCENE 4: RAM — Header in content area. List Y=16, dy=12. 2–3 processes.
+// Name truncate 8 chars, value "1024M" right-aligned.
 // ---------------------------------------------------------------------------
-#define RAM_HEADER_Y (CONTENT_Y + 8)
-#define RAM_HEADER_H 12
-#define RAM_LIST_Y (CONTENT_Y + RAM_HEADER_H + 4)
-#define RAM_LINE_DY 11
+#define RAM_HEADER_Y 14
+#define RAM_LIST_Y 16
+#define RAM_ROW_DY 12
 #define RAM_NAME_X NOCT_CARD_LEFT
-#define RAM_VALUE_X_ANCHOR (NOCT_DISP_W - 2)
-#define RAM_MAX_NAMELEN 14
+#define RAM_VALUE_ANCHOR (NOCT_DISP_W - 2)
+#define RAM_MAX_NAMELEN 8
 
 void SceneManager::drawRam(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
@@ -326,13 +317,13 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
   u8g2.drawUTF8(X(RAM_NAME_X, xOff), RAM_HEADER_Y, "RAM");
   if (!blinkRam) {
     snprintf(buf, sizeof(buf), "%.0f/%.0f GB", ru, ra > 0 ? ra : 0.0f);
-    disp_.drawRightAligned(X(RAM_VALUE_X_ANCHOR, xOff), RAM_HEADER_Y,
-                           VALUE_FONT, buf);
+    disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), RAM_HEADER_Y, VALUE_FONT,
+                           buf);
   }
 
   u8g2.setFont(LABEL_FONT);
   for (int i = 0; i < 2; i++) {
-    int y = RAM_LIST_Y + i * RAM_LINE_DY;
+    int y = RAM_LIST_Y + i * RAM_ROW_DY;
     if (y + 10 > NOCT_DISP_H)
       break;
     String name = proc.ramNames[i];
@@ -341,29 +332,45 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
       if (name.length() > (unsigned)RAM_MAX_NAMELEN)
         name = name.substring(0, RAM_MAX_NAMELEN);
       u8g2.drawUTF8(X(RAM_NAME_X, xOff), y + 8, name.c_str());
-      snprintf(buf, sizeof(buf), "%d M", mb);
-      disp_.drawRightAligned(X(RAM_VALUE_X_ANCHOR, xOff), y + 8, VALUE_FONT,
-                             buf);
+      snprintf(buf, sizeof(buf), "%dM", mb);
+      disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), y + 8, LABEL_FONT, buf);
     }
   }
   disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 5: DISKS — row_y = NOCT_CONTENT_START + i*13. Col1 Name + % X=2, Col2
-// Temp X=100.
+// SCENE 5: DISKS — 2x2 grid. Quadrants: C:, D:, E:, F:. Crosshair center.
+// Cell: label top-left, temp bottom-right, thin bar bottom.
 // ---------------------------------------------------------------------------
+#define DISK_GRID_TOP 14
+#define DISK_GRID_BOT 64
+#define DISK_GRID_LEFT 0
+#define DISK_GRID_RIGHT 128
+#define DISK_CENTER_X 64
+#define DISK_CENTER_Y 39
+
 void SceneManager::drawDisks(int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
+  int halfW = (DISK_GRID_RIGHT - DISK_GRID_LEFT) / 2;
+  int halfH = (DISK_GRID_BOT - DISK_GRID_TOP) / 2;
+
+  disp_.drawCrosshair(X(DISK_CENTER_X, xOff), DISK_CENTER_Y);
+  disp_.drawDottedHLine(X(0, xOff), X(NOCT_DISP_W - 1, xOff), DISK_CENTER_Y);
+  disp_.drawDottedVLine(X(DISK_CENTER_X, xOff), DISK_GRID_TOP, DISK_GRID_BOT);
+
   u8g2.setFont(LABEL_FONT);
   static char buf[16];
+
   for (int i = 0; i < NOCT_HDD_COUNT; i++) {
-    int rowY = NOCT_CONTENT_START + i * DISK_ROW_DY;
-    if (rowY + DISK_ROW_DY > NOCT_DISP_H)
-      break;
-    int textBaseline = rowY + 7;
+    int col = i % 2;
+    int row = i / 2;
+    int cellLeft = X(col * halfW + 2, xOff);
+    int cellTop = row * halfH + DISK_GRID_TOP + 2;
+    int cellW = halfW - 4;
+    int cellH = halfH - 4;
 
     char letter = hw.hdd[i].name[0] ? hw.hdd[i].name[0] : (char)('C' + i);
     float used = hw.hdd[i].used_gb >= 0.0f ? hw.hdd[i].used_gb : 0.0f;
@@ -371,16 +378,21 @@ void SceneManager::drawDisks(int xOff) {
     int pct = (total > 0.0f) ? (int)((used / total) * 100.0f) : 0;
     if (pct > 100)
       pct = 100;
-
-    snprintf(buf, sizeof(buf), "%c: %d%%", letter, pct);
-    u8g2.drawUTF8(X(DISK_NAME_X, xOff), textBaseline, buf);
-
     int t = hw.hdd[i].temp;
+
+    snprintf(buf, sizeof(buf), "%c:", letter);
+    u8g2.drawUTF8(cellLeft, cellTop + 6, buf);
+
     if (t > 0)
       snprintf(buf, sizeof(buf), "%d\xC2\xB0", t);
     else
       snprintf(buf, sizeof(buf), "-");
-    u8g2.drawUTF8(X(DISK_TEMP_X, xOff), textBaseline, buf);
+    int tw = u8g2.getUTF8Width(buf);
+    u8g2.drawUTF8(cellLeft + cellW - tw, cellTop + cellH - 2, buf);
+
+    int barY = cellTop + cellH - 3;
+    int barH = 2;
+    disp_.drawProgressBar(cellLeft, barY, cellW, barH, pct);
   }
   disp_.drawGreebles();
 }
@@ -424,14 +436,14 @@ void SceneManager::drawFans(int fanFrame, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 8: MOTHERBOARD — Text baselines Y=24, 40, 56. Dotted lines at Y=30, 46
-// (between rows, not through text).
+// SCENE 8: MOTHERBOARD — helvB10 medium font, list view, Y-start 16.
+// Dotted lines between rows. Header never touched.
 // ---------------------------------------------------------------------------
-#define MB_ROW_Y1 24
-#define MB_ROW_Y2 40
-#define MB_ROW_Y3 56
-#define MB_SEP_Y1 30
-#define MB_SEP_Y2 46
+#define MB_ROW_Y1 16
+#define MB_ROW_Y2 32
+#define MB_ROW_Y3 48
+#define MB_SEP_Y1 26
+#define MB_SEP_Y2 42
 
 void SceneManager::drawMotherboard(int xOff) {
   HardwareData &hw = state_.hw;
@@ -451,7 +463,7 @@ void SceneManager::drawMotherboard(int xOff) {
     char buf[16];
     int t = (temps[i] > 0) ? temps[i] : 0;
     snprintf(buf, sizeof(buf), "%d\xC2\xB0", t);
-    disp_.drawRightAligned(X(NOCT_DISP_W - 2, xOff), rowY[i], VALUE_FONT, buf);
+    disp_.drawRightAligned(X(126, xOff), rowY[i], VALUE_FONT, buf);
   }
   disp_.drawGreebles();
 }
@@ -667,8 +679,7 @@ void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
     u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "TCP: CONNECTING...");
   else
     u8g2.drawStr(NOCT_CARD_LEFT, y0 + 2 * dy, "WAITING FOR DATA...");
-  drawNoisePattern(0, NOCT_CONTENT_TOP, NOCT_DISP_W,
-                   NOCT_DISP_H - NOCT_CONTENT_TOP);
+  disp_.drawGreebles();
   if (blinkState)
     u8g2.drawBox(NOCT_DISP_W / 2 + 40, y0 + 2 * dy - 8, 6, 12);
 }
