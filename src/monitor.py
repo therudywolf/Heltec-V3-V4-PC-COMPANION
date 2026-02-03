@@ -745,11 +745,11 @@ def _create_tray_image() -> "Image.Image":
     img = Image.new("RGB", (64, 64), (0, 0, 0))
     draw = ImageDraw.Draw(img)
     green = (0, 255, 0)
-    # Simple "W" shape (4 strokes)
-    for i, (ax, ay, bx, by) in [
+    # Simple "W" shape (4 strokes): (x0, y0, x1, y1)
+    for (ax, ay, bx, by) in [
         (12, 50, 22, 14), (22, 14, 32, 36), (32, 36, 42, 14), (42, 14, 52, 50),
     ]:
-        draw.line([ax, ay, bx, by], fill=green, width=3)
+        draw.line([(ax, ay), (bx, by)], fill=green, width=3)
     # Center dot as "live" indicator
     draw.ellipse([29, 29, 35, 35], fill=green)
     return img
