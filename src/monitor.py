@@ -226,20 +226,8 @@ TARGETS = {
     "ru": "/ram/data/0",
     "ra": "/ram/data/1",
 }
-# HDD: try multiple path styles (LHM may use hdd, nvme, or drive)
-def _hdd_paths_for_slot(slot: int) -> List[Tuple[str, str]]:
-    return [
-        (f"/hdd/{slot}/load/0", f"/hdd/{slot}/temperature/0"),
-        (f"/nvme/{slot}/load/0", f"/nvme/{slot}/temperature/0"),
-        (f"/drive/{slot}/load/0", f"/drive/{slot}/temperature/0"),
-    ]
-HDD_PATHS = [
-    ("/hdd/0/load/0", "/hdd/0/temperature/0"),
-    ("/hdd/1/load/0", "/hdd/1/temperature/0"),
-    ("/hdd/2/load/0", "/hdd/2/temperature/0"),
-    ("/hdd/3/load/0", "/hdd/3/temperature/0"),
-]
-HDD_PATH_ALTERNATIVES = [_hdd_paths_for_slot(i) for i in range(4)]
+# Storage (serverpars): Free = data/31, Total = data/32, Temp = temperature/0. Used = Total - Free.
+# Devices: /hdd/N, /nvme/N, /ssd/N. No load % — display Used/Total GB only.
 FAN_PATHS = [
     "/lpc/it8688e/0/fan/0",   # CPU
     "/lpc/it8688e/0/fan/1",   # Pump
@@ -255,6 +243,7 @@ TARGETS_ALIAS = {
     "/gpu-nvidia/0/load/1": "gv",
     "/gpu-nvidia/0/clock/0": "gclock",
     "/gpu-nvidia/0/clock/1": "vclock",
+    "/gpu-nvidia/0/clock/4": "vclock",   # LHM may use clock/4 for "GPU Memory" MHz
     "/gpu-nvidia/0/power/0": "gtdp",
     "/gpu-nvidia/0/fan/0": "gf",
     "/gpu-nvidia/0/smalldata/1": "vu",
@@ -323,20 +312,6 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     it8688e_fans: List[Tuple[str, float]] = []
     it8688e_temps: List[Tuple[str, float]] = []
     gpu_memory_sensors: List[Tuple[str, float, str]] = []  # (sid, val, name_lower)
-    storage_loads: Dict[int, float] = {}   # slot -> load %
-    storage_temps: Dict[int, float] = {}   # slot -> temp
-
-    def _storage_slot(sid: str) -> Optional[int]:
-        parts = sid.split("/")
-        for prefix in ("hdd", "nvme", "drive"):
-            if prefix in parts:
-                try:
-                    i = parts.index(prefix)
-                    if i + 1 < len(parts):
-                        return int(parts[i + 1])
-                except (ValueError, IndexError):
-                    pass
-        return None
 
     def walk(node: Any) -> None:
         if isinstance(node, list):
@@ -368,14 +343,6 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                         name = (node.get("Name") or node.get("Text") or "").lower()
                         if "memory" in name or "used" in name or "total" in name or "limit" in name:
                             gpu_memory_sensors.append((sid, val, name))
-                # Collect storage (HDD/NVMe) load and temperature for fallback
-                slot = _storage_slot(sid)
-                if slot is not None and 0 <= slot < 4:
-                    stype = (node.get("Type") or "").lower()
-                    if "load" in stype:
-                        storage_loads[slot] = val
-                    if "temperature" in stype or "temp" in stype:
-                        storage_temps[slot] = val
             if "Children" in node:
                 walk(node["Children"])
     walk(data)
@@ -388,15 +355,19 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                 results["vt"] = val
     it8688e_fans.sort(key=lambda x: x[0])
     it8688e_temps.sort(key=lambda x: x[0])
-    # Fans: CPU, Pump, GPU, Case (optional)
+    # Fans: CPU, Pump, GPU (LHM gpu-nvidia uses fan/1 not fan/0), Case (optional)
     fans: List[int] = []
     for path in FAN_PATHS:
         fans.append(int(path_to_val.get(path, 0)))
     fans.append(int(path_to_val.get(FAN_CASE_PATH, 0)))
+    # GPU fan: serverpars has /gpu-nvidia/0/fan/1 for "GPU Fan" RPM (not fan/0)
+    gf_val = int(path_to_val.get("/gpu-nvidia/0/fan/1", 0)) or (fans[2] if len(fans) > 2 else 0)
+    if len(fans) > 2:
+        fans[2] = gf_val
     results["fans"] = fans
     results["cf"] = fans[0] if len(fans) > 0 else 0
     results["s1"] = fans[1] if len(fans) > 1 else 0
-    results["gf"] = fans[2] if len(fans) > 2 else 0
+    results["gf"] = gf_val
     results["s2"] = fans[3] if len(fans) > 3 else 0
     if it8688e_temps:
         results["ch"] = it8688e_temps[0][1]
@@ -406,24 +377,43 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
-    # HDD array: 4 drives — try path alternatives then storage fallback
+    # Storage: collect all /hdd/N, /nvme/N, /ssd/N with data/31 (free), data/32 (total), temperature/0
+    devices_seen: set = set()
+    storage_devices: List[Tuple[str, int, float, float, float]] = []  # (prefix, num, used_gb, total_gb, temp)
+    for sid in path_to_val:
+        parts = sid.strip("/").split("/")
+        if len(parts) >= 2 and parts[0] in ("hdd", "nvme", "ssd"):
+            try:
+                num = int(parts[1])
+                prefix = parts[0]
+                key = (prefix, num)
+                if key in devices_seen:
+                    continue
+                devices_seen.add(key)
+                free_gb = float(path_to_val.get(f"/{prefix}/{num}/data/31", 0) or 0)
+                total_gb = float(path_to_val.get(f"/{prefix}/{num}/data/32", 0) or 0)
+                temp = float(path_to_val.get(f"/{prefix}/{num}/temperature/0", 0) or 0)
+                if total_gb > 0 or free_gb > 0:
+                    used_gb = total_gb - free_gb if total_gb > 0 else 0.0
+                    if used_gb < 0:
+                        used_gb = 0.0
+                    storage_devices.append((prefix, num, used_gb, total_gb, temp))
+            except (ValueError, IndexError):
+                pass
+    storage_devices.sort(key=lambda x: (x[0], x[1]))
     drive_letters = ("C", "D", "E", "F")
     hdd: List[Dict[str, Any]] = []
     for idx in range(4):
-        u, t = 0, 0
-        for load_path, temp_path in HDD_PATH_ALTERNATIVES[idx]:
-            if load_path in path_to_val or temp_path in path_to_val:
-                u = int(path_to_val.get(load_path, 0))
-                t = int(path_to_val.get(temp_path, 0))
-                if u < 0 or u > 100:
-                    u = 0
-                break
+        if idx < len(storage_devices):
+            _pre, _num, used_gb, total_gb, temp = storage_devices[idx]
+            hdd.append({
+                "n": drive_letters[idx] if idx < len(drive_letters) else "?",
+                "u": round(used_gb, 1),
+                "tot": round(total_gb, 1),
+                "t": int(temp),
+            })
         else:
-            u = int(storage_loads.get(idx, 0))
-            t = int(storage_temps.get(idx, 0))
-            if u > 100:
-                u = 0
-        hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": u, "t": t})
+            hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": 0.0, "tot": 0.0, "t": 0})
     results["hdd"] = hdd
     return results
 
@@ -647,11 +637,12 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         if i < len(raw_hdd):
             e = raw_hdd[i]
             n = e.get("n") or drive_letters[i]
-            u = e.get("u") if "u" in e else e.get("load", 0)
+            u = e.get("u", 0.0)
+            tot = e.get("tot", 0.0)
             t = e.get("t", 0)
-            hdd_list.append({"n": n if isinstance(n, str) else drive_letters[i], "u": int(u), "t": int(t)})
+            hdd_list.append({"n": n if isinstance(n, str) else drive_letters[i], "u": round(float(u), 1), "tot": round(float(tot), 1), "t": int(t)})
         else:
-            hdd_list.append({"n": drive_letters[i], "u": 0, "t": 0})
+            hdd_list.append({"n": drive_letters[i], "u": 0.0, "tot": 0.0, "t": 0})
 
     payload = {
         "ct": ct, "gt": gt,
