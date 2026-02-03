@@ -79,52 +79,63 @@ WEATHER_UPDATE_INTERVAL = 10 * 60  # 10 minutes
 PING_TARGET = "8.8.8.8"  # Google DNS
 PING_TIMEOUT = 2
 
-COVER_SIZE = 48
+# Album cover: 64x64 1-bit → 512 bytes → base64
+COVER_SIZE = 64
 COVER_BYTES = (COVER_SIZE * COVER_SIZE) // 8
 TOP_PROCS_CPU_N = 3
 TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
 TOP_PROCS_CACHE_TTL = 2.5
 
-# NOCTURNE_OS: poll interval and send logic
-POLL_INTERVAL = 0.5          # Collect data every 500ms
-HEARTBEAT_INTERVAL = 2.0    # Must send at least something every 2s to keep link alive
-HYSTERESIS_TEMP = 2         # Send if temp changed by >= 2°C
-HYSTERESIS_LOAD = 5         # Send if load changed by >= 5%
-HYSTERESIS_NET_KB = 100     # Send if net changed by >= 100 KB/s
+# NOCTURNE_OS: poll interval 1s, send logic
+POLL_INTERVAL = 1.0          # Collect data every 1s
+HEARTBEAT_INTERVAL = 2.0     # Must send at least something every 2s to keep link alive
+HYSTERESIS_TEMP = 2          # Send if temp changed by >= 2°C
+HYSTERESIS_LOAD = 5          # Send if load changed by >= 5%
+HYSTERESIS_NET_KB = 100       # Send if net changed by >= 100 KB/s
 
 # ============================================================================
-# DATA MAPPING — EXACT Sensor IDs from serverpars.txt, 2-char JSON keys
+# DATA MAPPING — Exact sensor paths (Ryzen 5 5600X, RTX 4070, Gigabyte B550M / ITE IT8688E)
+# Primary: nvidiagpu; fallback alias: gpu-nvidia for LHM variants
 # ============================================================================
 
+# Primary paths (mandatory spec)
 TARGETS = {
-    # CPU & GPU Core Metrics
-    "ct": "/amdcpu/0/temperature/2",      # CPU Temp (Tdie)
-    "gt": "/gpu-nvidia/0/temperature/0",  # GPU Temp
-    "cl": "/amdcpu/0/load/0",             # CPU Load (Total)
-    "gl": "/gpu-nvidia/0/load/0",         # GPU Load (Core)
-    
-    # Memory
-    "ru": "/ram/data/0",                  # RAM Used (GB)
-    "ra": "/ram/data/1",                  # RAM Available (GB) - will calc total
-    
-    # Fans (RPM)
-    "cf": "/lpc/it8688e/0/fan/0",         # CPU Fan (Pump)
-    "s1": "/lpc/it8688e/0/fan/1",         # System Fan #1 (Radiator)
-    "s2": "/lpc/it8688e/0/fan/2",         # System Fan #2
-    "gf": "/gpu-nvidia/0/fan/1",          # GPU Fan
-    
-    # Storage Load (%)
-    "su": "/nvme/2/load/30",              # NVMe System Drive (C:)
-    "du": "/hdd/0/load/30",               # HDD Data Drive (D:)
-    
-    # VRAM
-    "vu": "/gpu-nvidia/0/smalldata/1",    # VRAM Used (MB)
-    "vt": "/gpu-nvidia/0/smalldata/2",    # VRAM Total (MB)
-    
-    # Chipset Temp
-    "ch": "/lpc/it8688e/0/temperature/0", # Chipset/System Temp
+    # CPU (Ryzen 5 5600X)
+    "ct": "/amdcpu/0/temperature/2",   # Package
+    "cl": "/amdcpu/0/load/0",          # Total
+    "pw": "/amdcpu/0/power/0",         # Package (W)
+    "cc": "/amdcpu/0/clock/1",         # Core #1 (MHz)
+    # GPU (RTX 4070)
+    "gt": "/nvidiagpu/0/temperature/0",  # Core
+    "gh": "/nvidiagpu/0/temperature/1",  # HotSpot
+    "gl": "/nvidiagpu/0/load/0",        # Core load
+    "gf": "/nvidiagpu/0/fan/0",
+    "gv": "/nvidiagpu/0/load/1",       # VRAM load (%)
+    # VRAM (MB → GB in parser)
+    "vu": "/nvidiagpu/0/smalldata/1",
+    "vt": "/nvidiagpu/0/smalldata/2",
+    # RAM (LHM: used + available → total = used+available)
+    "ru": "/ram/data/0",
+    "ra": "/ram/data/1",
+    # Storage: SSD /hdd/0, HDD /hdd/1
+    "su": "/hdd/0/load/0",             # SSD Samsung load
+    "nt": "/hdd/0/temperature/0",       # SSD temp (optional)
+    "du": "/hdd/1/load/0",             # HDD load
 }
+# Fallback: some LHM versions use gpu-nvidia instead of nvidiagpu
+TARGETS_ALIAS = {
+    "/gpu-nvidia/0/temperature/0": "gt",
+    "/gpu-nvidia/0/temperature/1": "gh",
+    "/gpu-nvidia/0/load/0": "gl",
+    "/gpu-nvidia/0/fan/0": "gf",
+    "/gpu-nvidia/0/fan/1": "gf",
+    "/gpu-nvidia/0/load/1": "gv",
+    "/gpu-nvidia/0/smalldata/1": "vu",
+    "/gpu-nvidia/0/smalldata/2": "vt",
+}
+# IT8688E: cf, s1, s2, ch filled by heuristic (Type Fan / Temperature under /lpc/it8688e/0)
+IT8688E_PREFIX = "/lpc/it8688e/0"
 
 # ============================================================================
 # GLOBAL STATE
@@ -176,6 +187,32 @@ global_data_cache: Dict = {
 _last_sent_snapshot: Optional[Tuple] = None
 _last_heartbeat_time: float = 0.0
 
+# Alarm config (loaded from config.json)
+alarm_config: Dict = {"gpu_temp_limit": 80, "cpu_temp_limit": 75}
+
+
+def load_config_json() -> Dict:
+    """Load config.json from same directory as script. Returns defaults on failure."""
+    global alarm_config
+    paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"),
+        "config.json",
+    ]
+    for p in paths:
+        try:
+            if os.path.isfile(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "gpu_temp_limit" in data:
+                    alarm_config["gpu_temp_limit"] = int(data["gpu_temp_limit"])
+                if "cpu_temp_limit" in data:
+                    alarm_config["cpu_temp_limit"] = int(data["cpu_temp_limit"])
+                log_info(f"Loaded config: {p}")
+                return alarm_config
+        except Exception as e:
+            log_debug(f"Config load {p}: {e}")
+    return alarm_config
+
 # ============================================================================
 # UTILITIES
 # ============================================================================
@@ -221,31 +258,53 @@ def clean_val(v: Any) -> float:
 # ============================================================================
 
 def _parse_lhm_json(data: Dict) -> Dict[str, float]:
-    results = {}
+    results: Dict[str, float] = {}
     targets_set = set(TARGETS.values())
+    it8688e_fans: List[Tuple[str, float]] = []   # (SensorId, value) for stable order
+    it8688e_temps: List[Tuple[str, float]] = []
 
-    def walk(node):
+    def walk(node: Any) -> None:
         if isinstance(node, list):
             for item in node:
                 walk(item)
         elif isinstance(node, dict):
             sid = node.get("SensorId") or node.get("SensorID")
-            if sid and sid in targets_set:
-                raw = node.get("Value") or node.get("RawValue") or ""
-                for k, v in TARGETS.items():
-                    if v == sid:
-                        results[k] = clean_val(raw)
-                        break
+            raw = node.get("Value") or node.get("RawValue") or ""
+            val = clean_val(raw)
+            if sid:
+                if sid in targets_set:
+                    for k, v in TARGETS.items():
+                        if v == sid:
+                            results[k] = val
+                            break
+                elif sid in TARGETS_ALIAS:
+                    results[TARGETS_ALIAS[sid]] = val
+                elif sid.startswith(IT8688E_PREFIX):
+                    stype = (node.get("Type") or node.get("SensorType") or "").lower()
+                    if "fan" in stype:
+                        it8688e_fans.append((sid, val))
+                    elif "temperature" in stype or "temp" in stype:
+                        it8688e_temps.append((sid, val))
             if "Children" in node:
                 walk(node["Children"])
 
     walk(data)
+    # IT8688E heuristic: assign first 3 fans to cf, s1, s2; first temp to ch
+    it8688e_fans.sort(key=lambda x: x[0])
+    it8688e_temps.sort(key=lambda x: x[0])
+    for i, (_, v) in enumerate(it8688e_fans[:3]):
+        results["cf" if i == 0 else "s1" if i == 1 else "s2"] = v
+    if it8688e_temps:
+        results["ch"] = it8688e_temps[0][1]
+    # RAM: ra = used + available (total)
     if "ru" in results and "ra" in results:
         results["ra"] = results["ru"] + results["ra"]
+    # VRAM MB → GB
     if "vu" in results:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
+    # CPU clock: may be in MHz; keep as-is (firmware shows 4.6GHz from 4600)
     return results
 
 
@@ -491,7 +550,7 @@ async def get_media_info() -> Dict:
         # Idle = we have a session (artist/track) but not playing — show IDLE + zzz on deck
         is_idle = bool(artist or track) and not is_playing
         cover_b64 = ""
-        if HAS_PIL and info:
+        if HAS_PIL and info and is_playing:
             try:
                 thumb_ref = getattr(info, "thumbnail", None)
                 if thumb_ref:
@@ -509,7 +568,8 @@ async def get_media_info() -> Dict:
                         if img_bytes:
                             img = Image.open(io.BytesIO(img_bytes))
                             img = img.convert("L").resize((COVER_SIZE, COVER_SIZE), Image.Resampling.LANCZOS)
-                            img = img.point(lambda p: 255 if p > 128 else 0, mode="1")
+                            # Floyd-Steinberg dithering (1-bit)
+                            img = img.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
                             bitmap = []
                             for y in range(COVER_SIZE):
                                 for x in range(0, COVER_SIZE, 8):
@@ -596,6 +656,10 @@ def build_payload(
         "gt": int(hw.get("gt", 0)),
         "cl": int(hw.get("cl", 0)),
         "gl": int(hw.get("gl", 0)),
+        "pw": int(hw.get("pw", 0)),   # CPU power (W)
+        "cc": int(hw.get("cc", 0)),   # CPU clock (MHz)
+        "gh": int(hw.get("gh", 0)),   # GPU HotSpot (°C)
+        "gv": int(hw.get("gv", 0)),   # VRAM load (%)
         
         # Memory
         "ru": ram_used_f,
@@ -643,6 +707,18 @@ def build_payload(
         "idle": media.get("idle", False),
         "cov": media.get("cover_b64", ""),
     }
+    
+    # Alarm: if limit exceeded, set alert and target_screen (auto-switch on display)
+    gpu_limit = alarm_config.get("gpu_temp_limit", 80)
+    cpu_limit = alarm_config.get("cpu_temp_limit", 75)
+    ct_val = payload["ct"]
+    gt_val = payload["gt"]
+    if gt_val >= gpu_limit or ct_val >= cpu_limit:
+        payload["alert"] = "CRITICAL"
+        payload["target_screen"] = "GPU" if gt_val >= gpu_limit else "CPU"
+    else:
+        payload["alert"] = ""
+        payload["target_screen"] = ""
     
     return payload
 
@@ -801,6 +877,7 @@ async def run():
     global _last_sent_snapshot, _last_heartbeat_time
 
     executor = ThreadPoolExecutor(max_workers=6)
+    load_config_json()
 
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
 

@@ -28,14 +28,9 @@ unsigned long bootTime = 0;
 bool splashDone = false;
 unsigned long splashStart = 0;
 int currentScene = 0;
-bool inMenu = false;
-int menuItem = 0;
-const int MENU_ITEMS = 5;
 
 unsigned long btnPressTime = 0;
 bool btnHeld = false;
-bool menuHoldHandled = false;
-unsigned long lastMenuActivity = 0;
 unsigned long lastCarousel = 0;
 unsigned long lastBlink = 0;
 unsigned long lastFanAnim = 0;
@@ -113,7 +108,8 @@ void loop() {
             netLink.markDataReceived(now);
             dataManager.parseLine(buf);
             HardwareData &hw = dataManager.hw();
-            display.cpuGraph.push((float)(hw.cl > hw.gl ? hw.cl : hw.gl));
+            display.cpuGraph.push((float)hw.cl);
+            display.gpuGraph.push((float)hw.gl);
             display.netDownGraph.setMax(2048);
             display.netDownGraph.push((float)hw.nd);
             display.netUpGraph.setMax(2048);
@@ -130,12 +126,11 @@ void loop() {
     }
   }
 
-  // Button: short = cycle scene, medium = menu, long = Predator
+  // Button: click = next screen, long press = SLEEP (Predator)
   int btnState = digitalRead(NOCT_BUTTON_PIN);
   if (btnState == LOW && !btnHeld) {
     btnHeld = true;
     btnPressTime = now;
-    menuHoldHandled = false;
   }
   if (btnState == HIGH && btnHeld) {
     unsigned long duration = now - btnPressTime;
@@ -144,63 +139,17 @@ void loop() {
       predatorMode = !predatorMode;
       if (predatorMode)
         predatorEnterTime = now;
-    } else if (duration > NOCT_BUTTON_MENU_MS) {
-      if (!inMenu) {
-        inMenu = true;
-        menuItem = 0;
-        lastMenuActivity = now;
-      }
     } else {
-      if (inMenu) {
-        lastMenuActivity = now;
-        menuItem++;
-        if (menuItem >= MENU_ITEMS)
-          menuItem = 0;
-      } else {
-        currentScene = (currentScene + 1) % sceneManager.totalScenes();
-        lastCarousel = now;
-      }
+      currentScene = (currentScene + 1) % sceneManager.totalScenes();
+      lastCarousel = now;
     }
   }
 
-  if (inMenu && btnState == LOW && (now - btnPressTime > NOCT_BUTTON_MENU_MS) &&
-      !menuHoldHandled) {
-    menuHoldHandled = true;
-    lastMenuActivity = now;
-    Preferences prefs;
-    prefs.begin("nocturne", false);
-    switch (menuItem) {
-    case 0:
-      settings.ledEnabled = !settings.ledEnabled;
-      prefs.putBool("led", settings.ledEnabled);
-      break;
-    case 1:
-      settings.carouselEnabled = !settings.carouselEnabled;
-      prefs.putBool("carousel", settings.carouselEnabled);
-      break;
-    case 2:
-      settings.displayContrast = (settings.displayContrast <= 128)   ? 192
-                                 : (settings.displayContrast <= 192) ? 255
-                                                                     : 128;
-      display.u8g2().setContrast((uint8_t)settings.displayContrast);
-      prefs.putInt("contrast", settings.displayContrast);
-      break;
-    case 3:
-      settings.displayInverted = !settings.displayInverted;
-      display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
-      prefs.putBool("inverted", settings.displayInverted);
-      break;
-    case 4:
-      inMenu = false;
-      break;
-    }
-    prefs.end();
-  }
+  // Alert from server: force scene to CPU or GPU and flash every 1s
+  if (dataManager.alertActive())
+    currentScene = dataManager.alertTargetScene();
 
-  if (inMenu && (now - lastMenuActivity > NOCT_MENU_TIMEOUT_MS))
-    inMenu = false;
-
-  if (settings.carouselEnabled && !inMenu) {
+  if (settings.carouselEnabled && !predatorMode) {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
     if (now - lastCarousel > intervalMs) {
@@ -274,14 +223,26 @@ void loop() {
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
+    // Alert flash: invert display every 1s when CRITICAL
+    static unsigned long lastAlertFlash = 0;
+    static bool alertFlashInverted = false;
+    if (dataManager.alertActive()) {
+      if (now - lastAlertFlash >= 1000) {
+        lastAlertFlash = now;
+        alertFlashInverted = !alertFlashInverted;
+      }
+      display.u8g2().setFlipMode(alertFlashInverted
+                                     ? (1 - (settings.displayInverted ? 1 : 0))
+                                     : (settings.displayInverted ? 1 : 0));
+    } else {
+      display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
+    }
+
     display.drawCornerCrosshairs();
     sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
 
     if (netLink.isWifiConnected())
       display.drawWiFiIcon(NOCT_DISP_W - 16, 2, netLink.rssi());
-    int graphY = NOCT_FOOTER_Y;
-    display.drawRollingGraph(2, graphY, NOCT_DISP_W - 4, NOCT_GRAPH_HEIGHT,
-                             display.cpuGraph, 100);
 
     display.drawLinkStatus(2, NOCT_DISP_H - 2,
                            netLink.isTcpConnected() &&
@@ -291,9 +252,6 @@ void loop() {
       display.u8g2().drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
 
     display.drawGlitchEffect();
-
-    if (inMenu)
-      sceneManager.drawMenu(menuItem);
 
     int n = sceneManager.totalScenes();
     int dotsW = n * 6 - 2;

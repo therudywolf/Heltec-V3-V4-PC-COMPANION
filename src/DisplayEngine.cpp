@@ -12,7 +12,7 @@
 
 DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
     : sdaPin_(sdaPin), sclPin_(sclPin), u8g2_(U8G2_R0, rstPin),
-      dataSpike_(false), lastGlitchApply_(0), invertPhase_(false) {}
+      dataSpike_(false), lastGlitchTrigger_(0), glitchUntil_(0) {}
 
 void DisplayEngine::begin() {
   Wire.begin(sdaPin_, sclPin_);
@@ -28,30 +28,30 @@ void DisplayEngine::setDataSpike(bool spike) { dataSpike_ = spike; }
 
 void DisplayEngine::drawBiosPost(unsigned long now, unsigned long bootTime,
                                  bool wifiOk, int rssi) {
-  // Fake BIOS POST: scroll lines like MEM CHECK... OK, LINK ESTABLISHED...,
-  // WOLF_PROTOCOL INIT
+  // BOOT: Wolf head logo + SYSTEM INIT scrolling
+  int cx = NOCT_DISP_W / 2;
+  int cy = 14;
+  u8g2_.drawTriangle(cx - 12, cy - 8, cx - 6, cy - 2, cx - 10, cy);
+  u8g2_.drawTriangle(cx + 12, cy - 8, cx + 6, cy - 2, cx + 10, cy);
+  u8g2_.drawRFrame(cx - 10, cy - 2, 20, 14, 2);
+  u8g2_.drawPixel(cx - 4, cy + 2);
+  u8g2_.drawPixel(cx + 4, cy + 2);
+
   u8g2_.setFont(FONT_LOG);
   int lineH = 7;
   unsigned long elapsed = now - bootTime;
-  int scroll = (int)(elapsed / 80) % (8 * lineH); // Scroll every 80ms
-  int y0 = NOCT_DISP_H + 4 - (scroll % (8 * lineH));
-
-  const char *lines[] = {"MEM CHECK......... OK",
-                         "LINK ESTABLISHED..",
-                         "WOLF_PROTOCOL INIT",
-                         "NOCTURNE_OS v1.0",
-                         wifiOk ? "WIFI: OK" : "WIFI: ...",
-                         ""};
-  int nLines = 5;
-  for (int i = 0; i < nLines; i++) {
+  int scroll = (int)(elapsed / 80) % (6 * lineH);
+  int y0 = NOCT_DISP_H + 4 - (scroll % (6 * lineH));
+  const char *lines[] = {
+      "SYSTEM INIT",   "MEM CHECK......... OK",           "LINK ESTABLISHED..",
+      "WOLF_PROTOCOL", wifiOk ? "WIFI: OK" : "WIFI: ...", ""};
+  for (int i = 0; i < 5; i++) {
     int y = y0 + i * lineH;
-    if (y >= -lineH && y < NOCT_DISP_H) {
+    if (y >= -lineH && y < NOCT_DISP_H)
       u8g2_.drawStr(NOCT_MARGIN, y + lineH - 1, lines[i]);
-    }
   }
-  if (wifiOk) {
+  if (wifiOk)
     drawWiFiIcon(NOCT_DISP_W - 16, NOCT_DISP_H - 12, rssi);
-  }
   // Progress bar at bottom
   int barW = (int)((float)elapsed * (NOCT_DISP_W - 2 * NOCT_MARGIN) /
                    (float)NOCT_SPLASH_MS);
@@ -145,30 +145,27 @@ void DisplayEngine::drawLinkStatus(int x, int y, bool linked) {
 }
 
 void DisplayEngine::drawGlitchEffect() {
-  // Glitch 2.0: V-Sync failure — horizontal tear or brief invert on data spike
+  // Timed glitch: every ~45 s, for 100 ms, horizontal shift effect (2–4 px)
   unsigned long now = millis();
-  if (dataSpike_ || (now - lastGlitchApply_ < 150)) {
-    if (random(100) < 40) {
-      // Horizontal tear: shift a band of scanlines
-      int y = random(8, NOCT_DISP_H - 8);
-      int shift = random(-4, 5);
+  if (glitchUntil_ > 0 && now < glitchUntil_) {
+    int shift = 2 + (random(3)); // 2–4 px
+    if (random(2) == 0)
+      shift = -shift;
+    for (int band = 0; band < 4; band++) {
+      int y = random(2, NOCT_DISP_H - 4);
       for (int x = 0; x < NOCT_DISP_W; x++) {
         int sx = (x + shift + NOCT_DISP_W) % NOCT_DISP_W;
-        // Simulate tear by drawing a line of pixels from shifted position
-        u8g2_.drawPixel(sx, y);
+        if (random(4) < 2)
+          u8g2_.drawPixel(sx, y);
       }
     }
-    if (random(100) < 25) {
-      // Brief invert: flip draw color for a stripe
-      u8g2_.setDrawColor(0);
-      int y0 = random(0, NOCT_DISP_H - 12);
-      u8g2_.drawBox(0, y0, NOCT_DISP_W, 10);
-      u8g2_.setDrawColor(1);
-    }
+    return;
   }
-  if (now - lastGlitchApply_ > 200) {
-    dataSpike_ = false;
-    lastGlitchApply_ = now;
+  if (glitchUntil_ > 0 && now >= glitchUntil_)
+    glitchUntil_ = 0;
+  if (now - lastGlitchTrigger_ >= (unsigned long)NOCT_GLITCH_INTERVAL_MS) {
+    lastGlitchTrigger_ = now;
+    glitchUntil_ = now + NOCT_GLITCH_DURATION_MS;
   }
 }
 

@@ -3,6 +3,7 @@
  */
 #include "nocturne/DataManager.h"
 #include "nocturne/config.h"
+#include <string.h>
 
 DataManager::DataManager() {}
 
@@ -24,6 +25,10 @@ void DataManager::parsePayload(JsonDocument &doc) {
   hw_.gt = doc["gt"] | 0;
   hw_.cl = doc["cl"] | 0;
   hw_.gl = doc["gl"] | 0;
+  hw_.cc = doc["cc"] | 0;
+  hw_.pw = doc["pw"] | 0;
+  hw_.gh = doc["gh"] | 0;
+  hw_.gv = doc["gv"] | 0;
   hw_.ru = doc["ru"] | 0.0f;
   hw_.ra = doc["ra"] | 0.0f;
   hw_.nd = doc["nd"] | 0;
@@ -77,9 +82,22 @@ void DataManager::parsePayload(JsonDocument &doc) {
 
   const char *art = doc["art"];
   const char *trk = doc["trk"];
+  const char *cov = doc["cov"];
   media_.artist = String(art ? art : "");
   media_.track = String(trk ? trk : "");
   media_.isPlaying = doc["mp"] | false;
-  media_.isIdle =
-      doc["idle"] | false; // Paused / no session — show IDLE + sleep icon
+  media_.isIdle = doc["idle"] | false;
+  media_.coverB64 = String(cov ? cov : "");
+
+  const char *alert = doc["alert"];
+  const char *target = doc["target_screen"];
+  alertActive_ = (alert && strcmp(alert, "CRITICAL") == 0);
+  if (alertActive_ && target) {
+    if (strcmp(target, "GPU") == 0)
+      alertTargetScene_ = NOCT_SCENE_GPU;
+    else
+      alertTargetScene_ = NOCT_SCENE_CPU;
+  } else {
+    alertActive_ = false;
+  }
 }
