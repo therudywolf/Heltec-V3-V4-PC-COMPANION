@@ -1,28 +1,31 @@
 /*
- * NOCTURNE_OS — NetLink: WiFi (non-blocking reconnect) + TCP stream
- * SEARCH_MODE: scanning animation when PC disconnects (no plain "NO SIGNAL").
+ * NOCTURNE_OS — NetManager: WiFi (reconnect), TCP stream, JSON parsing
+ * (ArduinoJson) MANDATORY: WiFi.setSleep(false) after connection for ping <
+ * 10ms.
  */
-#ifndef NOCTURNE_NETLINK_H
-#define NOCTURNE_NETLINK_H
+#ifndef NOCTURNE_NET_MANAGER_H
+#define NOCTURNE_NET_MANAGER_H
 
 #include <Arduino.h>
-#include <String.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
 
-class NetLink {
+struct AppState;
+
+class NetManager {
 public:
-  NetLink();
+  NetManager();
   void begin(const char *ssid, const char *pass);
+  void setServer(const char *ip, uint16_t port);
   void tick(unsigned long now);
 
   bool isWifiConnected() const { return wifiConnected_; }
   bool isTcpConnected() const { return tcpConnected_; }
   bool hasReceivedData() const { return firstDataReceived_; }
   int rssi() const { return rssi_; }
+  bool isSearchMode() const { return searchMode_; }
+  bool isSignalLost(unsigned long now) const;
 
-  // TCP stream
-  bool tcpConnected() const { return client_.connected(); }
   int available() { return client_.available(); }
   int read() { return client_.read(); }
   size_t print(const String &s) { return client_.print(s); }
@@ -30,24 +33,20 @@ public:
 
   void disconnectTcp();
   void markDataReceived(unsigned long now);
-
-  // SEARCH_MODE: true when we're in "scanning for host" state (show radar
-  // animation)
-  bool isSearchMode() const { return searchMode_; }
-  unsigned long lastUpdate() const { return lastUpdate_; }
-  bool isSignalLost(unsigned long now) const;
-
-  void setServer(const char *ip, uint16_t port);
   void appendLineBuffer(char c);
   void clearLineBuffer();
   String &getLineBuffer() { return lineBuffer_; }
   int getLastSentScreen() const { return lastSentScreen_; }
   void setLastSentScreen(int s) { lastSentScreen_ = s; }
 
+  /** Parse one newline-terminated JSON line into AppState. Returns true on
+   * success. */
+  bool parsePayload(const String &line, AppState *state);
+
 private:
   bool tryTcpConnect(unsigned long now);
 
-  mutable WiFiClient client_;
+  WiFiClient client_;
   String lineBuffer_;
   const char *serverIp_;
   uint16_t serverPort_;

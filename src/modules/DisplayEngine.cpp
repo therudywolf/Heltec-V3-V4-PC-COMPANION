@@ -1,14 +1,14 @@
 /*
- * NOCTURNE_OS — DisplayEngine: full buffer, glitch 2.0, BIOS POST, typography
- * No per-cell black box; clear -> draw -> send only.
+ * NOCTURNE_OS — DisplayEngine: full buffer, glitch, BIOS POST. Fonts:
+ * profont10, helvB10.
  */
-#include "nocturne/DisplayEngine.h"
+#include "DisplayEngine.h"
 #include <Wire.h>
 
-#define LINE_H_DATA 12
-#define LINE_H_LABEL 5
-#define LINE_H_HEAD 10
-#define LINE_H_BIG 14
+#define LINE_H_DATA NOCT_LINE_H_DATA
+#define LINE_H_LABEL NOCT_LINE_H_LABEL
+#define LINE_H_HEAD NOCT_LINE_H_HEAD
+#define LINE_H_BIG NOCT_LINE_H_BIG
 
 DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
     : sdaPin_(sdaPin), sclPin_(sclPin), u8g2_(U8G2_R0, rstPin),
@@ -21,23 +21,19 @@ void DisplayEngine::begin() {
 }
 
 void DisplayEngine::clearBuffer() { u8g2_.clearBuffer(); }
-
 void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
-
 void DisplayEngine::setDataSpike(bool spike) { dataSpike_ = spike; }
 
 void DisplayEngine::drawBiosPost(unsigned long now, unsigned long bootTime,
                                  bool wifiOk, int rssi) {
-  // BOOT: Wolf head logo + SYSTEM INIT scrolling
-  int cx = NOCT_DISP_W / 2;
-  int cy = 14;
+  int cx = NOCT_DISP_W / 2, cy = 14;
   u8g2_.drawTriangle(cx - 12, cy - 8, cx - 6, cy - 2, cx - 10, cy);
   u8g2_.drawTriangle(cx + 12, cy - 8, cx + 6, cy - 2, cx + 10, cy);
   u8g2_.drawRFrame(cx - 10, cy - 2, 20, 14, 2);
   u8g2_.drawPixel(cx - 4, cy + 2);
   u8g2_.drawPixel(cx + 4, cy + 2);
 
-  u8g2_.setFont(FONT_LOG);
+  u8g2_.setFont(FONT_TINY);
   int lineH = 7;
   unsigned long elapsed = now - bootTime;
   int scroll = (int)(elapsed / 80) % (6 * lineH);
@@ -52,7 +48,6 @@ void DisplayEngine::drawBiosPost(unsigned long now, unsigned long bootTime,
   }
   if (wifiOk)
     drawWiFiIcon(NOCT_DISP_W - 16, NOCT_DISP_H - 12, rssi);
-  // Progress bar at bottom
   int barW = (int)((float)elapsed * (NOCT_DISP_W - 2 * NOCT_MARGIN) /
                    (float)NOCT_SPLASH_MS);
   if (barW > NOCT_DISP_W - 2 * NOCT_MARGIN)
@@ -67,7 +62,6 @@ bool DisplayEngine::biosPostDone(unsigned long now, unsigned long bootTime) {
 
 void DisplayEngine::drawMetric(int x, int y, const char *label,
                                const char *value) {
-  // Full buffer mode: no black box; we clear whole buffer each frame
   u8g2_.setFont(FONT_VAL);
   if (label && strlen(label) > 0) {
     u8g2_.setFont(FONT_LABEL);
@@ -137,18 +131,16 @@ void DisplayEngine::drawFanIcon(int x, int y, int frame) {
 
 void DisplayEngine::drawLinkStatus(int x, int y, bool linked) {
   u8g2_.setFont(FONT_TINY);
-  if (linked) {
+  if (linked)
     u8g2_.drawStr(x, y, "LINK");
-  } else {
+  else
     u8g2_.drawStr(x, y, "----");
-  }
 }
 
 void DisplayEngine::drawGlitchEffect() {
-  // Timed glitch: every ~45 s, for 100 ms, horizontal shift effect (2–4 px)
   unsigned long now = millis();
   if (glitchUntil_ > 0 && now < glitchUntil_) {
-    int shift = 2 + (random(3)); // 2–4 px
+    int shift = 2 + (random(3));
     if (random(2) == 0)
       shift = -shift;
     for (int band = 0; band < 4; band++) {

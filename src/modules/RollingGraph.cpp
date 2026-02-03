@@ -1,7 +1,7 @@
 /*
  * NOCTURNE_OS — Rolling sparkline implementation
  */
-#include "nocturne/RollingGraph.h"
+#include "RollingGraph.h"
 
 RollingGraph::RollingGraph() : head(0), count(0), maxVal(100) {
   for (int i = 0; i < NOCT_GRAPH_SAMPLES; i++)
@@ -19,8 +19,6 @@ void RollingGraph::push(float value) {
     count++;
 }
 
-void RollingGraph::pushRaw(int value) { push((float)value); }
-
 void RollingGraph::setMax(int max) {
   if (max < 1)
     max = 1;
@@ -32,12 +30,4 @@ void RollingGraph::clear() {
   count = 0;
   for (int i = 0; i < NOCT_GRAPH_SAMPLES; i++)
     values[i] = 0.0f;
-}
-
-void RollingGraph::draw(int x, int y, int w, int h) {
-  // Drawing is done by DisplayEngine using our values[] buffer
-  (void)x;
-  (void)y;
-  (void)w;
-  (void)h;
 }

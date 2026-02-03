@@ -1,9 +1,9 @@
 /*
- * NOCTURNE_OS — SceneManager: HUB, CPU, GPU, NET, ATMOS, MEDIA (6 scenes)
+ * NOCTURNE_OS — SceneManager: 6 scenes (HUB, CPU, GPU, NET, ATMOS, MEDIA)
+ * pixel-perfect 128x64.
  */
-#include "nocturne/SceneManager.h"
-#include "nocturne/config.h"
-#include <WiFi.h>
+#include "SceneManager.h"
+#include "../../include/nocturne/config.h"
 #include <mbedtls/base64.h>
 
 #define LINE_H_DATA NOCT_LINE_H_DATA
@@ -11,8 +11,8 @@
 #define LINE_H_HEAD NOCT_LINE_H_HEAD
 #define LINE_H_BIG NOCT_LINE_H_BIG
 
-SceneManager::SceneManager(DisplayEngine &disp, DataManager &data)
-    : disp_(disp), data_(data) {}
+SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
+    : disp_(disp), state_(state) {}
 
 void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
                         int fanFrame) {
@@ -41,9 +41,8 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
   }
 }
 
-// SCENE_HUB: Top CPU 55° | GPU 64°; Mid 12:45 (big); Bot RAM [|||||| ] bar
 void SceneManager::drawHub(unsigned long bootTime) {
-  HardwareData &hw = data_.hw();
+  HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   char buf[24];
 
@@ -76,9 +75,8 @@ void SceneManager::drawHub(unsigned long bootTime) {
                         NOCT_DISP_W - 2 * NOCT_MARGIN, 5, ramPct);
 }
 
-// SCENE_CPU: Rolling Load sparkline; Stats 4.6GHz, 65W, FAN 1200
 void SceneManager::drawCpu(unsigned long bootTime, int fanFrame) {
-  HardwareData &hw = data_.hw();
+  HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)bootTime;
   char buf[24];
@@ -103,9 +101,8 @@ void SceneManager::drawCpu(unsigned long bootTime, int fanFrame) {
   disp_.drawMetricStr(NOCT_MARGIN + 2, y + LINE_H_DATA, "", String(buf));
 }
 
-// SCENE_GPU: Rolling Load; HOTSPOT 85°, VRAM 80%, FAN 0
 void SceneManager::drawGpu(int fanFrame) {
-  HardwareData &hw = data_.hw();
+  HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   char buf[24];
 
@@ -128,9 +125,8 @@ void SceneManager::drawGpu(int fanFrame) {
   disp_.drawMetricStr(NOCT_MARGIN + 2, y + LINE_H_DATA, "", String(buf));
 }
 
-// SCENE_NET: Network graph; DL 15 MB/s, UP 2 MB/s
 void SceneManager::drawNet() {
-  HardwareData &hw = data_.hw();
+  HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   char buf[24];
 
@@ -154,17 +150,19 @@ void SceneManager::drawNet() {
   else
     snprintf(buf, sizeof(buf), "UP %d KB/s", hw.nu);
   disp_.drawMetricStr(NOCT_MARGIN + 2, y + LINE_H_DATA, "", String(buf));
+  y += LINE_H_DATA + 2;
+  snprintf(buf, sizeof(buf), "PING %d ms", hw.pg);
+  disp_.drawMetricStr(NOCT_MARGIN + 2, y + LINE_H_DATA, "", String(buf));
 }
 
-// SCENE_ATMOS: Open-Meteo; pixel icon + temp (-10°C)
 void SceneManager::drawAtmos() {
-  WeatherData &w = data_.weather();
+  WeatherData &w = state_.weather;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_HEAD);
   u8g2.drawStr(NOCT_MARGIN + 2, NOCT_MARGIN + LINE_H_HEAD, "[ATMOS]");
 
   int y = NOCT_MARGIN + LINE_H_HEAD + 6;
-  if (!data_.weatherReceived() || (w.temp == 0 && w.desc.length() == 0)) {
+  if (!state_.weatherReceived || (w.temp == 0 && w.desc.length() == 0)) {
     u8g2.setFont(FONT_BIG);
     u8g2.drawStr(NOCT_MARGIN + 2, y + LINE_H_BIG, "NO DATA");
     return;
@@ -181,14 +179,10 @@ void SceneManager::drawAtmos() {
   u8g2.drawStr(NOCT_MARGIN + 24, y + 20, desc.c_str());
 }
 
-// SCENE_MEDIA: Left 0–64 dithered art (Base64); Right 65–128 track (scroll),
-// artist
 void SceneManager::drawMedia(bool blinkState) {
-  MediaData &media = data_.media();
+  MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int ART_W = 64;
-  const int ART_H = 64;
-  const int RAW_BYTES = (ART_W * ART_H) / 8;
+  const int ART_W = 64, ART_H = 64, RAW_BYTES = (ART_W * ART_H) / 8;
 
   if (media.coverB64.length() > 0) {
     unsigned char raw[512];
@@ -201,18 +195,17 @@ void SceneManager::drawMedia(bool blinkState) {
         for (int col = 0; col < ART_W; col++) {
           int byteIdx = row * (ART_W / 8) + col / 8;
           int bit = col % 8;
-          if (raw[byteIdx] & (1 << bit))
+          if (raw[byteIdx] & (1 << (7 - bit)))
             u8g2.drawPixel(col, row);
         }
       }
     }
   }
 
-  int rx = 65;
-  int ry = NOCT_MARGIN;
+  int rx = 65, ry = NOCT_MARGIN;
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(rx, ry + LINE_H_LABEL, "TRACK");
-  String trk = media.track.length() > 0 ? media.track : "—";
+  String trk = media.track.length() > 0 ? media.track : "-";
   if (trk.length() > 14)
     trk = trk.substring(0, 14);
   u8g2.setFont(FONT_VAL);
@@ -229,7 +222,7 @@ void SceneManager::drawMedia(bool blinkState) {
   ry += LINE_H_DATA + 8;
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(rx, ry + LINE_H_LABEL, "ARTIST");
-  String art = media.artist.length() > 0 ? media.artist : "—";
+  String art = media.artist.length() > 0 ? media.artist : "-";
   if (art.length() > 14)
     art = art.substring(0, 14);
   u8g2.setFont(FONT_VAL);
@@ -284,8 +277,7 @@ void SceneManager::drawSearchMode(int scanPhase) {
   u8g2.drawStr((NOCT_DISP_W - 90) / 2, NOCT_DISP_H / 2 - 8, "SEARCH_MODE");
   u8g2.setFont(FONT_TINY);
   u8g2.drawStr(NOCT_MARGIN + 2, NOCT_DISP_H / 2 + 4, "Scanning for host...");
-  int cx = NOCT_DISP_W / 2, cy = NOCT_DISP_H - 16;
-  int r = 14;
+  int cx = NOCT_DISP_W / 2, cy = NOCT_DISP_H - 16, r = 14;
   u8g2.drawCircle(cx, cy, r);
   int angle = (scanPhase * 30) % 360;
   float rad = angle * 3.14159f / 180.0f;
@@ -304,15 +296,15 @@ void SceneManager::drawMenu(int menuItem) {
                   NOCT_DISP_H - 2 * NOCT_MARGIN - 4, 2);
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(NOCT_MARGIN + 6, NOCT_MARGIN + 8, "SETTINGS");
-  const char *labels[] = {"LED", "Carousel", "Contrast", "Display", "Exit"};
+  const char *labels[] = {"Carousel", "WiFi Reset", "Exit"};
   int startY = NOCT_MARGIN + 14;
-  for (int i = 0; i < 5; i++) {
-    int y = startY + i * 8;
-    if (y + 8 > NOCT_DISP_H - NOCT_MARGIN - 4)
+  for (int i = 0; i < 3; i++) {
+    int y = startY + i * 10;
+    if (y + 10 > NOCT_DISP_H - NOCT_MARGIN - 4)
       break;
     if (i == menuItem) {
       u8g2.drawBox(NOCT_MARGIN + 6, y - 6, NOCT_DISP_W - 2 * NOCT_MARGIN - 12,
-                   8);
+                   10);
       u8g2.setDrawColor(0);
     }
     u8g2.drawStr(NOCT_MARGIN + 8, y, labels[i]);
