@@ -10,6 +10,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import os
 import platform
 import subprocess
@@ -47,6 +48,29 @@ except ImportError:
     HAS_PIL = False
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Logging: always to file (nocturne.log in project root); console only when --console
+# ---------------------------------------------------------------------------
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LOG_FILE = os.path.join(_PROJECT_ROOT, "nocturne.log")
+
+def _setup_logging(console: bool = False) -> None:
+    handlers: List[logging.Handler] = [
+        logging.FileHandler(_LOG_FILE, encoding="utf-8"),
+    ]
+    if console:
+        handlers.append(logging.StreamHandler(sys.stdout))
+    logging.basicConfig(
+        level=logging.DEBUG if os.getenv("DEBUG", "0") == "1" else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=handlers,
+        force=True,
+    )
+    # Prevent duplicate logs from asyncio/aiohttp
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 # ---------------------------------------------------------------------------
 # Config from config.json (host, port, lhm_url, limits, weather_city)
@@ -165,22 +189,19 @@ _last_sent_snapshot: Optional[Tuple] = None
 _last_heartbeat_time: float = 0.0
 
 
-def log_err(msg: str, exc: Optional[BaseException] = None):
+def log_err(msg: str, exc: Optional[BaseException] = None) -> None:
     try:
-        print(f"[ERROR] {msg}", file=sys.stderr, flush=True)
-        if exc is not None:
-            traceback.print_exc(file=sys.stderr)
+        logging.error(msg, exc_info=exc is not None)
     except Exception:
         pass
 
 
-def log_info(msg: str):
-    print(f"[INFO] {msg}", flush=True)
+def log_info(msg: str) -> None:
+    logging.info(msg)
 
 
-def log_debug(msg: str):
-    if os.getenv("DEBUG", "0") == "1":
-        print(f"[DEBUG] {msg}", flush=True)
+def log_debug(msg: str) -> None:
+    logging.debug(msg)
 
 
 def clean_val(v: Any) -> float:
@@ -776,7 +797,10 @@ def run_with_tray() -> None:
 
 if __name__ == "__main__":
     use_console = "--no-tray" in sys.argv or "--console" in sys.argv
+    _setup_logging(console=use_console)
     log_info("NOCTURNE_OS — PC Monitor Server (cover_b64 only on track change)")
+    if not use_console:
+        log_info(f"Log file: {_LOG_FILE}")
     try:
         if use_console:
             asyncio.run(run())
