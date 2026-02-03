@@ -18,12 +18,13 @@ public:
   const char *getSceneName(int sceneIndex) const;
   int totalScenes() const { return NOCT_TOTAL_SCENES; }
 
-  // --- Screens 1–7 (grid-perfect) ---
+  // --- Screens (grid-perfect) ---
   void drawHub(unsigned long bootTime);
   void drawCpuDetail(unsigned long bootTime);
   void drawGpuDetail(int fanFrame);
   void drawRam();
   void drawDisks();
+  void drawFans(int fanFrame);
   void drawAtmos();
   void drawMedia(bool blinkState);
 
@@ -34,6 +35,7 @@ public:
   void drawConnecting(int rssi, bool blinkState);
 
 private:
+  void drawFanIconSmall(int x, int y, int frame);
   void drawWeatherIcon32(int x, int y, int wmoCode);
   void drawNoDataCross(int x, int y, int w, int h);
   void drawNoisePattern(int x, int y, int w, int h);
