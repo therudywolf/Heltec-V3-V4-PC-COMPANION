@@ -1,7 +1,7 @@
 /*
  * NOCTURNE_OS — SceneManager: 6 screens. 128x64, MAIN/CPU/GPU/RAM/DISKS/MEDIA.
- * Unified card style: NOCT_CARD_LEFT/TOP/ROW_DY, LABEL_FONT labels, HUGE_FONT
- * for main values, STORAGE_FONT for lists.
+ * Unified card style: NOCT_CARD_LEFT/TOP/ROW_DY everywhere; LABEL_FONT for
+ * labels, STORAGE_FONT for values; no HUGE_FONT on cards.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
@@ -31,13 +31,13 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
     drawMain(blinkState);
     break;
   case NOCT_SCENE_CPU:
-    drawCpu();
+    drawCpu(blinkState);
     break;
   case NOCT_SCENE_GPU:
-    drawGpu();
+    drawGpu(blinkState);
     break;
   case NOCT_SCENE_RAM:
-    drawRam();
+    drawRam(blinkState);
     break;
   case NOCT_SCENE_DISKS:
     drawDisks();
@@ -65,8 +65,20 @@ void SceneManager::drawMain(bool blinkState) {
   int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
   int cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
   int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
-  bool cpuOver = (cpuTemp >= CPU_TEMP_ALERT);
-  bool gpuOver = (gpuTemp >= GPU_TEMP_ALERT);
+  bool onAlertMain =
+      state_.alertActive && state_.alertTargetScene == NOCT_SCENE_MAIN;
+  bool blinkCpu = onAlertMain &&
+                  (state_.alertMetric == NOCT_ALERT_CT ||
+                   state_.alertMetric == NOCT_ALERT_CL) &&
+                  blinkState;
+  bool blinkGpu = onAlertMain &&
+                  (state_.alertMetric == NOCT_ALERT_GT ||
+                   state_.alertMetric == NOCT_ALERT_GL) &&
+                  blinkState;
+  bool blinkRam =
+      onAlertMain && state_.alertMetric == NOCT_ALERT_RAM && blinkState;
+  bool blinkVram =
+      onAlertMain && state_.alertMetric == NOCT_ALERT_GV && blinkState;
 
   int y0 = NOCT_CARD_TOP;
   int dy = NOCT_CARD_ROW_DY;
@@ -76,19 +88,23 @@ void SceneManager::drawMain(bool blinkState) {
 
   char buf[24];
   snprintf(buf, sizeof(buf), "%d\xC2\xB0 %d%%", cpuTemp, cpuLoad);
-  if (!(cpuOver && blinkState))
+  if (!blinkCpu)
     u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
 
   snprintf(buf, sizeof(buf), "%d\xC2\xB0 %d%%", gpuTemp, gpuLoad);
-  if (!(gpuOver && blinkState))
+  if (!blinkGpu)
     u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + dy, buf);
 
   float ru = hw.ru, ra = hw.ra;
   float vu = hw.vu, vt = hw.vt;
-  snprintf(buf, sizeof(buf), "RAM %.1f/%.1f GB", ru, ra > 0 ? ra : 0.0f);
-  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, buf);
-  snprintf(buf, sizeof(buf), "VRAM %.1f/%.1f GB", vu, vt > 0 ? vt : 0.0f);
-  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
+  if (!blinkRam) {
+    snprintf(buf, sizeof(buf), "RAM %.1f/%.1f GB", ru, ra > 0 ? ra : 0.0f);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, buf);
+  }
+  if (!blinkVram) {
+    snprintf(buf, sizeof(buf), "VRAM %.1f/%.1f GB", vu, vt > 0 ? vt : 0.0f);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -102,27 +118,35 @@ void SceneManager::drawCpu() {
   int cc = (hw.cc >= 0) ? hw.cc : 0;
   int cl = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
   int pw = (hw.pw >= 0) ? hw.pw : 0;
+  bool onAlertCpu =
+      state_.alertActive && state_.alertTargetScene == NOCT_SCENE_CPU;
+  bool blinkTemp =
+      onAlertCpu && state_.alertMetric == NOCT_ALERT_CT && blinkState;
+  bool blinkLoad =
+      onAlertCpu && state_.alertMetric == NOCT_ALERT_CL && blinkState;
 
   int y0 = NOCT_CARD_TOP;
   int dy = NOCT_CARD_ROW_DY;
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(NOCT_CARD_LEFT, y0, "TEMP");
   u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0, "MHz");
-  u8g2.setFont(HUGE_FONT);
+  u8g2.setFont(STORAGE_FONT);
   char buf[16];
-  snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
-  int tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8(NOCT_CARD_LEFT + (SPLIT_X - NOCT_CARD_LEFT - tw) / 2, y0 + dy,
-                buf);
+  if (!blinkTemp) {
+    snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
+  }
   snprintf(buf, sizeof(buf), "%d", cc);
-  tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8(SPLIT_X + (SPLIT_X - NOCT_CARD_LEFT - tw) / 2, y0 + dy, buf);
+  u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + dy, buf);
 
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, "LOAD");
   u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + 2 * dy, "PWR");
-  snprintf(buf, sizeof(buf), "%d%%", cl);
-  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
+  u8g2.setFont(STORAGE_FONT);
+  if (!blinkLoad) {
+    snprintf(buf, sizeof(buf), "%d%%", cl);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
+  }
   snprintf(buf, sizeof(buf), "%dW", pw);
   u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + 3 * dy, buf);
 }
@@ -130,7 +154,7 @@ void SceneManager::drawCpu() {
 // ---------------------------------------------------------------------------
 // SCENE 3: GPU — Temperature, load %, VRAM %, frequencies, power.
 // ---------------------------------------------------------------------------
-void SceneManager::drawGpu() {
+void SceneManager::drawGpu(bool blinkState) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
@@ -140,54 +164,75 @@ void SceneManager::drawGpu() {
   int gclock = (hw.gclock >= 0) ? hw.gclock : 0;
   int vclock = (hw.vclock >= 0) ? hw.vclock : 0;
   int gtdp = (hw.gtdp >= 0) ? hw.gtdp : 0;
+  bool onAlertGpu =
+      state_.alertActive && state_.alertTargetScene == NOCT_SCENE_GPU;
+  bool blinkTemp =
+      onAlertGpu && state_.alertMetric == NOCT_ALERT_GT && blinkState;
+  bool blinkLoad =
+      onAlertGpu && state_.alertMetric == NOCT_ALERT_GL && blinkState;
+  bool blinkVram =
+      onAlertGpu && state_.alertMetric == NOCT_ALERT_GV && blinkState;
 
   int y0 = NOCT_CARD_TOP;
-  int dy = 8;
+  int dy = NOCT_CARD_ROW_DY;
   int left = NOCT_CARD_LEFT;
   int rightCol = SPLIT_X + left;
-  char buf[20];
+  char buf[24];
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(left, y0, "TEMP");
-  snprintf(buf, sizeof(buf), "%d\xC2\xB0", gt);
-  u8g2.drawUTF8(left, y0 + dy, buf);
-  u8g2.drawUTF8(left, y0 + 2 * dy, "LOAD");
-  snprintf(buf, sizeof(buf), "%d%%", gl);
-  u8g2.drawUTF8(left, y0 + 3 * dy, buf);
-  u8g2.drawUTF8(left, y0 + 4 * dy, "VRAM");
-  snprintf(buf, sizeof(buf), "%d%%", gv);
-  u8g2.drawUTF8(left, y0 + 5 * dy, buf);
-
   u8g2.drawUTF8(rightCol, y0, "CORE");
+  u8g2.setFont(STORAGE_FONT);
+  if (!blinkTemp) {
+    snprintf(buf, sizeof(buf), "%d\xC2\xB0", gt);
+    u8g2.drawUTF8(left, y0 + dy, buf);
+  }
   snprintf(buf, sizeof(buf), "%d", gclock);
   u8g2.drawUTF8(rightCol, y0 + dy, buf);
-  u8g2.drawUTF8(rightCol, y0 + 2 * dy, "MEM");
-  snprintf(buf, sizeof(buf), "%d", vclock);
-  u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
-  u8g2.drawUTF8(rightCol, y0 + 4 * dy, "PWR");
-  snprintf(buf, sizeof(buf), "%dW", gtdp);
-  u8g2.drawUTF8(rightCol, y0 + 5 * dy, buf);
+
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(left, y0 + 2 * dy, "LOAD");
+  u8g2.drawUTF8(rightCol, y0 + 2 * dy, "VRAM");
+  u8g2.setFont(STORAGE_FONT);
+  if (!blinkLoad) {
+    snprintf(buf, sizeof(buf), "%d%%", gl);
+    u8g2.drawUTF8(left, y0 + 3 * dy, buf);
+  }
+  if (!blinkVram) {
+    snprintf(buf, sizeof(buf), "%d%%", gv);
+    u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
+  }
+
+  u8g2.setFont(STORAGE_FONT);
+  snprintf(buf, sizeof(buf), "MEM %d", vclock);
+  u8g2.drawUTF8(left, y0 + 4 * dy, buf);
+  snprintf(buf, sizeof(buf), "PWR %dW", gtdp);
+  u8g2.drawUTF8(rightCol, y0 + 4 * dy, buf);
 }
 
 // ---------------------------------------------------------------------------
 // SCENE 4: RAM — Used/total GB + top 2 processes by RAM.
 // ---------------------------------------------------------------------------
-void SceneManager::drawRam() {
+void SceneManager::drawRam(bool blinkState) {
   HardwareData &hw = state_.hw;
   ProcessData &proc = state_.process;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
   float ru = hw.ru, ra = hw.ra;
+  bool onAlertRam =
+      state_.alertActive && state_.alertTargetScene == NOCT_SCENE_RAM;
+  bool blinkRam =
+      onAlertRam && state_.alertMetric == NOCT_ALERT_RAM && blinkState;
+
   int y0 = NOCT_CARD_TOP;
   int dy = NOCT_CARD_ROW_DY;
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(NOCT_CARD_LEFT, y0, "RAM");
   char buf[32];
-  snprintf(buf, sizeof(buf), "%.1f / %.1f GB", ru, ra > 0 ? ra : 0.0f);
-  u8g2.setFont(HUGE_FONT);
-  int tw = u8g2.getUTF8Width(buf);
-  if (tw > NOCT_DISP_W - 4)
-    u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
+  if (!blinkRam) {
+    snprintf(buf, sizeof(buf), "%.1f / %.1f GB", ru, ra > 0 ? ra : 0.0f);
+    u8g2.setFont(STORAGE_FONT);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
+  }
 
   u8g2.setFont(STORAGE_FONT);
   const int maxNameLen = 14;

@@ -557,6 +557,13 @@ CPU_LOAD_ALERT = 99
 GPU_LOAD_ALERT = 99
 VRAM_LOAD_ALERT = 95
 RAM_LOAD_ALERT = 90
+# Hysteresis: clear alert only when value drops below (threshold - HYST_*)
+CPU_TEMP_HYST = 5
+GPU_TEMP_HYST = 5
+LOAD_HYST = 5
+RAM_LOAD_HYST = 5
+# Last active alert (target, metric) for hysteresis
+_last_alert: tuple = (None, None)  # ("CPU"|"GPU"|"RAM", "ct"|"gt"|"cl"|"gl"|"gv"|"ram")
 
 
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
@@ -610,27 +617,57 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "media_status": media_status,
     }
 
-    # RED ALERT: if ANY threshold met, set alert and target scene (MAIN/CPU/GPU/RAM)
-    alert_target = ""
+    # RED ALERT: threshold with hysteresis; send alert_metric for value blink
+    global _last_alert
     ram_pct = int((ram_used_f / ram_total_f * 100) if ram_total_f > 0 else 0)
+    new_alert = None
     if ct >= CPU_TEMP_ALERT:
-        alert_target = "CPU"
+        new_alert = ("CPU", "ct")
     elif gt >= GPU_TEMP_ALERT:
-        alert_target = "GPU"
+        new_alert = ("GPU", "gt")
     elif cl >= CPU_LOAD_ALERT:
-        alert_target = "CPU"
+        new_alert = ("CPU", "cl")
     elif gl >= GPU_LOAD_ALERT:
-        alert_target = "GPU"
+        new_alert = ("GPU", "gl")
     elif gv >= VRAM_LOAD_ALERT:
-        alert_target = "GPU"
+        new_alert = ("GPU", "gv")
     elif ram_pct >= RAM_LOAD_ALERT:
-        alert_target = "RAM"
-    if alert_target:
+        new_alert = ("RAM", "ram")
+
+    if new_alert:
+        _last_alert = new_alert
         payload["alert"] = "CRITICAL"
-        payload["target_screen"] = alert_target
+        payload["target_screen"] = new_alert[0]
+        payload["alert_metric"] = new_alert[1]
     else:
-        payload["alert"] = ""
-        payload["target_screen"] = ""
+        # Clear only when current alert metric is below (threshold - hysteresis)
+        if _last_alert:
+            target, metric = _last_alert
+            clear = False
+            if metric == "ct":
+                clear = ct < CPU_TEMP_ALERT - CPU_TEMP_HYST
+            elif metric == "gt":
+                clear = gt < GPU_TEMP_ALERT - GPU_TEMP_HYST
+            elif metric == "cl":
+                clear = cl < CPU_LOAD_ALERT - LOAD_HYST
+            elif metric == "gl":
+                clear = gl < GPU_LOAD_ALERT - LOAD_HYST
+            elif metric == "gv":
+                clear = gv < VRAM_LOAD_ALERT - LOAD_HYST
+            elif metric == "ram":
+                clear = ram_pct < RAM_LOAD_ALERT - RAM_LOAD_HYST
+            else:
+                clear = True
+            if clear:
+                _last_alert = (None, None)
+        if not _last_alert[0]:
+            payload["alert"] = ""
+            payload["target_screen"] = ""
+            payload["alert_metric"] = ""
+        else:
+            payload["alert"] = "CRITICAL"
+            payload["target_screen"] = _last_alert[0]
+            payload["alert_metric"] = _last_alert[1]
     return payload
 
 

@@ -61,4 +61,12 @@
 #define NOCT_SCENE_MEDIA 5
 #define NOCT_TOTAL_SCENES 6
 
+/* alert_metric codes (match monitor.py: ct, gt, cl, gl, gv, ram) */
+#define NOCT_ALERT_CT 0
+#define NOCT_ALERT_GT 1
+#define NOCT_ALERT_CL 2
+#define NOCT_ALERT_GL 3
+#define NOCT_ALERT_GV 4
+#define NOCT_ALERT_RAM 5
+
 #endif

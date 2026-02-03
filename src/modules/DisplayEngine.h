@@ -69,6 +69,8 @@ public:
                              unsigned long nowMs);
 
   // --- Startup sequence ---
+  /** Single static splash for full boot: "Forest OS" + "By RudyWolf". */
+  void drawSplash();
   void drawBiosPost(unsigned long now, unsigned long bootTime, bool wifiOk,
                     int rssi);
   bool biosPostDone(unsigned long now, unsigned long bootTime);

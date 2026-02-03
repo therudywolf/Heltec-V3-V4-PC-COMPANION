@@ -19,9 +19,9 @@ public:
 
   // --- 6 screens ---
   void drawMain(bool blinkState);
-  void drawCpu();
-  void drawGpu();
-  void drawRam();
+  void drawCpu(bool blinkState);
+  void drawGpu(bool blinkState);
+  void drawRam(bool blinkState);
   void drawDisks();
   void drawPlayer();
 

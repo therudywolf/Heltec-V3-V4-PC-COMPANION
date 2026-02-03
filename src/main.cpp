@@ -172,7 +172,7 @@ void loop() {
       if (duration >= NOCT_BUTTON_LONG_MS) {
         quickMenuOpen = true;
         quickMenuItem = 0;
-      } else {
+      } else if (!state.alertActive) {
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
         lastCarousel = now;
       }
@@ -246,8 +246,7 @@ void loop() {
   if (!splashDone) {
     if (splashStart == 0)
       splashStart = now;
-    if (now - splashStart >=
-        (unsigned long)NOCT_SPLASH_MS + (unsigned long)NOCT_CONFIG_MSG_MS) {
+    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS) {
       splashDone = true;
       needRedraw = true;
     }
@@ -277,12 +276,7 @@ void loop() {
     netManager.disconnectTcp();
 
   if (!splashDone) {
-    if (now - splashStart < (unsigned long)NOCT_SPLASH_MS) {
-      display.drawBiosPost(now, bootTime, netManager.isWifiConnected(),
-                           netManager.rssi());
-    } else {
-      display.drawConfigLoaded(now, bootTime, "CONFIG LOADED: ALERTS ON");
-    }
+    display.drawSplash();
   } else if (!netManager.isWifiConnected()) {
     sceneManager.drawNoSignal(false, false, 0, blinkState);
   } else if (!netManager.isTcpConnected()) {
@@ -292,18 +286,15 @@ void loop() {
     sceneManager.drawSearchMode(scanPhase);
   } else {
     static unsigned long lastAlertFlash = 0;
-    static bool alertFlashInverted = false;
-    if (state.alertActive) {
-      if (now - lastAlertFlash >= 200) {
-        lastAlertFlash = now;
-        alertFlashInverted = !alertFlashInverted;
-      }
-      display.u8g2().setFlipMode(alertFlashInverted
-                                     ? (1 - (settings.displayInverted ? 1 : 0))
-                                     : (settings.displayInverted ? 1 : 0));
-    } else {
-      display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
+    if (state.alertActive && now - lastAlertFlash >= 1000) {
+      lastAlertFlash = now;
+      display.clearBuffer();
+      display.u8g2().drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+      display.sendBuffer();
+      delay(10);
+      return;
     }
+    display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
 
     display.drawGlobalHeader(sceneManager.getSceneName(currentScene), nullptr,
                              netManager.rssi());
