@@ -15,10 +15,6 @@
 #define CONTENT_Y NOCT_CONTENT_TOP
 #define X(x, off) ((x) + (off))
 #define DISK_NAME_X 2
-#define DISK_BAR_X0 22
-#define DISK_BAR_X1 95
-#define DISK_BAR_W (DISK_BAR_X1 - DISK_BAR_X0)
-#define DISK_BAR_H 6
 #define DISK_TEMP_X 100
 #define DISK_ROW_DY 13
 
@@ -168,14 +164,12 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
     u8g2.setFont(LABEL_FONT);
     u8g2.drawUTF8(X(2, xOff), MAIN_RAM_TEXT_Y, "RAM");
     static char buf[24];
-    snprintf(buf, sizeof(buf), "%.0f/%.0f GB", ru, raShow);
+    int pct = (raShow > 0) ? (int)((ru / raShow) * 100.0f) : 0;
+    if (pct > 100)
+      pct = 100;
+    snprintf(buf, sizeof(buf), "%.0f/%.0f GB %d%%", ru, raShow, pct);
     disp_.drawRightAligned(X(126, xOff), MAIN_RAM_TEXT_Y, VALUE_FONT, buf);
   }
-  int pct = (raShow > 0) ? (int)((ru / raShow) * 100.0f) : 0;
-  if (pct > 100)
-    pct = 100;
-  disp_.drawProgressBar(X(2, xOff), MAIN_RAM_TEXT_Y + 2, NOCT_DISP_W - 4, 4,
-                        pct);
   disp_.drawGreebles();
 }
 
@@ -356,8 +350,8 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 5: DISKS — row_y = NOCT_CONTENT_START + i*13. Col1 Name X=2, Col2 Bar
-// X=22..95 H=6, Col3 Temp X=100. LABEL_FONT for labels/temp.
+// SCENE 5: DISKS — row_y = NOCT_CONTENT_START + i*13. Col1 Name + % X=2, Col2
+// Temp X=100.
 // ---------------------------------------------------------------------------
 void SceneManager::drawDisks(int xOff) {
   HardwareData &hw = state_.hw;
@@ -369,7 +363,6 @@ void SceneManager::drawDisks(int xOff) {
     int rowY = NOCT_CONTENT_START + i * DISK_ROW_DY;
     if (rowY + DISK_ROW_DY > NOCT_DISP_H)
       break;
-    int barY = rowY + (DISK_ROW_DY - DISK_BAR_H) / 2;
     int textBaseline = rowY + 7;
 
     char letter = hw.hdd[i].name[0] ? hw.hdd[i].name[0] : (char)('C' + i);
@@ -379,11 +372,8 @@ void SceneManager::drawDisks(int xOff) {
     if (pct > 100)
       pct = 100;
 
-    snprintf(buf, sizeof(buf), "%c:", letter);
+    snprintf(buf, sizeof(buf), "%c: %d%%", letter, pct);
     u8g2.drawUTF8(X(DISK_NAME_X, xOff), textBaseline, buf);
-
-    disp_.drawSegmentedBar(X(DISK_BAR_X0, xOff), barY, DISK_BAR_W, DISK_BAR_H,
-                           pct);
 
     int t = hw.hdd[i].temp;
     if (t > 0)

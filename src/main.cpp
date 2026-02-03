@@ -310,10 +310,13 @@ void loop() {
   if (!splashDone) {
     display.drawSplash();
   } else if (!netManager.isWifiConnected()) {
+    display.drawGlobalHeader("NO SIGNAL", nullptr, 0);
     sceneManager.drawNoSignal(false, false, 0, blinkState);
   } else if (!netManager.isTcpConnected()) {
+    display.drawGlobalHeader("LINKING", nullptr, netManager.rssi());
     sceneManager.drawConnecting(netManager.rssi(), blinkState);
   } else if (netManager.isSearchMode() || signalLost) {
+    display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi());
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
@@ -327,6 +330,10 @@ void loop() {
       return;
     }
     display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
+
+    display.drawGlobalHeader(
+        quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
+        nullptr, netManager.rssi());
 
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,

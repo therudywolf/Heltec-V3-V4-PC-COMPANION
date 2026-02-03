@@ -17,10 +17,10 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
-/* Header removed: content uses full height 0..63 */
-#define NOCT_HEADER_H 0
+/* Header: zone Y 0..11 (Height 12); Content Area: 14..63 */
+#define NOCT_HEADER_H 12
 #define NOCT_HEADER_MARGIN 2
-#define NOCT_CONTENT_START 0
+#define NOCT_CONTENT_START 14
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
 #define NOCT_FOOTER_H 16
 /* Main scene: top block 13..45, RAM box 48..63 */
