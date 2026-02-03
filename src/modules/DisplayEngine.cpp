@@ -376,20 +376,16 @@ void DisplayEngine::drawConfigLoaded(unsigned long now, unsigned long bootTime,
 }
 
 // ---------------------------------------------------------------------------
-// Hazard stripe border (alert overlay)
+// Hazard stripe border (legacy)
 // ---------------------------------------------------------------------------
-void DisplayEngine::drawHazardBorder() {
-  const int stripeW = 4;
-  for (int i = 0; i < NOCT_DISP_W; i++) {
-    if ((i / stripeW) % 2 == 0) {
-      u8g2_.drawPixel(i, 0);
-      u8g2_.drawPixel(i, NOCT_DISP_H - 1);
-    }
-  }
-  for (int i = 0; i < NOCT_DISP_H; i++) {
-    if ((i / stripeW) % 2 == 0) {
-      u8g2_.drawPixel(0, i);
-      u8g2_.drawPixel(NOCT_DISP_W - 1, i);
-    }
+void DisplayEngine::drawHazardBorder() { drawAlertBorder(); }
+
+// ---------------------------------------------------------------------------
+// Thick border box around screen edges (RED ALERT overlay)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawAlertBorder() {
+  const int thick = 3;
+  for (int t = 0; t < thick; t++) {
+    u8g2_.drawFrame(t, t, NOCT_DISP_W - 2 * t, NOCT_DISP_H - 2 * t);
   }
 }

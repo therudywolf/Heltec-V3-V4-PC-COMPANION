@@ -9,14 +9,14 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- Font strategy: HUGE = main temp, MID = secondary, TINY = labels ---
-#define TINY_FONT u8g2_font_profont10_mr  // Labels
-#define MID_FONT u8g2_font_helvB10_tr     // Secondary
-#define HUGE_FONT u8g2_font_logisoso24_tr // Main temperature
-
-// --- Legacy aliases for compatibility ---
+// --- Font strategy: 5m rule — HUGE = main values, LABEL = readable labels ---
+#define HUGE_FONT u8g2_font_logisoso24_tr   // Main values (~24px)
+#define LABEL_FONT u8g2_font_profont12_tr   // Labels (~9px)
+#define STORAGE_FONT u8g2_font_profont11_tr // Storage list
+#define TINY_FONT LABEL_FONT
+#define MID_FONT LABEL_FONT
 #define FONT_TINY TINY_FONT
-#define FONT_LABEL TINY_FONT
+#define FONT_LABEL LABEL_FONT
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -75,8 +75,10 @@ public:
   void drawConfigLoaded(unsigned long now, unsigned long bootTime,
                         const char *message);
 
-  // --- Alert: hazard stripe border (call when alertActive) ---
+  // --- Alert: thick border box + strobe handled in main loop ---
   void drawHazardBorder();
+  /** Thick (3px) border around screen edges for RED ALERT. */
+  void drawAlertBorder();
 
   RollingGraph cpuGraph;
   RollingGraph gpuGraph;

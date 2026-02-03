@@ -18,15 +18,12 @@ public:
   const char *getSceneName(int sceneIndex) const;
   int totalScenes() const { return NOCT_TOTAL_SCENES; }
 
-  // --- Screens (grid-perfect) ---
-  void drawHub(unsigned long bootTime);
-  void drawCpuDetail(unsigned long bootTime);
-  void drawGpuDetail(int fanFrame);
-  void drawRam();
-  void drawDisks();
-  void drawFans(int fanFrame);
-  void drawAtmos();
-  void drawMedia(bool blinkState);
+  // --- 5 brutalist screens (5m rule) ---
+  void drawThermal(bool blinkState);
+  void drawLoad();
+  void drawMemory();
+  void drawStorage();
+  void drawFans();
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
