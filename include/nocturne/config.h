@@ -14,6 +14,7 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
+#define NOCT_HEADER_H 10
 #define NOCT_FOOTER_Y 50
 #define NOCT_LINE_H_DATA 12
 #define NOCT_LINE_H_LABEL 5

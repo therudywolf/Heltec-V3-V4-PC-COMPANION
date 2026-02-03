@@ -1,8 +1,9 @@
 /*
- * NOCTURNE_OS — DisplayEngine: full buffer, glitch, BIOS POST. Fonts:
- * profont10, helvB10.
+ * NOCTURNE_OS — DisplayEngine: Nocturne Style. Chamfered boxes, segmented
+ * bars, dotted grid, XBM icons, overlay, BIOS POST, rolling graph.
  */
 #include "DisplayEngine.h"
+#include <Arduino.h>
 #include <Wire.h>
 
 #define LINE_H_DATA NOCT_LINE_H_DATA
@@ -10,6 +11,56 @@
 #define LINE_H_HEAD NOCT_LINE_H_HEAD
 #define LINE_H_BIG NOCT_LINE_H_BIG
 
+// --- XBM bitmaps (row-major, MSB left). 1 = pixel on ---
+// WiFi 12x8: futuristic signal bars
+const uint8_t icon_wifi_bits[] = {0x00, 0x00, 0x00, 0x00, 0x24, 0x00,
+                                  0x24, 0x00, 0x24, 0x00, 0x6C, 0x00,
+                                  0x6C, 0x00, 0xEE, 0x0E};
+
+// Wolf head 32x32 (pixel-art). 4 bytes per row
+const uint8_t icon_wolf_bits[] = {
+    0x00, 0x18, 0x18, 0x00, 0x00, 0x3C, 0x3C, 0x00, 0x00, 0x3C, 0x3C, 0x00,
+    0x00, 0x7E, 0x7E, 0x00, 0x00, 0x7E, 0x7E, 0x00, 0x00, 0xFF, 0xFF, 0x00,
+    0x01, 0xFF, 0xFF, 0x80, 0x01, 0xFF, 0xFF, 0x80, 0x03, 0xFF, 0xFF, 0xC0,
+    0x03, 0xE7, 0xE7, 0xC0, 0x03, 0xC3, 0xC3, 0xC0, 0x03, 0xC3, 0xC3, 0xC0,
+    0x03, 0xE7, 0xE7, 0xC0, 0x03, 0xFF, 0xFF, 0xC0, 0x01, 0xFF, 0xFF, 0x80,
+    0x01, 0xFF, 0xFF, 0x80, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x7E, 0x7E, 0x00,
+    0x00, 0x7E, 0x7E, 0x00, 0x00, 0x3C, 0x3C, 0x00, 0x00, 0x3C, 0x3C, 0x00,
+    0x00, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+// Lock 8x8
+const uint8_t icon_lock_bits[] = {0x3C, 0x66, 0x42, 0x42,
+                                  0xFF, 0x42, 0x42, 0x42};
+
+// Warning triangle 12x12. 2 bytes per row
+const uint8_t icon_warning_bits[] = {
+    0x00, 0x80, 0x01, 0xC0, 0x01, 0xC0, 0x03, 0xE0, 0x03, 0xE0, 0x07, 0xF0,
+    0x07, 0xF0, 0x0F, 0xF8, 0x0F, 0xF8, 0x1F, 0xFC, 0x1F, 0xFC, 0x3F, 0xF0};
+
+// Weather 16x16
+const uint8_t icon_weather_sun_bits[] = {
+    0x01, 0x80, 0x01, 0x80, 0x11, 0x88, 0x01, 0x80, 0x49, 0x92, 0x01,
+    0x80, 0x01, 0x80, 0x7D, 0xBE, 0x7D, 0xBE, 0x01, 0x80, 0x01, 0x80,
+    0x49, 0x92, 0x01, 0x80, 0x11, 0x88, 0x01, 0x80, 0x01, 0x80};
+
+const uint8_t icon_weather_cloud_bits[] = {
+    0x00, 0x00, 0x00, 0x00, 0x03, 0xC0, 0x0F, 0xF0, 0x1C, 0x38, 0x18, 0x18,
+    0x38, 0x1C, 0x3F, 0xFC, 0x1F, 0xF8, 0x0F, 0xF0, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+const uint8_t icon_weather_rain_bits[] = {
+    0x00, 0x00, 0x03, 0xC0, 0x0F, 0xF0, 0x1C, 0x38, 0x18, 0x18, 0x3F, 0xFC,
+    0x1F, 0xF8, 0x0F, 0xF0, 0x00, 0x00, 0x12, 0x00, 0x12, 0x00, 0x48, 0x00,
+    0x48, 0x00, 0x12, 0x00, 0x12, 0x00, 0x48, 0x00, 0x00, 0x00};
+
+const uint8_t icon_weather_snow_bits[] = {
+    0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x0D, 0xB0, 0x1D, 0xB8, 0x39,
+    0x9C, 0x01, 0x80, 0x7F, 0xFE, 0x01, 0x80, 0x39, 0x9C, 0x1D, 0xB8,
+    0x0D, 0xB0, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00};
+
+// ---------------------------------------------------------------------------
 DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
     : sdaPin_(sdaPin), sclPin_(sclPin), u8g2_(U8G2_R0, rstPin),
       dataSpike_(false), lastGlitchTrigger_(0), glitchUntil_(0) {}
@@ -24,30 +75,128 @@ void DisplayEngine::clearBuffer() { u8g2_.clearBuffer(); }
 void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 void DisplayEngine::setDataSpike(bool spike) { dataSpike_ = spike; }
 
+// ---------------------------------------------------------------------------
+// Global HUD: solid black header [ SCENE ], dotted footer, WiFi top-right
+// (blink if low RSSI)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk) {
+  (void)linkOk;
+  const int HEADER_H = NOCT_HEADER_H;
+  u8g2_.setDrawColor(0);
+  u8g2_.drawBox(0, 0, NOCT_DISP_W, HEADER_H);
+  u8g2_.setDrawColor(1);
+  u8g2_.setFont(FONT_HEAD);
+  char buf[20];
+  snprintf(buf, sizeof(buf), "[ %s ]", sceneName ? sceneName : "");
+  int tw = u8g2_.getUTF8Width(buf);
+  u8g2_.drawUTF8((NOCT_DISP_W - tw) / 2, HEADER_H - 2, buf);
+
+  drawWiFiIconXbm(NOCT_DISP_W - ICON_WIFI_W - NOCT_MARGIN, NOCT_MARGIN, rssi,
+                  (rssi < -70));
+
+  drawDottedHLine(NOCT_MARGIN, NOCT_DISP_W - NOCT_MARGIN,
+                  NOCT_DISP_H - NOCT_MARGIN - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Chamfered box: 45° cut corners (no drawRBox). chamfer = pixel length of cut
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawChamferBox(int x, int y, int w, int h, int chamfer) {
+  if (chamfer <= 0 || chamfer * 2 >= w || chamfer * 2 >= h) {
+    u8g2_.drawFrame(x, y, w, h);
+    return;
+  }
+  int c = chamfer;
+  u8g2_.drawLine(x + c, y, x + w - 1 - c, y);
+  u8g2_.drawLine(x + w - 1, y + c, x + w - 1, y + h - 1 - c);
+  u8g2_.drawLine(x + w - 1 - c, y + h - 1, x + c, y + h - 1);
+  u8g2_.drawLine(x, y + h - 1 - c, x, y + c);
+  u8g2_.drawLine(x, y + c, x + c, y);
+  u8g2_.drawLine(x + w - 1 - c, y, x + w - 1, y + c);
+  u8g2_.drawLine(x + w - 1, y + h - 1 - c, x + w - 1 - c, y + h - 1);
+  u8g2_.drawLine(x + c, y + h - 1, x, y + h - 1 - c);
+}
+
+// ---------------------------------------------------------------------------
+// Segmented bar: blocks [|||||...] with 1px spacing
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawSegmentedBar(int x, int y, int w, int h, float pct,
+                                     int segments) {
+  if (segments < 1)
+    segments = 1;
+  if (pct > 100.0f)
+    pct = 100.0f;
+  if (pct < 0.0f)
+    pct = 0.0f;
+  int gap = 1;
+  int totalGaps = (segments - 1) * gap;
+  int blockW = (w - totalGaps) / segments;
+  if (blockW < 1)
+    blockW = 1;
+  int filled = (int)((pct / 100.0f) * segments + 0.5f);
+  if (filled > segments)
+    filled = segments;
+  for (int i = 0; i < segments; i++) {
+    int bx = x + i * (blockW + gap);
+    if (i < filled)
+      u8g2_.drawBox(bx, y, blockW, h);
+    else
+      u8g2_.drawFrame(bx, y, blockW, h);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dotted lines (every 2nd pixel)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawDottedHLine(int x0, int x1, int y) {
+  if (x0 > x1) {
+    int t = x0;
+    x0 = x1;
+    x1 = t;
+  }
+  for (int x = x0; x <= x1; x += 2)
+    u8g2_.drawPixel(x, y);
+}
+
+void DisplayEngine::drawDottedVLine(int x, int y0, int y1) {
+  if (y0 > y1) {
+    int t = y0;
+    y0 = y1;
+    y1 = t;
+  }
+  for (int y = y0; y <= y1; y += 2)
+    u8g2_.drawPixel(x, y);
+}
+
+// ---------------------------------------------------------------------------
 void DisplayEngine::drawBiosPost(unsigned long now, unsigned long bootTime,
                                  bool wifiOk, int rssi) {
-  int cx = NOCT_DISP_W / 2, cy = 14;
-  u8g2_.drawTriangle(cx - 12, cy - 8, cx - 6, cy - 2, cx - 10, cy);
-  u8g2_.drawTriangle(cx + 12, cy - 8, cx + 6, cy - 2, cx + 10, cy);
-  u8g2_.drawRFrame(cx - 10, cy - 2, 20, 14, 2);
-  u8g2_.drawPixel(cx - 4, cy + 2);
-  u8g2_.drawPixel(cx + 4, cy + 2);
-
   u8g2_.setFont(FONT_TINY);
   int lineH = 7;
   unsigned long elapsed = now - bootTime;
   int scroll = (int)(elapsed / 80) % (6 * lineH);
   int y0 = NOCT_DISP_H + 4 - (scroll % (6 * lineH));
-  const char *lines[] = {
-      "SYSTEM INIT",   "MEM CHECK......... OK",           "LINK ESTABLISHED..",
-      "WOLF_PROTOCOL", wifiOk ? "WIFI: OK" : "WIFI: ...", ""};
+  const char *lines[] = {"MEM_CHECK......... OK",
+                         "LINK.............. OK",
+                         "WOLF_PROTOCOL..... OK",
+                         "CORTEX........... OK",
+                         wifiOk ? "WIFI.............. OK"
+                                : "WIFI.............. ...",
+                         ""};
   for (int i = 0; i < 5; i++) {
     int y = y0 + i * lineH;
-    if (y >= -lineH && y < NOCT_DISP_H)
+    if (y >= -lineH && y < NOCT_DISP_H - ICON_WOLF_H - 4)
       u8g2_.drawStr(NOCT_MARGIN, y + lineH - 1, lines[i]);
   }
+
+  int wolfX = NOCT_DISP_W - ICON_WOLF_W - NOCT_MARGIN;
+  int wolfY = (NOCT_DISP_H - ICON_WOLF_H) / 2;
+  u8g2_.drawXBM(wolfX, wolfY, ICON_WOLF_W, ICON_WOLF_H, icon_wolf_bits);
+
   if (wifiOk)
-    drawWiFiIcon(NOCT_DISP_W - 16, NOCT_DISP_H - 12, rssi);
+    drawWiFiIconXbm(NOCT_DISP_W - ICON_WIFI_W - NOCT_MARGIN, NOCT_MARGIN, rssi,
+                    false);
+
   int barW = (int)((float)elapsed * (NOCT_DISP_W - 2 * NOCT_MARGIN) /
                    (float)NOCT_SPLASH_MS);
   if (barW > NOCT_DISP_W - 2 * NOCT_MARGIN)
@@ -60,6 +209,7 @@ bool DisplayEngine::biosPostDone(unsigned long now, unsigned long bootTime) {
   return (now - bootTime) >= (unsigned long)NOCT_SPLASH_MS;
 }
 
+// ---------------------------------------------------------------------------
 void DisplayEngine::drawMetric(int x, int y, const char *label,
                                const char *value) {
   u8g2_.setFont(FONT_VAL);
@@ -82,29 +232,25 @@ void DisplayEngine::drawProgressBar(int x, int y, int w, int h, float pct) {
     pct = 100.0f;
   if (pct < 0.0f)
     pct = 0.0f;
-  u8g2_.drawRFrame(x, y, w, h, 1);
+  u8g2_.drawFrame(x, y, w, h);
   int fillW = (int)((w - 2) * (pct / 100.0f));
   if (fillW > 0)
-    u8g2_.drawRBox(x + 1, y + 1, fillW, h - 2, 1);
+    u8g2_.drawBox(x + 1, y + 1, fillW, h - 2);
 }
 
 void DisplayEngine::drawWiFiIcon(int x, int y, int rssi) {
-  int bars = (rssi >= -50)   ? 4
-             : (rssi >= -60) ? 3
-             : (rssi >= -70) ? 2
-             : (rssi >= -80) ? 1
-                             : 0;
-  for (int i = 0; i < 4; i++) {
-    int h = (i + 1) * 2;
-    if (i < bars)
-      u8g2_.drawBox(x + i * 3, y + 8 - h, 2, h);
-    else
-      u8g2_.drawFrame(x + i * 3, y + 8 - h, 2, h);
-  }
+  drawWiFiIconXbm(x, y, rssi, false);
+}
+
+void DisplayEngine::drawWiFiIconXbm(int x, int y, int rssi, bool blink) {
+  if (blink && (millis() / 200) % 2 == 0)
+    return;
+  u8g2_.drawXBM(x, y, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 }
 
 void DisplayEngine::drawCornerCrosshairs() {
   int len = 4;
+  u8g2_.setDrawColor(1);
   u8g2_.drawLine(0, 0, len, 0);
   u8g2_.drawLine(0, 0, 0, len);
   u8g2_.drawLine(NOCT_DISP_W - len - 1, 0, NOCT_DISP_W - 1, 0);
@@ -137,6 +283,9 @@ void DisplayEngine::drawLinkStatus(int x, int y, bool linked) {
     u8g2_.drawStr(x, y, "----");
 }
 
+// ---------------------------------------------------------------------------
+// Glitch: horizontal slice shift (bands displaced)
+// ---------------------------------------------------------------------------
 void DisplayEngine::drawGlitchEffect() {
   unsigned long now = millis();
   if (glitchUntil_ > 0 && now < glitchUntil_) {
@@ -161,6 +310,10 @@ void DisplayEngine::drawGlitchEffect() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Rolling graph: thicker line, cleaner. Reference grid (50%, 100%) drawn by
+// caller.
+// ---------------------------------------------------------------------------
 void DisplayEngine::drawRollingGraph(int x, int y, int w, int h,
                                      RollingGraph &g, int maxVal) {
   if (g.count < 2 || maxVal <= 0)
@@ -178,10 +331,13 @@ void DisplayEngine::drawRollingGraph(int x, int y, int w, int h,
       gy = y;
     if (gy >= y + h)
       gy = y + h - 1;
-    if (px >= 0)
+    if (px >= 0) {
       u8g2_.drawLine(px, py, gx, gy);
-    else
+      u8g2_.drawLine(px, py + 1, gx, gy + 1);
+    } else {
       u8g2_.drawPixel(gx, gy);
+      u8g2_.drawPixel(gx, gy + 1);
+    }
     px = gx;
     py = gy;
   }
