@@ -40,6 +40,9 @@ unsigned long lastCarousel = 0;
 unsigned long lastFanAnim = 0;
 int fanAnimFrame = 0;
 bool blinkState = false;
+int alertBlinkCounter = 0;
+bool lastAlertActive = false;
+unsigned long lastBlink = 0;
 
 bool predatorMode = false;
 unsigned long predatorEnterTime = 0;
@@ -233,10 +236,7 @@ void loop() {
     lastFanAnim = now;
   }
 
-  /* Screen blink state for NO SIGNAL / LINKING etc */
-  blinkState = (millis() / NOCT_ALERT_LED_BLINK_MS) % 2;
-
-  /* Alert LED: simplified — blink 200ms on/off when alert; predator breath. */
+  /* Alert LED: double-tap (2 blinks then silence); predator breath. */
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   if (predatorMode) {
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -247,10 +247,44 @@ void loop() {
       analogWrite(NOCT_LED_ALERT_PIN, breath);
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-  } else if (state.alertActive) {
-    digitalWrite(NOCT_LED_ALERT_PIN, (millis() / 200) % 2);
   } else {
-    digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+    // --- ALERT LED LOGIC (DOUBLE TAP) ---
+
+    // 1. Detect New Alert Edge -> Reset Counter
+    if (state.alertActive && !lastAlertActive) {
+      alertBlinkCounter = 0;
+      blinkState = true; // Start ON
+      digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
+      lastBlink = now;
+    }
+    lastAlertActive = state.alertActive;
+
+    // 2. Process Blinking
+    if (state.alertActive) {
+      if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS) {
+        lastBlink = now;
+
+        // Count phases: 2 blinks = 4 phases (On, Off, On, Off)
+        if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
+          blinkState = !blinkState;
+          digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
+          alertBlinkCounter++;
+        } else {
+          // Limit reached: Silence
+          blinkState = false;                    // Value stays solid on screen
+          digitalWrite(NOCT_LED_ALERT_PIN, LOW); // LED Off
+        }
+      }
+    } else {
+      // No Alert -> LED Off
+      digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+
+      // Standard UI cursor blink (non-alert)
+      if (now - lastBlink > 500) {
+        blinkState = !blinkState;
+        lastBlink = now;
+      }
+    }
   }
 
   if (!splashDone) {
