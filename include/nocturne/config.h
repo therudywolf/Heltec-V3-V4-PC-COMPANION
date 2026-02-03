@@ -42,19 +42,20 @@
 #define GPU_TEMP_ALERT 72
 #endif
 
-// Scene indices
-#define NOCT_SCENE_CORTEX 0
-#define NOCT_SCENE_NEURAL 1
-#define NOCT_SCENE_THERMAL 2
-#define NOCT_SCENE_MEMBANK 3
-#define NOCT_SCENE_TASKKILL 4
-#define NOCT_SCENE_DECK 5
-#define NOCT_SCENE_WEATHER 6
-#define NOCT_SCENE_RADAR 7
-#define NOCT_TOTAL_SCENES 8
+// Scene indices (6 scenes)
+#define NOCT_SCENE_HUB 0
+#define NOCT_SCENE_CPU 1
+#define NOCT_SCENE_GPU 2
+#define NOCT_SCENE_NET 3
+#define NOCT_SCENE_ATMOS 4
+#define NOCT_SCENE_MEDIA 5
+#define NOCT_TOTAL_SCENES 6
 
-// Long-press threshold for menu vs Predator (ms)
-#define NOCT_BUTTON_MENU_MS 800
+// Long-press: SLEEP (Predator) only
 #define NOCT_BUTTON_PREDATOR_MS 2500
+
+// Glitch: horizontal shift 2–4 px for ~100 ms, every ~45 s
+#define NOCT_GLITCH_INTERVAL_MS 45000
+#define NOCT_GLITCH_DURATION_MS 100
 
 #endif

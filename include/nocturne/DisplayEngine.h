@@ -42,12 +42,13 @@ public:
   void drawFanIcon(int x, int y, int frame);
   void drawLinkStatus(int x, int y, bool linked);
 
-  // --- Glitch 2.0: V-Sync failure (tear or invert on spike) ---
-  void setDataSpike(bool spike); // Call when CPU/load spike detected
-  void drawGlitchEffect();       // Horizontal tear or brief invert
+  // --- Glitch: horizontal shift 2–4 px every ~45 s for 100 ms ---
+  void setDataSpike(bool spike);
+  void drawGlitchEffect(); // Timed glitch (45s interval, 100ms duration)
 
   // --- Rolling graphs (sparklines) ---
   RollingGraph cpuGraph;
+  RollingGraph gpuGraph;
   RollingGraph netDownGraph;
   RollingGraph netUpGraph;
 
@@ -59,8 +60,8 @@ private:
   int sclPin_;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2_;
   bool dataSpike_;
-  unsigned long lastGlitchApply_;
-  bool invertPhase_;
+  unsigned long lastGlitchTrigger_; // Last time we started a glitch
+  unsigned long glitchUntil_; // End of current glitch window (0 = inactive)
 };
 
 #endif

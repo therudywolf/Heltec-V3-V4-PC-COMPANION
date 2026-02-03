@@ -21,6 +21,13 @@ public:
   ProcessData &procs() { return procs_; }
   MediaData &media() { return media_; }
 
+  // Alert from server: CRITICAL + target_screen (CPU/GPU) for auto-switch +
+  // flash
+  bool alertActive() const { return alertActive_; }
+  int alertTargetScene() const {
+    return alertTargetScene_;
+  } // NOCT_SCENE_CPU or NOCT_SCENE_GPU
+
 private:
   void parsePayload(JsonDocument &doc);
 
@@ -29,6 +36,8 @@ private:
   bool weatherReceived_ = false;
   ProcessData procs_;
   MediaData media_;
+  bool alertActive_ = false;
+  int alertTargetScene_ = 1; // 1=CPU, 2=GPU scene index
 };
 
 #endif

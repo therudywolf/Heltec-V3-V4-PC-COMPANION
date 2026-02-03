@@ -10,24 +10,21 @@
 #include "Types.h"
 #include "config.h"
 
-
 class SceneManager {
 public:
   SceneManager(DisplayEngine &disp, DataManager &data);
   void draw(int sceneIndex, unsigned long bootTime, bool blinkState,
             int fanFrame);
 
-  // Per-scene draw (called by draw())
-  void drawCortex(unsigned long bootTime);
-  void drawNeural();
-  void drawThermal(int fanFrame);
-  void drawMemBank();
-  void drawTaskKill(bool blinkState);
-  void drawDeck(bool blinkState);
-  void drawWeather(); // WMO pixel-art icons
-  void drawRadar();   // Phantom Limb: WiFi strength history sonar/bar
+  // Per-scene draw (6 scenes)
+  void drawHub(unsigned long bootTime);
+  void drawCpu(unsigned long bootTime, int fanFrame);
+  void drawGpu(int fanFrame);
+  void drawNet();
+  void drawAtmos();
+  void drawMedia(bool blinkState);
 
-  void drawSearchMode(int scanPhase); // SEARCH_MODE scanning animation
+  void drawSearchMode(int scanPhase);
   void drawMenu(int menuItem);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
