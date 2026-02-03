@@ -5,13 +5,17 @@
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
 
+/* V4 Pinout: OLED SDA=17, SCL=18, RST=21; LED=25 (White, do NOT use GPIO 35);
+ * BUTTON=0 */
 #define NOCT_SDA_PIN 17
 #define NOCT_SCL_PIN 18
 #define NOCT_RST_PIN 21
 #define NOCT_VEXT_PIN 36
-#define NOCT_LED_CPU_PIN 35 /* White: CPU temp alert */
-#define NOCT_LED_GPU_PIN 4  /* Red: GPU temp alert */
+#define NOCT_LED_ALERT_PIN                                                     \
+  25 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
+#define NOCT_ALERT_LED_BLINK_MS 175
+#define NOCT_ALERT_LED_BLINKS 5 /* 5 blinks then fade out */
 #define NOCT_ALERT_LED_BLINK_MAX_MS 5000
 
 #define NOCT_DISP_W 128
@@ -20,10 +24,16 @@
 /* === Dimensions (Protocol Alpha Wolf) === */
 #define NOCT_HEADER_H 14
 #define NOCT_HEADER_MARGIN 2
-#define NOCT_CONTENT_START 17 /* Breathing room below header (physical bezel)  \
-                               */
+#define NOCT_CONTENT_START                                                     \
+  17 /* Breathing room below header (physical bezel)                           \
+      */
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
 #define NOCT_FOOTER_H 14
+/* Unified V4 grid (2x2 tech brackets): CPU, GPU, MB scenes */
+#define NOCT_GRID_ROW1_Y 19
+#define NOCT_GRID_ROW2_Y 44
+#define NOCT_GRID_COL1_X 0
+#define NOCT_GRID_COL2_X 64
 /* Main scene grid */
 #define MAIN_TOP_H 28        /* Height of CPU/GPU brackets */
 #define MAIN_BAR_Y_OFFSET 32 /* Relative to bracket top */

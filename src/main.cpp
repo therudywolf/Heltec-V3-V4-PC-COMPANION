@@ -51,11 +51,8 @@ int quickMenuItem = 0;
 
 #define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
-#define NOCT_ALERT_LED_BLINK_MS 175
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
-static bool alertLedCpuDone = false;
-static bool alertLedGpuDone = false;
 static unsigned long alertStartMs = 0;
 static bool lastAlertActive = false;
 
@@ -70,6 +67,7 @@ static void VextON() {
 // ---------------------------------------------------------------------------
 void setup() {
   bootTime = millis();
+  setCpuFrequencyMhz(240); // V4: max speed (also set in platformio.ini)
   VextON();
   pinMode(NOCT_RST_PIN, OUTPUT);
   digitalWrite(NOCT_RST_PIN, LOW);
@@ -80,8 +78,8 @@ void setup() {
   display.begin();
   drawBootSequence(display);
   splashDone = true;
-  pinMode(NOCT_LED_CPU_PIN, OUTPUT);
-  pinMode(NOCT_LED_GPU_PIN, OUTPUT);
+  pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
+  digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   pinMode(NOCT_BUTTON_PIN, INPUT_PULLUP);
 
   Preferences prefs;
@@ -240,51 +238,34 @@ void loop() {
     lastBlink = now;
   }
 
-  if (state.alertActive && !lastAlertActive) {
-    alertLedCpuDone = false;
-    alertLedGpuDone = false;
+  if (state.alertActive && !lastAlertActive)
     alertStartMs = now;
-  }
   lastAlertActive = state.alertActive;
   if (!state.alertActive) {
-    alertLedCpuDone = false;
-    alertLedGpuDone = false;
-  }
-
-  bool cpuTempAlert = state.alertActive &&
-                      state.alertTargetScene == NOCT_SCENE_CPU &&
-                      state.alertMetric == NOCT_ALERT_CT;
-  bool gpuTempAlert = state.alertActive &&
-                      state.alertTargetScene == NOCT_SCENE_GPU &&
-                      state.alertMetric == NOCT_ALERT_GT;
-  unsigned long alertElapsed = now - alertStartMs;
-  bool withinBlinkWindow =
-      alertElapsed < (unsigned long)NOCT_ALERT_LED_BLINK_MAX_MS;
-
-  if (predatorMode) {
-    digitalWrite(NOCT_LED_GPU_PIN, LOW);
-    unsigned long t = (now - predatorEnterTime) / 20;
-    int breath = (int)(128 + 127 * sin(t * 0.1f));
-    if (breath < 0)
-      breath = 0;
-    if (settings.ledEnabled)
-      analogWrite(NOCT_LED_CPU_PIN, breath);
-    else
-      digitalWrite(NOCT_LED_CPU_PIN, LOW);
+    digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   } else {
-    digitalWrite(NOCT_LED_CPU_PIN, LOW);
-    digitalWrite(NOCT_LED_GPU_PIN, LOW);
-    if (alertElapsed >= (unsigned long)NOCT_ALERT_LED_BLINK_MAX_MS) {
-      alertLedCpuDone = true;
-      alertLedGpuDone = true;
-    }
-    if (settings.ledEnabled && withinBlinkWindow) {
-      unsigned long phase = alertElapsed / NOCT_ALERT_LED_BLINK_MS;
-      bool on = (phase & 1) == 0;
-      if (cpuTempAlert && !alertLedCpuDone)
-        digitalWrite(NOCT_LED_CPU_PIN, on ? HIGH : LOW);
-      if (gpuTempAlert && !alertLedGpuDone)
-        digitalWrite(NOCT_LED_GPU_PIN, on ? HIGH : LOW);
+    unsigned long alertElapsed = now - alertStartMs;
+    bool withinBlinkWindow =
+        alertElapsed < (unsigned long)NOCT_ALERT_LED_BLINK_MAX_MS;
+    unsigned long phase = alertElapsed / NOCT_ALERT_LED_BLINK_MS;
+    int blinksSoFar = (int)(phase / 2); // one full blink = on + off
+    bool doFade = (blinksSoFar >= NOCT_ALERT_LED_BLINKS) || !withinBlinkWindow;
+
+    if (predatorMode) {
+      unsigned long t = (now - predatorEnterTime) / 20;
+      int breath = (int)(128 + 127 * sin(t * 0.1f));
+      if (breath < 0)
+        breath = 0;
+      if (settings.ledEnabled)
+        analogWrite(NOCT_LED_ALERT_PIN, breath);
+      else
+        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+    } else {
+      digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+      if (settings.ledEnabled && withinBlinkWindow && !doFade) {
+        bool on = (phase & 1) == 0;
+        digitalWrite(NOCT_LED_ALERT_PIN, on ? HIGH : LOW);
+      }
     }
   }
 
