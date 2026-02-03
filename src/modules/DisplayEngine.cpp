@@ -214,7 +214,7 @@ void DisplayEngine::drawOverlay(const char *sceneName, int rssi, bool linkOk,
 
   u8g2_.setFont(FONT_TINY);
   const char *tstr = (timeStr && timeStr[0]) ? timeStr : "---";
-  int tw = u8g2_.getUTF8Width(tstr);
+  tw = u8g2_.getUTF8Width(tstr);
   u8g2_.drawUTF8(90 - tw, BAR_Y0 + BAR_H - 2, tstr);
 
   drawWiFiIconXbm(115, BAR_Y0 + 1, rssi, (rssi < -70));
