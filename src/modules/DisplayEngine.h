@@ -10,11 +10,12 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- Font strategy (Grid Law) ---
-#define FONT_LABEL u8g2_font_profont10_mr // Labels (static), tiny 5–6px
-#define FONT_VAL u8g2_font_t0_11_tr       // Values (dynamic), bold small
-#define FONT_BIG u8g2_font_helvB10_tr     // Main temperature only
-#define FONT_TINY u8g2_font_profont10_mr  // Tiny text (city, desc)
+// --- Font strategy (Grid Law): Labels uppercase profont10, Values helvB10 ---
+#define FONT_LABEL                                                             \
+  u8g2_font_profont10_mr // Labels (static), 6px cap, always uppercase
+#define FONT_VAL u8g2_font_helvB10_tr    // Values (dynamic), bold sans-serif
+#define FONT_BIG u8g2_font_helvB10_tr    // Main temperature / big values
+#define FONT_TINY u8g2_font_profont10_mr // Tiny (city, desc)
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -49,10 +50,13 @@ public:
 
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2() { return u8g2_; }
 
-  // --- Grid Law helpers (MANDATORY) ---
-  void drawRightAligned(int x, int y, const String &text);
-  void drawCentered(int x, int y, int w, const String &text);
+  // --- Grid Law helpers (MANDATORY): x_end = right edge for right-align ---
+  void drawRightAligned(int x_end, int y, const String &text);
+  void drawCentered(int x_center, int y, const String &text);
+  void drawCenteredInRect(int x, int y, int w, int h, const String &text);
   void drawSafeStr(int x, int y, const String &text);
+  /** If value is 0 or empty, draw small static noise patch; else draw value. */
+  void drawValueOrNoise(int x_end, int y, const String &value);
 
   // --- HUD: Top bar Y 0–10, dotted line Y=11 ---
   void drawOverlay(const char *sceneName, int rssi, bool linkOk,
@@ -79,6 +83,9 @@ public:
 
   void setDataSpike(bool spike);
   void drawGlitchEffect();
+  /** Decode Base64 to XBM and draw. w×h must match buffer size (e.g. 64×64 =
+   * 512 bytes). */
+  bool drawXBMArtFromBase64(int x, int y, int w, int h, const String &base64);
 
   RollingGraph cpuGraph;
   RollingGraph gpuGraph;

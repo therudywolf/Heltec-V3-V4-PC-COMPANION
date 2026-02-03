@@ -23,7 +23,7 @@ public:
   void drawMedia(bool blinkState);
 
   void drawSearchMode(int scanPhase);
-  void drawMenu(int menuItem);
+  void drawMenu(int menuItem, bool carouselOn, bool screenOff);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
