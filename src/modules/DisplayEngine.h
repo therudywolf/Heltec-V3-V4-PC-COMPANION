@@ -54,6 +54,12 @@ public:
 
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2() { return u8g2_; }
 
+  /** Screen rotation (180° flip). Toggle with flipScreen(); sync from prefs
+   * with setScreenFlipped(). */
+  void flipScreen();
+  void setScreenFlipped(bool flipped);
+  bool isScreenFlipped() const { return screenRotated_; }
+
   // --- Cyberpunk helpers (implement first) ---
   /** Random horizontal slice shift + optional 10x10 invert. intensity 0..3. */
   void drawGlitch(int intensity);
@@ -172,6 +178,7 @@ private:
 
   int sdaPin_;
   int sclPin_;
+  bool screenRotated_ = false;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2_;
 };
 
