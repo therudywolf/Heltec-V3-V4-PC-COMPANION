@@ -1,30 +1,17 @@
 /*
- * NOCTURNE_OS — SceneManager: one topic per screen, large text, no overlap.
- * Each scene uses one content zone (full area below header) or two blocks
- * (HUB).
+ * NOCTURNE_OS — SceneManager: Grid-based layouts. 128x64, zero overlap.
+ * Coordinates as per spec; TINY / MID / HUGE fonts.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
 
-// --- Grid: header 0–10, content 11–63 (one zone per scene) ---
-#define LAYOUT_HEADER_H NOCT_HEADER_H
-#define LAYOUT_CONTENT_Y 11
-#define LAYOUT_CONTENT_H (NOCT_DISP_H - LAYOUT_HEADER_H)
-#define LAYOUT_CONTENT_W NOCT_DISP_W
-#define LAYOUT_ZONE_A_X 0
-#define LAYOUT_ZONE_A_Y 11
-#define LAYOUT_ZONE_A_W 64
-#define LAYOUT_ZONE_A_H 26
-#define LAYOUT_ZONE_B_X 64
-#define LAYOUT_ZONE_B_Y 11
-#define LAYOUT_ZONE_B_W 64
-#define LAYOUT_ZONE_B_H 26
-#define PAD 2
-#define CONTENT_Y0 11
+// --- Grid: header Y=0..8, content Y=10..63. Vertical split at X=64 ---
+#define HEADER_H 9
+#define CONTENT_Y 10
+#define SPLIT_X 64
 
-const char *SceneManager::sceneNames_[] = {"HUB",   "CPU",  "CPU_G", "GPU",
-                                           "GPU_G", "RAM",  "NET",   "NET_G",
-                                           "ATMOS", "MEDIA"};
+const char *SceneManager::sceneNames_[] = {"HUB",   "CPU",   "GPU",  "RAM",
+                                           "DISKS", "ATMOS", "MEDIA"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -42,25 +29,16 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
     drawHub(bootTime);
     break;
   case NOCT_SCENE_CPU:
-    drawCpu(bootTime, fanFrame);
-    break;
-  case NOCT_SCENE_CPU_GRAPH:
-    drawCpuGraph(bootTime);
+    drawCpuDetail(bootTime);
     break;
   case NOCT_SCENE_GPU:
-    drawGpu(fanFrame);
-    break;
-  case NOCT_SCENE_GPU_GRAPH:
-    drawGpuGraph(fanFrame);
+    drawGpuDetail(fanFrame);
     break;
   case NOCT_SCENE_RAM:
     drawRam();
     break;
-  case NOCT_SCENE_NET:
-    drawNet();
-    break;
-  case NOCT_SCENE_NET_GRAPH:
-    drawNetGraph();
+  case NOCT_SCENE_DISKS:
+    drawDisks();
     break;
   case NOCT_SCENE_ATMOS:
     drawAtmos();
@@ -75,211 +53,294 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
 }
 
 // ---------------------------------------------------------------------------
-// HUB: only CPU + GPU temps (two blocks). One topic = summary.
+// SCREEN 1: HUB — Split vertical. Left=CPU, Right=GPU. Vertical line X=64.
 // ---------------------------------------------------------------------------
 void SceneManager::drawHub(unsigned long bootTime) {
   HardwareData &hw = state_.hw;
   (void)bootTime;
-  String cpuVal = (hw.ct <= 0) ? "" : (String(hw.ct) + "C");
-  disp_.drawBlock(LAYOUT_ZONE_A_X, LAYOUT_ZONE_A_Y, LAYOUT_ZONE_A_W,
-                  LAYOUT_ZONE_A_H, "CPU", cpuVal, hw.ct >= CPU_TEMP_ALERT);
-  String gpuVal = (hw.gt <= 0) ? "" : (String(hw.gt) + "C");
-  disp_.drawBlock(LAYOUT_ZONE_B_X, LAYOUT_ZONE_B_Y, LAYOUT_ZONE_B_W,
-                  LAYOUT_ZONE_B_H, "GPU", gpuVal, hw.gt >= GPU_TEMP_ALERT);
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  // Vertical divider: solid line X=64, Y=10..64
+  for (int yy = CONTENT_Y; yy < NOCT_DISP_H; yy++)
+    u8g2.drawPixel(SPLIT_X, yy);
+
+  // --- LEFT (CPU) ---
+  u8g2.setFont(TINY_FONT);
+  u8g2.drawUTF8(2, 20, "CPU");
+  u8g2.setFont(HUGE_FONT);
+  String cpuTemp = (hw.ct <= 0) ? "---" : (String(hw.ct) + "\xC2\xB0");
+  disp_.drawRightAligned(62, 38, HUGE_FONT, cpuTemp.c_str());
+  u8g2.setFont(TINY_FONT);
+  String cpuFreq =
+      (hw.cc > 0)
+          ? (String(hw.cc / 100) + "." + String((hw.cc % 100) / 10) + "GHz")
+          : "4.2GHz";
+  u8g2.drawUTF8(2, 48, cpuFreq.c_str());
+  String cpuPwr = (hw.pw > 0) ? (String(hw.pw) + "W") : "65W";
+  u8g2.drawUTF8(34, 48, cpuPwr.c_str());
+  int cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
+  disp_.drawProgressBar(2, 58, 60, 4, cpuLoad);
+
+  // --- RIGHT (GPU) ---
+  u8g2.setFont(TINY_FONT);
+  u8g2.drawUTF8(66, 20, "GPU");
+  u8g2.setFont(HUGE_FONT);
+  String gpuTemp = (hw.gt <= 0) ? "---" : (String(hw.gt) + "\xC2\xB0");
+  disp_.drawRightAligned(126, 38, HUGE_FONT, gpuTemp.c_str());
+  u8g2.setFont(TINY_FONT);
+  int vramGb = (hw.gv > 0) ? (hw.gv / 1024) : 8;
+  u8g2.drawUTF8(66, 48, (String(vramGb) + "GB").c_str());
+  int gpuPwr = 220; // GPU power (no separate field in payload)
+  disp_.drawRightAligned(126, 48, TINY_FONT, (String(gpuPwr) + "W").c_str());
+  int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
+  disp_.drawProgressBar(66, 58, 60, 4, gpuLoad);
 }
 
 // ---------------------------------------------------------------------------
-// CPU: one big block — temperature only (large, readable).
+// SCREEN 2: CPU DETAIL — Sparkline Y=10..40; stats grid bottom.
+// Row 1 (Y=50): FREQ: 4650 MHz. Row 2 (Y=60): LOAD: 45% | TDP: 80W
 // ---------------------------------------------------------------------------
-void SceneManager::drawCpu(unsigned long bootTime, int fanFrame) {
+void SceneManager::drawCpuDetail(unsigned long bootTime) {
   HardwareData &hw = state_.hw;
   (void)bootTime;
-  (void)fanFrame;
-  String v = (hw.ct <= 0) ? "—" : (String(hw.ct) + "C");
-  disp_.drawBlock(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H,
-                  "CPU", v, hw.ct >= CPU_TEMP_ALERT);
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  disp_.drawRollingGraph(0, CONTENT_Y, NOCT_DISP_W, 30, disp_.cpuGraph, 100);
+
+  u8g2.setFont(MID_FONT);
+  char buf[32];
+  int mhz = (hw.cc > 0) ? hw.cc : 4650;
+  snprintf(buf, sizeof(buf), "FREQ: %d MHz", mhz);
+  u8g2.drawUTF8(2, 50, buf);
+
+  u8g2.setFont(TINY_FONT);
+  snprintf(buf, sizeof(buf), "LOAD: %d%%",
+           (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0);
+  u8g2.drawUTF8(2, 60, buf);
+  snprintf(buf, sizeof(buf), "TDP: %dW", (hw.pw > 0) ? hw.pw : 80);
+  disp_.drawRightAligned(128, 60, TINY_FONT, buf);
 }
 
 // ---------------------------------------------------------------------------
-// CPU_GRAPH: full-area graph only.
+// SCREEN 3: GPU DETAIL — Sparkline top half; Row 1: CORE: 1920 MHz; Row 2:
+// VRAM: 45% | HOTSPOT: 75°
 // ---------------------------------------------------------------------------
-void SceneManager::drawCpuGraph(unsigned long bootTime) {
-  (void)bootTime;
-  disp_.drawRollingGraph(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W,
-                         LAYOUT_CONTENT_H, disp_.cpuGraph, 100);
-}
-
-// ---------------------------------------------------------------------------
-// GPU: one big block — temperature only.
-// ---------------------------------------------------------------------------
-void SceneManager::drawGpu(int fanFrame) {
+void SceneManager::drawGpuDetail(int fanFrame) {
   HardwareData &hw = state_.hw;
   (void)fanFrame;
-  String v = (hw.gt <= 0) ? "—" : (String(hw.gt) + "C");
-  disp_.drawBlock(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H,
-                  "GPU", v, hw.gt >= GPU_TEMP_ALERT);
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  disp_.drawRollingGraph(0, CONTENT_Y, NOCT_DISP_W, 30, disp_.gpuGraph, 100);
+
+  u8g2.setFont(MID_FONT);
+  char buf[32];
+  int coreMhz = (hw.gh > 0) ? hw.gh : 1920;
+  snprintf(buf, sizeof(buf), "CORE: %d MHz", coreMhz);
+  u8g2.drawUTF8(2, 50, buf);
+
+  u8g2.setFont(TINY_FONT);
+  int vramPct = (hw.vt > 0) ? (int)(hw.vu / hw.vt * 100.0f) : 45;
+  if (vramPct > 100)
+    vramPct = 100;
+  if (vramPct < 0)
+    vramPct = 0;
+  snprintf(buf, sizeof(buf), "VRAM: %d%%", vramPct);
+  u8g2.drawUTF8(2, 60, buf);
+  int hotspot = (hw.ch > 0) ? hw.ch : 75;
+  snprintf(buf, sizeof(buf), "HOTSPOT: %d\xC2\xB0", hotspot);
+  disp_.drawRightAligned(128, 60, TINY_FONT, buf);
 }
 
 // ---------------------------------------------------------------------------
-// GPU_GRAPH: full-area graph only.
-// ---------------------------------------------------------------------------
-void SceneManager::drawGpuGraph(int fanFrame) {
-  (void)fanFrame;
-  disp_.drawRollingGraph(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W,
-                         LAYOUT_CONTENT_H, disp_.gpuGraph, 100);
-}
-
-// ---------------------------------------------------------------------------
-// RAM: one progress bar + one line "RAM: X GB" (full content area).
+// SCREEN 4: RAM — Large segmented bar; center "16.4 GB" (HUGE); bottom "TOTAL:
+// 32 GB" (Tiny)
 // ---------------------------------------------------------------------------
 void SceneManager::drawRam() {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
   float pct = (hw.ra > 0) ? (hw.ru / hw.ra * 100.0f) : 0.0f;
   if (pct > 100.0f)
     pct = 100.0f;
   if (pct < 0.0f)
     pct = 0.0f;
-  disp_.drawProgressBar(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H,
-                        pct);
-  int gb = (int)(hw.ra / 1024.0f);
-  if (gb < 0)
-    gb = 0;
-  String s = "RAM: " + String(gb) + " GB";
-  u8g2.setFont(FONT_TINY);
-  int tw = u8g2.getUTF8Width(s.c_str());
-  u8g2.setDrawColor(2);
-  u8g2.drawUTF8((LAYOUT_CONTENT_W - tw) / 2,
-                LAYOUT_CONTENT_Y + LAYOUT_CONTENT_H / 2 - 2, s.c_str());
-  u8g2.setDrawColor(1);
+
+  float usedGb = hw.ru / 1024.0f;
+  float totalGb = (hw.ra > 0) ? (hw.ra / 1024.0f) : 32.0f;
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%.1f GB", usedGb);
+
+  u8g2.setFont(HUGE_FONT);
+  int tw = u8g2.getUTF8Width(buf);
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, 28, buf);
+
+  int barW = 100;
+  int barH = 8;
+  int barX = (NOCT_DISP_W - barW) / 2;
+  int barY = 38;
+  disp_.drawProgressBar(barX, barY, barW, barH, (int)(pct + 0.5f));
+
+  u8g2.setFont(TINY_FONT);
+  snprintf(buf, sizeof(buf), "TOTAL: %.0f GB", totalGb);
+  tw = u8g2.getUTF8Width(buf);
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, 58, buf);
 }
 
 // ---------------------------------------------------------------------------
-// NET: one big block — DL speed only.
+// SCREEN 5: DISKS — List: C: [|||||.....] 45%, D: [||........] 10%, E:
+// [||||||||..] 80%
 // ---------------------------------------------------------------------------
-void SceneManager::drawNet() {
+void SceneManager::drawDisks() {
   HardwareData &hw = state_.hw;
-  String v;
-  if (hw.nd >= 1024)
-    v = String((int)(hw.nd / 1024.0f)) + " MB/s";
-  else
-    v = String(hw.nd) + " KB/s";
-  disp_.drawBlock(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H, "DL",
-                  v, false);
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  int pct1 = (hw.su >= 0 && hw.su <= 100) ? hw.su : 45;
+  int pct2 = (hw.du >= 0 && hw.du <= 100) ? hw.du : 10;
+  int pct3 = 80;
+
+  const int rowH = 15;
+  const int barX = 18;
+  const int barW = 80;
+  const int barH = 4;
+
+  u8g2.setFont(TINY_FONT);
+  u8g2.drawUTF8(2, 20, "C:");
+  disp_.drawProgressBar(barX, 16, barW, barH, pct1);
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d%%", pct1);
+  disp_.drawRightAligned(128, 20, TINY_FONT, buf);
+
+  u8g2.drawUTF8(2, 35, "D:");
+  disp_.drawProgressBar(barX, 31, barW, barH, pct2);
+  snprintf(buf, sizeof(buf), "%d%%", pct2);
+  disp_.drawRightAligned(128, 35, TINY_FONT, buf);
+
+  u8g2.drawUTF8(2, 50, "E:");
+  disp_.drawProgressBar(barX, 46, barW, barH, pct3);
+  snprintf(buf, sizeof(buf), "%d%%", pct3);
+  disp_.drawRightAligned(128, 50, TINY_FONT, buf);
 }
 
 // ---------------------------------------------------------------------------
-// NET_GRAPH: full-area net graph only.
-// ---------------------------------------------------------------------------
-void SceneManager::drawNetGraph() {
-  disp_.netDownGraph.setMax(2048);
-  disp_.drawRollingGraph(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W,
-                         LAYOUT_CONTENT_H, disp_.netDownGraph, 2048);
-}
-
-// ---------------------------------------------------------------------------
-// ATMOS: icon + big temp only (one topic, readable).
+// SCREEN 6: WEATHER — Left: 32x32 icon (X=0..32). Right: -12°C (HUGE), MOSCOW
+// (Tiny), Snowfall (Tiny)
 // ---------------------------------------------------------------------------
 void SceneManager::drawAtmos() {
   WeatherData &w = state_.weather;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int ICON_X = 8;
-  const int ICON_Y = LAYOUT_CONTENT_Y + 8;
-  const int TEMP_X = 50;
-  const int TEMP_Y = LAYOUT_CONTENT_Y + LAYOUT_CONTENT_H / 2 - 4;
+
+  const int ICON_X = 0;
+  const int ICON_Y = 16;
+  const int RIGHT_X = 45;
 
   bool hasWeather =
       state_.weatherReceived && (w.temp != 0 || w.desc.length() > 0);
   if (!hasWeather) {
-    disp_.drawDisconnectIcon(ICON_X, ICON_Y);
-    u8g2.setFont(FONT_BIG);
-    u8g2.drawUTF8(TEMP_X, TEMP_Y, "OFF");
+    u8g2.setFont(HUGE_FONT);
+    u8g2.drawUTF8(RIGHT_X, 32, "---");
+    u8g2.setFont(TINY_FONT);
+    u8g2.drawUTF8(RIGHT_X, 44, "NO DATA");
     return;
   }
-  drawWmoIconXbm(ICON_X, ICON_Y, w.wmoCode);
-  String tempStr = (w.temp == 0) ? "—" : (String(w.temp) + "C");
-  u8g2.setFont(FONT_BIG);
-  u8g2.drawUTF8(TEMP_X, TEMP_Y, tempStr.c_str());
+
+  drawWeatherIcon32(ICON_X, ICON_Y, w.wmoCode);
+
+  char tempBuf[16];
+  snprintf(tempBuf, sizeof(tempBuf), "%d\xC2\xB0C", w.temp);
+  u8g2.setFont(HUGE_FONT);
+  u8g2.drawUTF8(RIGHT_X, 32, tempBuf);
+
+  u8g2.setFont(TINY_FONT);
+  const char *city = "MOSCOW";
+  u8g2.drawUTF8(RIGHT_X, 44, city);
+  String desc = w.desc.length() > 0 ? w.desc : "Snowfall";
+  if (desc.length() > 12)
+    desc = desc.substring(0, 12);
+  u8g2.drawUTF8(RIGHT_X, 54, desc.c_str());
 }
 
 // ---------------------------------------------------------------------------
-// MEDIA: cover (left) + one line — track or status (right, large).
+// SCREEN 7: PLAYER — Left: 54x54 album art (dithered/base64). Right: Artist
+// (Tiny), Track (Mid, marquee), Time (Tiny). PAUSED overlay if paused.
 // ---------------------------------------------------------------------------
 void SceneManager::drawMedia(bool blinkState) {
   MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int ART_W = 64;
-  const int ART_H = 64;
-  const int TX = 66;
-  const int TY = LAYOUT_CONTENT_Y + LAYOUT_CONTENT_H / 2 - 4;
+
+  const int ART_X = 0;
+  const int ART_Y = CONTENT_Y;
+  const int ART_SZ = 54;
+  const int RIGHT_X = 56;
 
   if (media.coverB64.length() > 0 &&
-      disp_.drawXBMArtFromBase64(0, 0, ART_W, ART_H, media.coverB64)) {
+      disp_.drawXBMArtFromBase64(ART_X, ART_Y, ART_SZ, ART_SZ,
+                                 media.coverB64)) {
+    // drawn
   } else {
-    drawNoisePattern(0, LAYOUT_CONTENT_Y, ART_W, LAYOUT_CONTENT_H);
-    drawNoDataCross(8, LAYOUT_CONTENT_Y + 8, ART_W - 16, LAYOUT_CONTENT_H - 16);
+    drawNoisePattern(ART_X, ART_Y, ART_SZ, ART_SZ);
+    drawNoDataCross(ART_X + 8, ART_Y + 8, ART_SZ - 16, ART_SZ - 16);
   }
 
-  u8g2.setFont(FONT_BIG);
-  String line = media.track.length() > 0 ? media.track : "";
-  if (line.length() > 18)
-    line = line.substring(0, 18);
-  if (line.length() == 0) {
-    if (!media.isPlaying && !media.isIdle)
-      line = "STANDBY";
-    else if (media.isIdle)
-      line = blinkState ? "IDLE" : "—";
-    else
-      line = "PLAY";
+  if (!media.isPlaying && !media.isIdle) {
+    u8g2.setFont(TINY_FONT);
+    int pw = u8g2.getUTF8Width("PAUSED");
+    u8g2.drawUTF8(ART_X + (ART_SZ - pw) / 2, ART_Y + ART_SZ / 2 - 2, "PAUSED");
   }
-  u8g2.drawUTF8(TX, TY, line.c_str());
+
+  u8g2.setFont(TINY_FONT);
+  String artist =
+      media.artist.length() > 14 ? media.artist.substring(0, 14) : media.artist;
+  if (artist.length() == 0)
+    artist = "—";
+  u8g2.drawUTF8(RIGHT_X, 18, artist.c_str());
+
+  u8g2.setFont(MID_FONT);
+  String track = media.track;
+  if (track.length() > 18)
+    track = track.substring(0, 18);
+  if (track.length() == 0)
+    track = media.isIdle ? (blinkState ? "IDLE" : "—") : "PLAY";
+  u8g2.drawUTF8(RIGHT_X, 32, track.c_str());
+
+  u8g2.setFont(TINY_FONT);
+  const char *status =
+      media.isPlaying ? "PLAYING" : (media.isIdle ? "IDLE" : "PAUSED");
+  u8g2.drawUTF8(RIGHT_X, 54, status);
 }
 
-// Diagonal cross "NO DATA" inside box
+// ---------------------------------------------------------------------------
+// 32x32 weather icon by WMO code
+// ---------------------------------------------------------------------------
+void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  const uint8_t *bits = icon_weather_cloud_32_bits;
+  if (wmoCode == 0)
+    bits = icon_weather_sun_32_bits;
+  else if (wmoCode >= 1 && wmoCode <= 3)
+    bits = icon_weather_sun_32_bits;
+  else if (wmoCode >= 45 && wmoCode <= 48)
+    bits = icon_weather_cloud_32_bits;
+  else if (wmoCode >= 51 && wmoCode <= 67)
+    bits = icon_weather_rain_32_bits;
+  else if (wmoCode >= 71 && wmoCode <= 77)
+    bits = icon_weather_snow_32_bits;
+  else if (wmoCode >= 80 && wmoCode <= 82)
+    bits = icon_weather_rain_32_bits;
+  else if (wmoCode >= 85 && wmoCode <= 86)
+    bits = icon_weather_snow_32_bits;
+  else if (wmoCode >= 95 && wmoCode <= 99)
+    bits = icon_weather_rain_32_bits;
+  u8g2.drawXBM(x, y, WEATHER_ICON_W, WEATHER_ICON_H, bits);
+}
+
 void SceneManager::drawNoDataCross(int x, int y, int w, int h) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.drawLine(x, y, x + w - 1, y + h - 1);
   u8g2.drawLine(x + w - 1, y, x, y + h - 1);
-  u8g2.setFont(FONT_TINY);
-  String nd = "NO DATA";
-  int tw = u8g2.getUTF8Width(nd.c_str());
-  u8g2.drawUTF8(x + (w - tw) / 2, y + h / 2 - 2, nd.c_str());
-}
-
-// ---------------------------------------------------------------------------
-// WMO -> XBM weather icon
-// ---------------------------------------------------------------------------
-void SceneManager::drawWmoIconXbm(int x, int y, int wmoCode) {
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const uint8_t *bits = icon_weather_cloud_bits;
-  if (wmoCode == 0)
-    bits = icon_weather_sun_bits;
-  else if (wmoCode >= 1 && wmoCode <= 3)
-    bits = icon_weather_sun_bits;
-  else if (wmoCode >= 45 && wmoCode <= 48)
-    bits = icon_weather_cloud_bits;
-  else if (wmoCode >= 51 && wmoCode <= 67)
-    bits = icon_weather_rain_bits;
-  else if (wmoCode >= 71 && wmoCode <= 77)
-    bits = icon_weather_snow_bits;
-  else if (wmoCode >= 80 && wmoCode <= 82)
-    bits = icon_weather_rain_bits;
-  else if (wmoCode >= 85 && wmoCode <= 86)
-    bits = icon_weather_snow_bits;
-  else if (wmoCode >= 95 && wmoCode <= 99)
-    bits = icon_weather_rain_bits;
-  u8g2.drawXBM(x, y, ICON_WEATHER_W, ICON_WEATHER_H, bits);
-}
-
-void SceneManager::drawCassetteIcon(int x, int y) {
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  int cx = x + 32, cy = y + 32;
-  disp_.drawChamferBox(x + 8, y + 12, 48, 40, 4);
-  u8g2.drawDisc(cx - 10, cy - 6, 6);
-  u8g2.drawDisc(cx + 10, cy - 6, 6);
-  u8g2.drawDisc(cx - 10, cy - 6, 2);
-  u8g2.drawDisc(cx + 10, cy - 6, 2);
-  u8g2.drawFrame(cx - 6, cy - 2, 12, 8);
+  u8g2.setFont(TINY_FONT);
+  const char *nd = "NO DATA";
+  int tw = u8g2.getUTF8Width(nd);
+  u8g2.drawUTF8(x + (w - tw) / 2, y + h / 2 - 2, nd);
 }
 
 void SceneManager::drawNoisePattern(int x, int y, int w, int h) {
@@ -291,10 +352,12 @@ void SceneManager::drawNoisePattern(int x, int y, int w, int h) {
 // ---------------------------------------------------------------------------
 void SceneManager::drawSearchMode(int scanPhase) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFont(FONT_VAL);
-  disp_.drawCentered(NOCT_DISP_W / 2, NOCT_DISP_H / 2 - 10, "SEARCH_MODE");
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 4, "Scanning for host...");
+  int tw;
+  u8g2.setFont(MID_FONT);
+  tw = u8g2.getUTF8Width("SEARCH_MODE");
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H / 2 - 10, "SEARCH_MODE");
+  u8g2.setFont(TINY_FONT);
+  u8g2.drawStr(2, NOCT_DISP_H / 2 + 4, "Scanning for host...");
   int cx = NOCT_DISP_W / 2, cy = NOCT_DISP_H - 16, r = 14;
   u8g2.drawCircle(cx, cy, r);
   int angle = (scanPhase * 30) % 360;
@@ -304,14 +367,11 @@ void SceneManager::drawSearchMode(int scanPhase) {
 
 void SceneManager::drawMenu(int menuItem, bool carouselOn, bool screenOff) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int boxX = 8;
-  const int boxY = 14;
-  const int boxW = NOCT_DISP_W - 16;
-  const int boxH = NOCT_DISP_H - 28;
-  disp_.drawChamferBox(boxX, boxY, boxW, boxH, 4);
-  u8g2.setFont(FONT_LABEL);
+  const int boxX = 8, boxY = 14, boxW = NOCT_DISP_W - 16,
+            boxH = NOCT_DISP_H - 28;
+  u8g2.drawFrame(boxX, boxY, boxW, boxH);
+  u8g2.setFont(TINY_FONT);
   u8g2.drawStr(boxX + 6, boxY + 10, "QUICK MENU");
-  u8g2.setFont(FONT_TINY);
   const char *carouselStr = carouselOn ? "CAROUSEL: ON " : "CAROUSEL: OFF";
   const char *screenStr = screenOff ? "SCREEN: OFF" : "SCREEN: ON ";
   const char *lines[] = {carouselStr, screenStr, "EXIT"};
@@ -334,20 +394,20 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, bool screenOff) {
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
                                 bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFont(FONT_BIG);
-  disp_.drawCentered(NOCT_DISP_W / 2, NOCT_DISP_H / 2 - 6, "NO SIGNAL");
-  u8g2.setFont(FONT_TINY);
+  int tw;
+  u8g2.setFont(HUGE_FONT);
+  tw = u8g2.getUTF8Width("NO SIGNAL");
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H / 2 - 6, "NO SIGNAL");
+  u8g2.setFont(TINY_FONT);
   if (!wifiOk)
-    u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 10, "WiFi: DISCONNECTED");
+    u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "WiFi: DISCONNECTED");
   else if (!tcpOk)
-    u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 10, "TCP: CONNECTING...");
+    u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "TCP: CONNECTING...");
   else
-    u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 10,
-                 "WAITING FOR DATA...");
+    u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "WAITING FOR DATA...");
   drawNoisePattern(0, 0, NOCT_DISP_W, NOCT_DISP_H);
   if (wifiOk)
-    disp_.drawWiFiIconXbm(NOCT_DISP_W - ICON_WIFI_W - NOCT_MARGIN, NOCT_MARGIN,
-                          rssi, (rssi < -70));
+    disp_.drawWiFiIcon(NOCT_DISP_W - 14, 2, rssi);
   if (blinkState)
     u8g2.drawBox(NOCT_DISP_W / 2 + 40, NOCT_DISP_H / 2 - 8, 6, 12);
 }
@@ -355,14 +415,14 @@ void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
 void SceneManager::drawConnecting(int rssi, bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)blinkState;
-  u8g2.setFont(FONT_VAL);
-  disp_.drawCentered(NOCT_DISP_W / 2, NOCT_DISP_H / 2 - 6, "LINKING...");
-  u8g2.setFont(FONT_TINY);
-  u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 10,
-               "Establishing data link");
+  int tw;
+  u8g2.setFont(MID_FONT);
+  tw = u8g2.getUTF8Width("LINKING...");
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H / 2 - 6, "LINKING...");
+  u8g2.setFont(TINY_FONT);
+  u8g2.drawStr(2, NOCT_DISP_H / 2 + 10, "Establishing data link");
   int dots = (millis() / 300) % 4;
   for (int i = 0; i < dots; i++)
     u8g2.drawBox(NOCT_DISP_W / 2 + 36 + i * 6, NOCT_DISP_H / 2 + 8, 3, 3);
-  disp_.drawWiFiIconXbm(NOCT_DISP_W - ICON_WIFI_W - NOCT_MARGIN, NOCT_MARGIN,
-                        rssi, false);
+  disp_.drawWiFiIcon(NOCT_DISP_W - 14, 2, rssi);
 }

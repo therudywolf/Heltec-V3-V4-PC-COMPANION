@@ -1,6 +1,6 @@
 /*
- * NOCTURNE_OS — SceneManager: state machine for HUB, CPU, GPU, NET, ATMOS,
- * MEDIA, SETTINGS.
+ * NOCTURNE_OS — SceneManager: 7 screens, grid coordinates, cyberpunk layout.
+ * HUB, CPU, GPU, RAM, DISKS, ATMOS, MEDIA.
  */
 #ifndef NOCTURNE_SCENE_MANAGER_H
 #define NOCTURNE_SCENE_MANAGER_H
@@ -15,29 +15,27 @@ public:
   void draw(int sceneIndex, unsigned long bootTime, bool blinkState,
             int fanFrame);
 
+  const char *getSceneName(int sceneIndex) const;
+  int totalScenes() const { return NOCT_TOTAL_SCENES; }
+
+  // --- Screens 1–7 (grid-perfect) ---
   void drawHub(unsigned long bootTime);
-  void drawCpu(unsigned long bootTime, int fanFrame);
-  void drawCpuGraph(unsigned long bootTime);
-  void drawGpu(int fanFrame);
-  void drawGpuGraph(int fanFrame);
+  void drawCpuDetail(unsigned long bootTime);
+  void drawGpuDetail(int fanFrame);
   void drawRam();
-  void drawNet();
-  void drawNetGraph();
+  void drawDisks();
   void drawAtmos();
   void drawMedia(bool blinkState);
 
+  // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
   void drawMenu(int menuItem, bool carouselOn, bool screenOff);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
-  int totalScenes() const { return NOCT_TOTAL_SCENES; }
-  const char *getSceneName(int sceneIndex) const;
-
 private:
-  void drawWmoIconXbm(int x, int y, int wmoCode);
+  void drawWeatherIcon32(int x, int y, int wmoCode);
   void drawNoDataCross(int x, int y, int w, int h);
-  void drawCassetteIcon(int x, int y);
   void drawNoisePattern(int x, int y, int w, int h);
 
   static const char *sceneNames_[];
