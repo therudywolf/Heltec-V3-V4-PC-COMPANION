@@ -59,12 +59,16 @@
 
 ### Core Metrics
 
-| Key  | Type | Unit | Description            | Range |
-| ---- | ---- | ---- | ---------------------- | ----- |
-| `ct` | int  | °C   | CPU temperature (Tdie) | 0-100 |
-| `gt` | int  | °C   | GPU temperature        | 0-100 |
-| `cl` | int  | %    | CPU load (total)       | 0-100 |
-| `gl` | int  | %    | GPU load (core)        | 0-100 |
+| Key  | Type | Unit | Description               | Range  |
+| ---- | ---- | ---- | ------------------------- | ------ |
+| `ct` | int  | °C   | CPU temperature (Package) | 0-100  |
+| `gt` | int  | °C   | GPU temperature (Core)    | 0-100  |
+| `cl` | int  | %    | CPU load (total)          | 0-100  |
+| `gl` | int  | %    | GPU load (core)           | 0-100  |
+| `pw` | int  | W    | CPU package power         | 0-200  |
+| `cc` | int  | MHz  | CPU clock (e.g. Core #1)  | 0-6000 |
+| `gh` | int  | °C   | GPU HotSpot temperature   | 0-100  |
+| `gv` | int  | %    | VRAM load                 | 0-100  |
 
 ### Memory
 
@@ -123,12 +127,19 @@
 
 ### Media
 
-| Key   | Type   | Description                                   |
-| ----- | ------ | --------------------------------------------- |
-| `art` | string | Artist name (max 30 chars)                    |
-| `trk` | string | Track title (max 30 chars)                    |
-| `mp`  | bool   | Media playing status                          |
-| `cov` | string | Album cover (base64, 48×48 bitmap, 288 bytes) |
+| Key   | Type   | Description                                                         |
+| ----- | ------ | ------------------------------------------------------------------- |
+| `art` | string | Artist name (max 30 chars)                                          |
+| `trk` | string | Track title (max 30 chars)                                          |
+| `mp`  | bool   | Media playing status                                                |
+| `cov` | string | Album cover (base64, 64×64 1-bit bitmap, 512 bytes raw, ~684 chars) |
+
+### Alarm (server-side config.json limits)
+
+| Key             | Type   | Description                                             |
+| --------------- | ------ | ------------------------------------------------------- |
+| `alert`         | string | `"CRITICAL"` when temp limit exceeded, else `""`        |
+| `target_screen` | string | `"CPU"` or `"GPU"` — firmware auto-switches and flashes |
 
 ---
 
@@ -144,8 +155,8 @@ screen:2\n
 ```
 
 **Format**: `screen:<number>\n`  
-**Purpose**: Notify server of current screen (optional, for future use)  
-**Range**: 0-5 (6 screens)
+**Purpose**: Notify server of current screen (optional)  
+**Range**: 0-5 (6 scenes: HUB, CPU, GPU, NET, ATMOS, MEDIA)
 
 ---
 

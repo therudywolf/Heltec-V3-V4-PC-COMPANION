@@ -8,6 +8,10 @@
 
 struct HardwareData {
   int ct = 0, gt = 0, cl = 0, gl = 0;
+  int cc = 0; // CPU clock (MHz)
+  int pw = 0; // CPU power (W)
+  int gh = 0; // GPU HotSpot (°C)
+  int gv = 0; // VRAM load (%)
   float ru = 0.0f, ra = 0.0f;
   int nd = 0, nu = 0;
   int pg = 0;
@@ -35,7 +39,8 @@ struct MediaData {
   String artist = "";
   String track = "";
   bool isPlaying = false;
-  bool isIdle = false; // Paused / no session — show IDLE + sleep icon
+  bool isIdle = false;  // Paused / no session — show IDLE + sleep icon
+  String coverB64 = ""; // 64x64 1-bit bitmap, base64 (512 bytes decoded)
 };
 
 struct Settings {
