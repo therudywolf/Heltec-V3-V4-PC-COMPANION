@@ -239,6 +239,7 @@ FAN_CASE_PATH = "/lpc/it8688e/0/fan/2"
 TARGETS_ALIAS = {
     "/gpu-nvidia/0/temperature/0": "gt",
     "/gpu-nvidia/0/temperature/1": "gh",
+    "/gpu-nvidia/0/temperature/2": "gh",   # Hot Spot (serverpars uses temp/2)
     "/gpu-nvidia/0/load/0": "gl",
     "/gpu-nvidia/0/load/1": "gv",
     "/gpu-nvidia/0/clock/0": "gclock",
@@ -312,6 +313,7 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     it8688e_fans: List[Tuple[str, float]] = []
     it8688e_temps: List[Tuple[str, float]] = []
     gpu_memory_sensors: List[Tuple[str, float, str]] = []  # (sid, val, name_lower)
+    fan_controls: List[int] = [0, 0, 0, 0]  # CPU, Pump/Sys#1, GPU, Case/Sys#2
 
     def walk(node: Any) -> None:
         if isinstance(node, list):
@@ -336,6 +338,19 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                         it8688e_fans.append((sid, val))
                     elif "temperature" in stype or "temp" in stype:
                         it8688e_temps.append((sid, val))
+                    elif "control" in stype:
+                        # Fan control %: /lpc/it8688e/0/control/0=CPU, /1=Pump/Sys#1, /2=Case/Sys#2
+                        if "/control/0" in sid:
+                            fan_controls[0] = int(val)
+                        elif "/control/1" in sid:
+                            fan_controls[1] = int(val)
+                        elif "/control/2" in sid:
+                            fan_controls[3] = int(val)
+                # GPU fan control: /gpu-nvidia/0/control/1
+                if sid and "/gpu-nvidia/0/control/1" in sid:
+                    stype = (node.get("Type") or "").lower()
+                    if "control" in stype:
+                        fan_controls[2] = int(val)
                 # Collect GPU memory sensors for name-based fallback (vu/vt)
                 if ("/nvidiagpu/" in sid or "/gpu-nvidia/" in sid) and val > 0:
                     stype = (node.get("Type") or "").lower()
@@ -369,8 +384,14 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     results["s1"] = fans[1] if len(fans) > 1 else 0
     results["gf"] = gf_val
     results["s2"] = fans[3] if len(fans) > 3 else 0
+    results["fan_controls"] = fan_controls
     if it8688e_temps:
         results["ch"] = it8688e_temps[0][1]
+    # Motherboard temps: System, VSoC MOS, VRM MOS, Chipset
+    results["mb_sys"] = int(path_to_val.get("/lpc/it8688e/0/temperature/0", 0))
+    results["mb_vsoc"] = int(path_to_val.get("/lpc/it8688e/0/temperature/1", 0))
+    results["mb_vrm"] = int(path_to_val.get("/lpc/it8688e/0/temperature/4", 0))
+    results["mb_chipset"] = int(path_to_val.get("/lpc/it8688e/0/temperature/5", 0))
     if "ru" in results and "ra" in results:
         results["ra"] = results["ru"] + results["ra"]
     if "vu" in results:
@@ -655,9 +676,13 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "nd": net[1], "nu": net[0], "pg": ping_ms,
         "cf": int(hw.get("cf", 0)), "s1": int(hw.get("s1", 0)), "s2": int(hw.get("s2", 0)), "gf": int(hw.get("gf", 0)),
         "fans": hw.get("fans", [0, 0, 0, 0]),
+        "fan_controls": hw.get("fan_controls", [0, 0, 0, 0]),
         "hdd": hdd_list,
         "vu": round(float(hw.get("vu", 0)), 1), "vt": round(float(hw.get("vt", 0)), 1),
-        "ch": int(hw.get("ch", 0)), "dr": disk[0], "dw": disk[1],
+        "ch": int(hw.get("ch", 0)),
+        "mb_sys": int(hw.get("mb_sys", 0)), "mb_vsoc": int(hw.get("mb_vsoc", 0)),
+        "mb_vrm": int(hw.get("mb_vrm", 0)), "mb_chipset": int(hw.get("mb_chipset", 0)),
+        "dr": disk[0], "dw": disk[1],
         "wt": wt_val, "wd": wd_val, "wi": int(w.get("icon", 0)),
         "tp": top_procs, "tr": top_procs_ram,
         "art": media.get("art", ""), "trk": media.get("trk", ""),

@@ -146,6 +146,9 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   JsonArray fansArr = doc["fans"];
   for (int i = 0; i < NOCT_FAN_COUNT && i < (int)fansArr.size(); i++)
     hw.fans[i] = fansArr[i] | 0;
+  JsonArray fanControlsArr = doc["fan_controls"];
+  for (int i = 0; i < NOCT_FAN_COUNT && i < (int)fanControlsArr.size(); i++)
+    hw.fan_controls[i] = fanControlsArr[i] | 0;
   JsonArray hddArr = doc["hdd"];
   for (int i = 0; i < NOCT_HDD_COUNT && i < (int)hddArr.size(); i++) {
     const char *n = hddArr[i]["n"];
@@ -170,6 +173,10 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
   hw.vu = doc["vu"] | 0.0f;
   hw.vt = doc["vt"] | 0.0f;
   hw.ch = doc["ch"] | 0;
+  hw.mb_sys = doc["mb_sys"] | 0;
+  hw.mb_vsoc = doc["mb_vsoc"] | 0;
+  hw.mb_vrm = doc["mb_vrm"] | 0;
+  hw.mb_chipset = doc["mb_chipset"] | 0;
   hw.dr = doc["dr"] | 0;
   hw.dw = doc["dw"] | 0;
 
@@ -236,6 +243,10 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
       state->alertTargetScene = NOCT_SCENE_MEDIA;
     else if (strcmp(target, "FANS") == 0)
       state->alertTargetScene = NOCT_SCENE_FANS;
+    else if (strcmp(target, "MOTHERBOARD") == 0)
+      state->alertTargetScene = NOCT_SCENE_MOTHERBOARD;
+    else if (strcmp(target, "NETWORK") == 0)
+      state->alertTargetScene = NOCT_SCENE_NETWORK;
     else
       state->alertTargetScene = NOCT_SCENE_MAIN;
   }
