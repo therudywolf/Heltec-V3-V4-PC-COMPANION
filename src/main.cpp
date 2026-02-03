@@ -47,7 +47,7 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define QUICK_MENU_ITEMS 3
+#define WOLF_MENU_ITEMS 4 /* CAROUSEL: 5s, 10s, OFF, EXIT */
 
 #define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
@@ -78,7 +78,6 @@ void setup() {
   delay(50);
 
   display.begin();
-  Wire.setClock(800000);
   drawBootSequence(display);
   splashDone = true;
   pinMode(NOCT_LED_CPU_PIN, OUTPUT);
@@ -159,26 +158,39 @@ void loop() {
     btnHeld = false;
     if (quickMenuOpen) {
       if (duration >= NOCT_BUTTON_LONG_MS) {
+        /* Long press: save & exit */
         if (quickMenuItem == 0) {
-          settings.carouselEnabled = !settings.carouselEnabled;
+          settings.carouselEnabled = true;
+          settings.carouselIntervalSec = 5;
+        } else if (quickMenuItem == 1) {
+          settings.carouselEnabled = true;
+          settings.carouselIntervalSec = 10;
+        } else if (quickMenuItem == 2) {
+          settings.carouselEnabled = false;
+        }
+        if (quickMenuItem <= 2) {
           Preferences prefs;
           prefs.begin("nocturne", false);
           prefs.putBool("carousel", settings.carouselEnabled);
+          prefs.putInt("carouselSec", settings.carouselIntervalSec);
           prefs.end();
-        } else if (quickMenuItem == 1) {
-          predatorMode = !predatorMode;
-          if (predatorMode)
-            predatorEnterTime = now;
-        } else {
-          quickMenuOpen = false;
         }
+        quickMenuOpen = false; /* Always exit on long press */
       } else {
-        quickMenuItem = (quickMenuItem + 1) % QUICK_MENU_ITEMS;
+        /* Short press: toggle/cycle option (5s / 10s / OFF / EXIT) */
+        quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
       }
     } else {
       if (duration >= NOCT_BUTTON_LONG_MS) {
+        /* Long press (>1s): open modal menu CAROUSEL: [5s / 10s / OFF] */
         quickMenuOpen = true;
-        quickMenuItem = 0;
+        /* Highlight current option */
+        if (!settings.carouselEnabled)
+          quickMenuItem = 2;
+        else if (settings.carouselIntervalSec == 5)
+          quickMenuItem = 0;
+        else
+          quickMenuItem = 1;
       } else if (!state.alertActive) {
         previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
@@ -311,13 +323,14 @@ void loop() {
   if (!splashDone) {
     display.drawSplash();
   } else if (!netManager.isWifiConnected()) {
-    display.drawGlobalHeader("NO SIGNAL", nullptr, 0);
+    display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawNoSignal(false, false, 0, blinkState);
   } else if (!netManager.isTcpConnected()) {
-    display.drawGlobalHeader("LINKING", nullptr, netManager.rssi());
+    display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
     sceneManager.drawConnecting(netManager.rssi(), blinkState);
   } else if (netManager.isSearchMode() || signalLost) {
-    display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi());
+    display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
+                             netManager.isWifiConnected());
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
@@ -334,11 +347,11 @@ void loop() {
 
     display.drawGlobalHeader(
         quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
-        nullptr, netManager.rssi());
+        nullptr, netManager.rssi(), netManager.isWifiConnected());
 
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
-                            predatorMode);
+                            settings.carouselIntervalSec);
     } else if (inTransition) {
       unsigned long elapsed = now - transitionStart;
       int progress =
