@@ -11,9 +11,9 @@
 
 // --- NOCTURNE Design System: Forest OS v3 — Terminal / Cyberpunk ---
 #define HEADER_FONT u8g2_font_t0_11_tr    // Terminal-style headers
-#define LABEL_FONT u8g2_font_profont10_mr // Tiny monospaced labels
-#define VALUE_FONT u8g2_font_helvB10_tr   // Clean bold values
-#define HUGE_FONT u8g2_font_logisoso24_tr // Hero: main values (87°, 99%)
+#define LABEL_FONT u8g2_font_profont10_mr // Tiny tech labels (profont10)
+#define VALUE_FONT u8g2_font_helvB10_tr   // Bold readable values (no resize)
+#define HUGE_FONT u8g2_font_logisoso24_tr // Hero only (weather etc)
 #define SECONDARY_FONT VALUE_FONT
 #define CYRILLIC_FONT u8g2_font_6x10_tf
 #define TINY_FONT LABEL_FONT
@@ -51,9 +51,9 @@ public:
   // --- Cyberpunk helpers (implement first) ---
   /** Random horizontal slice shift + optional 10x10 invert. intensity 0..3. */
   void drawGlitch(int intensity);
-  /** Dotted line every 2nd pixel row at y (CRT scanline). */
+  /** (DEPRECATED v4: no-op) Was CRT scanline — removed for clean Cyberpunk. */
   void drawScanline(int y);
-  /** Full-screen CRT scanlines: black line every 2 (or 4 if subtle) pixels. */
+  /** (DEPRECATED v4: no-op) Was CRT scanlines — removed for clean Cyberpunk. */
   void drawScanlines(bool everyFourth = false);
   /** Right-aligned text: draw at (x_anchor - width). font = TINY_FONT etc. */
   void drawRightAligned(int x_anchor, int y, const uint8_t *font,
@@ -69,6 +69,14 @@ public:
 
   /** Chamfered box (cut corners). chamferPx = corner cut size. */
   void drawChamferBox(int x, int y, int w, int h, int chamferPx);
+  /** Tech frame: corners NOT connected (gaps) or chamfered. */
+  void drawTechFrame(int x, int y, int w, int h);
+  /** Vertical bracket [ or ] to group text. facingLeft: true = [ */
+  void drawTechBracket(int x, int y, int h, bool facingLeft);
+  /** Small + crosshair at (x,y). */
+  void drawCrosshair(int x, int y);
+  /** Bracketed progress bar: [ ||||||||     ] percent 0..100. */
+  void drawBracketedBar(int x, int y, int w, int h, int percent);
   /** Dotted horizontal line from (x0,y) to (x1,y). Pattern 0x55. */
   void drawDottedHLine(int x0, int x1, int y);
   /** Dotted vertical line from (x,y0) to (x,y1). */
