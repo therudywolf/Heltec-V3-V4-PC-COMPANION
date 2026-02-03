@@ -45,8 +45,8 @@ bool quickMenuOpen = false;
 int quickMenuItem = 0;
 #define QUICK_MENU_ITEMS 3
 
-#define NOCT_REDRAW_INTERVAL_MS                                                \
-  450 // Redraw at most every 450ms unless data/UI changed
+#define NOCT_REDRAW_INTERVAL_MS 450
+#define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
 
@@ -123,9 +123,6 @@ void loop() {
               display.netDownGraph.push((float)hw.nd);
               display.netUpGraph.setMax(2048);
               display.netUpGraph.push((float)hw.nu);
-              bool spike =
-                  (hw.cl > 85 || hw.gl > 85 || hw.nd > 1500 || hw.nu > 1500);
-              display.setDataSpike(spike);
             }
           }
         }
@@ -227,7 +224,8 @@ void loop() {
   if (!splashDone) {
     if (splashStart == 0)
       splashStart = now;
-    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS) {
+    if (now - splashStart >=
+        (unsigned long)NOCT_SPLASH_MS + (unsigned long)NOCT_CONFIG_MSG_MS) {
       splashDone = true;
       needRedraw = true;
     }
@@ -257,8 +255,12 @@ void loop() {
     netManager.disconnectTcp();
 
   if (!splashDone) {
-    display.drawBiosPost(now, bootTime, netManager.isWifiConnected(),
-                         netManager.rssi());
+    if (now - splashStart < (unsigned long)NOCT_SPLASH_MS) {
+      display.drawBiosPost(now, bootTime, netManager.isWifiConnected(),
+                           netManager.rssi());
+    } else {
+      display.drawConfigLoaded(now, bootTime, "CONFIG LOADED: ALERTS ON");
+    }
   } else if (!netManager.isWifiConnected()) {
     sceneManager.drawNoSignal(false, false, 0, blinkState);
   } else if (!netManager.isTcpConnected()) {
@@ -270,7 +272,7 @@ void loop() {
     static unsigned long lastAlertFlash = 0;
     static bool alertFlashInverted = false;
     if (state.alertActive) {
-      if (now - lastAlertFlash >= 1000) {
+      if (now - lastAlertFlash >= 500) {
         lastAlertFlash = now;
         alertFlashInverted = !alertFlashInverted;
       }
@@ -281,31 +283,17 @@ void loop() {
       display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
     }
 
-    display.drawOverlay(
-        sceneManager.getSceneName(currentScene), netManager.rssi(),
-        netManager.isTcpConnected() && netManager.hasReceivedData());
-    display.drawCornerCrosshairs();
+    display.drawGlobalHeader(sceneManager.getSceneName(currentScene), nullptr,
+                             netManager.rssi());
 
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
                             predatorMode);
     } else {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
-      display.drawLinkStatus(2, NOCT_DISP_H - 2,
-                             netManager.isTcpConnected() &&
-                                 netManager.hasReceivedData());
-      if (anyAlarm && blinkState)
-        display.u8g2().drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-      display.drawGlitchEffect();
-      int n = sceneManager.totalScenes();
-      int dotsW = n * 6 - 2;
-      for (int i = 0; i < n; i++) {
-        int x = NOCT_DISP_W / 2 - dotsW / 2 + (i * 6);
-        if (i == currentScene)
-          display.u8g2().drawBox(x, NOCT_DISP_H - 2, 3, 2);
-        else
-          display.u8g2().drawPixel(x + 1, NOCT_DISP_H - 1);
-      }
+      if (state.alertActive)
+        display.drawHazardBorder();
+      display.drawGlitch(1);
     }
   }
 
