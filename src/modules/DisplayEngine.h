@@ -104,6 +104,9 @@ public:
   /** Hex data decor at bottom corners. corner: 0 = bottom-left, 1 =
    * bottom-right. */
   void drawHexDecoration(int corner);
+  /** Fallback weather: 0-3=circle (sun), 45-48=rounded box (cloud),
+   * 50+=box+dotted (rain). */
+  void drawWeatherPrimitive(int x, int y, int wmoCode);
 
   // --- Global header: 10px bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
   // dotted at Y=10 ---
