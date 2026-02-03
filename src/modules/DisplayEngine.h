@@ -69,6 +69,11 @@ public:
 
   /** Chamfered box (cut corners). chamferPx = corner cut size. */
   void drawChamferBox(int x, int y, int w, int h, int chamferPx);
+  /** Tech brackets: four L-shaped corners only (viewfinder / targeting frame).
+   */
+  void drawTechBrackets(int x, int y, int w, int h, int bracketLen);
+  /** Circuit trace: 1px line (x1,y1)->(x2,y2); optional 2x2 dot at end. */
+  void drawCircuitTrace(int x1, int y1, int x2, int y2, bool connectDot);
   /** Tech frame: corners NOT connected (gaps) or chamfered. */
   void drawTechFrame(int x, int y, int w, int h);
   /** Vertical bracket [ or ] to group text. facingLeft: true = [ */

@@ -347,6 +347,50 @@ void DisplayEngine::drawChamferBox(int x, int y, int w, int h, int chamferPx) {
 }
 
 // ---------------------------------------------------------------------------
+// drawTechBrackets: four L-shaped corners only (viewfinder / targeting frame).
+// bracketLen = length of each leg of the L at every corner.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawTechBrackets(int x, int y, int w, int h,
+                                     int bracketLen) {
+  if (w < 2 || h < 2)
+    return;
+  int L = bracketLen;
+  if (L > (w - 2) / 2)
+    L = (w - 2) / 2;
+  if (L > (h - 2) / 2)
+    L = (h - 2) / 2;
+  if (L < 1)
+    L = 1;
+  int x2 = x + w - 1;
+  int y2 = y + h - 1;
+  // Top-left: horizontal right, vertical down
+  u8g2_.drawLine(x, y, x + L, y);
+  u8g2_.drawLine(x, y, x, y + L);
+  // Top-right: horizontal left, vertical down
+  u8g2_.drawLine(x2 - L, y, x2, y);
+  u8g2_.drawLine(x2, y, x2, y + L);
+  // Bottom-right: horizontal left, vertical up
+  u8g2_.drawLine(x2 - L, y2, x2, y2);
+  u8g2_.drawLine(x2, y2 - L, x2, y2);
+  // Bottom-left: horizontal right, vertical up
+  u8g2_.drawLine(x, y2, x + L, y2);
+  u8g2_.drawLine(x, y2 - L, x, y2);
+}
+
+// ---------------------------------------------------------------------------
+// drawCircuitTrace: 1px line between (x1,y1) and (x2,y2). If connectDot,
+// draw a 2x2 filled square centered at the end point (PCB node).
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawCircuitTrace(int x1, int y1, int x2, int y2,
+                                     bool connectDot) {
+  u8g2_.drawLine(x1, y1, x2, y2);
+  if (connectDot) {
+    // 2x2 node at end point (sharp, minimal)
+    u8g2_.drawBox(x2 - 1, y2 - 1, 2, 2);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // drawScrollIndicator: pixel-thin bar on right edge
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
