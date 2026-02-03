@@ -79,25 +79,30 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 1: MAIN — 3 sections. Left CPU (0..63), Right GPU (64..128), Bottom
-// RAM. CPU/GPU: label (Tiny) + value (Big) centered; Y=35 progress bar Load.
-// RAM: Y=50.
+// SCENE 1: MAIN — Strict Baseline Grid. CPU/GPU: Labels Y=20, Values Y=32,
+// Load bars Y=36 H=4. RAM: Label Y=52, Bar box X=25 Y=46 W=75 H=6, Value Y=52
+// right-aligned. Tech brackets wrap CPU/GPU sections.
 // ---------------------------------------------------------------------------
 #define MAIN_CPU_LEFT_W 64
-#define MAIN_CPU_LBL_Y 16
-#define MAIN_CPU_VAL_Y 26
-#define MAIN_LOAD_BAR_Y 35
+#define MAIN_CPU_LBL_Y 20
+#define MAIN_CPU_VAL_Y 32
+#define MAIN_LOAD_BAR_Y 36
 #define MAIN_LOAD_BAR_W 50
-#define MAIN_LOAD_BAR_H 6
-#define MAIN_RAM_LBL_Y 50
-#define MAIN_RAM_BAR_Y 52
+#define MAIN_LOAD_BAR_H 4
+#define MAIN_RAM_LBL_Y 52
+#define MAIN_RAM_BAR_X 25
+#define MAIN_RAM_BAR_Y 46
+#define MAIN_RAM_BAR_W 75
 #define MAIN_RAM_BAR_H 6
-#define MAIN_RAM_TEXT_Y 58
-#define MAIN_RAM_SEG 10
+#define MAIN_RAM_VAL_Y 52
 
 void SceneManager::drawMain(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  // Cyberdeck primitives: wrap CPU and GPU sections in tech brackets
+  disp_.drawTechBracket(X(0, xOff), 14, 63, 28, 8);
+  disp_.drawTechBracket(X(65, xOff), 14, 63, 28, 8);
 
   int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
   int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
@@ -154,32 +159,24 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(X(2, xOff), MAIN_RAM_LBL_Y, "RAM");
   if (!blinkRam) {
-    int ramW = NOCT_DISP_W - 4;
-    int nSeg = ramW / MAIN_RAM_SEG;
-    int filled = (pct * nSeg + 50) / 100;
-    if (filled > nSeg)
-      filled = nSeg;
-    for (int i = 0; i < nSeg; i++) {
-      int sx = X(2, xOff) + i * MAIN_RAM_SEG;
-      if (i < filled)
-        u8g2.drawBox(sx, MAIN_RAM_BAR_Y, MAIN_RAM_SEG - 1, MAIN_RAM_BAR_H);
-      else
-        u8g2.drawFrame(sx, MAIN_RAM_BAR_Y, MAIN_RAM_SEG - 1, MAIN_RAM_BAR_H);
-    }
-    snprintf(tbuf, sizeof(tbuf), "%.1f GB", ru);
+    disp_.drawProgressBar(X(MAIN_RAM_BAR_X, xOff), MAIN_RAM_BAR_Y,
+                          MAIN_RAM_BAR_W, MAIN_RAM_BAR_H, pct);
+    snprintf(tbuf, sizeof(tbuf), "%.1fG", ru);
     u8g2.setFont(LABEL_FONT);
-    int tw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(NOCT_DISP_W - 2 - tw, xOff), MAIN_RAM_TEXT_Y, tbuf);
+    disp_.drawRightAligned(X(NOCT_DISP_W - 2, xOff), MAIN_RAM_VAL_Y, LABEL_FONT,
+                           tbuf);
   }
+  disp_.drawClawMark(X(2, xOff), MAIN_RAM_BAR_Y + MAIN_RAM_BAR_H + 2);
   disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 2: CPU — Temp/MHz Row1 Y=24; 10px gap; Load/Pwr Row2 Y=46. Labels:
-// Temp, Load, Pwr.
+// SCENE 2: CPU — Row1 Temp/MHz Y=28; Dotted HLine Y=38; Row2 Load/Pwr Y=54.
+// drawRightAligned for values.
 // ---------------------------------------------------------------------------
-#define CPU_ROW1_Y 24
-#define CPU_ROW2_Y 46
+#define CPU_ROW1_Y 28
+#define CPU_SEP_Y 38
+#define CPU_ROW2_Y 54
 #define CPU_LEFT_ANCHOR 62
 #define CPU_RIGHT_ANCHOR 126
 
@@ -188,6 +185,8 @@ void SceneManager::drawCpu(bool blinkState, int xOff) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
   disp_.drawDottedVLine(X(SPLIT_X, xOff), NOCT_CONTENT_TOP, NOCT_DISP_H - 1);
+  disp_.drawDottedHLine(X(NOCT_CARD_LEFT, xOff),
+                        X(NOCT_DISP_W - NOCT_CARD_LEFT, xOff), CPU_SEP_Y);
 
   int ct = (hw.ct > 0) ? hw.ct : 0;
   int cc = (hw.cc >= 0) ? hw.cc : 0;
@@ -217,7 +216,7 @@ void SceneManager::drawCpu(bool blinkState, int xOff) {
                          buf);
 
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(leftX, xOff), CPU_ROW2_Y, "Load");
+  u8g2.drawUTF8(X(leftX, xOff), CPU_ROW2_Y, "ACT");
   u8g2.drawUTF8(X(rightX, xOff), CPU_ROW2_Y, "Pwr");
   if (!blinkLoad) {
     snprintf(buf, sizeof(buf), "%d%%", cl);
@@ -231,13 +230,12 @@ void SceneManager::drawCpu(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 3: GPU — Row1 Temp/Clock; separator Y=32; Row2 TDP; Row3 VM (VRAM, no
-// G).
+// SCENE 3: GPU — Simplified. Row1 Temp/Clock Y=28; Dotted HLine Y=38;
+// Row2 TDP/VRAM Y=54. Left: TDP/120W; Right: VM/4.2 (no G suffix).
 // ---------------------------------------------------------------------------
-#define GPU_ROW1_Y 24
-#define GPU_SEP_Y 32
-#define GPU_ROW2_Y 38
-#define GPU_ROW3_Y 52
+#define GPU_ROW1_Y 28
+#define GPU_SEP_Y 38
+#define GPU_ROW2_Y 54
 #define GPU_LEFT_ANCHOR 62
 #define GPU_RIGHT_ANCHOR 126
 
@@ -277,24 +275,24 @@ void SceneManager::drawGpu(bool blinkState, int xOff) {
 
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(X(leftX, xOff), GPU_ROW2_Y, "TDP");
+  u8g2.drawUTF8(X(rightX, xOff), GPU_ROW2_Y, "VM");
   snprintf(buf, sizeof(buf), "%dW", gtdp);
   disp_.drawRightAligned(X(GPU_LEFT_ANCHOR, xOff), GPU_ROW2_Y, VALUE_FONT, buf);
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(leftX, xOff), GPU_ROW3_Y, "VM");
-  snprintf(buf, sizeof(buf), "%.0f", vu);
-  disp_.drawRightAligned(X(GPU_LEFT_ANCHOR, xOff), GPU_ROW3_Y, VALUE_FONT, buf);
+  snprintf(buf, sizeof(buf), "%.1f", vu);
+  disp_.drawRightAligned(X(GPU_RIGHT_ANCHOR, xOff), GPU_ROW2_Y, VALUE_FONT,
+                         buf);
   disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 4: RAM — List from Y=18. Header "16/32 GB" at Y=58 (bottom). No graphs.
+// SCENE 4: RAM — List Y=20 (Row0), Y=34 (Row1). Summary Y=58. Text only, no
+// graph.
 // ---------------------------------------------------------------------------
-#define RAM_LIST_Y 18
-#define RAM_ROW_DY 12
+#define RAM_ROW0_Y 20
+#define RAM_ROW1_Y 34
+#define RAM_SUMMARY_Y 58
 #define RAM_NAME_X NOCT_CARD_LEFT
 #define RAM_VALUE_ANCHOR (NOCT_DISP_W - 2)
-#define RAM_SUMMARY_Y 58
 #define RAM_MAX_NAMELEN 8
 
 void SceneManager::drawRam(bool blinkState, int xOff) {
@@ -309,20 +307,19 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
       onAlertRam && state_.alertMetric == NOCT_ALERT_RAM && blinkState;
 
   char buf[24];
+  int rowY[] = {RAM_ROW0_Y, RAM_ROW1_Y};
 
   u8g2.setFont(LABEL_FONT);
   for (int i = 0; i < 2; i++) {
-    int y = RAM_LIST_Y + i * RAM_ROW_DY;
-    if (y + 10 > RAM_SUMMARY_Y - 4)
-      break;
+    int y = rowY[i];
     String name = proc.ramNames[i];
     int mb = proc.ramMb[i];
     if (name.length() > 0) {
       if (name.length() > (unsigned)RAM_MAX_NAMELEN)
         name = name.substring(0, RAM_MAX_NAMELEN);
-      u8g2.drawUTF8(X(RAM_NAME_X, xOff), y + 8, name.c_str());
+      u8g2.drawUTF8(X(RAM_NAME_X, xOff), y, name.c_str());
       snprintf(buf, sizeof(buf), "%dM", mb);
-      disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), y + 8, LABEL_FONT, buf);
+      disp_.drawRightAligned(X(RAM_VALUE_ANCHOR, xOff), y, LABEL_FONT, buf);
     }
   }
 
@@ -336,32 +333,43 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 5: DISKS — 2x2 grid. 64x32 quadrants. Drive letter top-left, temp
-// centered (getUTF8Width). No graphs. Big bold numbers only.
+// SCENE 5: DISKS — "DRIVE" header, 2x2 grid. Quadrants: 0:(0,14), 1:(64,14),
+// 2:(0,39), 3:(64,39). Drive letter + temp. NO BARS.
 // ---------------------------------------------------------------------------
 #define DISK_QUAD_W 64
 #define DISK_QUAD_H 25
-#define DISK_GRID_TOP NOCT_CONTENT_TOP
+#define DISK_Q0_X 0
+#define DISK_Q0_Y 14
+#define DISK_Q1_X 64
+#define DISK_Q1_Y 14
+#define DISK_Q2_X 0
+#define DISK_Q2_Y 39
+#define DISK_Q3_X 64
+#define DISK_Q3_Y 39
+#define DISK_HEADER_Y (NOCT_CONTENT_TOP + 2)
 
 void SceneManager::drawDisks(int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(X(NOCT_CARD_LEFT, xOff), DISK_HEADER_Y, "DRIVE");
+
+  static const int qx[] = {DISK_Q0_X, DISK_Q1_X, DISK_Q2_X, DISK_Q3_X};
+  static const int qy[] = {DISK_Q0_Y, DISK_Q1_Y, DISK_Q2_Y, DISK_Q3_Y};
   static char buf[16];
   for (int i = 0; i < NOCT_HDD_COUNT; i++) {
-    int col = i % 2;
-    int row = i / 2;
-    int cellLeft = X(col * DISK_QUAD_W + 4, xOff);
-    int cellTop = DISK_GRID_TOP + row * DISK_QUAD_H;
-    int cellW = DISK_QUAD_W - 8;
-    int cellH = DISK_QUAD_H - 2;
+    int cellX = X(qx[i], xOff);
+    int cellY = qy[i];
+    int cellW = DISK_QUAD_W;
+    int cellH = (i < 2) ? (qy[2] - qy[0]) : (NOCT_DISP_H - qy[2]);
 
     char letter = hw.hdd[i].name[0] ? hw.hdd[i].name[0] : (char)('C' + i);
     int t = hw.hdd[i].temp;
 
     u8g2.setFont(LABEL_FONT);
     snprintf(buf, sizeof(buf), "%c:", letter);
-    u8g2.drawUTF8(cellLeft, cellTop + 6, buf);
+    u8g2.drawUTF8(cellX + 4, cellY + 10, buf);
 
     u8g2.setFont(VALUE_FONT);
     if (t > 0)
@@ -369,21 +377,21 @@ void SceneManager::drawDisks(int xOff) {
     else
       snprintf(buf, sizeof(buf), "-");
     int tw = u8g2.getUTF8Width(buf);
-    int tx = cellLeft + (cellW - tw) / 2;
-    int ty = cellTop + cellH / 2 + 6;
+    int tx = cellX + (cellW - tw) / 2;
+    int ty = cellY + cellH / 2;
     u8g2.drawUTF8(tx, ty, buf);
   }
   disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 7: FANS — RPM in SECONDARY_FONT. Avoid %% (font may lack %); use "pct"
-// or number only.
+// SCENE 7: FANS — profont10 values, format [ RPM ]  XX% with UNIT_FONT for %.
 // ---------------------------------------------------------------------------
 #define FAN_ROW_Y0 14
 #define FAN_ROW_DY 12
 #define FAN_ICON_X 2
 #define FAN_TEXT_X 16
+#define FAN_VALUE_FONT LABEL_FONT // u8g2_font_profont10_mr (mono, thin)
 
 void SceneManager::drawFans(int fanFrame, int xOff) {
   HardwareData &hw = state_.hw;
@@ -402,26 +410,33 @@ void SceneManager::drawFans(int fanFrame, int xOff) {
     int pct = (hw.fan_controls[i] >= 0 && hw.fan_controls[i] <= 100)
                   ? hw.fan_controls[i]
                   : 0;
-    char buf[28];
     int iconFrame = (rpm > 0) ? (fanFrame % 4) : 0;
     drawFanIconSmall(X(FAN_ICON_X, xOff), rowY, iconFrame);
     u8g2.setFont(LABEL_FONT);
     u8g2.drawUTF8(X(FAN_TEXT_X, xOff), rowY + 6, labels[i]);
-    u8g2.setFont(SECONDARY_FONT);
-    if (pct > 0)
-      snprintf(buf, sizeof(buf), "%d %d pct", rpm, pct);
-    else
-      snprintf(buf, sizeof(buf), "%d", rpm);
-    u8g2.drawUTF8(X(FAN_TEXT_X + 24, xOff), rowY + 8, buf);
+
+    int valX = X(FAN_TEXT_X + 24, xOff);
+    int valY = rowY + 8;
+    u8g2.setFont(FAN_VALUE_FONT);
+    static char rpmBuf[16];
+    snprintf(rpmBuf, sizeof(rpmBuf), "[ %d ]", rpm);
+    u8g2.drawUTF8(valX, valY, rpmBuf);
+    int dx = valX + u8g2.getUTF8Width(rpmBuf);
+    if (pct > 0) {
+      snprintf(rpmBuf, sizeof(rpmBuf), "  %d", pct);
+      u8g2.drawUTF8(dx, valY, rpmBuf);
+      dx += u8g2.getUTF8Width(rpmBuf);
+      u8g2.setFont(UNIT_FONT);
+      u8g2.drawUTF8(dx, valY, "%");
+    }
   }
   disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 8: MOTHERBOARD — 2 col x 2 row like CPU. SYS, VRM, SOC, CHIP. Clean
-// grid.
+// SCENE 8: MOTHERBOARD — 2 col x 2 row. Grid Y=18..63 (breathing room).
 // ---------------------------------------------------------------------------
-#define MB_GRID_TOP 16
+#define MB_GRID_TOP 18
 #define MB_CELL_DX 64
 #define MB_CELL_DY 22
 #define MB_LBL_X_OFF 4

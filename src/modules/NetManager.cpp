@@ -17,6 +17,7 @@ NetManager::NetManager()
 void NetManager::begin(const char *ssid, const char *pass) {
   if (ssid && strlen(ssid) > 0) {
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false); // CRITICAL FIX FOR HELTEC V3 DROPOUTS
     WiFi.begin(ssid, pass);
   }
 }
