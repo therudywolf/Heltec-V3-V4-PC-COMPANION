@@ -32,6 +32,7 @@ public:
 
 private:
   void drawWmoIconXbm(int x, int y, int wmoCode);
+  void drawNoDataCross(int x, int y, int w, int h);
   void drawCassetteIcon(int x, int y);
   void drawNoisePattern(int x, int y, int w, int h);
 
