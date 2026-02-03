@@ -47,8 +47,14 @@ int quickMenuItem = 0;
 
 #define NOCT_REDRAW_INTERVAL_MS 450
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
+#define NOCT_ALERT_LED_BLINK_MS                                                \
+  175 // half-period for 3 fast blinks, then LED stays off
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
+static bool alertLedDone = false; // true after 3 blinks, until alert clears
+static unsigned long alertStartMs =
+    0; // when current alert started (for LED phase)
+static bool lastAlertActive = false;
 
 static void VextON() {
   pinMode(NOCT_VEXT_PIN, OUTPUT);
@@ -205,6 +211,17 @@ void loop() {
     lastBlink = now;
   }
 
+  // Alert LED: on alert start reset; 3 fast blinks then leave LED off until
+  // alert clears
+  if (state.alertActive && !lastAlertActive) {
+    alertLedDone = false;
+    alertStartMs = now;
+  }
+  lastAlertActive = state.alertActive;
+  if (!state.alertActive) {
+    alertLedDone = false;
+  }
+
   bool anyAlarm = state.alertActive;
   if (predatorMode) {
     digitalWrite(NOCT_LED_PIN, LOW);
@@ -214,8 +231,14 @@ void loop() {
       breath = 0;
     if (settings.ledEnabled)
       analogWrite(NOCT_LED_PIN, breath);
-  } else if (settings.ledEnabled && anyAlarm && blinkState) {
-    digitalWrite(NOCT_LED_PIN, HIGH);
+  } else if (settings.ledEnabled && anyAlarm && !alertLedDone) {
+    unsigned long phase = (now - alertStartMs) / NOCT_ALERT_LED_BLINK_MS;
+    if (phase >= 6) {
+      alertLedDone = true;
+      digitalWrite(NOCT_LED_PIN, LOW);
+    } else {
+      digitalWrite(NOCT_LED_PIN, (phase & 1) ? LOW : HIGH);
+    }
   } else {
     digitalWrite(NOCT_LED_PIN, LOW);
   }

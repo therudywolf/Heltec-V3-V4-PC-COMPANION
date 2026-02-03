@@ -1,12 +1,14 @@
 /*
  * NOCTURNE_OS — SceneManager: 6 screens. 128x64, MAIN/CPU/GPU/RAM/DISKS/MEDIA.
+ * Unified card style: NOCT_CARD_LEFT/TOP/ROW_DY, LABEL_FONT labels, HUGE_FONT
+ * for main values, STORAGE_FONT for lists.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
 #include <math.h>
 
 #define SPLIT_X 64
-#define CONTENT_Y 10
+#define CONTENT_Y NOCT_HEADER_H
 
 const char *SceneManager::sceneNames_[] = {"MAIN", "CPU",   "GPU",
                                            "RAM",  "DISKS", "MEDIA"};
@@ -66,25 +68,27 @@ void SceneManager::drawMain(bool blinkState) {
   bool cpuOver = (cpuTemp >= CPU_TEMP_ALERT);
   bool gpuOver = (gpuTemp >= GPU_TEMP_ALERT);
 
+  int y0 = NOCT_CARD_TOP;
+  int dy = NOCT_CARD_ROW_DY;
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 12, "CPU");
-  u8g2.drawUTF8(SPLIT_X + 2, 12, "GPU");
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0, "CPU");
+  u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0, "GPU");
 
   char buf[24];
   snprintf(buf, sizeof(buf), "%d\xC2\xB0 %d%%", cpuTemp, cpuLoad);
   if (!(cpuOver && blinkState))
-    u8g2.drawUTF8(2, 26, buf);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
 
   snprintf(buf, sizeof(buf), "%d\xC2\xB0 %d%%", gpuTemp, gpuLoad);
   if (!(gpuOver && blinkState))
-    u8g2.drawUTF8(SPLIT_X + 2, 26, buf);
+    u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + dy, buf);
 
   float ru = hw.ru, ra = hw.ra;
   float vu = hw.vu, vt = hw.vt;
   snprintf(buf, sizeof(buf), "RAM %.1f/%.1f GB", ru, ra > 0 ? ra : 0.0f);
-  u8g2.drawUTF8(2, 42, buf);
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, buf);
   snprintf(buf, sizeof(buf), "VRAM %.1f/%.1f GB", vu, vt > 0 ? vt : 0.0f);
-  u8g2.drawUTF8(2, 56, buf);
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -99,28 +103,28 @@ void SceneManager::drawCpu() {
   int cl = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
   int pw = (hw.pw >= 0) ? hw.pw : 0;
 
+  int y0 = NOCT_CARD_TOP;
+  int dy = NOCT_CARD_ROW_DY;
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 12, "TEMP");
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0, "TEMP");
+  u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0, "MHz");
   u8g2.setFont(HUGE_FONT);
   char buf[16];
   snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
   int tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8((SPLIT_X - tw) / 2, 32, buf);
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(SPLIT_X + 2, 12, "MHz");
+  u8g2.drawUTF8(NOCT_CARD_LEFT + (SPLIT_X - NOCT_CARD_LEFT - tw) / 2, y0 + dy,
+                buf);
   snprintf(buf, sizeof(buf), "%d", cc);
-  u8g2.setFont(HUGE_FONT);
   tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8(SPLIT_X + (SPLIT_X - tw) / 2, 32, buf);
+  u8g2.drawUTF8(SPLIT_X + (SPLIT_X - NOCT_CARD_LEFT - tw) / 2, y0 + dy, buf);
 
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 46, "LOAD");
-  u8g2.drawUTF8(SPLIT_X + 2, 46, "PWR");
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, "LOAD");
+  u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + 2 * dy, "PWR");
   snprintf(buf, sizeof(buf), "%d%%", cl);
-  u8g2.drawUTF8(2, 60, buf);
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 3 * dy, buf);
   snprintf(buf, sizeof(buf), "%dW", pw);
-  u8g2.drawUTF8(SPLIT_X + 2, 60, buf);
+  u8g2.drawUTF8(SPLIT_X + NOCT_CARD_LEFT, y0 + 3 * dy, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,31 +141,31 @@ void SceneManager::drawGpu() {
   int vclock = (hw.vclock >= 0) ? hw.vclock : 0;
   int gtdp = (hw.gtdp >= 0) ? hw.gtdp : 0;
 
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 10, "TEMP");
+  int y0 = NOCT_CARD_TOP;
+  int dy = 8;
+  int left = NOCT_CARD_LEFT;
+  int rightCol = SPLIT_X + left;
   char buf[20];
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(left, y0, "TEMP");
   snprintf(buf, sizeof(buf), "%d\xC2\xB0", gt);
-  u8g2.drawUTF8(2, 22, buf);
-
-  u8g2.drawUTF8(2, 34, "LOAD");
+  u8g2.drawUTF8(left, y0 + dy, buf);
+  u8g2.drawUTF8(left, y0 + 2 * dy, "LOAD");
   snprintf(buf, sizeof(buf), "%d%%", gl);
-  u8g2.drawUTF8(50, 34, buf);
-
-  u8g2.drawUTF8(2, 46, "VRAM");
+  u8g2.drawUTF8(left, y0 + 3 * dy, buf);
+  u8g2.drawUTF8(left, y0 + 4 * dy, "VRAM");
   snprintf(buf, sizeof(buf), "%d%%", gv);
-  u8g2.drawUTF8(50, 46, buf);
+  u8g2.drawUTF8(left, y0 + 5 * dy, buf);
 
-  u8g2.drawUTF8(70, 10, "CORE");
+  u8g2.drawUTF8(rightCol, y0, "CORE");
   snprintf(buf, sizeof(buf), "%d", gclock);
-  u8g2.drawUTF8(70, 22, buf);
-
-  u8g2.drawUTF8(70, 34, "MEM");
+  u8g2.drawUTF8(rightCol, y0 + dy, buf);
+  u8g2.drawUTF8(rightCol, y0 + 2 * dy, "MEM");
   snprintf(buf, sizeof(buf), "%d", vclock);
-  u8g2.drawUTF8(70, 46, buf);
-
-  u8g2.drawUTF8(2, 58, "PWR");
+  u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
+  u8g2.drawUTF8(rightCol, y0 + 4 * dy, "PWR");
   snprintf(buf, sizeof(buf), "%dW", gtdp);
-  u8g2.drawUTF8(40, 58, buf);
+  u8g2.drawUTF8(rightCol, y0 + 5 * dy, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -173,20 +177,22 @@ void SceneManager::drawRam() {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
   float ru = hw.ru, ra = hw.ra;
+  int y0 = NOCT_CARD_TOP;
+  int dy = NOCT_CARD_ROW_DY;
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 12, "RAM");
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0, "RAM");
   char buf[32];
   snprintf(buf, sizeof(buf), "%.1f / %.1f GB", ru, ra > 0 ? ra : 0.0f);
   u8g2.setFont(HUGE_FONT);
   int tw = u8g2.getUTF8Width(buf);
   if (tw > NOCT_DISP_W - 4)
     u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 28, buf);
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, buf);
 
   u8g2.setFont(STORAGE_FONT);
   const int maxNameLen = 14;
   for (int i = 0; i < 2; i++) {
-    int y = 42 + i * 11;
+    int y = y0 + 2 * dy + i * dy;
     if (y > NOCT_DISP_H - 2)
       break;
     String name = proc.ramNames[i];
@@ -198,7 +204,7 @@ void SceneManager::drawRam() {
       u8g2.drawUTF8(NOCT_DISP_W - 2 - lw, y, line);
       if (name.length() > (unsigned)maxNameLen)
         name = name.substring(0, maxNameLen);
-      u8g2.drawUTF8(2, y, name.c_str());
+      u8g2.drawUTF8(NOCT_CARD_LEFT, y, name.c_str());
     }
   }
 }
@@ -211,15 +217,16 @@ void SceneManager::drawDisks() {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
   u8g2.setFont(STORAGE_FONT);
-  const int rowY[] = {14, 26, 38, 50};
+  int y0 = NOCT_CARD_TOP;
+  int dy = NOCT_CARD_ROW_DY;
   char buf[32];
   for (int i = 0; i < NOCT_HDD_COUNT; i++) {
-    int y = rowY[i];
+    int y = y0 + i * dy;
     char letter = hw.hdd[i].name[0] ? hw.hdd[i].name[0] : (char)('C' + i);
     int u = (hw.hdd[i].load >= 0 && hw.hdd[i].load <= 100) ? hw.hdd[i].load : 0;
     int t = hw.hdd[i].temp;
     snprintf(buf, sizeof(buf), "%c: %d%% %d\xC2\xB0", letter, u, t);
-    u8g2.drawUTF8(2, y, buf);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y, buf);
   }
 }
 
@@ -230,21 +237,23 @@ void SceneManager::drawPlayer() {
   MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
+  int y0 = NOCT_CARD_TOP;
+  int dy = NOCT_CARD_ROW_DY;
   u8g2.setFont(LABEL_FONT);
   const char *status = (media.mediaStatus == "PLAYING") ? "PLAYING" : "PAUSED";
   int sw = u8g2.getUTF8Width(status);
-  u8g2.drawUTF8(NOCT_DISP_W - 2 - sw, 10, status);
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - sw, y0, status);
 
   int maxChar = 18;
   String artist = media.artist;
   if (artist.length() > (unsigned)maxChar)
     artist = artist.substring(0, maxChar);
-  u8g2.drawUTF8(2, 26, artist.c_str());
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + dy, artist.c_str());
 
   String track = media.track;
   if (track.length() > (unsigned)maxChar)
     track = track.substring(0, maxChar);
-  u8g2.drawUTF8(2, 42, track.c_str());
+  u8g2.drawUTF8(NOCT_CARD_LEFT, y0 + 2 * dy, track.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -306,22 +315,23 @@ void SceneManager::drawSearchMode(int scanPhase) {
 
 void SceneManager::drawMenu(int menuItem, bool carouselOn, bool screenOff) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int boxX = 8, boxY = 14, boxW = NOCT_DISP_W - 16,
-            boxH = NOCT_DISP_H - 28;
+  const int boxX = 8, boxY = 10, boxW = NOCT_DISP_W - 16,
+            boxH = NOCT_DISP_H - 20;
+  const int menuRowDy = 10;
   u8g2.drawFrame(boxX, boxY, boxW, boxH);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawStr(boxX + 6, boxY + 10, "QUICK MENU");
+  u8g2.drawStr(boxX + 6, boxY + 8, "QUICK MENU");
   const char *carouselStr = carouselOn ? "CAROUSEL: ON " : "CAROUSEL: OFF";
   const char *screenStr = screenOff ? "SCREEN: OFF" : "SCREEN: ON ";
   const char *lines[] = {carouselStr, screenStr, "EXIT"};
   int startY = boxY + 18;
   for (int i = 0; i < 3; i++) {
-    int y = startY + i * 12;
-    if (y + 10 > boxY + boxH - 4)
+    int y = startY + i * menuRowDy;
+    if (y + 8 > boxY + boxH - 4)
       break;
     if (i == menuItem) {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(boxX + 6, y - 6, boxW - 12, 10);
+      u8g2.drawBox(boxX + 6, y - 6, boxW - 12, 9);
       u8g2.setDrawColor(0);
     }
     u8g2.drawStr(boxX + 8, y, lines[i]);

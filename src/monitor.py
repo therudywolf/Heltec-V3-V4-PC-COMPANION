@@ -550,12 +550,13 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
     return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
-# Alert thresholds (RED ALERT when any is met)
+# Alert thresholds (RED ALERT when any is met; must match config.h)
 CPU_TEMP_ALERT = 87
 GPU_TEMP_ALERT = 68
 CPU_LOAD_ALERT = 99
 GPU_LOAD_ALERT = 99
 VRAM_LOAD_ALERT = 95
+RAM_LOAD_ALERT = 90
 
 
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
@@ -611,6 +612,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
 
     # RED ALERT: if ANY threshold met, set alert and target scene (MAIN/CPU/GPU/RAM)
     alert_target = ""
+    ram_pct = int((ram_used_f / ram_total_f * 100) if ram_total_f > 0 else 0)
     if ct >= CPU_TEMP_ALERT:
         alert_target = "CPU"
     elif gt >= GPU_TEMP_ALERT:
@@ -621,6 +623,8 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         alert_target = "GPU"
     elif gv >= VRAM_LOAD_ALERT:
         alert_target = "GPU"
+    elif ram_pct >= RAM_LOAD_ALERT:
+        alert_target = "RAM"
     if alert_target:
         payload["alert"] = "CRITICAL"
         payload["target_screen"] = alert_target
