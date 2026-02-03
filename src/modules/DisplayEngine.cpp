@@ -310,8 +310,6 @@ void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
-  if (NOCT_HEADER_H <= 0)
-    return;
   const int barH = NOCT_HEADER_H;
   const int textY = 8;
 
