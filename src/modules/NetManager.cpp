@@ -245,8 +245,6 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
       state->alertTargetScene = NOCT_SCENE_FANS;
     else if (strcmp(target, "MOTHERBOARD") == 0)
       state->alertTargetScene = NOCT_SCENE_MOTHERBOARD;
-    else if (strcmp(target, "NETWORK") == 0)
-      state->alertTargetScene = NOCT_SCENE_NETWORK;
     else
       state->alertTargetScene = NOCT_SCENE_MAIN;
   }
