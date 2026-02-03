@@ -239,8 +239,9 @@ void loop() {
     alertBlinkCounter = 0;
   lastAlertActive = state.alertActive;
 
-  /* Alert LED + UI blink: exactly NOCT_ALERT_MAX_BLINKS times, then LED off &
-   * value solid */
+  /* Alert LED: always blink on alert (ignore settings.ledEnabled). 175ms blink.
+   */
+  pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   if (predatorMode) {
     unsigned long t = (now - predatorEnterTime) / 20;
     int breath = (int)(128 + 127 * sin(t * 0.1f));
@@ -251,23 +252,20 @@ void loop() {
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   } else if (state.alertActive) {
-    if (now - lastBlink >= 500) {
+    if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS) {
       lastBlink = now;
       if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
         blinkState = !blinkState;
         alertBlinkCounter++;
-        if (settings.ledEnabled)
-          digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
-        else
-          digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+        digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
       } else {
-        blinkState = false; /* Post-blink: value stays visible */
+        blinkState = false;
         digitalWrite(NOCT_LED_ALERT_PIN, LOW);
       }
     }
   } else {
     digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-    if (now - lastBlink > 500) {
+    if (now - lastBlink > NOCT_ALERT_LED_BLINK_MS) {
       blinkState = !blinkState;
       lastBlink = now;
     }

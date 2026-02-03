@@ -176,7 +176,7 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
                    MAIN_LIFEBAR_H);
   }
 
-  /* RAM: ChamferBox, text "RAM: 4.2G" left/center, segmented graph right */
+  /* RAM: ChamferBox, text "RAM: 4.2G" left/center, 6× (3x6px) segments right */
   disp_.drawChamferBox(X(0, xOff), MAIN_SCENE_RAM_Y, NOCT_DISP_W,
                        MAIN_SCENE_RAM_H, MAIN_SCENE_RAM_CHAMFER);
   if (!blinkRam) {
@@ -185,10 +185,9 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
     const int textX = 4;
     int textW = u8g2.getUTF8Width(tbuf);
     u8g2.drawUTF8(X(textX, xOff), MAIN_SCENE_RAM_TEXT_Y, tbuf);
-    /* Segmented bar: small vertical boxes to the right of digits */
+    const int segW = 23; /* 6 segments × 3px + 5× 1px gap */
+    const int segH = 6;
     const int segStartX = textX + textW + 4;
-    const int segW = NOCT_DISP_W - segStartX - 4;
-    const int segH = 8;
     const int segY = MAIN_SCENE_RAM_Y + (MAIN_SCENE_RAM_H - segH) / 2;
     int ramPct = 0;
     if (hw.ra > 0.0f)
@@ -205,13 +204,16 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
 // drawGridCell: unified 2x2 cell — bracket (63x22, len 3), label top-left,
 // value right-aligned. (x,y) = top-left of cell (use X(col, xOff) for x).
 // ---------------------------------------------------------------------------
+/* Value sits +6px lower in bracket (heavy/grounded look) */
+#define GRID_VALUE_Y_EXTRA 6
+
 void SceneManager::drawGridCell(int x, int y, const char *label,
                                 const char *value, int valueYOffset) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   disp_.drawTechBracket(x, y, GRID_CELL_W, GRID_CELL_H, GRID_BRACKET_LEN);
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(x + GRID_LBL_INSET, y + GRID_BASELINE_Y_OFF, label);
-  int valueY = y + GRID_BASELINE_Y_OFF + valueYOffset;
+  int valueY = y + GRID_BASELINE_Y_OFF + valueYOffset + GRID_VALUE_Y_EXTRA;
   disp_.drawRightAligned(x + GRID_CELL_W - GRID_LBL_INSET, valueY, VALUE_FONT,
                          value);
 }
@@ -287,18 +289,18 @@ void SceneManager::drawGpu(bool blinkState, int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 4: RAM (Protocol Alpha Wolf) — Top 2 processes only. Row 0/1 and
-// TOTAL box shifted UP by 4px. Process names use RAM_PROCESS_FONT (6x12).
+// SCENE 4: RAM (Protocol Alpha Wolf) — Top 2 processes only. Start Y=16, Total
+// box Y=50 (up 4px). Process names: VALUE_FONT, truncate 6 chars.
 // ---------------------------------------------------------------------------
-#define RAM_ROW0_Y 21
-#define RAM_ROW1_Y 39
+#define RAM_ROW0_Y 16
+#define RAM_ROW1_Y 34
 #define RAM_ROW_H 16
 #define RAM_ROW_X NOCT_CARD_LEFT
 #define RAM_ROW_W (NOCT_DISP_W - 2 * NOCT_CARD_LEFT)
 #define RAM_BRACKET_LEN 3
 #define RAM_NAME_X (NOCT_CARD_LEFT + 4)
 #define RAM_VALUE_ANCHOR (NOCT_DISP_W - 4)
-#define RAM_MAX_NAMELEN 10
+#define RAM_MAX_NAMELEN 6
 #define RAM_SUMMARY_Y 50
 #define RAM_SUMMARY_H (NOCT_DISP_H - RAM_SUMMARY_Y)
 #define RAM_SUMMARY_CHAMFER 2
@@ -333,7 +335,7 @@ void SceneManager::drawRam(bool blinkState, int xOff) {
       name = name.substring(0, RAM_MAX_NAMELEN);
     name.toUpperCase();
 
-    u8g2.setFont(RAM_PROCESS_FONT);
+    u8g2.setFont(VALUE_FONT);
     const char *nameStr = name.length() > 0 ? name.c_str() : "-";
     u8g2.drawUTF8(X(RAM_NAME_X, xOff), baselineY, nameStr);
     int nameW = u8g2.getUTF8Width(nameStr);
@@ -509,12 +511,11 @@ void SceneManager::drawMotherboard(int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 9: WEATHER — 40/60 split. Left: huge icon. Right: HUGE_FONT temp,
-// LABEL_FONT description. Bottom bar: Min/Max placeholder (widget-style).
+// SCENE 9: WEATHER — 40/60 split. Left: geometric primitive. Right: HUGE_FONT
+// temp top-right, LABEL_FONT description below. No bottom bar; centered in box.
 // ---------------------------------------------------------------------------
 #define WTHR_LEFT_PCT 40
-#define WTHR_BOTTOM_BAR_H 10
-#define WTHR_MAIN_H (NOCT_DISP_H - NOCT_CONTENT_TOP - WTHR_BOTTOM_BAR_H - 2)
+#define WTHR_BOX_H (NOCT_DISP_H - NOCT_CONTENT_TOP - 2)
 
 void SceneManager::drawWeather(int xOff) {
   WeatherData &weather = state_.weather;
@@ -526,36 +527,33 @@ void SceneManager::drawWeather(int xOff) {
   const int boxX = X(NOCT_CARD_LEFT, xOff);
   const int boxY = NOCT_CONTENT_TOP;
   const int boxW = NOCT_DISP_W - 2 * NOCT_CARD_LEFT;
+  const int boxH = WTHR_BOX_H;
   const int leftW = (boxW * WTHR_LEFT_PCT) / 100;
   const int rightX = boxX + leftW;
   const int rightW = boxW - leftW;
-  const int mainH = WTHR_MAIN_H;
-  const int bottomBarY = boxY + mainH;
 
-  /* Main content area (above bottom bar) */
-  disp_.drawChamferBox(boxX, boxY, boxW, mainH + WTHR_BOTTOM_BAR_H, 2);
+  disp_.drawChamferBox(boxX, boxY, boxW, boxH, 2);
 
   if (!state_.weatherReceived && weather.temp == 0 && weather.wmoCode == 0) {
-    drawNoDataCross(boxX + 4, boxY + 4, boxW - 8, mainH - 8);
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(boxX + (boxW - 48) / 2, bottomBarY + 6, "— / —");
+    drawNoDataCross(boxX + 4, boxY + 4, boxW - 8, boxH - 8);
     disp_.drawGreebles();
     return;
   }
 
-  /* Left 40%: huge weather icon (32x32 bitmap or geometric fallback) */
-  const int iconW = 32, iconH = 32;
+  /* Left 40%: geometric weather primitive (centered vertically) */
+  const int iconW = 24, iconH = 24;
   const int iconX = boxX + (leftW - iconW) / 2;
-  const int iconY = boxY + (mainH - iconH) / 2 - 2;
-  drawWeatherIcon32(X(iconX, xOff), iconY, weather.wmoCode);
+  const int iconY = boxY + (boxH - iconH) / 2;
+  disp_.drawWeatherPrimitive(X(iconX, xOff), iconY, weather.wmoCode);
 
-  /* Right 60%: massive temp (HUGE_FONT) at top, description below */
+  /* Right 60%: HUGE_FONT temp top-right, LABEL_FONT desc below; vertically
+   * centered as a group */
   static char buf[16];
   snprintf(buf, sizeof(buf), "%+d\xC2\xB0", weather.temp);
   u8g2.setFont(HUGE_FONT);
   int tw = u8g2.getUTF8Width(buf);
-  int tempX = rightX + (rightW - tw) / 2;
-  const int tempY = boxY + 22;
+  int tempX = rightX + rightW - tw - 4;
+  const int tempY = boxY + (boxH / 2) - 10;
   u8g2.drawUTF8(tempX, tempY, buf);
 
   u8g2.setFont(LABEL_FONT);
@@ -573,14 +571,10 @@ void SceneManager::drawWeather(int xOff) {
       dw = u8g2.getUTF8Width(descBuf);
     }
     int descX = rightX + (rightW - dw) / 2;
-    u8g2.drawUTF8(descX, boxY + mainH - 8, descBuf);
+    int descY = boxY + (boxH / 2) + 4;
+    u8g2.drawUTF8(descX, descY, descBuf);
   }
 
-  /* Bottom bar: Min/Max placeholder (no min/max in WeatherData — high-end
-   * widget look) */
-  u8g2.drawHLine(boxX + 2, bottomBarY, boxW - 4);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(boxX + (boxW - 24) / 2, bottomBarY + 6, "— / —");
   disp_.drawGreebles();
 }
 
