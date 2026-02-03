@@ -42,6 +42,9 @@ public:
   void drawConnecting(int rssi, bool blinkState);
 
 private:
+  /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
+   */
+  void drawGridCell(int x, int y, const char *label, const char *value);
   void drawFanIconSmall(int x, int y, int frame);
   void drawWeatherIcon32(int x, int y, int wmoCode);
   void drawNoDataCross(int x, int y, int w, int h);

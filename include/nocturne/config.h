@@ -18,9 +18,10 @@
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
 /* === Dimensions (Protocol Alpha Wolf) === */
-#define NOCT_HEADER_H 12
+#define NOCT_HEADER_H 14
 #define NOCT_HEADER_MARGIN 2
-#define NOCT_CONTENT_START 16 /* Breathing room below header */
+#define NOCT_CONTENT_START 17 /* Breathing room below header (physical bezel)  \
+                               */
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
 #define NOCT_FOOTER_H 14
 /* Main scene grid */
