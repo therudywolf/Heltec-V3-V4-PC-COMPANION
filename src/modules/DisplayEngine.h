@@ -9,10 +9,13 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- NOCTURNE Design System: only these three fonts ---
+// --- NOCTURNE Design System: fonts (Latin + Cyrillic where needed) ---
 #define HUGE_FONT u8g2_font_logisoso24_tr   // Hero: main values (87°, 99%)
 #define LABEL_FONT u8g2_font_profont10_mr   // Meta: tiny, uppercase, tracking
 #define SECONDARY_FONT u8g2_font_helvB10_tr // Headers, list items
+// For Cyrillic: use u8g2_font_6x10_t_cyrillic (add to U8g2 build if needed)
+#define CYRILLIC_FONT                                                          \
+  u8g2_font_6x10_tf // fallback; use _t_cyrillic when available
 #define TINY_FONT LABEL_FONT
 #define MID_FONT SECONDARY_FONT
 #define FONT_TINY TINY_FONT
