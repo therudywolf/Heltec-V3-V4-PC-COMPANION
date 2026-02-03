@@ -14,20 +14,24 @@ public:
   SceneManager(DisplayEngine &disp, AppState &state);
   void draw(int sceneIndex, unsigned long bootTime, bool blinkState,
             int fanFrame);
+  /** Draw scene content with X offset (for slide transition). offset 0 =
+   * normal. */
+  void drawWithOffset(int sceneIndex, int xOffset, unsigned long bootTime,
+                      bool blinkState, int fanFrame);
 
   const char *getSceneName(int sceneIndex) const;
   int totalScenes() const { return NOCT_TOTAL_SCENES; }
 
-  // --- 9 screens ---
-  void drawMain(bool blinkState);
-  void drawCpu(bool blinkState);
-  void drawGpu(bool blinkState);
-  void drawRam(bool blinkState);
-  void drawDisks();
-  void drawPlayer();
-  void drawFans(int fanFrame);
-  void drawMotherboard();
-  void drawWeather();
+  // --- 9 screens (internal: use xOff for transition) ---
+  void drawMain(bool blinkState, int xOff = 0);
+  void drawCpu(bool blinkState, int xOff = 0);
+  void drawGpu(bool blinkState, int xOff = 0);
+  void drawRam(bool blinkState, int xOff = 0);
+  void drawDisks(int xOff = 0);
+  void drawPlayer(int xOff = 0);
+  void drawFans(int fanFrame, int xOff = 0);
+  void drawMotherboard(int xOff = 0);
+  void drawWeather(int xOff = 0);
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
