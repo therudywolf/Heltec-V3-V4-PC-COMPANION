@@ -70,6 +70,7 @@ struct AppState {
   bool weatherReceived = false;
   bool alertActive = false;
   int alertTargetScene = 0; /* NOCT_SCENE_MAIN/CPU/GPU/RAM/DISKS/MEDIA */
+  int alertMetric = -1;     /* 0=ct, 1=gt, 2=cl, 3=gl, 4=gv, 5=ram; -1=none */
 };
 
 #endif

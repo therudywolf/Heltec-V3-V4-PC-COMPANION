@@ -322,38 +322,34 @@ bool DisplayEngine::drawXBMArtFromBase64(int x, int y, int w, int h,
 }
 
 // ---------------------------------------------------------------------------
-// Startup: Wolf BIOS
+// Startup: single static splash "Forest OS" / "By RudyWolf"
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawSplash() {
+  u8g2_.setFont(HUGE_FONT);
+  const char *line1 = "Forest OS";
+  int w1 = u8g2_.getUTF8Width(line1);
+  int x1 = (NOCT_DISP_W - w1) / 2;
+  int y1 = NOCT_DISP_H / 2 - 10;
+  u8g2_.drawUTF8(x1, y1, line1);
+
+  u8g2_.setFont(LABEL_FONT);
+  const char *line2 = "By RudyWolf";
+  int w2 = u8g2_.getUTF8Width(line2);
+  int x2 = (NOCT_DISP_W - w2) / 2;
+  int y2 = NOCT_DISP_H / 2 + 6;
+  u8g2_.drawUTF8(x2, y2, line2);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy: Wolf BIOS (kept for compatibility; use drawSplash in main)
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawBiosPost(unsigned long now, unsigned long bootTime,
                                  bool wifiOk, int rssi) {
-  u8g2_.setFont(TINY_FONT);
-  int lineH = 7;
-  unsigned long elapsed = now - bootTime;
-  int scroll = (int)(elapsed / 80) % (6 * lineH);
-  int y0 = NOCT_DISP_H + 4 - (scroll % (6 * lineH));
-  const char *lines[] = {"MEM_CHECK......... OK",
-                         "LINK.............. OK",
-                         "WOLF_PROTOCOL..... OK",
-                         "CORTEX........... OK",
-                         wifiOk ? "WIFI.............. OK"
-                                : "WIFI.............. ...",
-                         ""};
-  for (int i = 0; i < 5; i++) {
-    int y = y0 + i * lineH;
-    if (y >= -lineH && y < NOCT_DISP_H - ICON_WOLF_H - 4)
-      u8g2_.drawStr(NOCT_MARGIN, y + lineH - 1, lines[i]);
-  }
-  int wolfX = NOCT_DISP_W - ICON_WOLF_W - NOCT_MARGIN;
-  int wolfY = (NOCT_DISP_H - ICON_WOLF_H) / 2;
-  u8g2_.drawXBM(wolfX, wolfY, ICON_WOLF_W, ICON_WOLF_H, icon_wolf_bits);
-  if (wifiOk)
-    drawWiFiIcon(NOCT_DISP_W - ICON_WIFI_W - NOCT_MARGIN, NOCT_MARGIN, rssi);
-  int barW = (int)((float)elapsed * (NOCT_DISP_W - 2 * NOCT_MARGIN) /
-                   (float)NOCT_SPLASH_MS);
-  if (barW > NOCT_DISP_W - 2 * NOCT_MARGIN)
-    barW = NOCT_DISP_W - 2 * NOCT_MARGIN;
-  if (barW > 0)
-    u8g2_.drawBox(NOCT_MARGIN, NOCT_DISP_H - 4 - NOCT_MARGIN, barW, 3);
+  (void)now;
+  (void)bootTime;
+  (void)wifiOk;
+  (void)rssi;
+  drawSplash();
 }
 
 bool DisplayEngine::biosPostDone(unsigned long now, unsigned long bootTime) {
@@ -361,18 +357,14 @@ bool DisplayEngine::biosPostDone(unsigned long now, unsigned long bootTime) {
 }
 
 // ---------------------------------------------------------------------------
-// Config loaded screen (after BIOS): "CONFIG LOADED: ALERTS ON"
+// Config loaded (legacy): now same as splash
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawConfigLoaded(unsigned long now, unsigned long bootTime,
                                      const char *message) {
   (void)bootTime;
   (void)now;
-  u8g2_.setFont(TINY_FONT);
-  const char *msg = message && message[0] ? message : "CONFIG LOADED";
-  int tw = u8g2_.getUTF8Width(msg);
-  int x = (NOCT_DISP_W - tw) / 2;
-  int y = NOCT_DISP_H / 2 - 4;
-  u8g2_.drawUTF8(x, y, msg);
+  (void)message;
+  drawSplash();
 }
 
 // ---------------------------------------------------------------------------

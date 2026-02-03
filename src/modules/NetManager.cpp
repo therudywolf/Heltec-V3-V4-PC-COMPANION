@@ -217,6 +217,7 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
 
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];
+  const char *metric = doc["alert_metric"];
   state->alertActive = (alert && strcmp(alert, "CRITICAL") == 0);
   if (state->alertActive && target) {
     if (strcmp(target, "MAIN") == 0)
@@ -234,8 +235,26 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
     else
       state->alertTargetScene = NOCT_SCENE_MAIN;
   }
-  if (!state->alertActive)
+  if (state->alertActive && metric) {
+    if (strcmp(metric, "ct") == 0)
+      state->alertMetric = NOCT_ALERT_CT;
+    else if (strcmp(metric, "gt") == 0)
+      state->alertMetric = NOCT_ALERT_GT;
+    else if (strcmp(metric, "cl") == 0)
+      state->alertMetric = NOCT_ALERT_CL;
+    else if (strcmp(metric, "gl") == 0)
+      state->alertMetric = NOCT_ALERT_GL;
+    else if (strcmp(metric, "gv") == 0)
+      state->alertMetric = NOCT_ALERT_GV;
+    else if (strcmp(metric, "ram") == 0)
+      state->alertMetric = NOCT_ALERT_RAM;
+    else
+      state->alertMetric = -1;
+  }
+  if (!state->alertActive) {
     state->alertTargetScene = NOCT_SCENE_MAIN;
+    state->alertMetric = -1;
+  }
 
   return true;
 }
