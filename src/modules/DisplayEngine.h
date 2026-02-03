@@ -121,12 +121,17 @@ public:
   void drawHexStream(int x, int y, int rows);
   /** Three parallel diagonal jagged lines (scratches / watermark). */
   void drawCyberClaw(int x, int y);
-  /** Small solid square blinking every 500ms + "ACT" or "HUNT" text. */
+  /** Heartbeat: 3x3 filled box blinks every 1000ms. Place in header next to
+   * scene name. */
   void drawActiveIndicator(int x, int y);
+  /** Wolf eye pixel art: open = < o >, closed = - - . Use in Hunt or idle. */
+  void drawWolfEye(int x, int y, bool open);
 
-  // --- Global header: 10px bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
-  // dotted at Y=10 ---
-  void drawGlobalHeader(const char *sceneTitle, const char *timeStr, int rssi);
+  // --- Global header (Wolf Collar): Scene left, NOCT:ON/WOLF:V3 right, Paw
+  // icon, separator Y=12 with 1px gap center. wifiConnected: true = NOCT:ON,
+  // false = WOLF:V3 ---
+  void drawGlobalHeader(const char *sceneTitle, const char *timeStr, int rssi,
+                        bool wifiConnected = true);
 
   // --- Rolling sparkline (with scanlines in background) ---
   void drawRollingGraph(int x, int y, int w, int h, RollingGraph &g,

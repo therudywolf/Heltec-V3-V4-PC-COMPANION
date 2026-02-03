@@ -17,17 +17,23 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
-/* Header: zone Y 0..11 (Height 12); Content Area: 14..63 */
+/* === Dimensions (Protocol Alpha Wolf) === */
 #define NOCT_HEADER_H 12
 #define NOCT_HEADER_MARGIN 2
-#define NOCT_CONTENT_START 14
+#define NOCT_CONTENT_START 16 /* Breathing room below header */
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
-#define NOCT_FOOTER_H 16
-/* Main scene: top block 13..45, RAM box 48..63 */
+#define NOCT_FOOTER_H 14
+/* Main scene grid */
+#define MAIN_TOP_H 28        /* Height of CPU/GPU brackets */
+#define MAIN_BAR_Y_OFFSET 32 /* Relative to bracket top */
+#define MAIN_BAR_H 4         /* Slimmer bars */
+#define MAIN_RAM_Y 50        /* RAM box top */
+#define MAIN_RAM_H 13
+/* Legacy aliases for compatibility */
 #define MAIN_TOP_Y_END 45
-#define MAIN_RAM_BOX_TOP 48
-#define MAIN_RAM_BOX_H 16
-#define MAIN_RAM_TEXT_Y 58
+#define MAIN_RAM_BOX_TOP MAIN_RAM_Y
+#define MAIN_RAM_BOX_H MAIN_RAM_H
+#define MAIN_RAM_TEXT_Y (MAIN_RAM_Y + MAIN_RAM_H - 4)
 /* Font baseline offsets (for alignment) */
 #define BASELINE_OFFSET_BIG 13
 #define BASELINE_OFFSET_TINY 7
@@ -80,8 +86,7 @@
 #define VRAM_LOAD_ALERT 95
 #define RAM_LOAD_ALERT 90
 
-/* 11 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS, MB, WEATHER, FIRE, HUNT
- */
+/* 9 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS, MB, WEATHER */
 #define NOCT_SCENE_MAIN 0
 #define NOCT_SCENE_CPU 1
 #define NOCT_SCENE_GPU 2
@@ -91,9 +96,7 @@
 #define NOCT_SCENE_FANS 6
 #define NOCT_SCENE_MOTHERBOARD 7
 #define NOCT_SCENE_WEATHER 8
-#define NOCT_SCENE_FIRE 9
-#define NOCT_SCENE_HUNT 10
-#define NOCT_TOTAL_SCENES 11
+#define NOCT_TOTAL_SCENES 9
 
 /* alert_metric codes (match monitor.py: ct, gt, cl, gl, gv, ram) */
 #define NOCT_ALERT_CT 0
