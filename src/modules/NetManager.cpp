@@ -156,13 +156,15 @@ bool NetManager::parsePayload(const String &line, AppState *state) {
       hw.hdd[i].name[0] = (char)('C' + i);
       hw.hdd[i].name[1] = '\0';
     }
-    hw.hdd[i].load = hddArr[i]["u"] | hddArr[i]["load"] | 0;
+    hw.hdd[i].used_gb = hddArr[i]["u"] | 0.0f;
+    hw.hdd[i].total_gb = hddArr[i]["tot"] | 0.0f;
     hw.hdd[i].temp = hddArr[i]["t"] | 0;
   }
   for (int i = (int)hddArr.size(); i < NOCT_HDD_COUNT; i++) {
     hw.hdd[i].name[0] = (char)('C' + i);
     hw.hdd[i].name[1] = '\0';
-    hw.hdd[i].load = 0;
+    hw.hdd[i].used_gb = 0.0f;
+    hw.hdd[i].total_gb = 0.0f;
     hw.hdd[i].temp = 0;
   }
   hw.vu = doc["vu"] | 0.0f;
