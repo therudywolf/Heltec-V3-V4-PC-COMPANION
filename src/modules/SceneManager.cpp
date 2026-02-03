@@ -152,7 +152,7 @@ void SceneManager::drawCpu(bool blinkState) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 3: GPU — Temperature, load %, VRAM %, frequencies, power.
+// SCENE 3: GPU — Temperature, load %, core MHz, VRAM GB, power.
 // ---------------------------------------------------------------------------
 void SceneManager::drawGpu(bool blinkState) {
   HardwareData &hw = state_.hw;
@@ -160,7 +160,6 @@ void SceneManager::drawGpu(bool blinkState) {
 
   int gt = (hw.gt > 0) ? hw.gt : 0;
   int gl = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
-  int gv = (hw.gv >= 0 && hw.gv <= 100) ? hw.gv : 0;
   int gclock = (hw.gclock >= 0) ? hw.gclock : 0;
   int gtdp = (hw.gtdp >= 0) ? hw.gtdp : 0;
   float vu = hw.vu, vt = hw.vt;
@@ -170,8 +169,6 @@ void SceneManager::drawGpu(bool blinkState) {
       onAlertGpu && state_.alertMetric == NOCT_ALERT_GT && blinkState;
   bool blinkLoad =
       onAlertGpu && state_.alertMetric == NOCT_ALERT_GL && blinkState;
-  bool blinkVram =
-      onAlertGpu && state_.alertMetric == NOCT_ALERT_GV && blinkState;
 
   int y0 = NOCT_CARD_TOP;
   int dy = NOCT_CARD_ROW_DY;
@@ -189,20 +186,16 @@ void SceneManager::drawGpu(bool blinkState) {
   u8g2.drawUTF8(rightCol, y0 + dy, buf);
 
   u8g2.drawUTF8(left, y0 + 2 * dy, "LOAD");
-  u8g2.drawUTF8(rightCol, y0 + 2 * dy, "VRAM");
+  u8g2.drawUTF8(rightCol, y0 + 2 * dy, "PWR");
   if (!blinkLoad) {
     snprintf(buf, sizeof(buf), "%d%%", gl);
     u8g2.drawUTF8(left, y0 + 3 * dy, buf);
   }
-  if (!blinkVram) {
-    snprintf(buf, sizeof(buf), "%d%%", gv);
-    u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
-  }
+  snprintf(buf, sizeof(buf), "%dW", gtdp);
+  u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
 
   snprintf(buf, sizeof(buf), "VRAM %.1f/%.1f GB", vu, vt > 0 ? vt : 0.0f);
   u8g2.drawUTF8(left, y0 + 4 * dy, buf);
-  snprintf(buf, sizeof(buf), "PWR %dW", gtdp);
-  u8g2.drawUTF8(rightCol, y0 + 4 * dy, buf);
 }
 
 // ---------------------------------------------------------------------------
