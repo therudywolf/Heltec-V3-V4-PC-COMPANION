@@ -741,33 +741,66 @@ void SceneManager::drawSearchMode(int scanPhase) {
 }
 
 // ---------------------------------------------------------------------------
-// Wolf Menu: centered overlay. Items: CAROUSEL: 5s, CAROUSEL: 10s,
-// CAROUSEL: OFF, EXIT. Short press = cycle, long press = select/exit.
+// Tactical HUD Menu: central ChamferBox overlay. Header "// CONFIG";
+// 3 rows: AUTO (5s/10s/15s/OFF), FLIP (0deg/180deg), EXIT. Inverted
+// selection (white bar, black text). Short = navigate, Long = interact.
 // ---------------------------------------------------------------------------
-void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec) {
+void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
+                            bool screenRotated) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int boxW = 100;
+  const int boxX = 10;
+  const int boxY = 10;
+  const int boxW = 108;
   const int boxH = 44;
-  const int boxX = (NOCT_DISP_W - boxW) / 2;
-  const int boxY = (NOCT_DISP_H - boxH) / 2;
-  const int menuRowDy = 10;
-  u8g2.drawFrame(boxX, boxY, boxW, boxH);
+
+  // 1. Dim background: clear center
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(boxX, boxY, boxW, boxH);
+  u8g2.setDrawColor(1);
+
+  // 2. Frame (chamfered tech frame)
+  disp_.drawTechFrame(boxX, boxY, boxW, boxH);
+
+  // 3. Header: white bar + chamfer outline, black text "// CONFIG"
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(34, 6, 60, 9);
+  disp_.drawChamferBox(34, 6, 60, 9, 2);
+  u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
-  const char *lines[] = {"CAROUSEL: 5s", "CAROUSEL: 10s", "CAROUSEL: OFF",
-                         "EXIT"};
-  int startY = boxY + 8;
-  for (int i = 0; i < 4; i++) {
-    int y = startY + i * menuRowDy;
-    if (y + 8 > boxY + boxH - 2)
-      break;
+  u8g2.drawUTF8(42, 13, "// CONFIG");
+  u8g2.setDrawColor(1);
+
+  // 4. Row labels from state: AUTO, FLIP, EXIT (3 rows only)
+  static char row0Buf[16];
+  if (!carouselOn)
+    snprintf(row0Buf, sizeof(row0Buf), "AUTO: OFF");
+  else
+    snprintf(row0Buf, sizeof(row0Buf), "AUTO: %ds", carouselSec);
+
+  static char row1Buf[16];
+  snprintf(row1Buf, sizeof(row1Buf), "FLIP: %s",
+           screenRotated ? "180deg" : "0deg");
+
+  const char *items[] = {row0Buf, row1Buf, "EXIT"};
+  const int count = 3;
+  const int startY = 24;
+  const int rowH = 9;
+
+  u8g2.setFont(LABEL_FONT);
+  for (int i = 0; i < count; i++) {
+    int y = startY + i * rowH;
     if (i == menuItem) {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(boxX + 4, y - 6, boxW - 8, 9);
+      u8g2.drawBox(14, y - 7, 100, rowH);
       u8g2.setDrawColor(0);
-    }
-    u8g2.drawUTF8(boxX + 6, y, lines[i]);
-    if (i == menuItem)
+      u8g2.drawUTF8(16, y, ">");
+      u8g2.drawUTF8(104, y, "<");
+    } else {
       u8g2.setDrawColor(1);
+    }
+    int tw = u8g2.getUTF8Width(items[i]);
+    u8g2.drawUTF8(64 - (tw / 2), y, items[i]);
+    u8g2.setDrawColor(1);
   }
 }
 
