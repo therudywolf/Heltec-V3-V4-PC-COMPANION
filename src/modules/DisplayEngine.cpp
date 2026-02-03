@@ -100,18 +100,9 @@ void DisplayEngine::clearBuffer() { u8g2_.clearBuffer(); }
 void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 
 // ---------------------------------------------------------------------------
-// drawScanlines: full-screen CRT effect — black horizontal line every 2 (or 4)
-// pixels
+// drawScanlines: REMOVED for Clean Cyberpunk v4 — crisp, bright display.
 // ---------------------------------------------------------------------------
-void DisplayEngine::drawScanlines(bool everyFourth) {
-  int step = everyFourth ? 4 : 2;
-  u8g2_.setDrawColor(0);
-  for (int y = 0; y < NOCT_DISP_H; y += step) {
-    for (int x = 0; x < NOCT_DISP_W; x++)
-      u8g2_.drawPixel(x, y);
-  }
-  u8g2_.setDrawColor(1);
-}
+void DisplayEngine::drawScanlines(bool everyFourth) { (void)everyFourth; }
 
 // ---------------------------------------------------------------------------
 // drawGlitch: horizontal slice offset 2–5px + random invert block. intensity
@@ -168,16 +159,9 @@ void DisplayEngine::drawGlitch(int intensity) {
 }
 
 // ---------------------------------------------------------------------------
-// drawScanline: dotted line every 2nd pixel at row y (CRT effect)
+// drawScanline: REMOVED for Clean Cyberpunk v4.
 // ---------------------------------------------------------------------------
-void DisplayEngine::drawScanline(int y) {
-  if (y < 0 || y >= NOCT_DISP_H)
-    return;
-  u8g2_.setDrawColor(0);
-  for (int x = 0; x < NOCT_DISP_W; x += 2)
-    u8g2_.drawPixel(x, y);
-  u8g2_.setDrawColor(1);
-}
+void DisplayEngine::drawScanline(int y) { (void)y; }
 
 // ---------------------------------------------------------------------------
 // drawRightAligned: width = getUTF8Width; draw at x_anchor - width (grid law).
@@ -264,6 +248,82 @@ void DisplayEngine::drawDottedVLine(int x, int y0, int y1) {
   }
   for (int y = y0; y <= y1; y += 2)
     u8g2_.drawPixel(x, y);
+}
+
+// ---------------------------------------------------------------------------
+// drawTechFrame: frame with gaps at corners (chamfered / cut corners)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawTechFrame(int x, int y, int w, int h) {
+  const int c = 2; // chamfer size
+  if (w < c * 2 + 2 || h < c * 2 + 2) {
+    u8g2_.drawFrame(x, y, w, h);
+    return;
+  }
+  // Top: left gap, line, right gap
+  u8g2_.drawLine(x + c, y, x + w - 1 - c, y);
+  u8g2_.drawLine(x + w - 1 - c, y, x + w - 1, y + c);
+  u8g2_.drawLine(x + w - 1, y + c, x + w - 1, y + h - 1 - c);
+  u8g2_.drawLine(x + w - 1, y + h - 1 - c, x + w - 1 - c, y + h - 1);
+  u8g2_.drawLine(x + w - 1 - c, y + h - 1, x + c, y + h - 1);
+  u8g2_.drawLine(x + c, y + h - 1, x, y + h - 1 - c);
+  u8g2_.drawLine(x, y + h - 1 - c, x, y + c);
+  u8g2_.drawLine(x, y + c, x + c, y);
+}
+
+// ---------------------------------------------------------------------------
+// drawTechBracket: vertical bracket [ or ] to group text
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawTechBracket(int x, int y, int h, bool facingLeft) {
+  if (h < 4)
+    return;
+  if (facingLeft) { // [
+    u8g2_.drawPixel(x, y);
+    u8g2_.drawPixel(x, y + h - 1);
+    u8g2_.drawLine(x, y, x + 2, y);
+    u8g2_.drawLine(x, y + h - 1, x + 2, y + h - 1);
+    u8g2_.drawLine(x, y + 1, x, y + h - 2);
+  } else { // ]
+    int xr = x + 2;
+    u8g2_.drawPixel(xr, y);
+    u8g2_.drawPixel(xr, y + h - 1);
+    u8g2_.drawLine(x, y, xr, y);
+    u8g2_.drawLine(x, y + h - 1, xr, y + h - 1);
+    u8g2_.drawLine(xr, y + 1, xr, y + h - 2);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// drawCrosshair: small + at (x,y)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawCrosshair(int x, int y) {
+  u8g2_.drawLine(x - 2, y, x + 2, y);
+  u8g2_.drawLine(x, y - 2, x, y + 2);
+}
+
+// ---------------------------------------------------------------------------
+// drawBracketedBar: [ ||||||||     ] style progress bar
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawBracketedBar(int x, int y, int w, int h, int percent) {
+  if (percent > 100)
+    percent = 100;
+  if (percent < 0)
+    percent = 0;
+  const int bracketW = 3; // each bracket is 3px wide
+  const int innerW = w - 2 * bracketW;
+  if (innerW < 2)
+    return;
+  // Draw brackets [ ]
+  drawTechBracket(x, y, h, true);
+  drawTechBracket(x + w - bracketW, y, h, false);
+  // Inner bar fill
+  int filled = (percent * innerW + 50) / 100;
+  if (filled > innerW)
+    filled = innerW;
+  int bx = x + bracketW;
+  int by = y + 1;
+  int bh = h > 2 ? h - 2 : 1;
+  if (bh > 0 && filled > 0)
+    u8g2_.drawBox(bx, by, filled, bh);
 }
 
 // ---------------------------------------------------------------------------
@@ -370,8 +430,6 @@ void DisplayEngine::drawGreebles() {
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawRollingGraph(int x, int y, int w, int h,
                                      RollingGraph &g, int maxVal) {
-  for (int ly = y; ly < y + h; ly += 2)
-    drawScanline(ly);
   if (g.count < 2 || maxVal <= 0)
     return;
   float scale = (float)(h - 2) / (float)maxVal;
