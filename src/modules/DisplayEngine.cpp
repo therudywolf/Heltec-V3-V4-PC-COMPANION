@@ -476,6 +476,27 @@ void DisplayEngine::drawHexDecoration(int corner) {
 }
 
 // ---------------------------------------------------------------------------
+// drawWeatherPrimitive: fallback when font icons fail. 0-3 sun, 45-48 cloud,
+// 50+ rain.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawWeatherPrimitive(int x, int y, int wmoCode) {
+  const int sz = 24;
+  int cx = x + sz / 2;
+  int cy = y + sz / 2;
+  if (wmoCode >= 0 && wmoCode <= 3) {
+    u8g2_.drawCircle(cx, cy, sz / 3);
+  } else if (wmoCode >= 45 && wmoCode <= 48) {
+    u8g2_.drawRBox(x + 2, y + 6, sz - 4, 14, 4);
+  } else if (wmoCode >= 50) {
+    u8g2_.drawRFrame(x + 2, y + 4, sz - 4, 16, 3);
+    for (int i = 0; i < 5; i++)
+      u8g2_.drawLine(x + 6 + i * 4, y + 10, x + 6 + i * 4, y + 18);
+  } else {
+    u8g2_.drawRBox(x + 2, y + 6, sz - 4, 14, 4);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // drawScrollIndicator: pixel-thin bar on right edge
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
@@ -494,8 +515,8 @@ void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
 }
 
 // ---------------------------------------------------------------------------
-// Global header: NOCT_HEADER_H px filled bar (color 1), [ SCENE ] left,
-// WIFI + time right, dotted at Y=NOCT_HEADER_H-1. Text/icon in color 0 on bar.
+// Global header: Inverted tab. Solid box (0,0,128,12), text black inside.
+// Connect lines from header bottom corners down to content. Strict Y=0..12.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
@@ -519,7 +540,6 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   int iconY = 1;
   if (rssi > -70) {
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
-    // "Live" pulse dot (color 0 = visible on filled bar): companion heartbeat
     if ((millis() / 800) % 2 == 0) {
       u8g2_.setDrawColor(0);
       u8g2_.drawBox(NOCT_DISP_W - 6, 3, 2, 2);
@@ -530,6 +550,8 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
 
   u8g2_.setDrawColor(1);
   drawDottedHLine(0, NOCT_DISP_W - 1, barH - 1);
+  u8g2_.drawLine(0, barH - 1, 0, NOCT_CONTENT_TOP);
+  u8g2_.drawLine(NOCT_DISP_W - 1, barH - 1, NOCT_DISP_W - 1, NOCT_CONTENT_TOP);
 }
 
 // ---------------------------------------------------------------------------

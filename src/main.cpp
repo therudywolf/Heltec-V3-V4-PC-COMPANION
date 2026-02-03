@@ -78,6 +78,7 @@ void setup() {
   delay(50);
 
   display.begin();
+  Wire.setClock(800000);
   drawBootSequence(display);
   splashDone = true;
   pinMode(NOCT_LED_CPU_PIN, OUTPUT);
@@ -342,24 +343,21 @@ void loop() {
       unsigned long elapsed = now - transitionStart;
       int progress =
           (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
-      if (progress > 128)
-        progress = 128;
+      if (progress > NOCT_DISP_W)
+        progress = NOCT_DISP_W;
       int offsetA = -progress;
-      int offsetB = 128 - progress;
+      int offsetB = NOCT_DISP_W - progress;
       sceneManager.drawWithOffset(previousScene, offsetA, bootTime, blinkState,
                                   fanAnimFrame);
       sceneManager.drawWithOffset(currentScene, offsetB, bootTime, blinkState,
                                   fanAnimFrame);
-      if (progress >= 128)
+      if (progress >= NOCT_DISP_W)
         inTransition = false;
     } else {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
       if (state.alertActive)
         display.drawAlertBorder();
     }
-
-    if (random(100) < 1)
-      display.drawGlitch(1);
   }
 
   display.sendBuffer();
