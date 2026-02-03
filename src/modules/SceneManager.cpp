@@ -1,6 +1,5 @@
 /*
- * NOCTURNE_OS — SceneManager: Brutalist 5-scene monitoring. 128x64, 5m rule.
- * MAIN VALUES: u8g2_font_logisoso24_tr. LABELS: u8g2_font_profont12_tr.
+ * NOCTURNE_OS — SceneManager: 6 screens. 128x64, MAIN/CPU/GPU/RAM/DISKS/MEDIA.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
@@ -9,15 +8,15 @@
 #define SPLIT_X 64
 #define CONTENT_Y 10
 
-const char *SceneManager::sceneNames_[] = {"THERMAL", "LOAD", "MEMORY",
-                                           "STORAGE", "FANS"};
+const char *SceneManager::sceneNames_[] = {"MAIN", "CPU",   "GPU",
+                                           "RAM",  "DISKS", "MEDIA"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
 
 const char *SceneManager::getSceneName(int sceneIndex) const {
   if (sceneIndex < 0 || sceneIndex >= NOCT_TOTAL_SCENES)
-    return "THERMAL";
+    return "MAIN";
   return sceneNames_[sceneIndex];
 }
 
@@ -26,32 +25,34 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
   (void)bootTime;
   (void)fanFrame;
   switch (sceneIndex) {
-  case NOCT_SCENE_THERMAL:
-    drawThermal(blinkState);
+  case NOCT_SCENE_MAIN:
+    drawMain(blinkState);
     break;
-  case NOCT_SCENE_LOAD:
-    drawLoad();
+  case NOCT_SCENE_CPU:
+    drawCpu();
     break;
-  case NOCT_SCENE_MEMORY:
-    drawMemory();
+  case NOCT_SCENE_GPU:
+    drawGpu();
     break;
-  case NOCT_SCENE_STORAGE:
-    drawStorage();
+  case NOCT_SCENE_RAM:
+    drawRam();
     break;
-  case NOCT_SCENE_FANS:
-    drawFans();
+  case NOCT_SCENE_DISKS:
+    drawDisks();
+    break;
+  case NOCT_SCENE_MEDIA:
+    drawPlayer();
     break;
   default:
-    drawThermal(blinkState);
+    drawMain(blinkState);
     break;
   }
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 1: THERMAL — Split at X=64. Left: CPU label + huge temp. Right: GPU.
-// If temp >= limit, blink that value.
+// SCENE 1: MAIN — CPU/GPU temp+load, RAM and VRAM used/total.
 // ---------------------------------------------------------------------------
-void SceneManager::drawThermal(bool blinkState) {
+void SceneManager::drawMain(bool blinkState) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
@@ -60,132 +61,190 @@ void SceneManager::drawThermal(bool blinkState) {
 
   int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
   int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
+  int cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
+  int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
   bool cpuOver = (cpuTemp >= CPU_TEMP_ALERT);
   bool gpuOver = (gpuTemp >= GPU_TEMP_ALERT);
 
-  // Left: CPU
   u8g2.setFont(LABEL_FONT);
-  int lw = u8g2.getUTF8Width("CPU");
-  u8g2.drawUTF8((SPLIT_X - lw) / 2, 18, "CPU");
+  u8g2.drawUTF8(2, 12, "CPU");
+  u8g2.drawUTF8(SPLIT_X + 2, 12, "GPU");
+
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0 %d%%", cpuTemp, cpuLoad);
+  if (!(cpuOver && blinkState))
+    u8g2.drawUTF8(2, 26, buf);
+
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0 %d%%", gpuTemp, gpuLoad);
+  if (!(gpuOver && blinkState))
+    u8g2.drawUTF8(SPLIT_X + 2, 26, buf);
+
+  float ru = hw.ru, ra = hw.ra;
+  float vu = hw.vu, vt = hw.vt;
+  snprintf(buf, sizeof(buf), "RAM %.1f/%.1f GB", ru, ra > 0 ? ra : 0.0f);
+  u8g2.drawUTF8(2, 42, buf);
+  snprintf(buf, sizeof(buf), "VRAM %.1f/%.1f GB", vu, vt > 0 ? vt : 0.0f);
+  u8g2.drawUTF8(2, 56, buf);
+}
+
+// ---------------------------------------------------------------------------
+// SCENE 2: CPU — Temperature, frequency, load %, watts.
+// ---------------------------------------------------------------------------
+void SceneManager::drawCpu() {
+  HardwareData &hw = state_.hw;
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  int ct = (hw.ct > 0) ? hw.ct : 0;
+  int cc = (hw.cc >= 0) ? hw.cc : 0;
+  int cl = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
+  int pw = (hw.pw >= 0) ? hw.pw : 0;
+
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(2, 12, "TEMP");
   u8g2.setFont(HUGE_FONT);
   char buf[16];
-  snprintf(buf, sizeof(buf), "%d\xC2\xB0", cpuTemp);
-  if (!(cpuOver && blinkState)) {
-    int tw = u8g2.getUTF8Width(buf);
-    u8g2.drawUTF8((SPLIT_X - tw) / 2, 44, buf);
-  }
-  // Right: GPU
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", ct);
+  int tw = u8g2.getUTF8Width(buf);
+  u8g2.drawUTF8((SPLIT_X - tw) / 2, 32, buf);
+
   u8g2.setFont(LABEL_FONT);
-  int rw = u8g2.getUTF8Width("GPU");
-  u8g2.drawUTF8(SPLIT_X + (SPLIT_X - rw) / 2, 18, "GPU");
+  u8g2.drawUTF8(SPLIT_X + 2, 12, "MHz");
+  snprintf(buf, sizeof(buf), "%d", cc);
   u8g2.setFont(HUGE_FONT);
-  snprintf(buf, sizeof(buf), "%d\xC2\xB0", gpuTemp);
-  if (!(gpuOver && blinkState)) {
-    int tw = u8g2.getUTF8Width(buf);
-    u8g2.drawUTF8(SPLIT_X + (SPLIT_X - tw) / 2, 44, buf);
-  }
+  tw = u8g2.getUTF8Width(buf);
+  u8g2.drawUTF8(SPLIT_X + (SPLIT_X - tw) / 2, 32, buf);
+
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(2, 46, "LOAD");
+  u8g2.drawUTF8(SPLIT_X + 2, 46, "PWR");
+  snprintf(buf, sizeof(buf), "%d%%", cl);
+  u8g2.drawUTF8(2, 60, buf);
+  snprintf(buf, sizeof(buf), "%dW", pw);
+  u8g2.drawUTF8(SPLIT_X + 2, 60, buf);
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 2: LOAD — Left: CPU % huge. Right: GPU % huge.
+// SCENE 3: GPU — Temperature, load %, VRAM %, frequencies, power.
 // ---------------------------------------------------------------------------
-void SceneManager::drawLoad() {
+void SceneManager::drawGpu() {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  for (int yy = CONTENT_Y; yy < NOCT_DISP_H; yy++)
-    u8g2.drawPixel(SPLIT_X, yy);
-
-  int cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
-  int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 18, "CPU %");
-  u8g2.setFont(HUGE_FONT);
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%d", cpuLoad);
-  int tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8((SPLIT_X - tw) / 2, 44, buf);
+  int gt = (hw.gt > 0) ? hw.gt : 0;
+  int gl = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
+  int gv = (hw.gv >= 0 && hw.gv <= 100) ? hw.gv : 0;
+  int gclock = (hw.gclock >= 0) ? hw.gclock : 0;
+  int vclock = (hw.vclock >= 0) ? hw.vclock : 0;
+  int gtdp = (hw.gtdp >= 0) ? hw.gtdp : 0;
 
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(SPLIT_X + 2, 18, "GPU %");
-  u8g2.setFont(HUGE_FONT);
-  snprintf(buf, sizeof(buf), "%d", gpuLoad);
-  tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8(SPLIT_X + (SPLIT_X - tw) / 2, 44, buf);
+  u8g2.drawUTF8(2, 10, "TEMP");
+  char buf[20];
+  snprintf(buf, sizeof(buf), "%d\xC2\xB0", gt);
+  u8g2.drawUTF8(2, 22, buf);
+
+  u8g2.drawUTF8(2, 34, "LOAD");
+  snprintf(buf, sizeof(buf), "%d%%", gl);
+  u8g2.drawUTF8(50, 34, buf);
+
+  u8g2.drawUTF8(2, 46, "VRAM");
+  snprintf(buf, sizeof(buf), "%d%%", gv);
+  u8g2.drawUTF8(50, 46, buf);
+
+  u8g2.drawUTF8(70, 10, "CORE");
+  snprintf(buf, sizeof(buf), "%d", gclock);
+  u8g2.drawUTF8(70, 22, buf);
+
+  u8g2.drawUTF8(70, 34, "MEM");
+  snprintf(buf, sizeof(buf), "%d", vclock);
+  u8g2.drawUTF8(70, 46, buf);
+
+  u8g2.drawUTF8(2, 58, "PWR");
+  snprintf(buf, sizeof(buf), "%dW", gtdp);
+  u8g2.drawUTF8(40, 58, buf);
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 3: MEMORY — Top: RAM USED "12.4" + "GB". Bottom: VRAM % huge.
+// SCENE 4: RAM — Used/total GB + top 2 processes by RAM.
 // ---------------------------------------------------------------------------
-void SceneManager::drawMemory() {
+void SceneManager::drawRam() {
   HardwareData &hw = state_.hw;
+  ProcessData &proc = state_.process;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  float usedGb = hw.ru;
-  int vramPct = (hw.gv >= 0 && hw.gv <= 100) ? hw.gv : 0;
-
+  float ru = hw.ru, ra = hw.ra;
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 18, "RAM USED");
+  u8g2.drawUTF8(2, 12, "RAM");
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%.1f / %.1f GB", ru, ra > 0 ? ra : 0.0f);
   u8g2.setFont(HUGE_FONT);
-  char buf[24];
-  snprintf(buf, sizeof(buf), "%.1f", usedGb);
   int tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2 - 10, 38, buf);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2 - 10 + tw + 2, 38, "GB");
+  if (tw > NOCT_DISP_W - 4)
+    u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(2, 28, buf);
 
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, 52, "VRAM %");
-  u8g2.setFont(HUGE_FONT);
-  snprintf(buf, sizeof(buf), "%d", vramPct);
-  tw = u8g2.getUTF8Width(buf);
-  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, 62, buf);
+  u8g2.setFont(STORAGE_FONT);
+  const int maxNameLen = 14;
+  for (int i = 0; i < 2; i++) {
+    int y = 42 + i * 11;
+    if (y > NOCT_DISP_H - 2)
+      break;
+    String name = proc.ramNames[i];
+    int mb = proc.ramMb[i];
+    if (name.length() > 0) {
+      char line[32];
+      snprintf(line, sizeof(line), "%d MB", mb);
+      int lw = u8g2.getUTF8Width(line);
+      u8g2.drawUTF8(NOCT_DISP_W - 2 - lw, y, line);
+      if (name.length() > (unsigned)maxNameLen)
+        name = name.substring(0, maxNameLen);
+      u8g2.drawUTF8(2, y, name.c_str());
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 4: STORAGE — Vertical list. Row Y=15,30,45,60: "C: [||||||....] 45%"
+// SCENE 5: DISKS — Letter, load %, temperature. No bars.
 // ---------------------------------------------------------------------------
-void SceneManager::drawStorage() {
+void SceneManager::drawDisks() {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
   u8g2.setFont(STORAGE_FONT);
-  const int rowY[] = {15, 30, 45, 60};
-  const int barX = 24;
-  const int barW = 70;
-  const int barH = 4;
-
+  const int rowY[] = {14, 26, 38, 50};
+  char buf[32];
   for (int i = 0; i < NOCT_HDD_COUNT; i++) {
     int y = rowY[i];
-    int u = (hw.hdd[i].load >= 0 && hw.hdd[i].load <= 100) ? hw.hdd[i].load : 0;
     char letter = hw.hdd[i].name[0] ? hw.hdd[i].name[0] : (char)('C' + i);
-    char label[4] = {letter, ':', '\0'};
-    u8g2.drawUTF8(2, y, label);
-    disp_.drawProgressBar(barX, y - 3, barW, barH, u);
-    char pct[8];
-    snprintf(pct, sizeof(pct), "%d%%", u);
-    disp_.drawRightAligned(NOCT_DISP_W - 2, y, STORAGE_FONT, pct);
+    int u = (hw.hdd[i].load >= 0 && hw.hdd[i].load <= 100) ? hw.hdd[i].load : 0;
+    int t = hw.hdd[i].temp;
+    snprintf(buf, sizeof(buf), "%c: %d%% %d\xC2\xB0", letter, u, t);
+    u8g2.drawUTF8(2, y, buf);
   }
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 5: FANS & POWER — Left: PUMP, CPU. Right: GPU, PWR.
+// SCENE 6: PLAYER — Artist, track, status (PLAYING/PAUSED).
 // ---------------------------------------------------------------------------
-void SceneManager::drawFans() {
-  HardwareData &hw = state_.hw;
+void SceneManager::drawPlayer() {
+  MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
   u8g2.setFont(LABEL_FONT);
-  char buf[20];
-  snprintf(buf, sizeof(buf), "PUMP: %d", hw.s1);
-  u8g2.drawUTF8(2, 22, buf);
-  snprintf(buf, sizeof(buf), "CPU: %d", hw.cf);
-  u8g2.drawUTF8(2, 38, buf);
-  snprintf(buf, sizeof(buf), "GPU: %d", hw.gf);
-  u8g2.drawUTF8(SPLIT_X + 2, 22, buf);
-  snprintf(buf, sizeof(buf), "PWR: %dW", hw.gtdp > 0 ? hw.gtdp : hw.pw);
-  u8g2.drawUTF8(SPLIT_X + 2, 38, buf);
+  const char *status = (media.mediaStatus == "PLAYING") ? "PLAYING" : "PAUSED";
+  int sw = u8g2.getUTF8Width(status);
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - sw, 10, status);
+
+  int maxChar = 18;
+  String artist = media.artist;
+  if (artist.length() > (unsigned)maxChar)
+    artist = artist.substring(0, maxChar);
+  u8g2.drawUTF8(2, 26, artist.c_str());
+
+  String track = media.track;
+  if (track.length() > (unsigned)maxChar)
+    track = track.substring(0, maxChar);
+  u8g2.drawUTF8(2, 42, track.c_str());
 }
 
 // ---------------------------------------------------------------------------
