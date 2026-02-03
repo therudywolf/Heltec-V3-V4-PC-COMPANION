@@ -1,13 +1,16 @@
 /*
- * NOCTURNE_OS — SceneManager: Strict 128x64 grid. Zero-overlap zones.
- * All draw calls use bounding-box constants; no magic numbers.
+ * NOCTURNE_OS — SceneManager: one topic per screen, large text, no overlap.
+ * Each scene uses one content zone (full area below header) or two blocks
+ * (HUB).
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
 
-// --- Strict grid (128x64): non-overlapping zones ---
-#define LAYOUT_HEADER_Y0 0
-#define LAYOUT_HEADER_H NOCT_HEADER_H // 10px
+// --- Grid: header 0–10, content 11–63 (one zone per scene) ---
+#define LAYOUT_HEADER_H NOCT_HEADER_H
+#define LAYOUT_CONTENT_Y 11
+#define LAYOUT_CONTENT_H (NOCT_DISP_H - LAYOUT_HEADER_H)
+#define LAYOUT_CONTENT_W NOCT_DISP_W
 #define LAYOUT_ZONE_A_X 0
 #define LAYOUT_ZONE_A_Y 11
 #define LAYOUT_ZONE_A_W 64
@@ -16,22 +19,12 @@
 #define LAYOUT_ZONE_B_Y 11
 #define LAYOUT_ZONE_B_W 64
 #define LAYOUT_ZONE_B_H 26
-#define LAYOUT_ZONE_C_X 0
-#define LAYOUT_ZONE_C_Y 37
-#define LAYOUT_ZONE_C_W NOCT_DISP_W
-#define LAYOUT_ZONE_C_H 12
-#define LAYOUT_ZONE_D_X 0
-#define LAYOUT_ZONE_D_Y 49
-#define LAYOUT_ZONE_D_W NOCT_DISP_W
-#define LAYOUT_ZONE_D_H 15
-
 #define PAD 2
-#define CONTENT_Y0 LAYOUT_ZONE_A_Y
-#define GRID_MID_X (NOCT_DISP_W / 2)
-#define FOOTER_Y0 54
+#define CONTENT_Y0 11
 
-const char *SceneManager::sceneNames_[] = {"HUB", "CPU",   "GPU",
-                                           "NET", "ATMOS", "MEDIA"};
+const char *SceneManager::sceneNames_[] = {"HUB",   "CPU",  "CPU_G", "GPU",
+                                           "GPU_G", "RAM",  "NET",   "NET_G",
+                                           "ATMOS", "MEDIA"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -51,11 +44,23 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
   case NOCT_SCENE_CPU:
     drawCpu(bootTime, fanFrame);
     break;
+  case NOCT_SCENE_CPU_GRAPH:
+    drawCpuGraph(bootTime);
+    break;
   case NOCT_SCENE_GPU:
     drawGpu(fanFrame);
     break;
+  case NOCT_SCENE_GPU_GRAPH:
+    drawGpuGraph(fanFrame);
+    break;
+  case NOCT_SCENE_RAM:
+    drawRam();
+    break;
   case NOCT_SCENE_NET:
     drawNet();
+    break;
+  case NOCT_SCENE_NET_GRAPH:
+    drawNetGraph();
     break;
   case NOCT_SCENE_ATMOS:
     drawAtmos();
@@ -70,243 +75,164 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE_HUB: Strict zones A (CPU), B (GPU), C (RAM bar), D (graph).
+// HUB: only CPU + GPU temps (two blocks). One topic = summary.
 // ---------------------------------------------------------------------------
 void SceneManager::drawHub(unsigned long bootTime) {
   HardwareData &hw = state_.hw;
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)bootTime;
-
   String cpuVal = (hw.ct <= 0) ? "" : (String(hw.ct) + "C");
-  bool cpuWarn = (hw.ct >= CPU_TEMP_ALERT);
   disp_.drawBlock(LAYOUT_ZONE_A_X, LAYOUT_ZONE_A_Y, LAYOUT_ZONE_A_W,
-                  LAYOUT_ZONE_A_H, "CPU", cpuVal, cpuWarn);
-
+                  LAYOUT_ZONE_A_H, "CPU", cpuVal, hw.ct >= CPU_TEMP_ALERT);
   String gpuVal = (hw.gt <= 0) ? "" : (String(hw.gt) + "C");
-  bool gpuWarn = (hw.gt >= GPU_TEMP_ALERT);
   disp_.drawBlock(LAYOUT_ZONE_B_X, LAYOUT_ZONE_B_Y, LAYOUT_ZONE_B_W,
-                  LAYOUT_ZONE_B_H, "GPU", gpuVal, gpuWarn);
-
-  float ramPct = (hw.ra > 0) ? (hw.ru / hw.ra * 100.0f) : 0.0f;
-  if (ramPct > 100.0f)
-    ramPct = 100.0f;
-  if (ramPct < 0.0f)
-    ramPct = 0.0f;
-  disp_.drawProgressBar(LAYOUT_ZONE_C_X, LAYOUT_ZONE_C_Y, LAYOUT_ZONE_C_W,
-                        LAYOUT_ZONE_C_H, ramPct);
-  int ramGb = (int)(hw.ra / 1024.0f);
-  if (ramGb < 0)
-    ramGb = 0;
-  String ramStr = "RAM: " + String(ramGb) + "GB";
-  u8g2.setFont(FONT_TINY);
-  int tw = u8g2.getUTF8Width(ramStr.c_str());
-  u8g2.setDrawColor(2);
-  u8g2.drawUTF8(LAYOUT_ZONE_C_X + (LAYOUT_ZONE_C_W - tw) / 2,
-                LAYOUT_ZONE_C_Y + 8, ramStr.c_str());
-  u8g2.setDrawColor(1);
-
-  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
-                         LAYOUT_ZONE_D_H, disp_.cpuGraph, 100);
+                  LAYOUT_ZONE_B_H, "GPU", gpuVal, hw.gt >= GPU_TEMP_ALERT);
 }
 
 // ---------------------------------------------------------------------------
-// CPU: stats in content area (11–48), rolling graph in Zone D.
+// CPU: one big block — temperature only (large, readable).
 // ---------------------------------------------------------------------------
 void SceneManager::drawCpu(unsigned long bootTime, int fanFrame) {
   HardwareData &hw = state_.hw;
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)bootTime;
-
-  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
-                         LAYOUT_ZONE_D_H, disp_.cpuGraph, 100);
-
-  disp_.drawFanIcon(NOCT_DISP_W - 14, CONTENT_Y0 + 8, fanFrame);
-
-  int y = CONTENT_Y0 + PAD;
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN, y + 6, "GHz");
-  String ghzStr = (hw.cc <= 0) ? "N/A" : String(hw.cc / 1000.0f, 1);
-  disp_.drawRightAligned(NOCT_DISP_W - NOCT_MARGIN, y + 6, ghzStr);
-  y += 10 + PAD;
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN, y + 6, "PWR");
-  String pwrStr = (hw.pw < 0) ? "N/A" : (String(hw.pw) + "W");
-  disp_.drawRightAligned(NOCT_DISP_W - NOCT_MARGIN, y + 6, pwrStr);
-  y += 10 + PAD;
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN, y + 6, "FAN");
-  String fanStr = (hw.cf < 0) ? "N/A" : String(hw.cf);
-  disp_.drawRightAligned(NOCT_DISP_W - NOCT_MARGIN, y + 6, fanStr);
+  (void)fanFrame;
+  String v = (hw.ct <= 0) ? "—" : (String(hw.ct) + "C");
+  disp_.drawBlock(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H,
+                  "CPU", v, hw.ct >= CPU_TEMP_ALERT);
 }
 
 // ---------------------------------------------------------------------------
-// GPU: stats in content area (11–48), rolling graph in Zone D.
+// CPU_GRAPH: full-area graph only.
+// ---------------------------------------------------------------------------
+void SceneManager::drawCpuGraph(unsigned long bootTime) {
+  (void)bootTime;
+  disp_.drawRollingGraph(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W,
+                         LAYOUT_CONTENT_H, disp_.cpuGraph, 100);
+}
+
+// ---------------------------------------------------------------------------
+// GPU: one big block — temperature only.
 // ---------------------------------------------------------------------------
 void SceneManager::drawGpu(int fanFrame) {
   HardwareData &hw = state_.hw;
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-
-  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
-                         LAYOUT_ZONE_D_H, disp_.gpuGraph, 100);
-
-  disp_.drawFanIcon(NOCT_DISP_W - 14, CONTENT_Y0 + 8, fanFrame);
-
-  int y = CONTENT_Y0 + PAD;
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN, y + 6, "HOT");
-  String hotStr = (hw.gh <= 0) ? "N/A" : (String(hw.gh) + "C");
-  disp_.drawRightAligned(NOCT_DISP_W - NOCT_MARGIN, y + 6, hotStr);
-  y += 10 + PAD;
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN, y + 6, "VRAM");
-  String vramStr = (hw.gv < 0) ? "N/A" : (String(hw.gv) + "%");
-  disp_.drawRightAligned(NOCT_DISP_W - NOCT_MARGIN, y + 6, vramStr);
-  y += 10 + PAD;
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN, y + 6, "FAN");
-  String fanStr = (hw.gf < 0) ? "N/A" : String(hw.gf);
-  disp_.drawRightAligned(NOCT_DISP_W - NOCT_MARGIN, y + 6, fanStr);
+  (void)fanFrame;
+  String v = (hw.gt <= 0) ? "—" : (String(hw.gt) + "C");
+  disp_.drawBlock(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H,
+                  "GPU", v, hw.gt >= GPU_TEMP_ALERT);
 }
 
 // ---------------------------------------------------------------------------
-// NET: graph in Zone D, DL box and strings in content area.
+// GPU_GRAPH: full-area graph only.
+// ---------------------------------------------------------------------------
+void SceneManager::drawGpuGraph(int fanFrame) {
+  (void)fanFrame;
+  disp_.drawRollingGraph(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W,
+                         LAYOUT_CONTENT_H, disp_.gpuGraph, 100);
+}
+
+// ---------------------------------------------------------------------------
+// RAM: one progress bar + one line "RAM: X GB" (full content area).
+// ---------------------------------------------------------------------------
+void SceneManager::drawRam() {
+  HardwareData &hw = state_.hw;
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  float pct = (hw.ra > 0) ? (hw.ru / hw.ra * 100.0f) : 0.0f;
+  if (pct > 100.0f)
+    pct = 100.0f;
+  if (pct < 0.0f)
+    pct = 0.0f;
+  disp_.drawProgressBar(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H,
+                        pct);
+  int gb = (int)(hw.ra / 1024.0f);
+  if (gb < 0)
+    gb = 0;
+  String s = "RAM: " + String(gb) + " GB";
+  u8g2.setFont(FONT_TINY);
+  int tw = u8g2.getUTF8Width(s.c_str());
+  u8g2.setDrawColor(2);
+  u8g2.drawUTF8((LAYOUT_CONTENT_W - tw) / 2,
+                LAYOUT_CONTENT_Y + LAYOUT_CONTENT_H / 2 - 2, s.c_str());
+  u8g2.setDrawColor(1);
+}
+
+// ---------------------------------------------------------------------------
+// NET: one big block — DL speed only.
 // ---------------------------------------------------------------------------
 void SceneManager::drawNet() {
   HardwareData &hw = state_.hw;
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-
-  disp_.netDownGraph.setMax(2048);
-  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
-                         LAYOUT_ZONE_D_H, disp_.netDownGraph, 2048);
-
-  int scanX = LAYOUT_ZONE_D_X + (millis() / 50) % (LAYOUT_ZONE_D_W + 1);
-  disp_.drawDottedVLine(scanX, LAYOUT_ZONE_D_Y,
-                        LAYOUT_ZONE_D_Y + LAYOUT_ZONE_D_H - 1);
-
-  char buf[24];
-  float dlMb = (hw.nd >= 1024) ? (hw.nd / 1024.0f) : 0.0f;
+  String v;
   if (hw.nd >= 1024)
-    snprintf(buf, sizeof(buf), "DL: %.1f", dlMb);
+    v = String((int)(hw.nd / 1024.0f)) + " MB/s";
   else
-    snprintf(buf, sizeof(buf), "DL: %d", hw.nd);
-  u8g2.setFont(FONT_VAL);
-  int tw = u8g2.getUTF8Width(buf);
-  int bx = NOCT_DISP_W - NOCT_MARGIN - tw - 4;
-  int by = CONTENT_Y0 + PAD;
-  u8g2.setDrawColor(1);
-  u8g2.drawBox(bx, by, tw + 4, 12 + PAD);
-  u8g2.setDrawColor(0);
-  u8g2.drawUTF8(bx + 2, by + 11, buf);
-  u8g2.setDrawColor(1);
-
-  int y = CONTENT_Y0 + 18 + PAD;
-  if (hw.nu >= 1024)
-    snprintf(buf, sizeof(buf), "UP %.1f MB/s", hw.nu / 1024.0f);
-  else
-    snprintf(buf, sizeof(buf), "UP %d KB/s", hw.nu);
-  disp_.drawSafeStr(NOCT_MARGIN, y, String(buf));
-  y += 12 + PAD;
-  snprintf(buf, sizeof(buf), "PING %d ms", hw.pg >= 0 ? hw.pg : 0);
-  disp_.drawSafeStr(NOCT_MARGIN, y, String(buf));
+    v = String(hw.nd) + " KB/s";
+  disp_.drawBlock(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W, LAYOUT_CONTENT_H, "DL",
+                  v, false);
 }
 
 // ---------------------------------------------------------------------------
-// SCENE_ATMOS: Icon at (5,20). Data at X=45. Temp big Y=30, city Y=45, desc
-// Y=55. If weather missing: ICON_DISCONNECT + "OFFLINE".
+// NET_GRAPH: full-area net graph only.
+// ---------------------------------------------------------------------------
+void SceneManager::drawNetGraph() {
+  disp_.netDownGraph.setMax(2048);
+  disp_.drawRollingGraph(0, LAYOUT_CONTENT_Y, LAYOUT_CONTENT_W,
+                         LAYOUT_CONTENT_H, disp_.netDownGraph, 2048);
+}
+
+// ---------------------------------------------------------------------------
+// ATMOS: icon + big temp only (one topic, readable).
 // ---------------------------------------------------------------------------
 void SceneManager::drawAtmos() {
   WeatherData &w = state_.weather;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-
-  const int ICON_X = 5;
-  const int ICON_Y = 20;
-  const int DATA_X = 45;
-  const int TEMP_Y = 30;
-  const int CITY_Y = 45;
-  const int DESC_Y = 55;
+  const int ICON_X = 8;
+  const int ICON_Y = LAYOUT_CONTENT_Y + 8;
+  const int TEMP_X = 50;
+  const int TEMP_Y = LAYOUT_CONTENT_Y + LAYOUT_CONTENT_H / 2 - 4;
 
   bool hasWeather =
       state_.weatherReceived && (w.temp != 0 || w.desc.length() > 0);
-
   if (!hasWeather) {
     disp_.drawDisconnectIcon(ICON_X, ICON_Y);
-    u8g2.setFont(FONT_VAL);
-    u8g2.drawUTF8(DATA_X, TEMP_Y + 2, "OFFLINE");
+    u8g2.setFont(FONT_BIG);
+    u8g2.drawUTF8(TEMP_X, TEMP_Y, "OFF");
     return;
   }
-
   drawWmoIconXbm(ICON_X, ICON_Y, w.wmoCode);
-
-  String tempStr = (w.temp == 0) ? "N/A" : (String(w.temp) + "C");
+  String tempStr = (w.temp == 0) ? "—" : (String(w.temp) + "C");
   u8g2.setFont(FONT_BIG);
-  u8g2.drawUTF8(DATA_X, TEMP_Y + 2, tempStr.c_str());
-
-  u8g2.setFont(FONT_TINY);
-  String cityStr = "MSK";
-  u8g2.drawStr(DATA_X, CITY_Y, cityStr.c_str());
-
-  String descStr = w.desc.length() > 0 ? w.desc : "---";
-  if (descStr.length() > 10)
-    descStr = descStr.substring(0, 10);
-  u8g2.drawStr(DATA_X, DESC_Y, descStr.c_str());
+  u8g2.drawUTF8(TEMP_X, TEMP_Y, tempStr.c_str());
 }
 
 // ---------------------------------------------------------------------------
-// SCENE_MEDIA: 64x64 XBM art at (0,0) left half. Text right of 64.
-// No cover -> static noise patch. Labels uppercase, values right-aligned.
+// MEDIA: cover (left) + one line — track or status (right, large).
 // ---------------------------------------------------------------------------
 void SceneManager::drawMedia(bool blinkState) {
   MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-
   const int ART_W = 64;
   const int ART_H = 64;
-  const int INFO_X = 66;
-  const int INFO_END = NOCT_DISP_W - NOCT_MARGIN;
-  const int ARTIST_Y = 22;
-  const int TRACK_Y = 36;
-  const int STATUS_Y = 52;
-  const int MAX_CHARS = 14;
+  const int TX = 66;
+  const int TY = LAYOUT_CONTENT_Y + LAYOUT_CONTENT_H / 2 - 4;
 
   if (media.coverB64.length() > 0 &&
       disp_.drawXBMArtFromBase64(0, 0, ART_W, ART_H, media.coverB64)) {
   } else {
-    drawNoisePattern(0, CONTENT_Y0, ART_W, ART_H - CONTENT_Y0);
-    drawNoDataCross(8, CONTENT_Y0 + 8, ART_W - 16, ART_H - CONTENT_Y0 - 16);
+    drawNoisePattern(0, LAYOUT_CONTENT_Y, ART_W, LAYOUT_CONTENT_H);
+    drawNoDataCross(8, LAYOUT_CONTENT_Y + 8, ART_W - 16, LAYOUT_CONTENT_H - 16);
   }
 
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(INFO_X, ARTIST_Y - 6, "ARTIST");
-  u8g2.setFont(FONT_VAL);
-  String artistStr = media.artist.length() > 0 ? media.artist : "";
-  if (artistStr.length() > (unsigned int)MAX_CHARS)
-    artistStr = artistStr.substring(0, MAX_CHARS);
-  disp_.drawSafeStr(INFO_X, ARTIST_Y, artistStr);
-
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(INFO_X, TRACK_Y - 6, "TRACK");
-  u8g2.setFont(FONT_VAL);
-  String trackStr = media.track.length() > 0 ? media.track : "---";
-  int maxW = INFO_END - INFO_X;
-  int tw = u8g2.getUTF8Width(trackStr.c_str());
-  if (tw > maxW) {
-    int scrollLen = tw + 24;
-    if (scrollLen < 1)
-      scrollLen = 1;
-    int scroll = (millis() / 50) % scrollLen;
-    int offset = maxW - scroll;
-    u8g2.drawUTF8(INFO_X + offset, TRACK_Y, trackStr.c_str());
-  } else {
-    u8g2.drawUTF8(INFO_X, TRACK_Y, trackStr.c_str());
+  u8g2.setFont(FONT_BIG);
+  String line = media.track.length() > 0 ? media.track : "";
+  if (line.length() > 18)
+    line = line.substring(0, 18);
+  if (line.length() == 0) {
+    if (!media.isPlaying && !media.isIdle)
+      line = "STANDBY";
+    else if (media.isIdle)
+      line = blinkState ? "IDLE" : "—";
+    else
+      line = "PLAY";
   }
-
-  u8g2.setFont(FONT_TINY);
-  if (!media.isPlaying && !media.isIdle)
-    u8g2.drawStr(INFO_X, STATUS_Y, "STANDBY");
-  else if (media.isIdle)
-    u8g2.drawStr(INFO_X, STATUS_Y, blinkState ? "IDLE" : "zzz");
-  else
-    u8g2.drawStr(INFO_X, STATUS_Y, "PLAY");
+  u8g2.drawUTF8(TX, TY, line.c_str());
 }
 
 // Diagonal cross "NO DATA" inside box

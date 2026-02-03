@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-NOCTURNE_OS — PC Monitor Server (Cyberdeck backend)
+NOCTURNE_OS — PC monitor server (backend for ESP32 display).
 
-PROTOCOL: Send cover_b64 ONLY when track changes; otherwise "cover_b64": null
-to avoid network congestion. Config from config.json.
+- Polls LHM (config.json lhm_url), weather, media (Windows SDK).
+- TCP server (host/port in config); sends JSON (hw, weather, media, …).
+- cover_b64 sent only on track change to save bandwidth.
+- Tray: Add/Remove startup, Restart, Close. Logs: nocturne.log.
 """
 
 import asyncio
@@ -74,12 +76,19 @@ def _setup_logging(console: bool = False) -> None:
 
 # ---------------------------------------------------------------------------
 # Config from config.json (host, port, lhm_url, limits, weather_city)
+# When frozen (exe): look next to executable.
 # ---------------------------------------------------------------------------
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
-if not os.path.isfile(CONFIG_PATH):
-    CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-if not os.path.isfile(CONFIG_PATH):
-    CONFIG_PATH = "config.json"
+def _get_config_path() -> str:
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+        return os.path.join(base, "config.json")
+    base = os.path.dirname(os.path.abspath(__file__))
+    for candidate in [os.path.join(base, "..", "config.json"), os.path.join(base, "config.json")]:
+        if os.path.isfile(candidate):
+            return candidate
+    return "config.json"
+
+CONFIG_PATH = _get_config_path()
 
 def load_config() -> Dict:
     out = {
@@ -106,6 +115,67 @@ def load_config() -> Dict:
         pass
     return out
 
+# ---------------------------------------------------------------------------
+# Autostart (Windows HKCU Run). Used by tray menu.
+# ---------------------------------------------------------------------------
+AUTOSTART_NAME = "NOCTURNE_OS"
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def _get_autostart_cmd() -> str:
+    """Command to run for autostart: exe path or pythonw + script."""
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitor.py")
+    exe = sys.executable
+    if "pythonw" not in os.path.basename(exe).lower():
+        base = os.path.dirname(exe)
+        pw = os.path.join(base, "pythonw.exe")
+        if os.path.isfile(pw):
+            exe = pw
+    return f'"{exe}" "{script}"'
+
+
+def is_autostart_enabled() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_READ)
+        try:
+            winreg.QueryValueEx(key, AUTOSTART_NAME)
+            return True
+        except FileNotFoundError:
+            return False
+        finally:
+            winreg.CloseKey(key)
+    except Exception:
+        return False
+
+
+def set_autostart(enable: bool) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, _RUN_KEY, 0,
+            winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE,
+        )
+        if enable:
+            winreg.SetValueEx(key, AUTOSTART_NAME, 0, winreg.REG_SZ, _get_autostart_cmd())
+            log_info("Autostart enabled (HKCU Run).")
+        else:
+            try:
+                winreg.DeleteValue(key, AUTOSTART_NAME)
+                log_info("Autostart removed.")
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+    except OSError as e:
+        log_err(f"Autostart failed: {e}")
+
+
 _config = load_config()
 LHM_URL = os.getenv("LHM_URL", _config["lhm_url"])
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
@@ -129,7 +199,7 @@ TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
 TOP_PROCS_CACHE_TTL = 2.5
 POLL_INTERVAL = 1.0
-HEARTBEAT_INTERVAL = 2.0
+HEARTBEAT_INTERVAL = 2.8  # Send at most every 2.8s when unchanged (reduces traffic)
 HYSTERESIS_TEMP = 2
 HYSTERESIS_LOAD = 5
 HYSTERESIS_NET_KB = 100
@@ -775,6 +845,25 @@ def _on_exit(icon: "pystray.Icon", item: Any) -> None:
     icon.stop()
 
 
+def _on_toggle_autostart(icon: "pystray.Icon", item: Any) -> None:
+    set_autostart(not is_autostart_enabled())
+    try:
+        icon.update_menu(_build_tray_menu())
+    except Exception:
+        pass
+
+
+def _build_tray_menu() -> "pystray.Menu":
+    autostart_label = "Remove from startup" if is_autostart_enabled() else "Add to startup"
+    return pystray.Menu(
+        pystray.MenuItem("Status: RUNNING", None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(autostart_label, _on_toggle_autostart),
+        pystray.MenuItem("Restart Server", _on_restart),
+        pystray.MenuItem("Close", _on_exit),
+    )
+
+
 def run_with_tray() -> None:
     """Main thread: pystray icon (blocking). Background thread: asyncio server."""
     if not HAS_PYSTRAY or not HAS_PIL:
@@ -784,14 +873,8 @@ def run_with_tray() -> None:
     _server_thread_holder[0] = threading.Thread(target=_run_async_worker, daemon=True)
     _server_thread_holder[0].start()
     time.sleep(0.5)  # let server bind
-    menu = pystray.Menu(
-        pystray.MenuItem("Status: RUNNING", None, enabled=False),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Restart Server", _on_restart),
-        pystray.MenuItem("Exit", _on_exit),
-    )
-    icon = pystray.Icon("nocturne", _create_tray_image(), "NOCTURNE_OS", menu)
-    log_info("NOCTURNE_OS — Server in system tray (no console). Exit via tray.")
+    icon = pystray.Icon("nocturne", _create_tray_image(), "NOCTURNE_OS", _build_tray_menu())
+    log_info("NOCTURNE_OS — Server in system tray. Exit via tray -> Close.")
     icon.run()
 
 
