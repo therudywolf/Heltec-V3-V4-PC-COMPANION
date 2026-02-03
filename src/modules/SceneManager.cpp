@@ -1,6 +1,7 @@
 /*
- * NOCTURNE_OS — SceneManager: 6 screens. 128x64, MAIN/CPU/GPU/RAM/DISKS/MEDIA.
- * Unified: LABEL_FONT only for content; Y from NOCT_CONTENT_TOP, NOCT_ROW_DY.
+ * NOCTURNE_OS — SceneManager: 7 screens. 128x64,
+ * MAIN/CPU/GPU/RAM/DISKS/MEDIA/FANS. Unified: LABEL_FONT only for content; Y
+ * from NOCT_CONTENT_TOP, NOCT_ROW_DY.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
@@ -9,8 +10,8 @@
 #define SPLIT_X 64
 #define CONTENT_Y NOCT_CONTENT_TOP
 
-const char *SceneManager::sceneNames_[] = {"MAIN", "CPU",   "GPU",
-                                           "RAM",  "DISKS", "MEDIA"};
+const char *SceneManager::sceneNames_[] = {"MAIN",  "CPU",   "GPU", "RAM",
+                                           "DISKS", "MEDIA", "FANS"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -43,6 +44,9 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
     break;
   case NOCT_SCENE_MEDIA:
     drawPlayer();
+    break;
+  case NOCT_SCENE_FANS:
+    drawFans();
     break;
   default:
     drawMain(blinkState);
@@ -195,7 +199,7 @@ void SceneManager::drawGpu(bool blinkState) {
     u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
   }
 
-  snprintf(buf, sizeof(buf), "MEM %d", vclock);
+  snprintf(buf, sizeof(buf), "VRAM %d MHz", vclock);
   u8g2.drawUTF8(left, y0 + 4 * dy, buf);
   snprintf(buf, sizeof(buf), "PWR %dW", gtdp);
   u8g2.drawUTF8(rightCol, y0 + 4 * dy, buf);
@@ -261,6 +265,27 @@ void SceneManager::drawDisks() {
     int u = (hw.hdd[i].load >= 0 && hw.hdd[i].load <= 100) ? hw.hdd[i].load : 0;
     int t = hw.hdd[i].temp;
     snprintf(buf, sizeof(buf), "%c: %d%% %d\xC2\xB0", letter, u, t);
+    u8g2.drawUTF8(NOCT_CARD_LEFT, y, buf);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SCENE 7: FANS — CPU, Pump, GPU, Case RPM.
+// ---------------------------------------------------------------------------
+void SceneManager::drawFans() {
+  HardwareData &hw = state_.hw;
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+  u8g2.setFont(LABEL_FONT);
+  int y0 = NOCT_CARD_TOP;
+  int dy = NOCT_CARD_ROW_DY;
+  char buf[24];
+  const char *labels[] = {"CPU", "Pump", "GPU", "Case"};
+  int rpms[] = {hw.cf, hw.s1, hw.gf, hw.s2};
+  for (int i = 0; i < 4; i++) {
+    int y = y0 + i * dy;
+    int rpm = (rpms[i] >= 0) ? rpms[i] : 0;
+    snprintf(buf, sizeof(buf), "%s %d", labels[i], rpm);
     u8g2.drawUTF8(NOCT_CARD_LEFT, y, buf);
   }
 }
