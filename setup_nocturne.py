@@ -116,28 +116,6 @@ def set_autostart(enable: bool) -> None:
         log_cyber(f"Autostart failed: {e}")
 
 
-def launch_monitor_to_tray() -> None:
-    log_cyber("Launching monitor (minimize to tray)...")
-    if not os.path.isfile(MONITOR_SCRIPT):
-        log_cyber(f"Not found: {MONITOR_SCRIPT}")
-        return
-    pythonw = get_pythonw_path()
-    try:
-        # Start detached, no console window (pythonw)
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-        subprocess.Popen(
-            [pythonw, MONITOR_SCRIPT],
-            cwd=PROJECT_ROOT,
-            creationflags=flags,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        log_cyber("Monitor started. Check system tray.")
-    except Exception as e:
-        log_cyber(f"Launch failed: {e}. Try: pythonw src/monitor.py")
-
-
 def main() -> None:
     os.chdir(PROJECT_ROOT)
     log_cyber("NOCTURNE_OS — Installer")
@@ -147,8 +125,8 @@ def main() -> None:
         set_autostart(True)
     else:
         set_autostart(False)
-    launch_monitor_to_tray()
-    log_cyber("Done.")
+    # Do not auto-start monitor; user runs INSTALL_AND_RUN or pythonw src/monitor.py
+    log_cyber("Done. Run START_MONITOR.bat or pythonw src/monitor.py to start.")
 
 
 if __name__ == "__main__":
