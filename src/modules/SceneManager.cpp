@@ -22,8 +22,9 @@ static const uint8_t icon_fan_8x8_f3[] = {0x00, 0x08, 0x0C, 0x7E,
 static const uint8_t *icon_fan_frames[] = {icon_fan_8x8_f0, icon_fan_8x8_f1,
                                            icon_fan_8x8_f2, icon_fan_8x8_f3};
 
-const char *SceneManager::sceneNames_[] = {
-    "MAIN", "CPU", "GPU", "RAM", "DISKS", "MEDIA", "FANS", "MB", "WTHR"};
+const char *SceneManager::sceneNames_[] = {"MAIN",  "CPU",   "GPU",  "RAM",
+                                           "DISKS", "MEDIA", "FANS", "MB",
+                                           "WTHR",  "FIRE",  "HUNT"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -72,6 +73,12 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
   case NOCT_SCENE_WEATHER:
     drawWeather(xOffset);
     break;
+  case NOCT_SCENE_FIRE:
+    drawFire(xOffset);
+    break;
+  case NOCT_SCENE_HUNT:
+    drawWolfHunt(xOffset);
+    break;
   default:
     drawMain(blinkState, xOffset);
     break;
@@ -79,34 +86,29 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 1: MAIN — Grid layout. Vertical split at X=64. CPU left, GPU right.
-// Temp Y=30, separator HLine Y=36, segmented bar Y=40 H=6. RAM block Y=48..63.
+// SCENE 1: MAIN — Predator dashboard. Tech brackets CPU/GPU, segmented bar
+// Y=44, chamfer RAM box. Hex stream corners, cyber claw watermark.
 // ---------------------------------------------------------------------------
-#define MAIN_TEMP_Y 30
-#define MAIN_SEP_Y 36
-#define MAIN_BAR_Y 40
+#define MAIN_BRACKET_TOP 14
+#define MAIN_BRACKET_H 28
+#define MAIN_CPU_BRACKET_X 0
+#define MAIN_CPU_BRACKET_W 63
+#define MAIN_GPU_BRACKET_X 65
+#define MAIN_GPU_BRACKET_W 63
+#define MAIN_BRACKET_LEN 4
+#define MAIN_BAR_Y 44
 #define MAIN_BAR_H 6
-#define MAIN_CPU_HLINE_X0 10
-#define MAIN_CPU_HLINE_X1 54
-#define MAIN_GPU_HLINE_X0 74
-#define MAIN_GPU_HLINE_X1 118
-#define MAIN_CPU_BAR_X 10
-#define MAIN_CPU_BAR_W 44
-#define MAIN_GPU_BAR_X 74
-#define MAIN_GPU_BAR_W 44
-#define MAIN_RAM_SEP_Y 48
-#define MAIN_RAM_LBL_X 4
-#define MAIN_RAM_LBL_Y 58
-#define MAIN_RAM_FRAME_X 30
-#define MAIN_RAM_FRAME_Y 50
-#define MAIN_RAM_FRAME_W 94
-#define MAIN_RAM_FRAME_H 10
+#define MAIN_CPU_BAR_X 4
+#define MAIN_CPU_BAR_W 55
+#define MAIN_GPU_BAR_X 69
+#define MAIN_GPU_BAR_W 55
+#define MAIN_RAM_BOX_Y MAIN_RAM_BOX_TOP
+#define MAIN_RAM_BOX_CHAMFER 3
+#define MAIN_RAM_H 15
 
 void SceneManager::drawMain(bool blinkState, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-
-  disp_.drawDottedVLine(X(64, xOff), NOCT_CONTENT_TOP, NOCT_DISP_H - 1);
 
   int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
   int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
@@ -127,69 +129,57 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
 
   static char tbuf[16];
 
-  /* CPU block (left X=0..63): Temp at Y=30, HLine 10..54 at Y=36, bar at Y=40
-   * H=6 */
-  u8g2.setFont(VALUE_FONT);
+  disp_.drawCyberClaw(X(100, xOff), 16);
+
+  disp_.drawTechBracket(X(MAIN_CPU_BRACKET_X, xOff), MAIN_BRACKET_TOP,
+                        MAIN_CPU_BRACKET_W, MAIN_BRACKET_H, MAIN_BRACKET_LEN);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(X(MAIN_CPU_BRACKET_X + 4, xOff), MAIN_BRACKET_TOP + 7, "CPU");
   if (!blinkCpu) {
+    u8g2.setFont(VALUE_FONT);
     snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", cpuTemp);
     int tw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(32 - tw / 2, xOff), MAIN_TEMP_Y, tbuf);
-  }
-  u8g2.drawHLine(X(MAIN_CPU_HLINE_X0, xOff), MAIN_SEP_Y,
-                 MAIN_CPU_HLINE_X1 - MAIN_CPU_HLINE_X0 + 1);
-  if (!blinkCpu) {
-    disp_.drawProgressBar(X(MAIN_CPU_BAR_X, xOff), MAIN_BAR_Y, MAIN_CPU_BAR_W,
-                          MAIN_BAR_H, cpuLoad);
-    u8g2.setFont(LABEL_FONT);
-    snprintf(tbuf, sizeof(tbuf), "%d%%", cpuLoad);
-    int lw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(32 - lw / 2, xOff), MAIN_BAR_Y - 1, tbuf);
+    int cx = MAIN_CPU_BRACKET_X + MAIN_CPU_BRACKET_W / 2 - tw / 2;
+    u8g2.drawUTF8(X(cx, xOff), MAIN_BRACKET_TOP + 22, tbuf);
   }
 
-  /* GPU block (right X=64..127): mirror CPU */
-  u8g2.setFont(VALUE_FONT);
+  disp_.drawTechBracket(X(MAIN_GPU_BRACKET_X, xOff), MAIN_BRACKET_TOP,
+                        MAIN_GPU_BRACKET_W, MAIN_BRACKET_H, MAIN_BRACKET_LEN);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(X(MAIN_GPU_BRACKET_X + 4, xOff), MAIN_BRACKET_TOP + 7, "GPU");
   if (!blinkGpu) {
+    u8g2.setFont(VALUE_FONT);
     snprintf(tbuf, sizeof(tbuf), "%d\xC2\xB0", gpuTemp);
     int tw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(96 - tw / 2, xOff), MAIN_TEMP_Y, tbuf);
+    int cx = MAIN_GPU_BRACKET_X + MAIN_GPU_BRACKET_W / 2 - tw / 2;
+    u8g2.drawUTF8(X(cx, xOff), MAIN_BRACKET_TOP + 22, tbuf);
   }
-  u8g2.drawHLine(X(MAIN_GPU_HLINE_X0, xOff), MAIN_SEP_Y,
-                 MAIN_GPU_HLINE_X1 - MAIN_GPU_HLINE_X0 + 1);
-  if (!blinkGpu) {
+
+  if (!blinkCpu)
+    disp_.drawProgressBar(X(MAIN_CPU_BAR_X, xOff), MAIN_BAR_Y, MAIN_CPU_BAR_W,
+                          MAIN_BAR_H, cpuLoad);
+  if (!blinkGpu)
     disp_.drawProgressBar(X(MAIN_GPU_BAR_X, xOff), MAIN_BAR_Y, MAIN_GPU_BAR_W,
                           MAIN_BAR_H, gpuLoad);
-    u8g2.setFont(LABEL_FONT);
-    snprintf(tbuf, sizeof(tbuf), "%d%%", gpuLoad);
-    int lw = u8g2.getUTF8Width(tbuf);
-    u8g2.drawUTF8(X(96 - lw / 2, xOff), MAIN_BAR_Y - 1, tbuf);
-  }
 
-  /* RAM block (Y=48..63): dotted HLine at Y=48, label RAM at 4,58, frame 30,50
-   * 94x10, fill, text */
-  disp_.drawDottedHLine(X(0, xOff), X(NOCT_DISP_W - 1, xOff), MAIN_RAM_SEP_Y);
-
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(X(MAIN_RAM_LBL_X, xOff), MAIN_RAM_LBL_Y, "RAM");
-
+  disp_.drawChamferBox(X(0, xOff), MAIN_RAM_BOX_Y, NOCT_DISP_W, MAIN_RAM_H,
+                       MAIN_RAM_BOX_CHAMFER);
   float ru = hw.ru, ra = hw.ra;
   float raShow = ra > 0 ? ra : 0.0f;
   int pct = (raShow > 0) ? (int)((ru / raShow) * 100.0f) : 0;
   if (pct > 100)
     pct = 100;
-
-  int rx = X(MAIN_RAM_FRAME_X, xOff);
-  u8g2.drawFrame(rx, MAIN_RAM_FRAME_Y, MAIN_RAM_FRAME_W, MAIN_RAM_FRAME_H);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(X(4, xOff), MAIN_RAM_TEXT_Y, "RAM:");
+  int barX = X(28, xOff);
+  disp_.drawProgressBar(barX, MAIN_RAM_BOX_Y + 4, 72, 6, pct);
   if (!blinkRam) {
-    int innerW = (MAIN_RAM_FRAME_W - 2) * pct / 100;
-    if (innerW > 0)
-      u8g2.drawBox(rx + 1, MAIN_RAM_FRAME_Y + 1, innerW, MAIN_RAM_FRAME_H - 2);
-    snprintf(tbuf, sizeof(tbuf), "%.1fGB", ru);
-    u8g2.setFont(LABEL_FONT);
-    int tw = u8g2.getUTF8Width(tbuf);
-    int tx = rx + (MAIN_RAM_FRAME_W - tw) / 2;
-    int ty = MAIN_RAM_FRAME_Y + 8;
-    u8g2.drawUTF8(tx, ty, tbuf);
+    snprintf(tbuf, sizeof(tbuf), "%.1fG", ru);
+    u8g2.drawUTF8(barX + 76, MAIN_RAM_TEXT_Y, tbuf);
   }
+
+  disp_.drawHexStream(X(0, xOff), NOCT_CONTENT_TOP, 2);
+  disp_.drawHexStream(X(NOCT_DISP_W - 54, xOff), NOCT_CONTENT_TOP, 2);
 
   disp_.drawGreebles();
 }
@@ -409,20 +399,24 @@ void SceneManager::drawDisks(int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 7: FANS — profont10 values, format [ RPM ]  XX% with UNIT_FONT for %.
+// SCENE 7: FANS — Monospaced profont10. Col1 Icon X=2, Name X=14, RPM X=60
+// [ 1500 ], % X=110 "45%".
 // ---------------------------------------------------------------------------
 #define FAN_ROW_Y0 14
 #define FAN_ROW_DY 12
 #define FAN_ICON_X 2
-#define FAN_TEXT_X 16
-#define FAN_VALUE_FONT LABEL_FONT // u8g2_font_profont10_mr (mono, thin)
+#define FAN_NAME_X 14
+#define FAN_RPM_X 60
+#define FAN_PCT_X 110
 
 void SceneManager::drawFans(int fanFrame, int xOff) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
+  u8g2.setFont(LABEL_FONT); /* u8g2_font_profont10_mr */
   const char *labels[] = {"CPU", "Pump", "GPU", "Case"};
   int rpms[] = {hw.cf, hw.s1, hw.gf, hw.s2};
+  static char rpmBuf[16];
   for (int i = 0; i < 4; i++) {
     int rowY = FAN_ROW_Y0 + i * FAN_ROW_DY;
     if (rowY + FAN_ROW_DY > NOCT_DISP_H)
@@ -436,23 +430,11 @@ void SceneManager::drawFans(int fanFrame, int xOff) {
                   : 0;
     int iconFrame = (rpm > 0) ? (fanFrame % 4) : 0;
     drawFanIconSmall(X(FAN_ICON_X, xOff), rowY, iconFrame);
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(FAN_TEXT_X, xOff), rowY + 6, labels[i]);
-
-    int valX = X(FAN_TEXT_X + 24, xOff);
-    int valY = rowY + 8;
-    u8g2.setFont(FAN_VALUE_FONT);
-    static char rpmBuf[16];
+    u8g2.drawUTF8(X(FAN_NAME_X, xOff), rowY + 6, labels[i]);
     snprintf(rpmBuf, sizeof(rpmBuf), "[ %d ]", rpm);
-    u8g2.drawUTF8(valX, valY, rpmBuf);
-    int dx = valX + u8g2.getUTF8Width(rpmBuf);
-    if (pct > 0) {
-      snprintf(rpmBuf, sizeof(rpmBuf), "  %d", pct);
-      u8g2.drawUTF8(dx, valY, rpmBuf);
-      dx += u8g2.getUTF8Width(rpmBuf);
-      u8g2.setFont(UNIT_FONT);
-      u8g2.drawUTF8(dx, valY, "%");
-    }
+    u8g2.drawUTF8(X(FAN_RPM_X, xOff), rowY + 6, rpmBuf);
+    snprintf(rpmBuf, sizeof(rpmBuf), "%d%%", pct);
+    u8g2.drawUTF8(X(FAN_PCT_X, xOff), rowY + 6, rpmBuf);
   }
   disp_.drawGreebles();
 }
@@ -492,12 +474,12 @@ void SceneManager::drawMotherboard(int xOff) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 9: WEATHER — Icon 32x32 left. Temp HUGE top-right baseline Y=40.
-// Desc bottom (CYRILLIC/TINY), no overlap with temp descenders.
+// SCENE 9: WEATHER — Geometric fallback (sun=disc, cloud=box). helvB10 temp
+// baseline Y >= 30 (no header overlap).
 // ---------------------------------------------------------------------------
 #define WEATHER_ICON_X (NOCT_CARD_LEFT + 4)
 #define WEATHER_ICON_Y (NOCT_CONTENT_TOP + 4)
-#define WEATHER_TEMP_BASELINE_Y 40
+#define WEATHER_TEMP_BASELINE_Y 38
 #define WEATHER_DESC_Y 58
 
 void SceneManager::drawWeather(int xOff) {
@@ -516,12 +498,14 @@ void SceneManager::drawWeather(int xOff) {
     return;
   }
 
+  /* Geometric fallback: drawWeatherPrimitive uses drawDisc (sun), drawBox
+   * (cloud) when icons fail */
   disp_.drawWeatherPrimitive(X(WEATHER_ICON_X, xOff), WEATHER_ICON_Y,
                              weather.wmoCode);
 
   static char buf[16];
   snprintf(buf, sizeof(buf), "%+d\xC2\xB0", weather.temp);
-  u8g2.setFont(HUGE_FONT);
+  u8g2.setFont(VALUE_FONT); /* helvB10, baseline >= 30 */
   int tw = u8g2.getUTF8Width(buf);
   if (boxX + boxW - 4 - tw >= X(WEATHER_ICON_X, xOff) + WEATHER_ICON_W)
     u8g2.drawUTF8(boxX + boxW - 4 - tw, WEATHER_TEMP_BASELINE_Y, buf);
@@ -589,6 +573,109 @@ void SceneManager::drawPlayer(int xOff) {
   u8g2.drawUTF8(boxX + 4 - scrollT, PLAYER_TRACK_Y, trackBuf);
   u8g2.setMaxClipWindow();
   disp_.drawGreebles();
+}
+
+// ---------------------------------------------------------------------------
+// SCENE 10: FIRE — Doom-style fire effect. fire[32], propagate heat upward,
+// draw vertical bars; overlay "IGNITION" / "BURNOUT".
+// ---------------------------------------------------------------------------
+#define FIRE_W 32
+#define FIRE_BOTTOM_Y 64
+#define FIRE_COOLING 2
+
+void SceneManager::drawFire(int xOff) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  static uint8_t fire[FIRE_W];
+  static bool initialized = false;
+  if (!initialized) {
+    for (int i = 0; i < FIRE_W; i++)
+      fire[i] = 0;
+    initialized = true;
+  }
+  /* Ignite bottom row randomly */
+  for (int x = 0; x < FIRE_W; x++)
+    if (random(3) == 0)
+      fire[x] = (uint8_t)((fire[x] + random(200, 256)) / 2);
+  /* Propagate heat (smooth + cool); use temp buffer */
+  uint8_t next[FIRE_W];
+  for (int x = 0; x < FIRE_W; x++)
+    next[x] = fire[x];
+  for (int x = 1; x < FIRE_W - 1; x++) {
+    int v = (int)next[x] + (int)next[x - 1] + (int)next[x + 1];
+    v = v / 3 - FIRE_COOLING;
+    fire[x] = (v < 0) ? 0 : (uint8_t)v;
+  }
+  /* Render: vertical lines at bottom. Height = fire[x]/4, scaled to screen */
+  const int barW = 4;
+  const int baseY = NOCT_DISP_H - 1;
+  for (int x = 0; x < FIRE_W; x++) {
+    int h = fire[x] / 4;
+    if (h > NOCT_DISP_H - NOCT_HEADER_H)
+      h = NOCT_DISP_H - NOCT_HEADER_H;
+    if (h > 0) {
+      int px = X(x * barW, xOff);
+      if (px + barW > 0 && px < NOCT_DISP_W)
+        u8g2.drawBox(px, baseY - h, barW, h);
+    }
+  }
+  const char *label = (millis() / 2000) & 1 ? "BURNOUT" : "IGNITION";
+  u8g2.setFont(VALUE_FONT);
+  int tw = u8g2.getUTF8Width(label);
+  int tx = X((NOCT_DISP_W - tw) / 2, xOff);
+  int ty = NOCT_CONTENT_TOP + 12;
+  if (tx >= X(0, xOff) && tx + tw <= X(NOCT_DISP_W, xOff))
+    u8g2.drawUTF8(tx, ty, label);
+}
+
+// ---------------------------------------------------------------------------
+// SCENE 11: HUNT — Pixel wolf chases pixel rabbit. "TARGET LOCK" blinking.
+// ---------------------------------------------------------------------------
+void SceneManager::drawWolfHunt(int xOff) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  static int wolfX = 0, wolfY = 32;
+  static int rabbitX = 100, rabbitY = 32;
+  int dx = rabbitX - wolfX;
+  int dy = rabbitY - wolfY;
+  int dist = (dx == 0 && dy == 0) ? 0 : (int)sqrt((double)(dx * dx + dy * dy));
+  if (dist < 5) {
+    rabbitX = 20 + random(80);
+    rabbitY = NOCT_HEADER_H + 8 + random(40);
+  } else if (dist > 0) {
+    wolfX += (dx * 2) / dist;
+    wolfY += (dy * 2) / dist;
+    if (wolfX < 0)
+      wolfX = 0;
+    if (wolfX >= NOCT_DISP_W)
+      wolfX = NOCT_DISP_W - 1;
+    if (wolfY < NOCT_HEADER_H)
+      wolfY = NOCT_HEADER_H;
+    if (wolfY >= NOCT_DISP_H)
+      wolfY = NOCT_DISP_H - 1;
+  }
+  /* Wolf: two triangles (ears) + square (head) */
+  int wx = X(wolfX, xOff);
+  int wy = wolfY;
+  u8g2.drawLine(wx, wy - 4, wx - 2, wy);
+  u8g2.drawLine(wx - 2, wy, wx, wy - 2);
+  u8g2.drawLine(wx + 4, wy - 4, wx + 6, wy);
+  u8g2.drawLine(wx + 6, wy, wx + 4, wy - 2);
+  u8g2.drawBox(wx, wy - 2, 4, 4);
+  /* Rabbit: flashing cross/dot */
+  int rx = X(rabbitX, xOff);
+  int ry = rabbitY;
+  bool flash = (millis() / 150) & 1;
+  if (flash) {
+    u8g2.drawPixel(rx, ry);
+    u8g2.drawPixel(rx + 1, ry);
+    u8g2.drawPixel(rx, ry + 1);
+    u8g2.drawPixel(rx - 1, ry);
+    u8g2.drawPixel(rx, ry - 1);
+  } else {
+    u8g2.drawBox(rx - 1, ry - 1, 3, 3);
+  }
+  u8g2.setFont(LABEL_FONT);
+  if ((millis() / 400) & 1)
+    u8g2.drawUTF8(X(2, xOff), NOCT_DISP_H - 4, "TARGET LOCK");
 }
 
 // ---------------------------------------------------------------------------

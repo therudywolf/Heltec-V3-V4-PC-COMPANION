@@ -23,7 +23,8 @@
 #define FONT_SECONDARY SECONDARY_FONT
 #define FONT_HEADER HEADER_FONT
 #define HEXDECOR_FONT u8g2_font_5x7_tf
-#define UNIT_FONT u8g2_font_4x6_tr /* Small % and units (Fans) */
+#define HEXSTREAM_FONT u8g2_font_5x7_tf /* Small hex stream (micro_tr alt) */
+#define UNIT_FONT u8g2_font_4x6_tr      /* Small % and units (Fans) */
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -114,6 +115,14 @@ public:
   void drawClawMark(int x, int y);
   /** Small 5x5 paw icon (next to WiFi in header). */
   void drawPawIcon(int x, int y);
+
+  // --- Protocol Fenrir: Cyberpunk primitives ---
+  /** 2–3 columns of random hex (e.g. A4, 0F); update every ~100ms. */
+  void drawHexStream(int x, int y, int rows);
+  /** Three parallel diagonal jagged lines (scratches / watermark). */
+  void drawCyberClaw(int x, int y);
+  /** Small solid square blinking every 500ms + "ACT" or "HUNT" text. */
+  void drawActiveIndicator(int x, int y);
 
   // --- Global header: 10px bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
   // dotted at Y=10 ---
