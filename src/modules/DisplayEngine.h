@@ -85,6 +85,7 @@ public:
 
 private:
   void drawDottedHLine(int x0, int x1, int y);
+  bool drawXBMArtFromBase64(int x, int y, int w, int h, const String &base64);
 
   int sdaPin_;
   int sclPin_;
