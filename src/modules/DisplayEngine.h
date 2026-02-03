@@ -22,6 +22,7 @@
 #define FONT_LABEL LABEL_FONT
 #define FONT_SECONDARY SECONDARY_FONT
 #define FONT_HEADER HEADER_FONT
+#define HEXDECOR_FONT u8g2_font_5x7_tf
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -92,6 +93,18 @@ public:
   /** Small static greebles (tiny squares/crosses) in content area corners. */
   void drawGreebles();
 
+  // --- Netrunner / Cyberpunk mechanics ---
+  /** Decrypt animation: reveal finalStr from left; rest = random hex. speed =
+   * ms per char. */
+  void drawDecryptedText(int x, int y, const char *finalStr,
+                         int speedMsPerChar);
+  /** PCB-style line: solid circle at start, hollow diamond at end (near text).
+   */
+  void drawCircuitLine(int x_start, int y_start, int x_end, int y_end);
+  /** Hex data decor at bottom corners. corner: 0 = bottom-left, 1 =
+   * bottom-right. */
+  void drawHexDecoration(int corner);
+
   // --- Global header: 10px bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
   // dotted at Y=10 ---
   void drawGlobalHeader(const char *sceneTitle, const char *timeStr, int rssi);
@@ -128,6 +141,7 @@ public:
 
 private:
   bool drawXBMArtFromBase64(int x, int y, int w, int h, const String &base64);
+  static char scrambleBuf_[32];
 
   int sdaPin_;
   int sclPin_;
