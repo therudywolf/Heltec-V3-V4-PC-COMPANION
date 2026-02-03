@@ -741,9 +741,7 @@ def _run_async_worker() -> None:
 
 def _create_tray_image() -> "Image.Image":
     """Programmatic 64x64 icon: black background, green 'W' / dot. No external .ico."""
-    if not HAS_PIL:
-        from PIL import Image
-    from PIL import ImageDraw
+    from PIL import Image, ImageDraw
     img = Image.new("RGB", (64, 64), (0, 0, 0))
     draw = ImageDraw.Draw(img)
     green = (0, 255, 0)
