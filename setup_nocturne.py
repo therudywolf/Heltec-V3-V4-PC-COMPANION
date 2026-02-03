@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-NOCTURNE_OS — One-Click Installer / Launcher
-Cyberpunk-style setup: deps, config, autostart (winreg), launch to tray.
-Paths are resolved with os.path.abspath so it works from any folder location.
+NOCTURNE_OS — One-time setup: pip install -r requirements.txt, create config.json.
+With --no-launch: only deps + config (used by RUN.bat). Without: optional autostart prompt + launch.
 """
 
 import os
@@ -139,9 +138,12 @@ def launch_monitor() -> None:
 
 def main() -> None:
     os.chdir(PROJECT_ROOT)
-    log_cyber("NOCTURNE_OS — Installer")
+    log_cyber("NOCTURNE_OS — Setup (deps + config)")
     check_dependencies()
     ensure_config()
+    if "--no-launch" in sys.argv:
+        log_cyber("Skipping launch (--no-launch). Use RUN.bat or: pythonw src/monitor.py")
+        return
     if prompt_autostart():
         set_autostart(True)
     else:

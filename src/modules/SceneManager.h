@@ -17,8 +17,12 @@ public:
 
   void drawHub(unsigned long bootTime);
   void drawCpu(unsigned long bootTime, int fanFrame);
+  void drawCpuGraph(unsigned long bootTime);
   void drawGpu(int fanFrame);
+  void drawGpuGraph(int fanFrame);
+  void drawRam();
   void drawNet();
+  void drawNetGraph();
   void drawAtmos();
   void drawMedia(bool blinkState);
 

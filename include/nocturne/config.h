@@ -1,5 +1,6 @@
 /*
- * NOCTURNE_OS — Config (pins, dimensions). Secrets in secrets.h
+ * NOCTURNE_OS — Config: pins (SDA/SCL/RST), display 128x64, timeouts,
+ * NOCT_SCENE_* indices, NOCT_GRAPH_SAMPLES. WiFi/PC IP in secrets.h.
  */
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
@@ -32,7 +33,7 @@
 #define NOCT_BUTTON_PREDATOR_MS 2500
 #define NOCT_GLITCH_INTERVAL_MS 60000
 #define NOCT_GLITCH_DURATION_MS 100
-#define NOCT_GRAPH_SAMPLES 64
+#define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
 
 #ifndef CPU_TEMP_ALERT
@@ -42,12 +43,17 @@
 #define GPU_TEMP_ALERT 80
 #endif
 
+/* One topic per screen; more scenes = less clutter, larger text */
 #define NOCT_SCENE_HUB 0
 #define NOCT_SCENE_CPU 1
-#define NOCT_SCENE_GPU 2
-#define NOCT_SCENE_NET 3
-#define NOCT_SCENE_ATMOS 4
-#define NOCT_SCENE_MEDIA 5
-#define NOCT_TOTAL_SCENES 6
+#define NOCT_SCENE_CPU_GRAPH 2
+#define NOCT_SCENE_GPU 3
+#define NOCT_SCENE_GPU_GRAPH 4
+#define NOCT_SCENE_RAM 5
+#define NOCT_SCENE_NET 6
+#define NOCT_SCENE_NET_GRAPH 7
+#define NOCT_SCENE_ATMOS 8
+#define NOCT_SCENE_MEDIA 9
+#define NOCT_TOTAL_SCENES 10
 
 #endif
