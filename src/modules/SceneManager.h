@@ -35,9 +35,11 @@ public:
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
-  /** Wolf Menu: menuItem 0=5s, 1=10s, 2=OFF, 3=EXIT. carouselOn + carouselSec
-   * for display. */
-  void drawMenu(int menuItem, bool carouselOn, int carouselSec);
+  /** Tactical HUD Menu: 3 rows. Row0=AUTO (5s/10s/15s/OFF), Row1=FLIP
+   * (0/180deg), Row2=EXIT. menuItem 0/1/2. carouselOn+carouselSec and
+   * screenRotated for row labels. */
+  void drawMenu(int menuItem, bool carouselOn, int carouselSec,
+                bool screenRotated);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 

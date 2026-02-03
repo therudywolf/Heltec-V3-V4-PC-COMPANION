@@ -49,7 +49,7 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define WOLF_MENU_ITEMS 4 /* CAROUSEL: 5s, 10s, OFF, EXIT */
+#define WOLF_MENU_ITEMS 3 /* Row0=AUTO, Row1=FLIP, Row2=EXIT */
 
 #define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
@@ -101,7 +101,7 @@ void setup() {
   prefs.end();
 
   display.u8g2().setContrast((uint8_t)settings.displayContrast);
-  display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
+  display.setScreenFlipped(settings.displayInverted);
   randomSeed(analogRead(0));
 
   netManager.begin(WIFI_SSID, WIFI_PASS);
@@ -145,8 +145,8 @@ void loop() {
     }
   }
 
-  // Button: Short (<500ms) = next screen or cycle menu. Long (>=1000ms) = Quick
-  // Menu or Toggle/Select.
+  // Button: In menu: Short = NAVIGATE (next item), Long = INTERACT (change
+  // value / execute). When closed: Long = open menu, Short = next scene.
   int btnState = digitalRead(NOCT_BUTTON_PIN);
   if (btnState == LOW && !btnHeld) {
     btnHeld = true;
@@ -156,42 +156,52 @@ void loop() {
     needRedraw = true;
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
+
     if (quickMenuOpen) {
+      // --- MENU MODE ---
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        /* Long press: save & exit */
+        // LONG PRESS: INTERACT (change value / execute)
         if (quickMenuItem == 0) {
-          settings.carouselEnabled = true;
-          settings.carouselIntervalSec = 5;
-        } else if (quickMenuItem == 1) {
-          settings.carouselEnabled = true;
-          settings.carouselIntervalSec = 10;
-        } else if (quickMenuItem == 2) {
-          settings.carouselEnabled = false;
-        }
-        if (quickMenuItem <= 2) {
+          // Cycle Carousel: 5 -> 10 -> 15 -> OFF -> 5
+          if (!settings.carouselEnabled) {
+            settings.carouselEnabled = true;
+            settings.carouselIntervalSec = 5;
+          } else if (settings.carouselIntervalSec == 5) {
+            settings.carouselIntervalSec = 10;
+          } else if (settings.carouselIntervalSec == 10) {
+            settings.carouselIntervalSec = 15;
+          } else {
+            settings.carouselEnabled = false;
+          }
           Preferences prefs;
           prefs.begin("nocturne", false);
           prefs.putBool("carousel", settings.carouselEnabled);
           prefs.putInt("carouselSec", settings.carouselIntervalSec);
           prefs.end();
+        } else if (quickMenuItem == 1) {
+          // Flip Screen
+          display.flipScreen();
+          settings.displayInverted = display.isScreenFlipped();
+          Preferences prefs;
+          prefs.begin("nocturne", false);
+          prefs.putBool("inverted", settings.displayInverted);
+          prefs.end();
+        } else if (quickMenuItem == 2) {
+          // Exit
+          quickMenuOpen = false;
         }
-        quickMenuOpen = false; /* Always exit on long press */
       } else {
-        /* Short press: toggle/cycle option (5s / 10s / OFF / EXIT) */
+        // SHORT PRESS: NAVIGATE (next item)
         quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
       }
     } else {
+      // --- NORMAL MODE ---
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        /* Long press (>1s): open modal menu CAROUSEL: [5s / 10s / OFF] */
+        // Long press: Open Menu
         quickMenuOpen = true;
-        /* Highlight current option */
-        if (!settings.carouselEnabled)
-          quickMenuItem = 2;
-        else if (settings.carouselIntervalSec == 5)
-          quickMenuItem = 0;
-        else
-          quickMenuItem = 1;
+        quickMenuItem = 0;
       } else if (!state.alertActive) {
+        // Short press: Next Scene
         previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
         if (previousScene != currentScene) {
@@ -333,15 +343,14 @@ void loop() {
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
-    display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
-
     display.drawGlobalHeader(
         quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
         nullptr, netManager.rssi(), netManager.isWifiConnected());
 
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
-                            settings.carouselIntervalSec);
+                            settings.carouselIntervalSec,
+                            settings.displayInverted);
     } else if (inTransition) {
       unsigned long elapsed = now - transitionStart;
       int progress =

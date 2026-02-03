@@ -90,6 +90,16 @@ const uint8_t icon_weather_snow_32_bits[] = {
 DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
     : sdaPin_(sdaPin), sclPin_(sclPin), u8g2_(U8G2_R0, rstPin) {}
 
+void DisplayEngine::flipScreen() {
+  screenRotated_ = !screenRotated_;
+  u8g2_.setFlipMode(screenRotated_ ? 1 : 0);
+}
+
+void DisplayEngine::setScreenFlipped(bool flipped) {
+  screenRotated_ = flipped;
+  u8g2_.setFlipMode(screenRotated_ ? 1 : 0);
+}
+
 void DisplayEngine::begin() {
   Wire.begin(sdaPin_, sclPin_);
   Wire.setClock(800000); // V4 overclock: 800kHz for fluid frames (if artifacts,
