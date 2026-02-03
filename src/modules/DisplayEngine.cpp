@@ -273,9 +273,15 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
 
   int iconX = 104;
   int iconY = 1;
-  if (rssi > -70)
+  if (rssi > -70) {
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
-  else if ((millis() / 200) % 2 == 0)
+    // "Live" pulse dot (color 0 = visible on filled bar): companion heartbeat
+    if ((millis() / 800) % 2 == 0) {
+      u8g2_.setDrawColor(0);
+      u8g2_.drawBox(NOCT_DISP_W - 6, 3, 2, 2);
+      u8g2_.setDrawColor(1);
+    }
+  } else if ((millis() / 200) % 2 == 0)
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 
   u8g2_.setDrawColor(1);
