@@ -16,8 +16,7 @@
 #define NOCT_BUTTON_PIN 0
 #define NOCT_ALERT_LED_BLINK_MS 175
 #define NOCT_ALERT_LED_BLINKS 5 /* 5 blinks then fade out */
-#define NOCT_ALERT_MAX_BLINKS                                                  \
-  5 /* Stealth: blink exactly this many times, then LED off & value solid */
+#define NOCT_ALERT_MAX_BLINKS 2 /* Strict limit: 2 blinks only */
 #define NOCT_ALERT_LED_BLINK_MAX_MS 5000
 
 #define NOCT_DISP_W 128
