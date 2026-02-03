@@ -9,18 +9,19 @@
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 
-// --- NOCTURNE Design System: fonts (Latin + Cyrillic where needed) ---
-#define HUGE_FONT u8g2_font_logisoso24_tr   // Hero: main values (87°, 99%)
-#define LABEL_FONT u8g2_font_profont10_mr   // Meta: tiny, uppercase, tracking
-#define SECONDARY_FONT u8g2_font_helvB10_tr // Headers, list items
-// For Cyrillic: use u8g2_font_6x10_t_cyrillic (add to U8g2 build if needed)
-#define CYRILLIC_FONT                                                          \
-  u8g2_font_6x10_tf // fallback; use _t_cyrillic when available
+// --- NOCTURNE Design System: Forest OS v3 — Terminal / Cyberpunk ---
+#define HEADER_FONT u8g2_font_t0_11_tr    // Terminal-style headers
+#define LABEL_FONT u8g2_font_profont10_mr // Tiny monospaced labels
+#define VALUE_FONT u8g2_font_helvB10_tr   // Clean bold values
+#define HUGE_FONT u8g2_font_logisoso24_tr // Hero: main values (87°, 99%)
+#define SECONDARY_FONT VALUE_FONT
+#define CYRILLIC_FONT u8g2_font_6x10_tf
 #define TINY_FONT LABEL_FONT
 #define MID_FONT SECONDARY_FONT
 #define FONT_TINY TINY_FONT
 #define FONT_LABEL LABEL_FONT
 #define FONT_SECONDARY SECONDARY_FONT
+#define FONT_HEADER HEADER_FONT
 
 // --- XBM Icons ---
 #define ICON_WIFI_W 12
@@ -52,6 +53,8 @@ public:
   void drawGlitch(int intensity);
   /** Dotted line every 2nd pixel row at y (CRT scanline). */
   void drawScanline(int y);
+  /** Full-screen CRT scanlines: black line every 2 (or 4 if subtle) pixels. */
+  void drawScanlines(bool everyFourth = false);
   /** Right-aligned text: draw at (x_anchor - width). font = TINY_FONT etc. */
   void drawRightAligned(int x_anchor, int y, const uint8_t *font,
                         const char *text);
