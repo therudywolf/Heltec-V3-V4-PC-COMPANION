@@ -36,22 +36,31 @@
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
 
+/* RED ALERT thresholds (must match monitor.py) */
 #ifndef CPU_TEMP_ALERT
-#define CPU_TEMP_ALERT 75
+#define CPU_TEMP_ALERT 87
 #endif
 #ifndef GPU_TEMP_ALERT
-#define GPU_TEMP_ALERT 80
+#define GPU_TEMP_ALERT 68
 #endif
+#define CPU_LOAD_ALERT 99
+#define GPU_LOAD_ALERT 99
+#define VRAM_LOAD_ALERT 95
 
-/* 8 screens: HUB, CPU, GPU, RAM, DISKS, FANS, ATMOS, MEDIA */
-#define NOCT_SCENE_HUB 0
-#define NOCT_SCENE_CPU 1
-#define NOCT_SCENE_GPU 2
-#define NOCT_SCENE_RAM 3
-#define NOCT_SCENE_DISKS 4
-#define NOCT_SCENE_FANS 5
-#define NOCT_SCENE_ATMOS 6
-#define NOCT_SCENE_MEDIA 7
-#define NOCT_TOTAL_SCENES 8
+/* 5 screens: THERMAL, LOAD, MEMORY, STORAGE, FANS (brutalist monitoring) */
+#define NOCT_SCENE_THERMAL 0
+#define NOCT_SCENE_LOAD 1
+#define NOCT_SCENE_MEMORY 2
+#define NOCT_SCENE_STORAGE 3
+#define NOCT_SCENE_FANS 4
+#define NOCT_TOTAL_SCENES 5
+/* Legacy aliases for code that still references old names */
+#define NOCT_SCENE_HUB NOCT_SCENE_THERMAL
+#define NOCT_SCENE_CPU NOCT_SCENE_THERMAL
+#define NOCT_SCENE_GPU NOCT_SCENE_LOAD
+#define NOCT_SCENE_RAM NOCT_SCENE_MEMORY
+#define NOCT_SCENE_DISKS NOCT_SCENE_STORAGE
+#define NOCT_SCENE_ATMOS NOCT_SCENE_THERMAL
+#define NOCT_SCENE_MEDIA NOCT_SCENE_THERMAL
 
 #endif

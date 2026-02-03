@@ -11,8 +11,8 @@
 #define NOCT_FAN_COUNT 4
 
 struct HddEntry {
-  int load = 0;
-  int temp = 0;
+  char name[2] = {'C', '\0'}; /* Drive letter: C, D, E, F */
+  int load = 0;               /* Usage percent (u in JSON) */
 };
 
 struct HardwareData {
@@ -68,7 +68,7 @@ struct AppState {
   Settings settings;
   bool weatherReceived = false;
   bool alertActive = false;
-  int alertTargetScene = 1; // NOCT_SCENE_CPU or NOCT_SCENE_GPU
+  int alertTargetScene = 0; /* NOCT_SCENE_THERMAL/LOAD/MEMORY */
 };
 
 #endif
