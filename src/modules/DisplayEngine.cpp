@@ -186,7 +186,7 @@ void DisplayEngine::drawProgressBar(int x, int y, int w, int h, int percent) {
 }
 
 // ---------------------------------------------------------------------------
-// drawDottedHLine: grid helper
+// drawDottedHLine: dotted horizontal (pattern 0x55)
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawDottedHLine(int x0, int x1, int y) {
   if (x0 > x1) {
@@ -199,32 +199,108 @@ void DisplayEngine::drawDottedHLine(int x0, int x1, int y) {
 }
 
 // ---------------------------------------------------------------------------
-// Global header: black bar 0..(NOCT_HEADER_H-2), dotted at NOCT_HEADER_H-1
+// drawDottedVLine: dotted vertical
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawDottedVLine(int x, int y0, int y1) {
+  if (y0 > y1) {
+    int t = y0;
+    y0 = y1;
+    y1 = t;
+  }
+  for (int y = y0; y <= y1; y += 2)
+    u8g2_.drawPixel(x, y);
+}
+
+// ---------------------------------------------------------------------------
+// drawChamferBox: cut corners (chamferPx from each corner)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawChamferBox(int x, int y, int w, int h, int chamferPx) {
+  if (chamferPx <= 0 || chamferPx * 2 >= w || chamferPx * 2 >= h) {
+    u8g2_.drawFrame(x, y, w, h);
+    return;
+  }
+  int c = chamferPx;
+  // Top: left chamfer cut, line, right chamfer cut
+  u8g2_.drawLine(x + c, y, x + w - 1 - c, y);
+  u8g2_.drawLine(x + w - 1 - c, y, x + w - 1, y + c);
+  u8g2_.drawLine(x + w - 1, y + c, x + w - 1, y + h - 1 - c);
+  u8g2_.drawLine(x + w - 1, y + h - 1 - c, x + w - 1 - c, y + h - 1);
+  u8g2_.drawLine(x + w - 1 - c, y + h - 1, x + c, y + h - 1);
+  u8g2_.drawLine(x + c, y + h - 1, x, y + h - 1 - c);
+  u8g2_.drawLine(x, y + h - 1 - c, x, y + c);
+  u8g2_.drawLine(x, y + c, x + c, y);
+}
+
+// ---------------------------------------------------------------------------
+// drawScrollIndicator: pixel-thin bar on right edge
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
+                                        int visibleItems, int firstVisible) {
+  if (totalItems <= visibleItems || visibleItems <= 0)
+    return;
+  const int rx = NOCT_DISP_W - 1;
+  int thumbH = (visibleItems * h + totalItems - 1) / totalItems;
+  if (thumbH < 2)
+    thumbH = 2;
+  int maxFirst = totalItems - visibleItems;
+  int thumbY =
+      y + (maxFirst > 0 ? (firstVisible * (h - thumbH) / maxFirst) : 0);
+  for (int dy = 0; dy < thumbH; dy++)
+    u8g2_.drawPixel(rx, thumbY + dy);
+}
+
+// ---------------------------------------------------------------------------
+// Global header: 10px black bar, [ SCENE_NAME ] left, WIFI + HH:MM right,
+// dotted at Y=10
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
-  const int barH = NOCT_HEADER_H - 1;
-  const int textY = barH - 2;
+  const int barH = 10; /* NOCT_HEADER_H */
+  const int textY = 7;
 
   u8g2_.setDrawColor(0);
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
   u8g2_.setDrawColor(1);
 
   u8g2_.setFont(TINY_FONT);
-  const char *title = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
-  u8g2_.drawUTF8(2, textY, title);
+  const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
+  char titleBuf[24];
+  snprintf(titleBuf, sizeof(titleBuf), "[ %s ]", raw);
+  u8g2_.drawUTF8(2, textY, titleBuf);
 
-  const char *tstr = (timeStr && timeStr[0]) ? timeStr : "---";
-  drawRightAligned(90, textY, TINY_FONT, tstr);
+  const char *tstr = (timeStr && timeStr[0]) ? timeStr : "--:--";
+  drawRightAligned(98, textY, TINY_FONT, tstr);
 
-  int iconX = 118;
-  int iconY = 0;
+  int iconX = 104;
+  int iconY = 1;
   if (rssi > -70)
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
   else if ((millis() / 200) % 2 == 0)
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 
-  drawDottedHLine(0, NOCT_DISP_W - 1, NOCT_HEADER_H - 1);
+  drawDottedHLine(0, NOCT_DISP_W - 1, 10);
+}
+
+// ---------------------------------------------------------------------------
+// drawGreebles: tiny technical decorations in content corners
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawGreebles() {
+  const int top = NOCT_CONTENT_TOP;
+  const int bottom = NOCT_DISP_H - 1;
+  const int left = 0;
+  const int right = NOCT_DISP_W - 1;
+  u8g2_.drawPixel(left + 2, top + 2);
+  u8g2_.drawPixel(left + 4, top + 2);
+  u8g2_.drawPixel(left + 2, top + 4);
+  u8g2_.drawPixel(right - 2, top + 2);
+  u8g2_.drawPixel(right - 4, top + 2);
+  u8g2_.drawPixel(right - 2, top + 4);
+  u8g2_.drawPixel(left + 2, bottom - 2);
+  u8g2_.drawPixel(left + 2, bottom - 4);
+  u8g2_.drawPixel(left + 4, bottom - 2);
+  u8g2_.drawPixel(right - 2, bottom - 2);
+  u8g2_.drawPixel(right - 2, bottom - 4);
+  u8g2_.drawPixel(right - 4, bottom - 2);
 }
 
 // ---------------------------------------------------------------------------

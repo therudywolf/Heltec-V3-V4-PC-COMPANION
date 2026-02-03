@@ -3,8 +3,8 @@
   "port": 8090,
   "lhm_url": "http://localhost:8085/data.json",
   "limits": {
-    "gpu": 80,
-    "cpu": 75
+    "gpu": 72,
+    "cpu": 85
   },
   "weather_city": "Moscow"
 }

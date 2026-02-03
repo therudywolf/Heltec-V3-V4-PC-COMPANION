@@ -25,9 +25,13 @@ struct HardwareData {
   int nd = 0, nu = 0, pg = 0;
   int cf = 0, s1 = 0, s2 = 0, gf = 0;
   int fans[NOCT_FAN_COUNT] = {0, 0, 0, 0};
+  int fan_controls[NOCT_FAN_COUNT] = {
+      0, 0, 0, 0}; /* Fan control %: CPU, Pump, GPU, Case */
   HddEntry hdd[NOCT_HDD_COUNT] = {};
   float vu = 0.0f, vt = 0.0f;
   int ch = 0;
+  int mb_sys = 0, mb_vsoc = 0, mb_vrm = 0,
+      mb_chipset = 0; /* Motherboard temps */
   int dr = 0, dw = 0;
 };
 
