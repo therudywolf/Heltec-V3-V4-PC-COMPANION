@@ -12,7 +12,8 @@
 
 struct HddEntry {
   char name[2] = {'C', '\0'}; /* Drive letter: C, D, E, F */
-  int load = 0;               /* Usage percent (u in JSON) */
+  float used_gb = 0.0f;       /* Used space GB (u in JSON) */
+  float total_gb = 0.0f;      /* Total space GB (tot in JSON) */
   int temp = 0;               /* Temperature (t in JSON) */
 };
 

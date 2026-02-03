@@ -162,8 +162,8 @@ void SceneManager::drawGpu(bool blinkState) {
   int gl = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
   int gv = (hw.gv >= 0 && hw.gv <= 100) ? hw.gv : 0;
   int gclock = (hw.gclock >= 0) ? hw.gclock : 0;
-  int vclock = (hw.vclock >= 0) ? hw.vclock : 0;
   int gtdp = (hw.gtdp >= 0) ? hw.gtdp : 0;
+  float vu = hw.vu, vt = hw.vt;
   bool onAlertGpu =
       state_.alertActive && state_.alertTargetScene == NOCT_SCENE_GPU;
   bool blinkTemp =
@@ -199,7 +199,7 @@ void SceneManager::drawGpu(bool blinkState) {
     u8g2.drawUTF8(rightCol, y0 + 3 * dy, buf);
   }
 
-  snprintf(buf, sizeof(buf), "VRAM %d MHz", vclock);
+  snprintf(buf, sizeof(buf), "VRAM %.1f/%.1f GB", vu, vt > 0 ? vt : 0.0f);
   u8g2.drawUTF8(left, y0 + 4 * dy, buf);
   snprintf(buf, sizeof(buf), "PWR %dW", gtdp);
   u8g2.drawUTF8(rightCol, y0 + 4 * dy, buf);
@@ -249,7 +249,7 @@ void SceneManager::drawRam(bool blinkState) {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE 5: DISKS — Letter, load %, temperature. No bars.
+// SCENE 5: DISKS — Letter, used/total GB, temperature (if present).
 // ---------------------------------------------------------------------------
 void SceneManager::drawDisks() {
   HardwareData &hw = state_.hw;
@@ -262,9 +262,14 @@ void SceneManager::drawDisks() {
   for (int i = 0; i < NOCT_HDD_COUNT; i++) {
     int y = y0 + i * dy;
     char letter = hw.hdd[i].name[0] ? hw.hdd[i].name[0] : (char)('C' + i);
-    int u = (hw.hdd[i].load >= 0 && hw.hdd[i].load <= 100) ? hw.hdd[i].load : 0;
+    float used = hw.hdd[i].used_gb >= 0.0f ? hw.hdd[i].used_gb : 0.0f;
+    float total = hw.hdd[i].total_gb > 0.0f ? hw.hdd[i].total_gb : 0.0f;
     int t = hw.hdd[i].temp;
-    snprintf(buf, sizeof(buf), "%c: %d%% %d\xC2\xB0", letter, u, t);
+    if (t > 0)
+      snprintf(buf, sizeof(buf), "%c: %.1f/%.1f GB %d\xC2\xB0", letter, used,
+               total, t);
+    else
+      snprintf(buf, sizeof(buf), "%c: %.1f/%.1f GB", letter, used, total);
     u8g2.drawUTF8(NOCT_CARD_LEFT, y, buf);
   }
 }
