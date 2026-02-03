@@ -1,15 +1,34 @@
 /*
- * NOCTURNE_OS — SceneManager: Grid Law. HUB/MEDIA/ATMOS layouts, null handling.
- * Content starts below HUD (Y=12). 2px padding between text and lines.
+ * NOCTURNE_OS — SceneManager: Strict 128x64 grid. Zero-overlap zones.
+ * All draw calls use bounding-box constants; no magic numbers.
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
 
-// Grid: header 0–12, content 12–54, footer 54–64. 2px margin.
-#define CONTENT_Y0 12
-#define FOOTER_Y0 54
+// --- Strict grid (128x64): non-overlapping zones ---
+#define LAYOUT_HEADER_Y0 0
+#define LAYOUT_HEADER_H NOCT_HEADER_H // 10px
+#define LAYOUT_ZONE_A_X 0
+#define LAYOUT_ZONE_A_Y 11
+#define LAYOUT_ZONE_A_W 64
+#define LAYOUT_ZONE_A_H 26
+#define LAYOUT_ZONE_B_X 64
+#define LAYOUT_ZONE_B_Y 11
+#define LAYOUT_ZONE_B_W 64
+#define LAYOUT_ZONE_B_H 26
+#define LAYOUT_ZONE_C_X 0
+#define LAYOUT_ZONE_C_Y 37
+#define LAYOUT_ZONE_C_W NOCT_DISP_W
+#define LAYOUT_ZONE_C_H 12
+#define LAYOUT_ZONE_D_X 0
+#define LAYOUT_ZONE_D_Y 49
+#define LAYOUT_ZONE_D_W NOCT_DISP_W
+#define LAYOUT_ZONE_D_H 15
+
 #define PAD 2
-#define GRID_MID_X 64
+#define CONTENT_Y0 LAYOUT_ZONE_A_Y
+#define GRID_MID_X (NOCT_DISP_W / 2)
+#define FOOTER_Y0 54
 
 const char *SceneManager::sceneNames_[] = {"HUB", "CPU",   "GPU",
                                            "NET", "ATMOS", "MEDIA"};
@@ -51,72 +70,55 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE_HUB: Grid. CPU left, GPU right, RAM bottom. Values right-aligned.
-// Dotted vertical separator at X=64. 0/null -> noise patch.
+// SCENE_HUB: Strict zones A (CPU), B (GPU), C (RAM bar), D (graph).
 // ---------------------------------------------------------------------------
 void SceneManager::drawHub(unsigned long bootTime) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)bootTime;
 
-  const int LEFT_X = NOCT_MARGIN;
-  const int LEFT_END = GRID_MID_X - PAD;
-  const int RIGHT_X = GRID_MID_X + PAD;
-  const int RIGHT_END = NOCT_DISP_W - NOCT_MARGIN;
-  const int LABEL_Y = 20;
-  const int TEMP_Y = 32;
-  const int BAR_Y = 42;
-  const int BAR_W_LEFT = LEFT_END - LEFT_X - 2;
-  const int BAR_W_RIGHT = RIGHT_END - RIGHT_X - 2;
-  const int BAR_H = 5;
-  const int RAM_Y = 52;
-  const int RAM_BAR_X0 = 28;
-  const int RAM_BAR_X1 = 126;
-  const int RAM_BAR_W = RAM_BAR_X1 - RAM_BAR_X0;
-  const int RAM_BAR_H = 4;
+  String cpuVal = (hw.ct <= 0) ? "" : (String(hw.ct) + "C");
+  bool cpuWarn = (hw.ct >= CPU_TEMP_ALERT);
+  disp_.drawBlock(LAYOUT_ZONE_A_X, LAYOUT_ZONE_A_Y, LAYOUT_ZONE_A_W,
+                  LAYOUT_ZONE_A_H, "CPU", cpuVal, cpuWarn);
 
-  disp_.drawDottedVLine(GRID_MID_X, CONTENT_Y0, FOOTER_Y0 - 1);
+  String gpuVal = (hw.gt <= 0) ? "" : (String(hw.gt) + "C");
+  bool gpuWarn = (hw.gt >= GPU_TEMP_ALERT);
+  disp_.drawBlock(LAYOUT_ZONE_B_X, LAYOUT_ZONE_B_Y, LAYOUT_ZONE_B_W,
+                  LAYOUT_ZONE_B_H, "GPU", gpuVal, gpuWarn);
 
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(LEFT_X, LABEL_Y, "CPU");
-  String cpuTempStr = (hw.ct <= 0) ? "" : (String(hw.ct) + "C");
-  u8g2.setFont(FONT_VAL);
-  disp_.drawValueOrNoise(LEFT_END, TEMP_Y, cpuTempStr);
-  float cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? (float)hw.cl : 0.0f;
-  disp_.drawProgressBar(LEFT_X, BAR_Y, BAR_W_LEFT, BAR_H, cpuLoad);
-
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(RIGHT_X, LABEL_Y, "GPU");
-  String gpuTempStr = (hw.gt <= 0) ? "" : (String(hw.gt) + "C");
-  u8g2.setFont(FONT_VAL);
-  disp_.drawValueOrNoise(RIGHT_END, TEMP_Y, gpuTempStr);
-  float gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? (float)hw.gl : 0.0f;
-  disp_.drawProgressBar(RIGHT_X, BAR_Y, BAR_W_RIGHT, BAR_H, gpuLoad);
-
-  u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(LEFT_X, RAM_Y, "RAM");
   float ramPct = (hw.ra > 0) ? (hw.ru / hw.ra * 100.0f) : 0.0f;
   if (ramPct > 100.0f)
     ramPct = 100.0f;
   if (ramPct < 0.0f)
     ramPct = 0.0f;
-  disp_.drawSegmentedBar(RAM_BAR_X0, RAM_Y - 3, RAM_BAR_W, RAM_BAR_H, ramPct,
-                         16);
+  disp_.drawProgressBar(LAYOUT_ZONE_C_X, LAYOUT_ZONE_C_Y, LAYOUT_ZONE_C_W,
+                        LAYOUT_ZONE_C_H, ramPct);
+  int ramGb = (int)(hw.ra / 1024.0f);
+  if (ramGb < 0)
+    ramGb = 0;
+  String ramStr = "RAM: " + String(ramGb) + "GB";
+  u8g2.setFont(FONT_TINY);
+  int tw = u8g2.getUTF8Width(ramStr.c_str());
+  u8g2.setDrawColor(2);
+  u8g2.drawUTF8(LAYOUT_ZONE_C_X + (LAYOUT_ZONE_C_W - tw) / 2,
+                LAYOUT_ZONE_C_Y + 8, ramStr.c_str());
+  u8g2.setDrawColor(1);
+
+  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
+                         LAYOUT_ZONE_D_H, disp_.cpuGraph, 100);
 }
 
 // ---------------------------------------------------------------------------
-// CPU: rolling graph, stats right-aligned, 2px padding
+// CPU: stats in content area (11–48), rolling graph in Zone D.
 // ---------------------------------------------------------------------------
 void SceneManager::drawCpu(unsigned long bootTime, int fanFrame) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)bootTime;
 
-  int gx = NOCT_MARGIN, gy = NOCT_FOOTER_Y, gw = NOCT_DISP_W - 2 * NOCT_MARGIN,
-      gh = NOCT_GRAPH_HEIGHT;
-  disp_.drawDottedHLine(gx, gx + gw, gy + gh / 2);
-  disp_.drawDottedHLine(gx, gx + gw, gy);
-  disp_.drawRollingGraph(gx, gy, gw, gh, disp_.cpuGraph, 100);
+  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
+                         LAYOUT_ZONE_D_H, disp_.cpuGraph, 100);
 
   disp_.drawFanIcon(NOCT_DISP_W - 14, CONTENT_Y0 + 8, fanFrame);
 
@@ -138,17 +140,14 @@ void SceneManager::drawCpu(unsigned long bootTime, int fanFrame) {
 }
 
 // ---------------------------------------------------------------------------
-// GPU: same layout, right-aligned values
+// GPU: stats in content area (11–48), rolling graph in Zone D.
 // ---------------------------------------------------------------------------
 void SceneManager::drawGpu(int fanFrame) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  int gx = NOCT_MARGIN, gy = NOCT_FOOTER_Y, gw = NOCT_DISP_W - 2 * NOCT_MARGIN,
-      gh = NOCT_GRAPH_HEIGHT;
-  disp_.drawDottedHLine(gx, gx + gw, gy + gh / 2);
-  disp_.drawDottedHLine(gx, gx + gw, gy);
-  disp_.drawRollingGraph(gx, gy, gw, gh, disp_.gpuGraph, 100);
+  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
+                         LAYOUT_ZONE_D_H, disp_.gpuGraph, 100);
 
   disp_.drawFanIcon(NOCT_DISP_W - 14, CONTENT_Y0 + 8, fanFrame);
 
@@ -170,19 +169,19 @@ void SceneManager::drawGpu(int fanFrame) {
 }
 
 // ---------------------------------------------------------------------------
-// NET: graph, DL in inverted box, safe strings
+// NET: graph in Zone D, DL box and strings in content area.
 // ---------------------------------------------------------------------------
 void SceneManager::drawNet() {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  int gx = NOCT_MARGIN, gy = NOCT_FOOTER_Y, gw = NOCT_DISP_W - 2 * NOCT_MARGIN,
-      gh = NOCT_GRAPH_HEIGHT;
   disp_.netDownGraph.setMax(2048);
-  disp_.drawRollingGraph(gx, gy, gw, gh, disp_.netDownGraph, 2048);
+  disp_.drawRollingGraph(LAYOUT_ZONE_D_X, LAYOUT_ZONE_D_Y, LAYOUT_ZONE_D_W,
+                         LAYOUT_ZONE_D_H, disp_.netDownGraph, 2048);
 
-  int scanX = gx + (millis() / 50) % (gw + 1);
-  disp_.drawDottedVLine(scanX, gy, gy + gh - 1);
+  int scanX = LAYOUT_ZONE_D_X + (millis() / 50) % (LAYOUT_ZONE_D_W + 1);
+  disp_.drawDottedVLine(scanX, LAYOUT_ZONE_D_Y,
+                        LAYOUT_ZONE_D_Y + LAYOUT_ZONE_D_H - 1);
 
   char buf[24];
   float dlMb = (hw.nd >= 1024) ? (hw.nd / 1024.0f) : 0.0f;
