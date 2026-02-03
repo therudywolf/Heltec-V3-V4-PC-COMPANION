@@ -9,8 +9,10 @@
 #define NOCT_SCL_PIN 18
 #define NOCT_RST_PIN 21
 #define NOCT_VEXT_PIN 36
-#define NOCT_LED_PIN 35
+#define NOCT_LED_CPU_PIN 35 /* White: CPU temp alert */
+#define NOCT_LED_GPU_PIN 4  /* Red: GPU temp alert */
 #define NOCT_BUTTON_PIN 0
+#define NOCT_ALERT_LED_BLINK_MAX_MS 5000
 
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
@@ -57,7 +59,7 @@
 #define VRAM_LOAD_ALERT 95
 #define RAM_LOAD_ALERT 90
 
-/* 10 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS, MB, NETWORK, WEATHER */
+/* 9 screens: MAIN, CPU, GPU, RAM, DISKS, MEDIA, FANS, MB, WEATHER */
 #define NOCT_SCENE_MAIN 0
 #define NOCT_SCENE_CPU 1
 #define NOCT_SCENE_GPU 2
@@ -66,9 +68,8 @@
 #define NOCT_SCENE_MEDIA 5
 #define NOCT_SCENE_FANS 6
 #define NOCT_SCENE_MOTHERBOARD 7
-#define NOCT_SCENE_NETWORK 8
-#define NOCT_SCENE_WEATHER 9
-#define NOCT_TOTAL_SCENES 10
+#define NOCT_SCENE_WEATHER 8
+#define NOCT_TOTAL_SCENES 9
 
 /* alert_metric codes (match monitor.py: ct, gt, cl, gl, gv, ram) */
 #define NOCT_ALERT_CT 0
