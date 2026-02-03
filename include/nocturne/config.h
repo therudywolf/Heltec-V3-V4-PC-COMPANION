@@ -17,11 +17,29 @@
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
 #define NOCT_MARGIN 2
-/* Header: zone Y 0..(NOCT_HEADER_H-1); dotted line at Y=NOCT_HEADER_H-1 */
-#define NOCT_HEADER_H 10
+/* Header: zone Y 0..10 (Height 11); Content Area: 13..63 */
+#define NOCT_HEADER_H 11
 #define NOCT_HEADER_MARGIN 2
-#define NOCT_CONTENT_TOP (NOCT_HEADER_H + NOCT_HEADER_MARGIN)
-#define NOCT_ROW_DY 10
+#define NOCT_CONTENT_START 13
+#define NOCT_CONTENT_TOP NOCT_CONTENT_START
+#define NOCT_FOOTER_H 16
+/* Main scene: top block 13..45, RAM box 48..63 */
+#define MAIN_TOP_Y_END 45
+#define MAIN_RAM_BOX_TOP 48
+#define MAIN_RAM_BOX_H 16
+#define MAIN_RAM_TEXT_Y 58
+/* Font baseline offsets (for alignment) */
+#define BASELINE_OFFSET_BIG 13
+#define BASELINE_OFFSET_TINY 7
+/* Font vertical metrics (manual corrections for helvB10 / profont10) */
+#define FONT_BIG_ASCENT 12 /* For helvB10 */
+#define FONT_TINY_ASCENT 7 /* For profont10 */
+#define LINE_HEIGHT_BIG 16 /* Minimum safe distance for Big Font lines */
+#define LINE_HEIGHT_TINY 9 /* Minimum safe distance for Tiny Font lines */
+#define FONT_BIG_HEIGHT 14 /* Legacy alias */
+#define FONT_LBL_HEIGHT 8
+#define ROW_GAP 2
+#define NOCT_ROW_DY 12 /* Prefer LINE_HEIGHT_TINY + ROW_GAP */
 #define NOCT_CONTENT_MAX_ROWS 5
 /* Card grid: unified layout for all scene screens */
 #define NOCT_CARD_LEFT 2

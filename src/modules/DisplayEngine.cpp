@@ -148,7 +148,8 @@ void DisplayEngine::drawScanline(int y) {
 }
 
 // ---------------------------------------------------------------------------
-// drawRightAligned: width = getUTF8Width; draw at x_anchor - width (grid law)
+// drawRightAligned: width = getUTF8Width; draw at x_anchor - width (grid law).
+// Safety: if x - w < 0 (left overflow), switch to TINY_FONT and redraw.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawRightAligned(int x_anchor, int y, const uint8_t *font,
                                      const char *text) {
@@ -156,6 +157,28 @@ void DisplayEngine::drawRightAligned(int x_anchor, int y, const uint8_t *font,
     return;
   u8g2_.setFont(font);
   int w = u8g2_.getUTF8Width(text);
+  if (x_anchor - w < 0) {
+    u8g2_.setFont(TINY_FONT);
+    w = u8g2_.getUTF8Width(text);
+  }
+  u8g2_.drawUTF8(x_anchor - w, y, text);
+}
+
+// ---------------------------------------------------------------------------
+// drawSafeRightAligned: if text width > available_space, use LABEL_FONT (Tiny)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawSafeRightAligned(int x_anchor, int y,
+                                         int available_space,
+                                         const uint8_t *font,
+                                         const char *text) {
+  if (!text || !text[0])
+    return;
+  u8g2_.setFont(font);
+  int w = u8g2_.getUTF8Width(text);
+  if (w > available_space) {
+    u8g2_.setFont(LABEL_FONT);
+    w = u8g2_.getUTF8Width(text);
+  }
   u8g2_.drawUTF8(x_anchor - w, y, text);
 }
 
@@ -250,13 +273,13 @@ void DisplayEngine::drawScrollIndicator(int y, int h, int totalItems,
 }
 
 // ---------------------------------------------------------------------------
-// Global header: 10px filled bar (color 1), [ SCENE ] left, WIFI + time right,
-// dotted at Y=10. Text/icon in color 0 on the bar.
+// Global header: NOCT_HEADER_H px filled bar (color 1), [ SCENE ] left,
+// WIFI + time right, dotted at Y=NOCT_HEADER_H-1. Text/icon in color 0 on bar.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
                                      const char *timeStr, int rssi) {
-  const int barH = 10;
-  const int textY = 7;
+  const int barH = NOCT_HEADER_H;
+  const int textY = 8;
 
   u8g2_.setDrawColor(1);
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
@@ -285,7 +308,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
     u8g2_.drawXBM(iconX, iconY, ICON_WIFI_W, ICON_WIFI_H, icon_wifi_bits);
 
   u8g2_.setDrawColor(1);
-  drawDottedHLine(0, NOCT_DISP_W - 1, 10);
+  drawDottedHLine(0, NOCT_DISP_W - 1, barH - 1);
 }
 
 // ---------------------------------------------------------------------------
