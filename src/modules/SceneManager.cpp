@@ -4,11 +4,12 @@
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
-#include <mbedtls/base64.h>
 
-// Content area: below dotted line at Y=11
+// Grid: header 0–12, content 12–54, footer 54–64. 2px margin.
 #define CONTENT_Y0 12
+#define FOOTER_Y0 54
 #define PAD 2
+#define GRID_MID_X 64
 
 const char *SceneManager::sceneNames_[] = {"HUB", "CPU",   "GPU",
                                            "NET", "ATMOS", "MEDIA"};
@@ -50,64 +51,57 @@ void SceneManager::draw(int sceneIndex, unsigned long bootTime, bool blinkState,
 }
 
 // ---------------------------------------------------------------------------
-// SCENE_HUB: Split at X=64. Left CPU, Right GPU, Bottom RAM.
-// Null: temp 0 or invalid -> "N/A". Empty strings -> "---".
+// SCENE_HUB: Grid. CPU left, GPU right, RAM bottom. Values right-aligned.
+// Dotted vertical separator at X=64. 0/null -> noise patch.
 // ---------------------------------------------------------------------------
 void SceneManager::drawHub(unsigned long bootTime) {
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)bootTime;
 
-  const int LEFT_X = 2;
-  const int RIGHT_X = 66;
+  const int LEFT_X = NOCT_MARGIN;
+  const int LEFT_END = GRID_MID_X - PAD;
+  const int RIGHT_X = GRID_MID_X + PAD;
+  const int RIGHT_END = NOCT_DISP_W - NOCT_MARGIN;
   const int LABEL_Y = 20;
-  const int TEMP_Y = 35;
-  const int BAR_Y = 45;
-  const int BAR_W = 60;
-  const int BAR_H = 6;
-  const int RAM_LABEL_Y = 58;
-  const int RAM_BAR_X0 = 25;
+  const int TEMP_Y = 32;
+  const int BAR_Y = 42;
+  const int BAR_W_LEFT = LEFT_END - LEFT_X - 2;
+  const int BAR_W_RIGHT = RIGHT_END - RIGHT_X - 2;
+  const int BAR_H = 5;
+  const int RAM_Y = 52;
+  const int RAM_BAR_X0 = 28;
   const int RAM_BAR_X1 = 126;
-  const int RAM_BAR_W = RAM_BAR_X1 - RAM_BAR_X0 + 1;
+  const int RAM_BAR_W = RAM_BAR_X1 - RAM_BAR_X0;
   const int RAM_BAR_H = 4;
 
-  // Left: CPU
+  disp_.drawDottedVLine(GRID_MID_X, CONTENT_Y0, FOOTER_Y0 - 1);
+
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(LEFT_X, LABEL_Y, "CPU");
-  String cpuTempStr = (hw.ct <= 0) ? "N/A" : String(hw.ct);
-  u8g2.setFont(FONT_BIG);
-  u8g2.drawUTF8(LEFT_X, TEMP_Y, cpuTempStr.c_str());
-  if (hw.ct > 0) {
-    u8g2.setFont(FONT_TINY);
-    u8g2.drawStr(LEFT_X + 18, TEMP_Y - 1, "C");
-  }
+  String cpuTempStr = (hw.ct <= 0) ? "" : (String(hw.ct) + "C");
+  u8g2.setFont(FONT_VAL);
+  disp_.drawValueOrNoise(LEFT_END, TEMP_Y, cpuTempStr);
   float cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? (float)hw.cl : 0.0f;
-  disp_.drawProgressBar(LEFT_X, BAR_Y, BAR_W, BAR_H, cpuLoad);
+  disp_.drawProgressBar(LEFT_X, BAR_Y, BAR_W_LEFT, BAR_H, cpuLoad);
 
-  // Right: GPU
   u8g2.setFont(FONT_LABEL);
   u8g2.drawStr(RIGHT_X, LABEL_Y, "GPU");
-  String gpuTempStr = (hw.gt <= 0) ? "N/A" : String(hw.gt);
-  u8g2.setFont(FONT_BIG);
-  u8g2.drawUTF8(RIGHT_X, TEMP_Y, gpuTempStr.c_str());
-  if (hw.gt > 0) {
-    u8g2.setFont(FONT_TINY);
-    u8g2.drawStr(RIGHT_X + 18, TEMP_Y - 1, "C");
-  }
+  String gpuTempStr = (hw.gt <= 0) ? "" : (String(hw.gt) + "C");
+  u8g2.setFont(FONT_VAL);
+  disp_.drawValueOrNoise(RIGHT_END, TEMP_Y, gpuTempStr);
   float gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? (float)hw.gl : 0.0f;
-  disp_.drawProgressBar(RIGHT_X, BAR_Y, BAR_W, BAR_H, gpuLoad);
+  disp_.drawProgressBar(RIGHT_X, BAR_Y, BAR_W_RIGHT, BAR_H, gpuLoad);
 
-  // Bottom: RAM segmented bar from X=25 to X=126
   u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(LEFT_X, RAM_LABEL_Y, "RAM");
+  u8g2.drawStr(LEFT_X, RAM_Y, "RAM");
   float ramPct = (hw.ra > 0) ? (hw.ru / hw.ra * 100.0f) : 0.0f;
   if (ramPct > 100.0f)
     ramPct = 100.0f;
   if (ramPct < 0.0f)
     ramPct = 0.0f;
-  int segments = 16;
-  disp_.drawSegmentedBar(RAM_BAR_X0, RAM_LABEL_Y - 3, RAM_BAR_W, RAM_BAR_H,
-                         ramPct, segments);
+  disp_.drawSegmentedBar(RAM_BAR_X0, RAM_Y - 3, RAM_BAR_W, RAM_BAR_H, ramPct,
+                         16);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,59 +253,42 @@ void SceneManager::drawAtmos() {
 }
 
 // ---------------------------------------------------------------------------
-// SCENE_MEDIA: Cover box (0,12,52,52). If no cover: "NO DATA" diagonal cross.
-// Track info at X=56: Artist Y=25 (truncate 12), Track Y=40 (marquee/truncate),
-// Time/Status Y=55.
+// SCENE_MEDIA: 64x64 XBM art at (0,0) left half. Text right of 64.
+// No cover -> static noise patch. Labels uppercase, values right-aligned.
 // ---------------------------------------------------------------------------
 void SceneManager::drawMedia(bool blinkState) {
   MediaData &media = state_.media;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
 
-  const int COVER_X = 0;
-  const int COVER_Y = 12;
-  const int COVER_W = 52;
-  const int COVER_H = 52;
-  const int INFO_X = 56;
-  const int ARTIST_Y = 25;
-  const int TRACK_Y = 40;
-  const int STATUS_Y = 55;
-  const int MAX_ARTIST_CHARS = 12;
-  const int RAW_BYTES = (52 * 52) / 8;
+  const int ART_W = 64;
+  const int ART_H = 64;
+  const int INFO_X = 66;
+  const int INFO_END = NOCT_DISP_W - NOCT_MARGIN;
+  const int ARTIST_Y = 22;
+  const int TRACK_Y = 36;
+  const int STATUS_Y = 52;
+  const int MAX_CHARS = 14;
 
-  disp_.drawChamferBox(COVER_X, COVER_Y, COVER_W, COVER_H, 2);
-
-  if (media.coverB64.length() > 0) {
-    unsigned char raw[512];
-    size_t olen = 0;
-    int ret = mbedtls_base64_decode(
-        raw, sizeof(raw), &olen, (const unsigned char *)media.coverB64.c_str(),
-        media.coverB64.length());
-    if (ret == 0 && olen == (size_t)RAW_BYTES) {
-      for (int row = 0; row < COVER_H; row++) {
-        for (int col = 0; col < COVER_W; col++) {
-          int byteIdx = row * (COVER_W / 8) + col / 8;
-          int bit = col % 8;
-          if (raw[byteIdx] & (1 << (7 - bit)))
-            u8g2.drawPixel(COVER_X + col, COVER_Y + row);
-        }
-      }
-    } else {
-      drawNoDataCross(COVER_X, COVER_Y, COVER_W, COVER_H);
-    }
+  if (media.coverB64.length() > 0 &&
+      disp_.drawXBMArtFromBase64(0, 0, ART_W, ART_H, media.coverB64)) {
   } else {
-    drawNoDataCross(COVER_X, COVER_Y, COVER_W, COVER_H);
+    drawNoisePattern(0, CONTENT_Y0, ART_W, ART_H - CONTENT_Y0);
+    drawNoDataCross(8, CONTENT_Y0 + 8, ART_W - 16, ART_H - CONTENT_Y0 - 16);
   }
 
   u8g2.setFont(FONT_LABEL);
-  String artistStr = media.artist.length() > 0 ? media.artist : "---";
-  if (artistStr.length() > (unsigned int)MAX_ARTIST_CHARS)
-    artistStr = artistStr.substring(0, MAX_ARTIST_CHARS);
+  u8g2.drawStr(INFO_X, ARTIST_Y - 6, "ARTIST");
   u8g2.setFont(FONT_VAL);
-  u8g2.drawUTF8(INFO_X, ARTIST_Y, artistStr.c_str());
+  String artistStr = media.artist.length() > 0 ? media.artist : "";
+  if (artistStr.length() > (unsigned int)MAX_CHARS)
+    artistStr = artistStr.substring(0, MAX_CHARS);
+  disp_.drawSafeStr(INFO_X, ARTIST_Y, artistStr);
 
-  String trackStr = media.track.length() > 0 ? media.track : "---";
+  u8g2.setFont(FONT_LABEL);
+  u8g2.drawStr(INFO_X, TRACK_Y - 6, "TRACK");
   u8g2.setFont(FONT_VAL);
-  int maxW = NOCT_DISP_W - INFO_X - PAD;
+  String trackStr = media.track.length() > 0 ? media.track : "---";
+  int maxW = INFO_END - INFO_X;
   int tw = u8g2.getUTF8Width(trackStr.c_str());
   if (tw > maxW) {
     int scrollLen = tw + 24;
@@ -390,7 +367,7 @@ void SceneManager::drawNoisePattern(int x, int y, int w, int h) {
 void SceneManager::drawSearchMode(int scanPhase) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_VAL);
-  disp_.drawCentered(0, NOCT_DISP_H / 2 - 10, NOCT_DISP_W, "SEARCH_MODE");
+  disp_.drawCentered(NOCT_DISP_W / 2, NOCT_DISP_H / 2 - 10, "SEARCH_MODE");
   u8g2.setFont(FONT_TINY);
   u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 4, "Scanning for host...");
   int cx = NOCT_DISP_W / 2, cy = NOCT_DISP_H - 16, r = 14;
@@ -400,26 +377,30 @@ void SceneManager::drawSearchMode(int scanPhase) {
   u8g2.drawLine(cx, cy, cx + (int)(r * cos(rad)), cy + (int)(r * sin(rad)));
 }
 
-void SceneManager::drawMenu(int menuItem) {
+void SceneManager::drawMenu(int menuItem, bool carouselOn, bool screenOff) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  disp_.drawChamferBox(NOCT_MARGIN + 4, NOCT_MARGIN + 4,
-                       NOCT_DISP_W - 2 * NOCT_MARGIN - 8,
-                       NOCT_DISP_H - 2 * NOCT_MARGIN - 8, 3);
+  const int boxX = 8;
+  const int boxY = 14;
+  const int boxW = NOCT_DISP_W - 16;
+  const int boxH = NOCT_DISP_H - 28;
+  disp_.drawChamferBox(boxX, boxY, boxW, boxH, 4);
   u8g2.setFont(FONT_LABEL);
-  u8g2.drawStr(NOCT_MARGIN + 8, NOCT_MARGIN + 14, "SETTINGS");
-  const char *labels[] = {"Carousel", "WiFi Reset", "Exit"};
-  int startY = NOCT_MARGIN + 20;
+  u8g2.drawStr(boxX + 6, boxY + 10, "QUICK MENU");
+  u8g2.setFont(FONT_TINY);
+  const char *carouselStr = carouselOn ? "CAROUSEL: ON " : "CAROUSEL: OFF";
+  const char *screenStr = screenOff ? "SCREEN: OFF" : "SCREEN: ON ";
+  const char *lines[] = {carouselStr, screenStr, "EXIT"};
+  int startY = boxY + 18;
   for (int i = 0; i < 3; i++) {
-    int y = startY + i * 10;
-    if (y + 10 > NOCT_DISP_H - NOCT_MARGIN - 4)
+    int y = startY + i * 12;
+    if (y + 10 > boxY + boxH - 4)
       break;
     if (i == menuItem) {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(NOCT_MARGIN + 8, y - 6, NOCT_DISP_W - 2 * NOCT_MARGIN - 16,
-                   10);
+      u8g2.drawBox(boxX + 6, y - 6, boxW - 12, 10);
       u8g2.setDrawColor(0);
     }
-    u8g2.drawStr(NOCT_MARGIN + 10, y, labels[i]);
+    u8g2.drawStr(boxX + 8, y, lines[i]);
     if (i == menuItem)
       u8g2.setDrawColor(1);
   }
@@ -429,7 +410,7 @@ void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
                                 bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_BIG);
-  disp_.drawCentered(0, NOCT_DISP_H / 2 - 6, NOCT_DISP_W, "NO SIGNAL");
+  disp_.drawCentered(NOCT_DISP_W / 2, NOCT_DISP_H / 2 - 6, "NO SIGNAL");
   u8g2.setFont(FONT_TINY);
   if (!wifiOk)
     u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 10, "WiFi: DISCONNECTED");
@@ -450,7 +431,7 @@ void SceneManager::drawConnecting(int rssi, bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   (void)blinkState;
   u8g2.setFont(FONT_VAL);
-  disp_.drawCentered(0, NOCT_DISP_H / 2 - 6, NOCT_DISP_W, "LINKING...");
+  disp_.drawCentered(NOCT_DISP_W / 2, NOCT_DISP_H / 2 - 6, "LINKING...");
   u8g2.setFont(FONT_TINY);
   u8g2.drawStr(NOCT_MARGIN + PAD, NOCT_DISP_H / 2 + 10,
                "Establishing data link");

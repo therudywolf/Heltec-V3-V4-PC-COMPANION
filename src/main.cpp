@@ -40,6 +40,10 @@ bool blinkState = false;
 bool predatorMode = false;
 unsigned long predatorEnterTime = 0;
 
+bool quickMenuOpen = false;
+int quickMenuItem = 0;
+#define QUICK_MENU_ITEMS 3
+
 static void VextON() {
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
@@ -125,8 +129,8 @@ void loop() {
     }
   }
 
-  // Button: short = next scene, long (2.5s) = Predator mode (screen OFF, LED
-  // breath)
+  // Button: Short (<500ms) = next screen or cycle menu. Long (>=1000ms) = Quick
+  // Menu or Toggle/Select.
   int btnState = digitalRead(NOCT_BUTTON_PIN);
   if (btnState == LOW && !btnHeld) {
     btnHeld = true;
@@ -135,13 +139,32 @@ void loop() {
   if (btnState == HIGH && btnHeld) {
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
-    if (duration >= NOCT_BUTTON_PREDATOR_MS) {
-      predatorMode = !predatorMode;
-      if (predatorMode)
-        predatorEnterTime = now;
+    if (quickMenuOpen) {
+      if (duration >= NOCT_BUTTON_LONG_MS) {
+        if (quickMenuItem == 0) {
+          settings.carouselEnabled = !settings.carouselEnabled;
+          Preferences prefs;
+          prefs.begin("nocturne", false);
+          prefs.putBool("carousel", settings.carouselEnabled);
+          prefs.end();
+        } else if (quickMenuItem == 1) {
+          predatorMode = !predatorMode;
+          if (predatorMode)
+            predatorEnterTime = now;
+        } else {
+          quickMenuOpen = false;
+        }
+      } else {
+        quickMenuItem = (quickMenuItem + 1) % QUICK_MENU_ITEMS;
+      }
     } else {
-      currentScene = (currentScene + 1) % sceneManager.totalScenes();
-      lastCarousel = now;
+      if (duration >= NOCT_BUTTON_LONG_MS) {
+        quickMenuOpen = true;
+        quickMenuItem = 0;
+      } else {
+        currentScene = (currentScene + 1) % sceneManager.totalScenes();
+        lastCarousel = now;
+      }
     }
   }
 
@@ -240,25 +263,27 @@ void loop() {
         sceneManager.getSceneName(currentScene), netManager.rssi(),
         netManager.isTcpConnected() && netManager.hasReceivedData());
     display.drawCornerCrosshairs();
-    sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
 
-    display.drawLinkStatus(2, NOCT_DISP_H - 2,
-                           netManager.isTcpConnected() &&
-                               netManager.hasReceivedData());
-
-    if (anyAlarm && blinkState)
-      display.u8g2().drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-
-    display.drawGlitchEffect();
-
-    int n = sceneManager.totalScenes();
-    int dotsW = n * 6 - 2;
-    for (int i = 0; i < n; i++) {
-      int x = NOCT_DISP_W / 2 - dotsW / 2 + (i * 6);
-      if (i == currentScene)
-        display.u8g2().drawBox(x, NOCT_DISP_H - 2, 3, 2);
-      else
-        display.u8g2().drawPixel(x + 1, NOCT_DISP_H - 1);
+    if (quickMenuOpen) {
+      sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
+                            predatorMode);
+    } else {
+      sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
+      display.drawLinkStatus(2, NOCT_DISP_H - 2,
+                             netManager.isTcpConnected() &&
+                                 netManager.hasReceivedData());
+      if (anyAlarm && blinkState)
+        display.u8g2().drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+      display.drawGlitchEffect();
+      int n = sceneManager.totalScenes();
+      int dotsW = n * 6 - 2;
+      for (int i = 0; i < n; i++) {
+        int x = NOCT_DISP_W / 2 - dotsW / 2 + (i * 6);
+        if (i == currentScene)
+          display.u8g2().drawBox(x, NOCT_DISP_H - 2, 3, 2);
+        else
+          display.u8g2().drawPixel(x + 1, NOCT_DISP_H - 1);
+      }
     }
   }
 
