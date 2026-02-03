@@ -55,6 +55,9 @@ public:
   /** Right-aligned text: draw at (x_anchor - width). font = TINY_FONT etc. */
   void drawRightAligned(int x_anchor, int y, const uint8_t *font,
                         const char *text);
+  /** Right-aligned text; if width > available_space, switch to LABEL_FONT. */
+  void drawSafeRightAligned(int x_anchor, int y, int available_space,
+                            const uint8_t *font, const char *text);
   /** Segmented progress bar: blocks [|||| ] with 1px gap. percent 0..100. */
   void drawProgressBar(int x, int y, int w, int h, int percent);
   void drawSegmentedBar(int x, int y, int w, int h, int percent) {

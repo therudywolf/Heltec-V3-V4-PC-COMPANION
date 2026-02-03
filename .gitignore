@@ -36,3 +36,4 @@ nocturne.log
 
 # Данные сервера (для разработки, не коммитить)
 serverpars.txt
+CURSOR_UI_REFACTOR.md
