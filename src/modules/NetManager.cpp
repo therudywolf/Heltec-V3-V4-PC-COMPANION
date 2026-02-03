@@ -16,11 +16,19 @@ NetManager::NetManager()
       searchMode_(false), rssi_(0), lastSentScreen_(-1) {}
 
 void NetManager::begin(const char *ssid, const char *pass) {
-  if (ssid && strlen(ssid) > 0) {
-    WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false); // CRITICAL FIX FOR HELTEC V3 DROPOUTS
-    WiFi.begin(ssid, pass);
-  }
+  if (!ssid || strlen(ssid) == 0)
+    return;
+  WiFi.mode(WIFI_STA);
+#if defined(WIFI_STATIC_IP) && defined(WIFI_GATEWAY) && defined(WIFI_SUBNET)
+  IPAddress staticIp, gateway, subnet;
+  if (staticIp.fromString(WIFI_STATIC_IP) && gateway.fromString(WIFI_GATEWAY) &&
+      subnet.fromString(WIFI_SUBNET))
+    WiFi.config(staticIp, gateway, subnet);
+#endif
+  WiFi.begin(ssid, pass);
+  // V4 Iron Grip: keep radio awake (no aggressive S3 power save)
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
 }
 
 void NetManager::setServer(const char *ip, uint16_t port) {

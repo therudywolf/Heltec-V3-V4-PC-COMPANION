@@ -10,11 +10,11 @@
 #define SPLIT_X 64
 #define X(x, off) ((x) + (off))
 
-// Unified 2x2 grid (CPU, GPU, MOTHERBOARD): same layout for all
-#define GRID_ROW1_Y 23
-#define GRID_ROW2_Y 47
-#define GRID_COL1_X 0
-#define GRID_COL2_X 64
+// Unified V4 2x2 grid (CPU, GPU, MB): from config.h
+#define GRID_ROW1_Y NOCT_GRID_ROW1_Y
+#define GRID_ROW2_Y NOCT_GRID_ROW2_Y
+#define GRID_COL1_X NOCT_GRID_COL1_X
+#define GRID_COL2_X NOCT_GRID_COL2_X
 #define GRID_CELL_W 63
 #define GRID_CELL_H 22
 #define GRID_BRACKET_LEN 3

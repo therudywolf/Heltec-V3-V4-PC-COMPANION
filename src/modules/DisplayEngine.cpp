@@ -92,7 +92,8 @@ DisplayEngine::DisplayEngine(int rstPin, int sdaPin, int sclPin)
 
 void DisplayEngine::begin() {
   Wire.begin(sdaPin_, sclPin_);
-  Wire.setClock(400000); // V4: stable I2C for SSD1306 (SDA=17, SCL=18)
+  Wire.setClock(800000); // V4 overclock: 800kHz for fluid frames (if artifacts,
+                         // use 600000)
   u8g2_.begin();
   u8g2_.enableUTF8Print();
 }
