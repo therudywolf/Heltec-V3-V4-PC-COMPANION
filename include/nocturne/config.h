@@ -12,7 +12,7 @@
 #define NOCT_RST_PIN 21
 #define NOCT_VEXT_PIN 36
 #define NOCT_LED_ALERT_PIN                                                     \
-  25 /* White programmable LED; blink on any active alert */
+  35 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
 #define NOCT_ALERT_LED_BLINK_MS 175
 #define NOCT_ALERT_LED_BLINKS 5 /* 5 blinks then fade out */
