@@ -2,6 +2,10 @@
 REM NOCTURNE_OS — Единый скрипт сервера: очистка (в т.ч. .pio), установка зависимостей, сборка EXE.
 setlocal
 cd /d "%~dp0"
+if not exist "src\monitor.py" (
+    echo [SERVER] ERROR: src\monitor.py not found. Run from project root.
+    exit /b 1
+)
 
 echo [SERVER] Clean...
 if exist ".pio" rmdir /s /q ".pio"
@@ -9,7 +13,7 @@ if exist "build" rmdir /s /q "build"
 if exist "dist" rmdir /s /q "dist"
 for /d /r %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d" 2>nul
 del /s /q *.pyc 2>nul
-del /q *.spec 2>nul
+REM .spec не удаляем — PyInstaller перезапишет при сборке; del *.spec при отсутствии файла даёт ошибку
 echo [SERVER] Clean done.
 
 echo [SERVER] Python deps...
