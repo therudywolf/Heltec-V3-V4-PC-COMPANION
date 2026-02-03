@@ -1,4 +1,10 @@
 {
-  "gpu_temp_limit": 80,
-  "cpu_temp_limit": 75
+  "host": "0.0.0.0",
+  "port": 8090,
+  "lhm_url": "http://localhost:8085/data.json",
+  "limits": {
+    "gpu": 80,
+    "cpu": 75
+  },
+  "weather_city": "Moscow"
 }

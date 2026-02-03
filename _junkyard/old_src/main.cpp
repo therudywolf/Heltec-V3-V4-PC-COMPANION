@@ -1,33 +1,32 @@
 /*
  * NOCTURNE_OS — Cyberdeck firmware
- * Modules: NetManager (WiFi + TCP + JSON), DisplayEngine, SceneManager.
- * Predator Mode: long press -> screen OFF, LED breathing.
+ * Modular: DisplayEngine, NetLink, DataManager, SceneManager
+ * Identity Integrity: a living, breathing digital organism.
  */
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <Wire.h>
 
-#include "modules/DisplayEngine.h"
-#include "modules/NetManager.h"
-#include "modules/SceneManager.h"
-#include "nocturne/Types.h"
+#include "nocturne/DataManager.h"
+#include "nocturne/DisplayEngine.h"
+#include "nocturne/NetLink.h"
+#include "nocturne/SceneManager.h"
 #include "nocturne/config.h"
 #include "secrets.h"
-
 
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
-NetManager netManager;
-AppState state;
-SceneManager sceneManager(display, state);
+NetLink netLink;
+DataManager dataManager;
+SceneManager sceneManager(display, dataManager);
 
-Settings &settings = state.settings;
+Settings settings;
 unsigned long bootTime = 0;
-unsigned long splashStart = 0;
 bool splashDone = false;
+unsigned long splashStart = 0;
 int currentScene = 0;
 
 unsigned long btnPressTime = 0;
@@ -38,6 +37,7 @@ unsigned long lastFanAnim = 0;
 int fanAnimFrame = 0;
 bool blinkState = false;
 
+// Predator mode: OLED off, LED breathing (long press ~2.5s)
 bool predatorMode = false;
 unsigned long predatorEnterTime = 0;
 
@@ -83,8 +83,8 @@ void setup() {
   display.u8g2().setFlipMode(settings.displayInverted ? 1 : 0);
   randomSeed(analogRead(0));
 
-  netManager.begin(WIFI_SSID, WIFI_PASS);
-  netManager.setServer(PC_IP, TCP_PORT);
+  netLink.begin(WIFI_SSID, WIFI_PASS);
+  netLink.setServer(PC_IP, TCP_PORT);
 }
 
 // ---------------------------------------------------------------------------
@@ -93,41 +93,40 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  netManager.tick(now);
+  netLink.tick(now);
 
-  if (netManager.isTcpConnected()) {
-    while (netManager.available()) {
-      char c = (char)netManager.read();
+  // TCP read and parse
+  if (netLink.tcpConnected()) {
+    while (netLink.available()) {
+      char c = (char)netLink.read();
       if (c == '\n') {
-        String &buf = netManager.getLineBuffer();
+        String &buf = netLink.getLineBuffer();
         if (buf.length() > 0) {
           JsonDocument doc;
           DeserializationError err = deserializeJson(doc, buf);
           if (!err) {
-            netManager.markDataReceived(now);
-            if (netManager.parsePayload(buf, &state)) {
-              HardwareData &hw = state.hw;
-              display.cpuGraph.push((float)hw.cl);
-              display.gpuGraph.push((float)hw.gl);
-              display.netDownGraph.setMax(2048);
-              display.netDownGraph.push((float)hw.nd);
-              display.netUpGraph.setMax(2048);
-              display.netUpGraph.push((float)hw.nu);
-              bool spike =
-                  (hw.cl > 85 || hw.gl > 85 || hw.nd > 1500 || hw.nu > 1500);
-              display.setDataSpike(spike);
-            }
+            netLink.markDataReceived(now);
+            dataManager.parseLine(buf);
+            HardwareData &hw = dataManager.hw();
+            display.cpuGraph.push((float)hw.cl);
+            display.gpuGraph.push((float)hw.gl);
+            display.netDownGraph.setMax(2048);
+            display.netDownGraph.push((float)hw.nd);
+            display.netUpGraph.setMax(2048);
+            display.netUpGraph.push((float)hw.nu);
+            bool spike =
+                (hw.cl > 85 || hw.gl > 85 || hw.nd > 1500 || hw.nu > 1500);
+            display.setDataSpike(spike);
           }
         }
-        netManager.clearLineBuffer();
+        netLink.clearLineBuffer();
       } else {
-        netManager.appendLineBuffer(c);
+        netLink.appendLineBuffer(c);
       }
     }
   }
 
-  // Button: short = next scene, long (2.5s) = Predator mode (screen OFF, LED
-  // breath)
+  // Button: click = next screen, long press = SLEEP (Predator)
   int btnState = digitalRead(NOCT_BUTTON_PIN);
   if (btnState == LOW && !btnHeld) {
     btnHeld = true;
@@ -146,8 +145,9 @@ void loop() {
     }
   }
 
-  if (state.alertActive)
-    currentScene = state.alertTargetScene;
+  // Alert from server: force scene to CPU or GPU and flash every 1s
+  if (dataManager.alertActive())
+    currentScene = dataManager.alertTargetScene();
 
   if (settings.carouselEnabled && !predatorMode) {
     unsigned long intervalMs =
@@ -158,12 +158,11 @@ void loop() {
     }
   }
 
-  if (netManager.isTcpConnected() &&
-      netManager.getLastSentScreen() != currentScene) {
-    netManager.print("screen:");
-    netManager.print(String(currentScene));
-    netManager.print("\n");
-    netManager.setLastSentScreen(currentScene);
+  if (netLink.tcpConnected() && netLink.getLastSentScreen() != currentScene) {
+    netLink.print("screen:");
+    netLink.print(String(currentScene));
+    netLink.print("\n");
+    netLink.setLastSentScreen(currentScene);
   }
 
   if (now - lastFanAnim >= 100) {
@@ -175,8 +174,8 @@ void loop() {
     lastBlink = now;
   }
 
-  bool anyAlarm =
-      (state.hw.ct >= CPU_TEMP_ALERT) || (state.hw.gt >= GPU_TEMP_ALERT);
+  bool anyAlarm = (dataManager.hw().ct >= CPU_TEMP_ALERT) ||
+                  (dataManager.hw().gt >= GPU_TEMP_ALERT);
   if (predatorMode) {
     digitalWrite(NOCT_LED_PIN, LOW);
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -207,25 +206,27 @@ void loop() {
   }
 
   display.clearBuffer();
-  bool signalLost = splashDone && netManager.isSignalLost(now);
+  bool signalLost = splashDone && netLink.isSignalLost(now);
 
-  if (signalLost && netManager.isTcpConnected() && netManager.hasReceivedData())
-    netManager.disconnectTcp();
+  if (signalLost && netLink.tcpConnected() && netLink.hasReceivedData()) {
+    netLink.disconnectTcp();
+  }
 
   if (!splashDone) {
-    display.drawBiosPost(now, bootTime, netManager.isWifiConnected(),
-                         netManager.rssi());
-  } else if (!netManager.isWifiConnected()) {
+    display.drawBiosPost(now, bootTime, netLink.isWifiConnected(),
+                         netLink.rssi());
+  } else if (!netLink.isWifiConnected()) {
     sceneManager.drawNoSignal(false, false, 0, blinkState);
-  } else if (!netManager.isTcpConnected()) {
-    sceneManager.drawConnecting(netManager.rssi(), blinkState);
-  } else if (netManager.isSearchMode() || signalLost) {
+  } else if (!netLink.isTcpConnected()) {
+    sceneManager.drawConnecting(netLink.rssi(), blinkState);
+  } else if (netLink.isSearchMode() || signalLost) {
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
+    // Alert flash: invert display every 1s when CRITICAL
     static unsigned long lastAlertFlash = 0;
     static bool alertFlashInverted = false;
-    if (state.alertActive) {
+    if (dataManager.alertActive()) {
       if (now - lastAlertFlash >= 1000) {
         lastAlertFlash = now;
         alertFlashInverted = !alertFlashInverted;
@@ -240,12 +241,12 @@ void loop() {
     display.drawCornerCrosshairs();
     sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
 
-    if (netManager.isWifiConnected())
-      display.drawWiFiIcon(NOCT_DISP_W - 16, 2, netManager.rssi());
+    if (netLink.isWifiConnected())
+      display.drawWiFiIcon(NOCT_DISP_W - 16, 2, netLink.rssi());
 
     display.drawLinkStatus(2, NOCT_DISP_H - 2,
-                           netManager.isTcpConnected() &&
-                               netManager.hasReceivedData());
+                           netLink.isTcpConnected() &&
+                               netLink.hasReceivedData());
 
     if (anyAlarm && blinkState)
       display.u8g2().drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
