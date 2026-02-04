@@ -43,6 +43,11 @@ public:
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
+  /** Cyberdeck: Daemon mode (Wolf Soul). */
+  void drawDaemon();
+  /** Cyberdeck: Netrunner WiFi Radar. */
+  void drawRadar();
+
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
    * valueYOffset: extra pixels to move value baseline down (e.g. 6 for
