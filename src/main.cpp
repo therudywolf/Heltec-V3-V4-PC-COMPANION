@@ -221,11 +221,12 @@ void loop() {
       }
     }
 
-    // IN APP MODE: short = navigate, long = action (JAMMER in Radar)
+    // IN APP MODE: short = navigate/clear, long = action (REPLAY in LORA)
     if (currentMode != MODE_NORMAL) {
       if (duration >= NOCT_BUTTON_LONG_MS) {
         if (currentMode == MODE_LORA) {
-          // Long press in LORA: no action (or could rescan)
+          loraManager.replayLast();
+          needRedraw = true;
         } else if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
           if (n > 0) {
@@ -239,7 +240,10 @@ void loop() {
           }
         }
       } else {
-        if (currentMode == MODE_RADAR) {
+        if (currentMode == MODE_LORA) {
+          loraManager.clearBuffer();
+          needRedraw = true;
+        } else if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
           if (n > 0) {
             wifiScanSelected = (wifiScanSelected + 1) % n;
