@@ -62,6 +62,13 @@ public:
   /** BADWOLF USB HID: skull/wolf icon, ARMED status, Short/Long labels. */
   void drawBadWolf();
 
+  /** SILENCE: 868 MHz jammer UI — muted icon, static noise, status. */
+  void drawSilenceMode();
+
+  /** TRAP: Evil twin / captive portal — clients, logs, last bite. */
+  void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
+                    unsigned long passwordShowUntil);
+
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
    * valueYOffset: extra pixels to move value baseline down (e.g. 6 for

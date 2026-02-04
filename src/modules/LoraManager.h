@@ -55,6 +55,11 @@ public:
   /** Clear packet buffer and reset count (Short press) */
   void clearBuffer();
 
+  /** SILENCE: Start jamming 868 band. Hopping 869.4–869.6 MHz, +22 dBm. */
+  void startJamming(float centerFreq = 869.5f);
+  void stopJamming();
+  bool isJamming() const { return isJamming_; }
+
 private:
   void captureAndStore(const uint8_t *rawData, size_t len, float rssi,
                        float snr);
@@ -79,4 +84,8 @@ private:
   int packetBufferCount_ = 0;
   uint8_t lastPacketRaw_[LORA_RAW_PACKET_MAX];
   size_t lastPacketRawLen_ = 0;
+
+  bool isJamming_ = false;
+  int jamHopIndex_ = 0;
+  uint8_t jamBuf_[32];
 };
