@@ -12,6 +12,7 @@
 
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
+#include "modules/LoraManager.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
 #include "nocturne/Types.h"
@@ -23,6 +24,7 @@
 // ---------------------------------------------------------------------------
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
 NetManager netManager;
+LoraManager loraManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
@@ -52,10 +54,10 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define WOLF_MENU_ITEMS 6 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, EXIT */
+#define WOLF_MENU_ITEMS 7 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, LORA, EXIT */
 
 // --- Cyberdeck Modes ---
-enum AppMode { MODE_NORMAL, MODE_DAEMON, MODE_RADAR };
+enum AppMode { MODE_NORMAL, MODE_DAEMON, MODE_RADAR, MODE_LORA };
 AppMode currentMode = MODE_NORMAL;
 
 // --- Netrunner WiFi Scanner ---
@@ -180,6 +182,8 @@ void loop() {
       if (clickCount >= 3) {
         clickCount = 0;
         if (currentMode != MODE_NORMAL) {
+          if (currentMode == MODE_LORA)
+            loraManager.setMode(false);
           currentMode = MODE_NORMAL;
           WiFi.scanDelete();
           netManager.setSuspend(false);
@@ -194,7 +198,9 @@ void loop() {
     // IN APP MODE: short = navigate, long = action (JAMMER in Radar)
     if (currentMode != MODE_NORMAL) {
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        if (currentMode == MODE_RADAR) {
+        if (currentMode == MODE_LORA) {
+          // Long press in LORA: no action (or could rescan)
+        } else if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
           if (n > 0) {
             Serial.println("[RADAR] INITIATING DISCONNECT...");
@@ -260,6 +266,13 @@ void loop() {
           WiFi.mode(WIFI_STA);
           WiFi.scanNetworks(true);
         } else if (quickMenuItem == 5) {
+          currentMode = MODE_LORA;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          loraManager.setMode(true);
+          Serial.println("[SYS] LORA SNIFFER ON.");
+        } else if (quickMenuItem == 6) {
           quickMenuOpen = false;
         }
       } else {
@@ -399,6 +412,13 @@ void loop() {
 
   if (!splashDone) {
     display.drawSplash();
+  } else if (currentMode == MODE_DAEMON) {
+    sceneManager.drawDaemon();
+  } else if (currentMode == MODE_RADAR) {
+    sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage);
+  } else if (currentMode == MODE_LORA) {
+    loraManager.tick();
+    sceneManager.drawLoraSniffer(loraManager);
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawNoSignal(false, false, 0, blinkState);
@@ -411,36 +431,30 @@ void loop() {
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
-    if (currentMode == MODE_DAEMON) {
-      sceneManager.drawDaemon();
-    } else if (currentMode == MODE_RADAR) {
-      sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage);
-    } else {
-      display.drawGlobalHeader(
-          quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
-          nullptr, netManager.rssi(), netManager.isWifiConnected());
+    display.drawGlobalHeader(
+        quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
+        nullptr, netManager.rssi(), netManager.isWifiConnected());
 
-      if (quickMenuOpen) {
-        sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
-                              settings.carouselIntervalSec,
-                              settings.displayInverted, settings.glitchEnabled);
-      } else if (inTransition) {
-        unsigned long elapsed = now - transitionStart;
-        int progress =
-            (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
-        if (progress > NOCT_DISP_W)
-          progress = NOCT_DISP_W;
-        int offsetA = -progress;
-        int offsetB = NOCT_DISP_W - progress;
-        sceneManager.drawWithOffset(previousScene, offsetA, bootTime,
-                                    blinkState, fanAnimFrame);
-        sceneManager.drawWithOffset(currentScene, offsetB, bootTime, blinkState,
-                                    fanAnimFrame);
-        if (progress >= NOCT_DISP_W)
-          inTransition = false;
-      } else {
-        sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
-      }
+    if (quickMenuOpen) {
+      sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
+                            settings.carouselIntervalSec,
+                            settings.displayInverted, settings.glitchEnabled);
+    } else if (inTransition) {
+      unsigned long elapsed = now - transitionStart;
+      int progress =
+          (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
+      if (progress > NOCT_DISP_W)
+        progress = NOCT_DISP_W;
+      int offsetA = -progress;
+      int offsetB = NOCT_DISP_W - progress;
+      sceneManager.drawWithOffset(previousScene, offsetA, bootTime, blinkState,
+                                  fanAnimFrame);
+      sceneManager.drawWithOffset(currentScene, offsetB, bootTime, blinkState,
+                                  fanAnimFrame);
+      if (progress >= NOCT_DISP_W)
+        inTransition = false;
+    } else {
+      sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
     }
   }
 
