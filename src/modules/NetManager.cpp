@@ -9,6 +9,54 @@
 #include <esp_wifi.h>
 #include <string.h>
 
+// --- WIFI DIAGNOSTICS INTERCEPTOR ---
+void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  // Only log critical changes to keep Serial clean
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    uint8_t reason = info.wifi_sta_disconnected.reason;
+    Serial.println("\n---------------------------------------");
+    Serial.printf("[WIFI-DIAG] !!! DISCONNECT DETECTED !!!\n");
+    Serial.printf("[WIFI-DIAG] Reason Code: %u\n", reason);
+    Serial.printf("[WIFI-DIAG] RSSI at death: %d dBm\n", WiFi.RSSI());
+
+    // Human-readable decoder for common Heltec V4 issues
+    switch (reason) {
+    case 1:
+      Serial.println(
+          ">> REASON: UNSPECIFIED (Firmware glitch or interference)");
+      break;
+    case 6:
+      Serial.println(">> REASON: NOT_AUTHED (Router rejected us)");
+      break;
+    case 8:
+      Serial.println(
+          ">> REASON: ASSOC_LEAVE (Weak Signal / Antenna Missing / Brownout)");
+      break;
+    case 15:
+      Serial.println(
+          ">> REASON: 4WAY_HANDSHAKE_TIMEOUT (Wrong WPA Mode or Noise)");
+      break;
+    case 200:
+      Serial.println(
+          ">> REASON: BEACON_TIMEOUT (Router disappeared / ESP slept)");
+      break;
+    case 201:
+      Serial.println(
+          ">> REASON: NO_AP_FOUND (Wrong 2.4GHz Channel / Hidden SSID)");
+      break;
+    case 202:
+      Serial.println(">> REASON: AUTH_FAIL (Wrong Password)");
+      break;
+    default:
+      Serial.println(">> REASON: OTHER/UNKNOWN");
+      break;
+    }
+    Serial.println("---------------------------------------");
+  } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    Serial.println("[WIFI-DIAG] >> CONNECTED. IP Obtained.");
+  }
+}
+
 NetManager::NetManager()
     : serverIp_(nullptr), serverPort_(0), lastTcpAttempt_(0),
       tcpConnectTime_(0), lastUpdate_(0), lastWifiRetry_(0),
@@ -16,6 +64,7 @@ NetManager::NetManager()
       searchMode_(false), rssi_(0), lastSentScreen_(-1) {}
 
 void NetManager::begin(const char *ssid, const char *pass) {
+  WiFi.onEvent(WiFiEvent);
   if (!ssid || strlen(ssid) == 0)
     return;
   WiFi.mode(WIFI_STA);
