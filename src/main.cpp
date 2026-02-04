@@ -10,7 +10,6 @@
 #include <WiFi.h>
 #include <Wire.h>
 
-
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
 #include "modules/NetManager.h"
@@ -56,6 +55,10 @@ int quickMenuItem = 0;
 // --- Cyberdeck Modes ---
 enum AppMode { MODE_NORMAL, MODE_DAEMON, MODE_RADAR };
 AppMode currentMode = MODE_NORMAL;
+
+// --- Netrunner WiFi Scanner ---
+int wifiScanSelected = 0;
+int wifiListPage = 0;
 
 #define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
@@ -165,14 +168,47 @@ void loop() {
     btnHeld = false;
 
     if (currentMode != MODE_NORMAL) {
-      // --- IN DAEMON/RADAR: Long = EXIT, Short = Action ---
+      // IF IN APP
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        if (currentMode == MODE_RADAR)
-          WiFi.scanDelete();
-        currentMode = MODE_NORMAL;
+        // --- LONG PRESS ACTIONS ---
+        if (currentMode == MODE_RADAR) {
+          // ACTION: Disconnect / Rescan
+          int n = WiFi.scanComplete();
+          if (n > 0 && wifiScanSelected < n) {
+            // If a network is selected, check if it's ours and disconnect
+            if (WiFi.SSID(wifiScanSelected) == WiFi.SSID()) {
+              Serial.println("[NETRUNNER] Disconnecting from current AP.");
+              WiFi.disconnect(); // "Attack" self
+            } else {
+              // Rescan if not connected to selected target
+              Serial.println("[NETRUNNER] Rescanning...");
+              WiFi.scanNetworks(true);
+              wifiScanSelected = 0;
+              wifiListPage = 0;
+            }
+          } else {
+            WiFi.scanNetworks(true); // Rescan if scan not done
+          }
+        } else {
+          // Exit Daemon
+          currentMode = MODE_NORMAL;
+        }
       } else {
-        if (currentMode == MODE_RADAR)
-          WiFi.scanNetworks(true); // Rescan on short press
+        // --- SHORT PRESS ACTIONS (Navigation) ---
+        if (currentMode == MODE_RADAR) {
+          int n = WiFi.scanComplete();
+          if (n > 0) {
+            // Scroll down the list
+            wifiScanSelected = (wifiScanSelected + 1) % n;
+            // Move page if selection goes off screen
+            if (wifiScanSelected >= wifiListPage + 5) {
+              wifiListPage = wifiScanSelected - 4;
+            } else if (wifiScanSelected < wifiListPage) {
+              wifiListPage = wifiScanSelected;
+            }
+          }
+        }
+        // (Daemon mode short press doesn't need action yet)
       }
     } else if (quickMenuOpen) {
       // --- MENU MODE ---
@@ -370,7 +406,7 @@ void loop() {
     if (currentMode == MODE_DAEMON) {
       sceneManager.drawDaemon();
     } else if (currentMode == MODE_RADAR) {
-      sceneManager.drawRadar();
+      sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage);
     } else {
       display.drawGlobalHeader(
           quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
