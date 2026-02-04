@@ -943,7 +943,7 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
                              "BLE",   "USB",   "TOOLS", "EXIT"};
   static const char *subWifi[] = {"SCAN", "DEAUTH", "PORTAL", "BACK"};
   static const char *subRadio[] = {"SNIFF", "JAM", "SENSE", "BACK"};
-  static const char *subTools[] = {"VAULT", "DAEMON", "BACK"};
+  static const char *subTools[] = {"VAULT", "DAEMON", "MESH FLASH", "BACK"};
 
   const char **items = mainItems;
   int count = 9;

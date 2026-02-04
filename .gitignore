@@ -21,6 +21,9 @@ build/
 # PlatformIO / Arduino
 .pio/
 
+# Meshtastic / other firmware packs (do not commit)
+firmware-*/
+
 # IDE / OS
 .idea/
 .vscode/

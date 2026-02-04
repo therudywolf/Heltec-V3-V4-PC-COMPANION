@@ -78,7 +78,7 @@ int submenuIndex = 0;
 #define MAIN_IDX_EXIT 8
 #define SUB_WIFI_COUNT 4
 #define SUB_RADIO_COUNT 4
-#define SUB_TOOLS_COUNT 3
+#define SUB_TOOLS_COUNT 4
 
 // --- Cyberdeck Modes ---
 enum AppMode {
@@ -409,10 +409,15 @@ void loop() {
             quickMenuOpen = false;
             vaultManager.trySyncNtp();
             Serial.println("[SYS] VAULT OPEN.");
-          } else {
+          } else if (submenuIndex == 1) {
             currentMode = MODE_DAEMON;
             quickMenuOpen = false;
             Serial.println("[SYS] DAEMON.");
+          } else {
+            Serial.println(
+                "[SYS] Rebooting for Meshtastic flash. Hold BOOT to enter "
+                "download mode.");
+            esp_restart();
           }
         } else {
           if (quickMenuItem == 0) {
