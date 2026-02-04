@@ -1,21 +1,24 @@
 /*
  * NOCTURNE_OS — BADWOLF USB HID: Matrix (short) and Sniffer (long) payloads.
- * Uses USB.h + USBHIDKeyboard.h (ESP32-S3 native USB).
+ * Uses USB.h + USBHIDKeyboard.h (ESP32-S3 native USB). Builds on non-S3 when
+ * header is missing (USB code is no-op).
  */
 #include "UsbManager.h"
-#include <soc/soc_caps.h>
 
-#if SOC_USB_OTG_SUPPORTED
+#if __has_include("USBHIDKeyboard.h")
 #include "USB.h"
 #include "USBHIDKeyboard.h"
 
 static USBHIDKeyboard *s_keyboard = nullptr;
+#define HAVE_USB_HID 1
+#else
+#define HAVE_USB_HID 0
 #endif
 
 UsbManager::UsbManager() {}
 
 void UsbManager::begin() {
-#if SOC_USB_OTG_SUPPORTED
+#if HAVE_USB_HID
   if (active_)
     return;
   USB.begin();
@@ -25,13 +28,12 @@ void UsbManager::begin() {
   active_ = true;
   Serial.println("[BADWOLF] USB HID Keyboard ARMED.");
 #else
-  (void)0;
   Serial.println("[BADWOLF] USB not supported on this board.");
 #endif
 }
 
 void UsbManager::stop() {
-#if SOC_USB_OTG_SUPPORTED
+#if HAVE_USB_HID
   if (!active_)
     return;
   if (s_keyboard) {
@@ -41,12 +43,10 @@ void UsbManager::stop() {
   }
   active_ = false;
   Serial.println("[BADWOLF] USB HID disarmed.");
-#else
-  (void)0;
 #endif
 }
 
-#if SOC_USB_OTG_SUPPORTED
+#if HAVE_USB_HID
 void UsbManager::ensureEnglishLayout() {
   if (!s_keyboard)
     return;
@@ -75,7 +75,7 @@ void UsbManager::openPowerShell() {
 #endif
 
 void UsbManager::runMatrix() {
-#if SOC_USB_OTG_SUPPORTED
+#if HAVE_USB_HID
   if (!s_keyboard || !active_)
     return;
   openPowerShell();
@@ -93,7 +93,7 @@ void UsbManager::runMatrix() {
 }
 
 void UsbManager::runSniffer() {
-#if SOC_USB_OTG_SUPPORTED
+#if HAVE_USB_HID
   if (!s_keyboard || !active_)
     return;
   openPowerShell();
