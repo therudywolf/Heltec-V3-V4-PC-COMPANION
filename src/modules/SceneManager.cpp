@@ -818,29 +818,30 @@ void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
   u8g2.drawXBM(x, y, WEATHER_ICON_W, WEATHER_ICON_H, bits);
 }
 
-// Battery HUD: far right of top bar (x 95–125), 12x6 frame + 2x2 terminal,
-// 3 segments, smallest font. Draw color 0 so visible on white header.
+// Battery HUD: far right of top bar, slightly larger (16x8 frame).
+// Draw color 0 so visible on white header.
 void SceneManager::drawPowerStatus(int pct, bool isCharging) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFont(UNIT_FONT);
+  u8g2.setFont(LABEL_FONT);
 
-  const int frameW = 12;
-  const int frameH = 6;
-  const int termW = 2;
+  const int frameW = 16;
+  const int frameH = 8;
+  const int termW = 3;
+  const int termH = 3;
   const int baselineY = 11;
   int x = NOCT_DISP_W - frameW - termW;
   int y = baselineY;
 
   u8g2.setDrawColor(0);
   u8g2.drawFrame(x, y - frameH, frameW, frameH);
-  u8g2.drawBox(x + frameW, y - frameH + 2, termW, termW);
+  u8g2.drawBox(x + frameW, y - frameH + (frameH - termH) / 2, termW, termH);
 
   if (pct > 10)
-    u8g2.drawBox(x + 2, y - frameH + 1, 2, 4);
+    u8g2.drawBox(x + 2, y - frameH + 2, 3, 4);
   if (pct > 40)
-    u8g2.drawBox(x + 5, y - frameH + 1, 2, 4);
+    u8g2.drawBox(x + 6, y - frameH + 2, 3, 4);
   if (pct > 80)
-    u8g2.drawBox(x + 8, y - frameH + 1, 2, 4);
+    u8g2.drawBox(x + 10, y - frameH + 2, 3, 4);
 
   static char buf[8];
   if (isCharging) {
@@ -889,27 +890,28 @@ void SceneManager::drawSearchMode(int scanPhase) {
 }
 
 // ---------------------------------------------------------------------------
-// Tactical HUD Menu: central ChamferBox overlay. Header "// CONFIG";
-// 3 rows: AUTO (5s/10s/15s/OFF), FLIP (0deg/180deg), EXIT. Inverted
-// selection (white bar, black text). Short = navigate, Long = interact.
+// Tactical HUD Menu: ChamferBox with scroll. Visible rows = 5, total = 9.
+// Short = navigate (scroll), Long = interact.
 // ---------------------------------------------------------------------------
+#define MENU_VISIBLE_ROWS 5
+#define MENU_ROW_H 8
+#define MENU_LIST_LEFT 14
+#define MENU_LIST_W 82
+
 void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
                             bool screenRotated, bool glitchEnabled) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = 10;
   const int boxY = 10;
   const int boxW = 108;
-  const int boxH = 52; /* Taller for 8 rows */
+  const int boxH = 52;
 
-  // 1. Dim background: clear center
   u8g2.setDrawColor(0);
   u8g2.drawBox(boxX, boxY, boxW, boxH);
   u8g2.setDrawColor(1);
 
-  // 2. Frame (chamfered tech frame)
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
-  // 3. Header: white bar + chamfer outline, black text "// CONFIG"
   u8g2.setDrawColor(1);
   u8g2.drawBox(34, 6, 60, 9);
   disp_.drawChamferBox(34, 6, 60, 9, 2);
@@ -918,7 +920,6 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   u8g2.drawUTF8(42, 13, "// CONFIG");
   u8g2.setDrawColor(1);
 
-  // 4. Row labels: AUTO, FLIP, GLITCH, DAEMON, RADAR, EXIT (6 rows)
   static char row0Buf[16];
   if (!carouselOn)
     snprintf(row0Buf, sizeof(row0Buf), "AUTO: OFF");
@@ -937,25 +938,36 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
                          "RUN: DAEMON", "RUN: RADAR",   "RUN: BADWOLF",
                          "RUN: LORA",   "RUN: PHANTOM", "EXIT"};
   const int count = 9;
-  const int startY = 14;
-  const int rowH = 6;
+  const int startY = 16;
+
+  int firstVisible = menuItem - MENU_VISIBLE_ROWS / 2;
+  if (firstVisible < 0)
+    firstVisible = 0;
+  if (firstVisible + MENU_VISIBLE_ROWS > count)
+    firstVisible = count - MENU_VISIBLE_ROWS;
 
   u8g2.setFont(LABEL_FONT);
-  for (int i = 0; i < count; i++) {
-    int y = startY + i * rowH;
+  for (int r = 0; r < MENU_VISIBLE_ROWS; r++) {
+    int i = firstVisible + r;
+    if (i >= count)
+      break;
+    int y = startY + r * MENU_ROW_H;
     if (i == menuItem) {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(14, y - 6, 100, rowH);
+      u8g2.drawBox(MENU_LIST_LEFT, y - 6, MENU_LIST_W, MENU_ROW_H);
       u8g2.setDrawColor(0);
-      u8g2.drawUTF8(16, y, ">");
-      u8g2.drawUTF8(104, y, "<");
+      u8g2.drawUTF8(MENU_LIST_LEFT + 2, y, ">");
+      u8g2.drawUTF8(MENU_LIST_LEFT + MENU_LIST_W - 6, y, "<");
     } else {
       u8g2.setDrawColor(1);
     }
     int tw = u8g2.getUTF8Width(items[i]);
-    u8g2.drawUTF8(64 - (tw / 2), y, items[i]);
+    u8g2.drawUTF8(boxX + (boxW - tw) / 2, y, items[i]);
     u8g2.setDrawColor(1);
   }
+
+  disp_.drawScrollIndicator(startY - 2, MENU_VISIBLE_ROWS * MENU_ROW_H, count,
+                            MENU_VISIBLE_ROWS, firstVisible);
 }
 
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
@@ -993,16 +1005,18 @@ void SceneManager::drawConnecting(int rssi, bool blinkState) {
 }
 
 // ---------------------------------------------------------------------------
-// DAEMON MODE: Split layout — Wolf (left) | Stats (right). Wolf sprites:
-// idle, blink, aggressive (alert), funny — cycle by time.
+// DAEMON MODE: Wolf (left) | CPU, GPU, RAM (right). Wolf sprites by mood.
 // ---------------------------------------------------------------------------
 void SceneManager::drawDaemon() {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   HardwareData &hw = state_.hw;
 
   int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
+  int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
+  int cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
+  int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
   float ramUsage = (hw.ra > 0) ? (hw.ru / hw.ra) * 100.0f : 0.0f;
-  bool alert = (cpuTemp > 75 || ramUsage > 85);
+  bool alert = (cpuTemp > 75 || gpuTemp > 75 || ramUsage > 85);
 
   const unsigned char *wolfSprite = wolf_idle;
   if (alert) {
@@ -1018,27 +1032,40 @@ void SceneManager::drawDaemon() {
       wolfSprite = wolf_idle;
   }
 
-  // LEFT: Wolf Avatar (0–42)
   u8g2.setDrawColor(1);
   u8g2.drawXBMP(4, 16, 32, 32, wolfSprite);
   u8g2.drawFrame(0, 10, 42, 44);
   u8g2.drawBox(40, 20, 4, 2);
 
-  // RIGHT: Data Grid (48–128)
+  const int dataX = 48;
+  const int barW = 70;
+  const int rowH = 14;
+  int y = 16;
+
   u8g2.setFont(TINY_FONT);
-  u8g2.setCursor(48, 18);
+  u8g2.setCursor(dataX, y);
   u8g2.print(alert ? "STATUS: HUNTING" : "STATUS: IDLE");
+  y += rowH;
 
-  u8g2.setCursor(48, 30);
-  u8g2.printf("CPU: %d C", cpuTemp);
-  u8g2.drawBox(48, 32, (int)map((long)cpuTemp, 30, 90, 0, 70), 2);
+  u8g2.setCursor(dataX, y);
+  u8g2.printf("CPU: %d C %d%%", cpuTemp, cpuLoad);
+  u8g2.drawFrame(dataX, y + 2, barW, 3);
+  u8g2.drawBox(dataX + 1, y + 3, (int)map((long)cpuLoad, 0, 100, 0, barW - 2),
+               1);
+  y += rowH;
 
-  u8g2.setCursor(48, 44);
+  u8g2.setCursor(dataX, y);
+  u8g2.printf("GPU: %d C %d%%", gpuTemp, gpuLoad);
+  u8g2.drawFrame(dataX, y + 2, barW, 3);
+  u8g2.drawBox(dataX + 1, y + 3, (int)map((long)gpuLoad, 0, 100, 0, barW - 2),
+               1);
+  y += rowH;
+
+  u8g2.setCursor(dataX, y);
   u8g2.printf("RAM: %0.1f%%", ramUsage);
-  u8g2.drawBox(48, 46, (int)map((long)(ramUsage + 0.5f), 0, 100, 0, 70), 2);
-
-  u8g2.setCursor(48, 58);
-  u8g2.print(alert ? ">> OVERHEAT <<" : ">> SYSTEM OK");
+  u8g2.drawFrame(dataX, y + 2, barW, 3);
+  u8g2.drawBox(dataX + 1, y + 3,
+               (int)map((long)(ramUsage + 0.5f), 0, 100, 0, barW - 2), 1);
 }
 
 // ===========================================================================
