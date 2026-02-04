@@ -1,69 +1,132 @@
-# NOCTURNE_OS
+# NOCTURNE OS (v4.2.0)
 
-Hardware monitor: **ESP32 (Heltec)** + **SSD1306 128×64** OLED, backend — **Windows Python** server (aiohttp, system tray). Data: LHM (Liberty Hardware Monitor) → TCP → device.
+### High-Performance Cyberdeck Firmware for Heltec WiFi LoRa 32 V4
 
----
+![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue) ![Status](https://img.shields.io/badge/status-STABLE-brightgreen)
 
-## Structure
+> _"In the silence of the net, the wolf hunts alone."_
 
-```
-Heltec v4/
-  config.json          — host, port, lhm_url, limits, weather_city
-  requirements.txt     — Python deps (aiohttp, pystray, psutil, …)
-  platformio.ini       — ESP32 build config
-  RUN.bat              — Main launcher (deps + config, then tray server)
-  EMERGENCY_START.bat  — Run server in console (debug)
-  build.bat            — Full clean build → firmware + exe (see Build)
-  setup_nocturne.py    — One-time: pip install, create config.json
-  include/nocturne/
-    config.h           — Pins, display size, scene IDs, timeouts
-    Types.h            — HardwareData, AppState, etc.
-    secrets.h.example  — Copy to secrets.h (WiFi, PC IP)
-  src/
-    main.cpp           — Firmware entry, loop, button, carousel
-    monitor.py         — PC server: LHM poll, TCP, tray (autostart, close)
-    modules/
-      DisplayEngine.*  — OLED draw, layout blocks, progress bar, graph
-      NetManager.*      — WiFi, TCP client, JSON parse
-      SceneManager.*   — Per-scene draw (HUB, CPU, GPU, RAM, NET, ATMOS, MEDIA)
-      RollingGraph.*    — Ring buffer + draw for graphs
-```
+**Nocturne OS** is a specialized firmware designed for the **Heltec V4** development board. It transforms the device into a dedicated, high-speed hardware monitor and cyberdeck interface, receiving telemetry from a host PC via TCP.
 
-Logs: `nocturne.log` in project root.
+Built for **visual aesthetics**, **low latency**, and **hardware resilience**.
 
 ---
 
-## Run (PC server)
+## 🐺 Key Features
 
-- **RUN.bat** — Install deps and create `config.json` if missing, then start server in **system tray**. Autostart and Exit: use **tray menu** (right-click icon).
-- **EMERGENCY_START.bat** — Run server in **console** (no tray) for debugging.
+### 1. The "Unified Grid" Design System
+
+A strict, pixel-perfect 2x2 grid layout used across CPU, GPU, and Motherboard scenes.
+
+- **Tech Brackets:** Custom drawing primitives that frame data like a HUD.
+- **Chamfered Boxes:** Industrial aesthetics for menus and headers.
+- **Typography:** Hand-picked `ProFont10` (Data) and `HelvB10` (Headers) for maximum readability on 0.96" OLEDs.
+
+### 2. "Iron Grip" Connectivity
+
+The ESP32-S3 radio is notorious for aggressive power-saving drops. Nocturne OS bypasses this:
+
+- **Direct Driver Access:** Uses `esp_wifi_set_ps(WIFI_PS_NONE)` to lock the radio in high-performance mode.
+- **Latency:** Sub-50ms updates for real-time graphs.
+- **Self-Healing:** Auto-reconnect logic with configurable grace periods.
+
+### 3. "Stealth Hunter" Alert System
+
+A non-intrusive, tactical alert logic for critical temperatures/loads.
+
+- **Trigger:** Server sends `CRITICAL` state.
+- **Double Tap:** The White LED (GPIO 25) blinks **exactly 2 times** (Double Tap) to catch your eye.
+- **Silence:** After 2 blinks, the LED goes dark, but the specific metric on the screen freezes/highlights. No infinite annoying flashing.
+
+### 4. Tactical Menu (Overlay)
+
+Long-press interaction model for quick adjustments without rebooting.
+
+- **Carousel:** Auto-cycle screens (5s / 10s / 15s / OFF).
+- **Flip:** Rotate screen 180° (for cable management).
+- **Persistence:** Settings saved to NVS (Non-Volatile Storage).
 
 ---
 
-## Tray menu (when server is running)
+## 🛠 Hardware Specs
 
-- **Status: RUNNING** — info only
-- **Add to startup** / **Remove from startup** — toggle Windows startup (HKCU Run, name `NOCTURNE_OS`)
-- **Restart Server** — restart TCP server
-- **Close** — exit server and tray
-
----
-
-## Build
-
-1. **Firmware (ESP32)**  
-   Copy `include/secrets.h.example` → `include/secrets.h`, set WiFi and PC IP. Then:
-
-   ```text
-   pio run
-   pio run --target upload   # optional, with board connected
-   ```
-
-2. **Full build (firmware + exe)**  
-   Run **build.bat**: cleans `.pio/build` and PyInstaller `dist/`, builds firmware, then packs `src/monitor.py` into **dist/NocturneServer.exe**. No incremental build — clean each time.
+| Component   | Specification                 | Notes                        |
+| ----------- | ----------------------------- | ---------------------------- |
+| **Board**   | Heltec WiFi LoRa 32 V4        | ESP32-S3R2 MCU               |
+| **Display** | 0.96" OLED (SSD1306)          | I2C (SDA 17, SCL 18)         |
+| **Clock**   | 240 MHz (CPU) / 800 kHz (I2C) | Overclocked I2C for 60FPS UI |
+| **LED**     | GPIO 25 (White)               | Programmable Alert LED       |
+| **Button**  | GPIO 0 (PRG)                  | Input (Pull-up)              |
 
 ---
 
-## Config
+## 🖥️ Scenes
 
-Edit `config.json`: `host`, `port` (TCP server for device), `lhm_url` (Liberty Hardware Monitor JSON), `limits` (cpu/gpu alert), `weather_city`.
+1.  **MAIN:** Dashboard summary (CPU/GPU Temp bars + RAM usage).
+2.  **CPU:** Detailed Core Temp, Clock, Load, Power.
+3.  **GPU:** Core Temp, Clock, Load, VRAM Usage.
+4.  **RAM:** Top 2 memory-hogging processes + Total usage.
+5.  **DISKS:** 2x2 Grid showing Drive Letter + Temperature.
+6.  **MEDIA:** Current Track/Artist (Scrollable).
+7.  **FANS:** RPM & % for CPU, Pump, GPU, Case fans.
+8.  **MB:** Motherboard sensor array (VRM, Chipset, etc.).
+9.  **WEATHER:** XBM Pixel-art icons + Large Temp display.
+
+---
+
+## 🎮 Controls
+
+**Button (GPIO 0):**
+
+| Action                | State     | Result                                 |
+| :-------------------- | :-------- | :------------------------------------- |
+| **Short Press** (<1s) | Normal    | **Next Scene** (Resets Carousel Timer) |
+|                       | Menu Open | **Next Menu Item** (Navigate)          |
+| **Long Press** (>1s)  | Normal    | **Open Menu**                          |
+|                       | Menu Open | **Interact / Change Value**            |
+
+**Menu Items:**
+
+1.  **AUTO:** Cycle Carousel (5s -> 10s -> 15s -> OFF).
+2.  **FLIP:** Rotate Screen 180°.
+3.  **EXIT:** Close Menu.
+
+---
+
+## 🚀 Installation
+
+### Prerequisites
+
+- **VS Code** with **PlatformIO**.
+- **Python 3** (for the Host Monitor script).
+
+### Flashing (Firmware)
+
+1.  Clone this repository.
+2.  Open in VS Code.
+3.  Edit `include/secrets.h` (create it if missing) with your WiFi creds:
+    ```cpp
+    #define WIFI_SSID "YourSSID"
+    #define WIFI_PASS "YourPass"
+    #define PC_IP "192.168.1.100" // Your PC's IP
+    ```
+4.  Connect Heltec V4 via USB-C.
+5.  Run **PlatformIO: Upload**.
+
+### Running (Host Monitor)
+
+1.  Go to `monitor/` folder.
+2.  Install requirements: `pip install psutil GPUtil py3nvml requests`.
+3.  Run: `python monitor.py`.
+
+---
+
+## ⚠️ Credits
+
+- **Concept & Code:** RudyWolf
+- **UI Design:** "Nocturne" Cyberpunk System
+- **Libraries:** U8g2 (Olikraus), ArduinoJson (Bblanchon)
+
+---
+
+_End of Transmission._
