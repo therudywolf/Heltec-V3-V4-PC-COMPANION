@@ -62,6 +62,7 @@ struct Settings {
   int carouselIntervalSec = 10;
   int displayContrast = 128;
   bool displayInverted = false;
+  bool glitchEnabled = false;
 };
 
 /** Single app state: hardware, weather, media, process, alerts (filled by

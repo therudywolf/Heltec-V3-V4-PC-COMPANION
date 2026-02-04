@@ -5,7 +5,31 @@
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
+#include <WiFi.h>
 #include <math.h>
+
+// --- CYBERDECK ASSETS (Wolf Bitmaps 32x32) ---
+static const unsigned char wolf_idle_bits[] = {
+  0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x70,0x0e,0x00, 0x00,0xf8,0x1f,0x00,
+  0x00,0xfc,0x3f,0x00, 0x00,0xfe,0x7f,0x00, 0x00,0xff,0xff,0x00, 0x80,0xff,0xff,0x01,
+  0xc0,0xff,0xff,0x03, 0xe0,0xff,0xff,0x07, 0xf0,0xff,0xff,0x0f, 0xf8,0xe7,0xe7,0x1f,
+  0xfc,0xc3,0xc3,0x3f, 0xfe,0x81,0x81,0x7f, 0xff,0x00,0x00,0xff, 0xff,0x00,0x00,0xff,
+  0xff,0x00,0x00,0xff, 0xff,0x18,0x18,0xff, 0xff,0x3c,0x3c,0xff, 0x7e,0x7e,0x7e,0x7e,
+  0x3c,0xff,0xff,0x3c, 0x18,0xff,0xff,0x18, 0x00,0xff,0xff,0x00, 0x00,0x7e,0x7e,0x00,
+  0x00,0x3c,0x3c,0x00, 0x00,0x18,0x18,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+  0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00
+};
+
+static const unsigned char wolf_alert_bits[] = {
+  0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0xf0,0x0f,0x00, 0x00,0xf8,0x1f,0x00,
+  0x00,0xfc,0x3f,0x00, 0x00,0xfe,0x7f,0x00, 0x00,0xff,0xff,0x00, 0x80,0xff,0xff,0x01,
+  0xc0,0xff,0xff,0x03, 0xe0,0xff,0xff,0x07, 0xf0,0xcf,0xf3,0x0f, 0xf8,0x87,0xe1,0x1f,
+  0xfc,0x03,0xc0,0x3f, 0xfe,0x01,0x80,0x7f, 0xff,0x00,0x00,0xff, 0xff,0x24,0x24,0xff,
+  0xff,0x00,0x00,0xff, 0xff,0x99,0x99,0xff, 0xff,0x3c,0x3c,0xff, 0x7e,0x42,0x42,0x7e,
+  0x3c,0xe7,0xe7,0x3c, 0x18,0xff,0xff,0x18, 0x00,0xff,0xff,0x00, 0x00,0x7e,0x7e,0x00,
+  0x00,0x3c,0x3c,0x00, 0x00,0x18,0x18,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+  0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00
+};
 
 #define SPLIT_X 64
 #define X(x, off) ((x) + (off))
@@ -836,4 +860,100 @@ void SceneManager::drawConnecting(int rssi, bool blinkState) {
   int dots = (millis() / 300) % 4;
   for (int i = 0; i < dots; i++)
     u8g2.drawBox(NOCT_DISP_W / 2 + 36 + i * 6, y0 + 2 * dy + 2, 3, 3);
+}
+
+// ---------------------------------------------------------------------------
+// DAEMON MODE: The Digital Soul
+// ---------------------------------------------------------------------------
+void SceneManager::drawDaemon() {
+    U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+    HardwareData &hw = state_.hw;
+
+    // Logic: Check Vital Signs
+    int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
+    int ramUsage = (hw.ra > 0) ? (int)((hw.ru / hw.ra) * 100.0f) : 0;
+    bool isAngry = (cpuTemp > 75) || (ramUsage > 90);
+
+    // Layout: Center
+    int iconX = (128 - 32) / 2;
+    int iconY = 16;
+
+    // Draw Tech Frame around the soul
+    disp_.drawTechBracket(iconX - 8, iconY - 6, 48, 44, 4);
+
+    // Render Wolf
+    u8g2.setDrawColor(1);
+    if (isAngry) {
+        u8g2.drawXBMP(iconX, iconY, 32, 32, wolf_alert_bits);
+        u8g2.setFont(LABEL_FONT);
+        disp_.drawCentered(iconY + 40, "STATUS: AGGRESSIVE");
+    } else {
+        u8g2.drawXBMP(iconX, iconY, 32, 32, wolf_idle_bits);
+        u8g2.setFont(LABEL_FONT);
+        disp_.drawCentered(iconY + 40, "STATUS: OBSERVING");
+    }
+
+    // Stats
+    char buf[32];
+    snprintf(buf, sizeof(buf), "RAM:%d%%  CPU:%dC", ramUsage, cpuTemp);
+    u8g2.setFont(TINY_FONT);
+    disp_.drawCentered(60, buf);
+}
+
+// ---------------------------------------------------------------------------
+// RADAR MODE: Netrunner WiFi Scanner
+// ---------------------------------------------------------------------------
+void SceneManager::drawRadar() {
+    U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+
+    int cx = 64;
+    int cy = 34;
+    int r = 28;
+
+    // Draw Radar Circle
+    u8g2.setDrawColor(1);
+    u8g2.drawCircle(cx, cy, r);
+    u8g2.drawCircle(cx, cy, r/2);
+    u8g2.drawLine(cx - r, cy, cx + r, cy); // Crosshair H
+    u8g2.drawLine(cx, cy - r, cx, cy + r); // Crosshair V
+
+    // Scan Handling
+    int n = WiFi.scanComplete();
+    if (n == -2) {
+        WiFi.scanNetworks(true); // Start Async Scan
+        u8g2.setFont(TINY_FONT);
+        disp_.drawCentered(58, "INIT SCAN...");
+    } else if (n == -1) {
+        // Scanning... animate radar line
+        int angle = (millis() / 10) % 360;
+        float rad = angle * 0.0174533f;
+        int lx = cx + (int)(cos(rad) * r);
+        int ly = cy + (int)(sin(rad) * r);
+        u8g2.drawLine(cx, cy, lx, ly);
+        u8g2.setFont(TINY_FONT);
+        disp_.drawCentered(58, "SCANNING...");
+    } else {
+        // Results Ready
+        u8g2.setFont(TINY_FONT);
+        char buf[20];
+        snprintf(buf, sizeof(buf), "TARGETS: %d", n);
+        disp_.drawCentered(58, buf);
+
+        // Draw Blips
+        for (int i = 0; i < n && i < 20; i++) {
+            int rssi = WiFi.RSSI(i);
+            // Map RSSI (-100 to -40) to Distance (r to 0)
+            int dist = map(constrain(rssi, -100, -40), -100, -40, r - 2, 2);
+
+            // Generate pseudo-random angle from BSSID to keep blips stable
+            uint8_t* bssid = WiFi.BSSID(i);
+            int angle = (bssid[5] * 10) % 360;
+            float rad = angle * 0.0174533f;
+
+            int bx = cx + (int)(cos(rad) * dist);
+            int by = cy + (int)(sin(rad) * dist);
+
+            u8g2.drawBox(bx, by, 2, 2); // The Blip
+        }
+    }
 }

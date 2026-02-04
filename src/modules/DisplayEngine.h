@@ -67,6 +67,8 @@ public:
   void drawScanline(int y);
   /** (DEPRECATED v4: no-op) Was CRT scanlines — removed for clean Cyberpunk. */
   void drawScanlines(bool everyFourth = false);
+  /** Center-aligned text at Y. Uses current font. */
+  void drawCentered(int y, const char *text);
   /** Right-aligned text: draw at (x_anchor - width). font = TINY_FONT etc. */
   void drawRightAligned(int x_anchor, int y, const uint8_t *font,
                         const char *text);
@@ -166,6 +168,8 @@ public:
   void drawHazardBorder();
   /** Thick (3px) border around screen edges for RED ALERT. */
   void drawAlertBorder();
+  /** Cyberpunk glitch: XOR noise / screen tear. Call before sendBuffer(). */
+  void applyGlitch();
 
   RollingGraph cpuGraph;
   RollingGraph gpuGraph;
