@@ -1,9 +1,10 @@
-# Секреты и конфиг (не коммитить)
+# Secrets and local config (do not commit)
 .env
 secrets.h
+include/secrets.h
 
 # Python
-.venv*/
+.venv/
 venv/
 __pycache__/
 *.py[cod]
@@ -12,11 +13,10 @@ __pycache__/
 *.egg-info/
 .eggs/
 
-# Сборка exe (PyInstaller)
+# PyInstaller / build
 dist/
 build/
 *.exe
-# monitor.spec — в репозитории (нужен для build_oneclick.bat)
 
 # PlatformIO / Arduino
 .pio/
@@ -29,11 +29,11 @@ build/
 .DS_Store
 Thumbs.db
 
-# Логи
+# Logs
 *.log
 monitor.log
 nocturne.log
 
-# Данные сервера (для разработки, не коммитить)
+# Local dev / scratch (do not commit)
 serverpars.txt
 CURSOR_UI_REFACTOR.md
