@@ -1034,47 +1034,82 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
 }
 
 // ---------------------------------------------------------------------------
-// ETHER STALKER: LoRa sniffer (868 MHz) — noise floor, packet count, hex dump
+// SIGINT: LoRa Meshtastic sniffer — RSSI waterfall, packet console, REPLAY
+// Top: RSSI bar, Middle: [MESH] From: 0x... | SNR, Bottom: Short=Next
+// Long=REPLAY
 // ---------------------------------------------------------------------------
+#define LORA_HEADER_H 10
+#define LORA_RSSI_BAR_Y 12
+#define LORA_RSSI_BAR_H 6
+#define LORA_CONSOLE_Y 22
+#define LORA_CONSOLE_H 32
+#define LORA_FOOTER_Y 56
+
 void SceneManager::drawLoraSniffer(LoraManager &lora) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFont(TINY_FONT);
-
-  // Header
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, 128, 11);
+
+  // --- Top: Header + real-time RSSI "waterfall" bar ---
+  u8g2.drawBox(0, 0, NOCT_DISP_W, LORA_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 8);
-  u8g2.print("ETHER STALKER (868MHz)");
+  u8g2.setCursor(2, 7);
+  u8g2.print("SIGINT 868MHz");
   u8g2.setDrawColor(1);
 
-  // Current RSSI bar (noise floor)
-  float rssi = lora.getCurrentRSSI();
-  int barW = map(constrain((int)rssi, -130, -50), -130, -50, 0, 100);
-
-  u8g2.setCursor(2, 22);
-  u8g2.printf("NOISE: %d dBm", (int)rssi);
-  u8g2.drawFrame(2, 25, 104, 6);
-  u8g2.drawBox(4, 27, barW, 2);
-
-  // Packet info
-  LoraPacket last = lora.getLastPacket();
-  u8g2.drawLine(0, 35, 128, 35);
-
-  u8g2.setCursor(2, 44);
-  u8g2.printf("CAPTURED: %d", lora.getPacketCount());
-
-  if (lora.getPacketCount() > 0) {
-    u8g2.setCursor(2, 54);
-    u8g2.printf("LAST: %d dBm (SNR %.1f)", (int)last.rssi, last.snr);
-
-    u8g2.setCursor(2, 63);
-    String preview = last.data;
-    if (preview.length() > 20)
-      preview = preview.substring(0, 19) + "...";
-    u8g2.print(preview);
+  int histLen = 0;
+  const int8_t *hist = lora.getRssiHistory(histLen);
+  int barW = NOCT_DISP_W;
+  int barY = LORA_RSSI_BAR_Y;
+  u8g2.drawFrame(0, barY, barW, LORA_RSSI_BAR_H);
+  if (histLen > 0) {
+    int L = LoraManager::rssiHistoryLen();
+    int head = lora.getRssiHistoryHead();
+    for (int i = 0; i < barW && i < histLen; i++) {
+      int idx = (head - histLen + i + L) % L;
+      int r = hist[idx];
+      int h = map(constrain(r, -120, -50), -120, -50, LORA_RSSI_BAR_H - 2, 0);
+      if (h > 0 && h < LORA_RSSI_BAR_H - 1)
+        u8g2.drawVLine(i, barY + LORA_RSSI_BAR_H - 1 - h, h);
+    }
   } else {
-    u8g2.setCursor(2, 58);
-    u8g2.print("LISTENING FOR GHOSTS...");
+    float rssi = lora.getCurrentRSSI();
+    int w = map(constrain((int)rssi, -130, -50), -130, -50, 0, barW - 2);
+    if (w > 0)
+      u8g2.drawBox(1, barY + 1, w, LORA_RSSI_BAR_H - 2);
   }
+
+  // --- Middle: Packet console [MESH] From: 0xDEADBEEF | SNR: 10 ---
+  u8g2.drawLine(0, LORA_CONSOLE_Y - 1, NOCT_DISP_W, LORA_CONSOLE_Y - 1);
+  int nPackets = lora.getPacketBufferCount();
+  static char lineBuf[32];
+
+  if (nPackets == 0) {
+    u8g2.setCursor(2, LORA_CONSOLE_Y + 6);
+    u8g2.print("[MESH] Listening...");
+    u8g2.setCursor(2, LORA_CONSOLE_Y + 14);
+    u8g2.print("No packets yet.");
+  } else {
+    for (int i = 0; i < nPackets && i < 3; i++) {
+      const LoraRawPacket *p = lora.getPacketInBuffer(i);
+      if (!p || p->len < 4)
+        continue;
+      int y = LORA_CONSOLE_Y + 2 + i * 10;
+      uint32_t fromId = 0;
+      if (p->len >= 4)
+        fromId = (uint32_t)p->data[0] | ((uint32_t)p->data[1] << 8) |
+                 ((uint32_t)p->data[2] << 16) | ((uint32_t)p->data[3] << 24);
+      snprintf(lineBuf, sizeof(lineBuf), "[MESH] 0x%lX | SNR %.0f",
+               (unsigned long)fromId, (double)p->snr);
+      u8g2.setCursor(2, y);
+      u8g2.print(lineBuf);
+    }
+  }
+
+  // --- Bottom: Action labels [Short: Next | Long: REPLAY] ---
+  u8g2.drawLine(0, LORA_FOOTER_Y - 1, NOCT_DISP_W, LORA_FOOTER_Y - 1);
+  u8g2.setCursor(2, LORA_FOOTER_Y + 6);
+  u8g2.print("Short: Clear");
+  u8g2.setCursor(70, LORA_FOOTER_Y + 6);
+  u8g2.print("Long: REPLAY");
 }
