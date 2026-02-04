@@ -37,6 +37,8 @@ bool inTransition = false;
 
 unsigned long btnPressTime = 0;
 bool btnHeld = false;
+int clickCount = 0;
+unsigned long lastClickTime = 0;
 unsigned long lastCarousel = 0;
 unsigned long lastFanAnim = 0;
 int fanAnimFrame = 0;
@@ -155,67 +157,75 @@ void loop() {
     }
   }
 
-  // Button: In menu: Short = NAVIGATE (next item), Long = INTERACT (change
-  // value / execute). When closed: Long = open menu, Short = next scene.
+  // --- BUTTON LOGIC WITH TRIPLE CLICK ---
   int btnState = digitalRead(NOCT_BUTTON_PIN);
+
   if (btnState == LOW && !btnHeld) {
     btnHeld = true;
     btnPressTime = now;
   }
-  if (btnState == HIGH && btnHeld) {
-    needRedraw = true;
-    unsigned long duration = now - btnPressTime;
-    btnHeld = false;
 
+  if (btnState == HIGH && btnHeld) {
+    btnHeld = false;
+    unsigned long duration = now - btnPressTime;
+    needRedraw = true;
+
+    // TRIPLE CLICK: Count fast clicks
+    if (duration < 500) {
+      if (now - lastClickTime > 600)
+        clickCount = 0;
+      clickCount++;
+      lastClickTime = now;
+
+      if (clickCount >= 3) {
+        clickCount = 0;
+        if (currentMode != MODE_NORMAL) {
+          currentMode = MODE_NORMAL;
+          WiFi.scanDelete();
+          Serial.println("[UI] Triple Click: EXIT APP");
+        } else {
+          quickMenuOpen = false;
+        }
+        return;
+      }
+    }
+
+    // STANDARD LOGIC
     if (currentMode != MODE_NORMAL) {
-      // IF IN APP
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        // --- LONG PRESS ACTIONS ---
         if (currentMode == MODE_RADAR) {
-          // ACTION: Disconnect / Rescan
           int n = WiFi.scanComplete();
           if (n > 0 && wifiScanSelected < n) {
-            // If a network is selected, check if it's ours and disconnect
             if (WiFi.SSID(wifiScanSelected) == WiFi.SSID()) {
               Serial.println("[NETRUNNER] Disconnecting from current AP.");
-              WiFi.disconnect(); // "Attack" self
+              WiFi.disconnect();
             } else {
-              // Rescan if not connected to selected target
               Serial.println("[NETRUNNER] Rescanning...");
               WiFi.scanNetworks(true);
               wifiScanSelected = 0;
               wifiListPage = 0;
             }
           } else {
-            WiFi.scanNetworks(true); // Rescan if scan not done
+            WiFi.scanNetworks(true);
           }
         } else {
-          // Exit Daemon
           currentMode = MODE_NORMAL;
         }
       } else {
-        // --- SHORT PRESS ACTIONS (Navigation) ---
         if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
           if (n > 0) {
-            // Scroll down the list
             wifiScanSelected = (wifiScanSelected + 1) % n;
-            // Move page if selection goes off screen
-            if (wifiScanSelected >= wifiListPage + 5) {
+            if (wifiScanSelected >= wifiListPage + 5)
               wifiListPage = wifiScanSelected - 4;
-            } else if (wifiScanSelected < wifiListPage) {
+            else if (wifiScanSelected < wifiListPage)
               wifiListPage = wifiScanSelected;
-            }
           }
         }
-        // (Daemon mode short press doesn't need action yet)
       }
     } else if (quickMenuOpen) {
-      // --- MENU MODE ---
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        // LONG PRESS: INTERACT
         if (quickMenuItem == 0) {
-          // Cycle Carousel: 5 -> 10 -> 15 -> OFF -> 5
           if (!settings.carouselEnabled) {
             settings.carouselEnabled = true;
             settings.carouselIntervalSec = 5;
@@ -253,11 +263,9 @@ void loop() {
           quickMenuOpen = false;
         }
       } else {
-        // SHORT PRESS: Navigate (0..5)
         quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
       }
     } else {
-      // --- NORMAL MODE ---
       if (duration >= NOCT_BUTTON_LONG_MS) {
         quickMenuOpen = true;
         quickMenuItem = 0;
