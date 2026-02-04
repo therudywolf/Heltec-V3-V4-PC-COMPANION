@@ -899,7 +899,13 @@ void SceneManager::drawSearchMode(int scanPhase) {
 #define MENU_LIST_LEFT 14
 #define MENU_LIST_W 82
 
-void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
+static const int MENU_MAIN = 0;
+static const int MENU_SUB_WIFI = 1;
+static const int MENU_SUB_RADIO = 2;
+static const int MENU_SUB_TOOLS = 3;
+
+void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
+                            bool carouselOn, int carouselSec,
                             bool screenRotated, bool glitchEnabled) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = 10;
@@ -918,32 +924,46 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   disp_.drawChamferBox(34, 6, 60, 9, 2);
   u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(42, 13, "// CONFIG");
+  u8g2.drawUTF8(42, 13, menuStateVal == MENU_MAIN ? "// CONFIG" : "// SUBMENU");
   u8g2.setDrawColor(1);
 
   static char row0Buf[16];
+  static char row1Buf[16];
+  static char row2Buf[16];
   if (!carouselOn)
     snprintf(row0Buf, sizeof(row0Buf), "AUTO: OFF");
   else
     snprintf(row0Buf, sizeof(row0Buf), "AUTO: %ds", carouselSec);
-
-  static char row1Buf[16];
   snprintf(row1Buf, sizeof(row1Buf), "FLIP: %s",
            screenRotated ? "180deg" : "0deg");
-
-  static char row2Buf[16];
   snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
            glitchEnabled ? "ON" : "OFF");
 
-  const char *items[] = {row0Buf,        row1Buf,      row2Buf,
-                         "RUN: DAEMON",  "RUN: RADAR", "RUN: KICK",
-                         "RUN: BADWOLF", "RUN: LORA",  "RUN: SILENCE",
-                         "RUN: PHANTOM", "RUN: TRAP",  "RUN: VAULT",
-                         "RUN: GHOSTS",  "EXIT"};
-  const int count = 14;
-  const int startY = 16;
+  const char *mainItems[] = {row0Buf, row1Buf, row2Buf, "WIFI", "RADIO",
+                             "BLE",   "USB",   "TOOLS", "EXIT"};
+  static const char *subWifi[] = {"SCAN", "DEAUTH", "PORTAL", "BACK"};
+  static const char *subRadio[] = {"SNIFF", "JAM", "SENSE", "BACK"};
+  static const char *subTools[] = {"VAULT", "DAEMON", "BACK"};
 
-  int firstVisible = menuItem - MENU_VISIBLE_ROWS / 2;
+  const char **items = mainItems;
+  int count = 9;
+  int selected = mainIndex;
+  if (menuStateVal == MENU_SUB_WIFI) {
+    items = subWifi;
+    count = 4;
+    selected = submenuIndex;
+  } else if (menuStateVal == MENU_SUB_RADIO) {
+    items = subRadio;
+    count = 4;
+    selected = submenuIndex;
+  } else if (menuStateVal == MENU_SUB_TOOLS) {
+    items = subTools;
+    count = 3;
+    selected = submenuIndex;
+  }
+
+  const int startY = 16;
+  int firstVisible = selected - MENU_VISIBLE_ROWS / 2;
   if (firstVisible < 0)
     firstVisible = 0;
   if (firstVisible + MENU_VISIBLE_ROWS > count)
@@ -955,7 +975,7 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
     if (i >= count)
       break;
     int y = startY + r * MENU_ROW_H;
-    if (i == menuItem) {
+    if (i == selected) {
       u8g2.setDrawColor(1);
       u8g2.drawBox(MENU_LIST_LEFT, y - 6, MENU_LIST_W, MENU_ROW_H);
       u8g2.setDrawColor(0);
@@ -1215,12 +1235,9 @@ void SceneManager::drawLoraSniffer(LoraManager &lora) {
     }
   }
 
-  // --- Bottom: Action labels [Short: Next | Long: REPLAY] ---
   u8g2.drawLine(0, LORA_FOOTER_Y - 1, NOCT_DISP_W, LORA_FOOTER_Y - 1);
   u8g2.setCursor(2, LORA_FOOTER_Y + 6);
-  u8g2.print("Short: Clear");
-  u8g2.setCursor(70, LORA_FOOTER_Y + 6);
-  u8g2.print("Long: REPLAY");
+  u8g2.print("Short: Clear | Long: REPLAY | 3x Out");
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,7 +1270,7 @@ void SceneManager::drawBleSpammer(int packetCount) {
   u8g2.drawBox(0, 0, NOCT_DISP_W, PHANTOM_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
-  u8g2.print("STATUS: PHANTOM ACTIVE");
+  u8g2.print("BLE SPAM");
   u8g2.setDrawColor(1);
 
   // Pulsing Bluetooth icon (center)
@@ -1289,7 +1306,7 @@ void SceneManager::drawBadWolf() {
   u8g2.drawBox(0, 0, NOCT_DISP_W, BADWOLF_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
-  u8g2.print("USB STATUS: ARMED");
+  u8g2.print("USB HID");
   u8g2.setDrawColor(1);
 
   int cx = BADWOLF_ICON_CX;
@@ -1302,7 +1319,7 @@ void SceneManager::drawBadWolf() {
 
   u8g2.drawLine(0, BADWOLF_FOOTER_Y - 1, NOCT_DISP_W, BADWOLF_FOOTER_Y - 1);
   u8g2.setCursor(2, BADWOLF_FOOTER_Y + 6);
-  u8g2.print("Short: MATRIX | Long: SNIFFER");
+  u8g2.print("Short: MATRIX | Long: SNIFFER | 3x Out");
 
   disp_.drawGreebles();
 }
@@ -1319,7 +1336,7 @@ void SceneManager::drawSilenceMode() {
   u8g2.drawBox(0, 0, NOCT_DISP_W, SILENCE_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
-  u8g2.print("STATUS: RADIATING SILENCE");
+  u8g2.print("JAM 868");
   u8g2.setDrawColor(1);
 
   // Static noise: intensity increases with time (jammer run duration)
@@ -1349,7 +1366,7 @@ void SceneManager::drawSilenceMode() {
 
   u8g2.drawLine(0, SILENCE_FOOTER_Y - 1, NOCT_DISP_W, SILENCE_FOOTER_Y - 1);
   u8g2.setCursor(2, SILENCE_FOOTER_Y + 5);
-  u8g2.print("MAX POWER: +22dBm");
+  u8g2.print("+22dBm | 3x Out");
 
   disp_.drawGreebles();
 }
@@ -1370,7 +1387,7 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
   u8g2.drawBox(0, 0, NOCT_DISP_W, TRAP_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
-  u8g2.print("TRAP // FREE_WIFI");
+  u8g2.print("PORTAL");
   u8g2.setDrawColor(1);
 
   unsigned long now = millis();
@@ -1410,7 +1427,7 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
 
   u8g2.drawLine(0, TRAP_FOOTER_Y - 1, NOCT_DISP_W, TRAP_FOOTER_Y - 1);
   u8g2.setCursor(2, TRAP_FOOTER_Y + 5);
-  u8g2.print("Triple-click: EXIT");
+  u8g2.print("3x Out");
 
   disp_.drawGreebles();
 }
@@ -1433,7 +1450,7 @@ void SceneManager::drawKickMode(KickManager &kick) {
   u8g2.drawBox(0 + sx, 0 + sy, NOCT_DISP_W, KICK_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setCursor(2 + sx, 7 + sy);
-  u8g2.print("KICKER");
+  u8g2.print("DEAUTH");
   u8g2.setDrawColor(1);
 
   u8g2.drawXBM(KICK_ICON_X + sx, KICK_ICON_Y + sy, 32, 32, wolf_aggressive);
@@ -1500,7 +1517,7 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
                 : 100;
   disp_.drawProgressBar(4, 48, NOCT_DISP_W - 8, 4, 100 - pct);
   u8g2.setCursor(2, VAULT_FOOTER_Y + 5);
-  u8g2.print("Short: next account");
+  u8g2.print("Short: next account | 3x Out");
 
   disp_.drawGreebles();
 }
@@ -1518,7 +1535,7 @@ void SceneManager::drawGhostsMode(LoraManager &lora) {
   u8g2.drawBox(0, 0, NOCT_DISP_W, GHOSTS_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
-  u8g2.print("GHOSTS 868.3");
+  u8g2.print("SENSE 868");
   u8g2.setDrawColor(1);
 
   unsigned long t = millis() / 80;
@@ -1540,7 +1557,7 @@ void SceneManager::drawGhostsMode(LoraManager &lora) {
 
   u8g2.drawLine(0, 55, NOCT_DISP_W, 55);
   u8g2.setCursor(2, 62);
-  u8g2.print("Triple-click: EXIT");
+  u8g2.print("3x Out");
 
   disp_.drawGreebles();
 }
