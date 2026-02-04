@@ -5,9 +5,11 @@
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
+#include "LoraManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
+
 
 // ===========================================================================
 // ASSETS: 32x32 PIXEL PERFECT WOLF (High contrast for OLED)
@@ -843,9 +845,9 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
            glitchEnabled ? "ON" : "OFF");
 
-  const char *items[] = {row0Buf,       row1Buf,      row2Buf,
-                         "RUN: DAEMON", "RUN: RADAR", "EXIT"};
-  const int count = 6;
+  const char *items[] = {row0Buf,      row1Buf,     row2Buf, "RUN: DAEMON",
+                         "RUN: RADAR", "RUN: LORA", "EXIT"};
+  const int count = 7;
   const int startY = 22;
   const int rowH = 7;
 
@@ -1003,5 +1005,51 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
     u8g2.print("LINK: ONLINE");
   } else {
     u8g2.print("LINK: DISCONNECTED");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ETHER STALKER: LoRa sniffer (868 MHz) — noise floor, packet count, hex dump
+// ---------------------------------------------------------------------------
+void SceneManager::drawLoraSniffer(LoraManager &lora) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+
+  // Header
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, 128, 11);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 8);
+  u8g2.print("ETHER STALKER (868MHz)");
+  u8g2.setDrawColor(1);
+
+  // Current RSSI bar (noise floor)
+  float rssi = lora.getCurrentRSSI();
+  int barW = map(constrain((int)rssi, -130, -50), -130, -50, 0, 100);
+
+  u8g2.setCursor(2, 22);
+  u8g2.printf("NOISE: %d dBm", (int)rssi);
+  u8g2.drawFrame(2, 25, 104, 6);
+  u8g2.drawBox(4, 27, barW, 2);
+
+  // Packet info
+  LoraPacket last = lora.getLastPacket();
+  u8g2.drawLine(0, 35, 128, 35);
+
+  u8g2.setCursor(2, 44);
+  u8g2.printf("CAPTURED: %d", lora.getPacketCount());
+
+  if (lora.getPacketCount() > 0) {
+    u8g2.setCursor(2, 54);
+    u8g2.printf("LAST: %d dBm (SNR %.1f)", (int)last.rssi, last.snr);
+
+    u8g2.setCursor(2, 63);
+    String preview = last.data;
+    if (preview.length() > 20)
+      preview = preview.substring(0, 19) + "...";
+    u8g2.print(preview);
+  } else {
+    u8g2.setCursor(2, 58);
+    u8g2.print("LISTENING FOR GHOSTS...");
   }
 }
