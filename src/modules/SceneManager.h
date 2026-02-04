@@ -52,6 +52,10 @@ public:
    */
   void drawLoraSniffer(LoraManager &lora);
 
+  /** Battery HUD: icon + percent (or CHG when charging) in header, right of
+   * WOOF!. */
+  void drawPowerStatus(int pct, bool isCharging);
+
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
    * valueYOffset: extra pixels to move value baseline down (e.g. 6 for

@@ -66,8 +66,30 @@ int wifiListPage = 0;
 
 #define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
+#define NOCT_BAT_READ_INTERVAL_MS 5000
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
+static unsigned long lastBatteryReadMs = 0;
+
+/** Read ADC from battery pin (GPIO 1), convert to 0..100% and optional
+ * voltage. Heltec V4: 1/2 divider → multiply by 2. */
+static int readBatteryPercentage(float *voltageOut = nullptr) {
+  uint32_t raw = 0;
+  for (int i = 0; i < 10; i++) {
+    raw += analogRead(NOCT_BAT_PIN);
+    if (NOCT_BAT_READ_DELAY > 0)
+      delay(NOCT_BAT_READ_DELAY);
+  }
+  float voltage = (raw / 10.0f) * (3.3f / 4095.0f) * 2.0f;
+  voltage += 0.15f; // calibration (may vary 0.1–0.2V per unit)
+
+  if (voltageOut)
+    *voltageOut = voltage;
+
+  int pct = (int)((voltage - NOCT_VOLT_MIN) / (NOCT_VOLT_MAX - NOCT_VOLT_MIN) *
+                  100.0f);
+  return constrain(pct, 0, 100);
+}
 
 static void VextON() {
   pinMode(NOCT_VEXT_PIN, OUTPUT);
@@ -120,6 +142,10 @@ void setup() {
 
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
+
+  state.batteryVoltage = 0.0f;
+  state.batteryPct = readBatteryPercentage(&state.batteryVoltage);
+  lastBatteryReadMs = millis();
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +353,13 @@ void loop() {
     lastFanAnim = now;
   }
 
+  /* Battery: read every 5s to save power */
+  if (now - lastBatteryReadMs >= (unsigned long)NOCT_BAT_READ_INTERVAL_MS) {
+    lastBatteryReadMs = now;
+    state.batteryVoltage = 0.0f;
+    state.batteryPct = readBatteryPercentage(&state.batteryVoltage);
+  }
+
   /* Alert LED: double-tap (2 blinks then silence); predator breath. */
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   if (predatorMode) {
@@ -421,19 +454,23 @@ void loop() {
     sceneManager.drawLoraSniffer(loraManager);
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
+    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
     sceneManager.drawNoSignal(false, false, 0, blinkState);
   } else if (!netManager.isTcpConnected()) {
     display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
+    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
     sceneManager.drawConnecting(netManager.rssi(), blinkState);
   } else if (netManager.isSearchMode() || signalLost) {
     display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
                              netManager.isWifiConnected());
+    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
     display.drawGlobalHeader(
         quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
         nullptr, netManager.rssi(), netManager.isWifiConnected());
+    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
 
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
