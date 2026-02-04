@@ -10,17 +10,16 @@
 #include <math.h>
 
 // ===========================================================================
-// ASSETS: CYBER-WOLF DAEMON (48x48 HIGH RES)
-// Clearer, bigger, sharper.
+// ASSETS: 32x32 PIXEL PERFECT WOLF (High contrast for OLED)
 // ===========================================================================
 
-// IDLE: Calm profile
-static const unsigned char wolf_idle_bits[] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFC, 0x01, 0x00, 0x00,
-    0x00, 0x00, 0xFF, 0x07, 0x00, 0x00, 0x00, 0x80, 0xFF, 0x1F, 0x00, 0x00,
-    0x00, 0xE0, 0xFF, 0x3F, 0x00, 0x00, 0x00, 0xF0, 0xFF, 0x7F, 0x00, 0x00,
-    0x00, 0xF8, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0xFC, 0xFF, 0xFF, 0x00, 0x00,
-    0x00, 0xFE, 0xFF, 0xFF, 0x01, 0x00, 0x00, 0xFF, 0xCF, 0xFF, 0x03, 0x00,
+// 32x32 PIXEL PERFECT WOLF (Left Profile)
+static const unsigned char wolf_head_side[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x03, 0x00, 0x00, 0xE0, 0x07, 0x00,
+    0x00, 0xF0, 0x0F, 0x00, 0x00, 0xF8, 0x1F, 0x00, 0x00, 0xFC, 0x3F, 0x00,
+    0x00, 0xFE, 0x7F, 0x00, 0x00, 0xFF, 0x7F, 0x00, 0x80, 0xFF, 0xFF, 0x00,
+    0xC0, 0xFF, 0xFF, 0x01, 0xE0, 0xFF, 0xFF, 0x03, 0xF0, 0xFF, 0xFF, 0x03,
+    0xF8, 0xCF, 0xF3, 0x07, 0xFC, 0x87, 0xE1, 0x07, 0xFE, 0x03, 0xC0, 0x0F,
     0x00, 0xFF, 0x87, 0xFF, 0x03, 0x00, 0x00, 0xFF, 0x03, 0xFF, 0x07, 0x00,
     0x80, 0xFF, 0x01, 0xFE, 0x0F, 0x00, 0xC0, 0xFF, 0x00, 0xFC, 0x0F, 0x00,
     0xE0, 0x7F, 0x00, 0xF8, 0x1F, 0x00, 0xF0, 0x3F, 0x00, 0xF8, 0x1F, 0x00,
@@ -40,8 +39,8 @@ static const unsigned char wolf_idle_bits[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-// ALERT: Bared teeth, ears back
-static const unsigned char wolf_alert_bits[] = {
+// 32x32 ALERT (Teeth Bared)
+static const unsigned char wolf_head_growl[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE0, 0x01, 0x00, 0x00,
     0x00, 0x00, 0xF8, 0x07, 0x00, 0x00, 0x00, 0x00, 0xFE, 0x1F, 0x00, 0x00,
     0x00, 0x80, 0xFF, 0x3F, 0x00, 0x00, 0x00, 0xC0, 0xFF, 0x7F, 0x00, 0x00,
@@ -903,109 +902,106 @@ void SceneManager::drawConnecting(int rssi, bool blinkState) {
 }
 
 // ---------------------------------------------------------------------------
-// DAEMON MODE: The Digital Soul
+// DAEMON MODE: Split layout — Wolf (left) | Stats (right)
 // ---------------------------------------------------------------------------
 void SceneManager::drawDaemon() {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   HardwareData &hw = state_.hw;
 
-  // Logic: Check Vital Signs
   int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
-  int ramUsage = (hw.ra > 0) ? (int)((hw.ru / hw.ra) * 100.0f) : 0;
-  bool isAngry = (cpuTemp > 75) || (ramUsage > 90);
+  float ramUsage = (hw.ra > 0) ? (hw.ru / hw.ra) * 100.0f : 0.0f;
+  bool alert = (cpuTemp > 75 || ramUsage > 85);
 
-  // Layout: Center 48x48
-  int iconX = (128 - 48) / 2;
-  int iconY = 8;
-
-  // Draw Tech Frame around the soul
-  disp_.drawTechBracket(iconX - 4, iconY - 4, 56, 56, 4);
-
-  // Render Wolf
+  // LEFT: Wolf Avatar (0–42)
   u8g2.setDrawColor(1);
-  if (isAngry) {
-    u8g2.drawXBMP(iconX, iconY, 48, 48, wolf_alert_bits);
-    u8g2.setFont(LABEL_FONT);
-    disp_.drawCentered(iconY + 50, "STATUS: AGGRESSIVE");
-  } else {
-    u8g2.drawXBMP(iconX, iconY, 48, 48, wolf_idle_bits);
-    u8g2.setFont(LABEL_FONT);
-    disp_.drawCentered(iconY + 50, "STATUS: OBSERVING");
-  }
+  u8g2.drawXBMP(4, 16, 32, 32, alert ? wolf_head_growl : wolf_head_side);
+  u8g2.drawFrame(0, 10, 42, 44);
+  u8g2.drawBox(40, 20, 4, 2);
 
-  // Stats
-  char buf[32];
-  snprintf(buf, sizeof(buf), "RAM:%d%%  CPU:%dC", ramUsage, cpuTemp);
+  // RIGHT: Data Grid (48–128)
   u8g2.setFont(TINY_FONT);
-  disp_.drawCentered(60, buf);
+  u8g2.setCursor(48, 18);
+  u8g2.print(alert ? "STATUS: HUNTING" : "STATUS: IDLE");
+
+  u8g2.setCursor(48, 30);
+  u8g2.printf("CPU: %d C", cpuTemp);
+  u8g2.drawBox(48, 32, (int)map((long)cpuTemp, 30, 90, 0, 70), 2);
+
+  u8g2.setCursor(48, 44);
+  u8g2.printf("RAM: %0.1f%%", ramUsage);
+  u8g2.drawBox(48, 46, (int)map((long)(ramUsage + 0.5f), 0, 100, 0, 70), 2);
+
+  u8g2.setCursor(48, 58);
+  u8g2.print(alert ? ">> OVERHEAT <<" : ">> SYSTEM OK");
 }
 
 // ===========================================================================
-// NETRUNNER MODE: WiFi Scanner List View
-// Displays found networks with RSSI and security status.
+// NETRUNNER MODE: WiFi Scanner — more networks, fast scroll, JAMMER status
 // ===========================================================================
 void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFont(TINY_FONT);
 
-  // FIX: Force scan start if in raw init state
   int n = WiFi.scanComplete();
 
   if (n == -2) {
-    disp_.drawCentered(32, "INIT SENSORS...");
-    WiFi.scanNetworks(true);
+    disp_.drawCentered(32, "INIT RADAR...");
     return;
-  } else if (n == -1) {
+  }
+  if (n == -1) {
     disp_.drawCentered(25, "SCANNING...");
-    int w = (millis() / 20) % 80;
-    u8g2.drawFrame(24, 35, 80, 6);
-    u8g2.drawBox(26, 37, w, 2);
+    u8g2.drawFrame(34, 35, 60, 4);
+    int w = (millis() / 10) % 60;
+    u8g2.drawBox(34, 35, w, 4);
     return;
-  } else if (n == 0) {
+  }
+  if (n == 0) {
     disp_.drawCentered(32, "NO SIGNALS");
     disp_.drawCentered(45, "[PRESS TO RESCAN]");
     return;
   }
 
-  // --- RENDER LIST ---
-  u8g2.setFont(LABEL_FONT);
-  char headerMsg[32];
-  snprintf(headerMsg, sizeof(headerMsg), "NETS: %d [%d-%d]", n, pageOffset + 1,
-           min(pageOffset + 5, n));
+  // --- LIST RENDER ---
+  u8g2.setCursor(2, 6);
+  u8g2.printf("TARGETS: %d", n);
+  u8g2.drawLine(0, 8, 128, 8);
 
-  u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, 128, 11);
-  u8g2.setDrawColor(0);
-  u8g2.drawUTF8(2, 9, headerMsg);
-  u8g2.setDrawColor(1);
+  int yStart = 16;
+  int h = 10;
 
-  int yStart = 20;
-  int h = 9;
-  u8g2.setFont(TINY_FONT);
-
-  for (int i = pageOffset; i < min(pageOffset + 5, n); i++) {
+  for (int i = pageOffset; i < (pageOffset + 5 < n ? pageOffset + 5 : n); i++) {
     int y = yStart + ((i - pageOffset) * h);
 
     if (i == selectedIndex) {
-      u8g2.drawBox(0, y - 7, 128, h);
+      u8g2.setDrawColor(1);
+      u8g2.drawBox(0, y - 8, 128, h);
       u8g2.setDrawColor(0);
     } else {
       u8g2.setDrawColor(1);
     }
 
     String ssid = WiFi.SSID(i);
-    if (ssid.length() > 15)
-      ssid = ssid.substring(0, 14) + "~";
-    u8g2.drawUTF8(2, y, ssid.c_str());
+    if (ssid.length() > 14)
+      ssid = ssid.substring(0, 13) + ".";
+    u8g2.setCursor(2, y);
+    u8g2.print(ssid);
 
-    bool isLock = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
-    u8g2.drawUTF8(95, y, isLock ? "L" : "O");
+    u8g2.setCursor(95, y);
+    u8g2.print(WiFi.RSSI(i));
 
-    int rssi = WiFi.RSSI(i);
-    char rssiBuf[8];
-    snprintf(rssiBuf, sizeof(rssiBuf), "%d", rssi);
-    u8g2.drawUTF8(105, y, rssiBuf);
-
+    if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
+      u8g2.setCursor(120, y);
+      u8g2.print("*");
+    }
     u8g2.setDrawColor(1);
+  }
+
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 55, 128, 55);
+  u8g2.setCursor(2, 63);
+  if (WiFi.status() == WL_CONNECTED) {
+    u8g2.print("LINK: ONLINE");
+  } else {
+    u8g2.print("LINK: DISCONNECTED");
   }
 }
