@@ -59,6 +59,9 @@ public:
   /** BLE Phantom Spammer UI: status bar, pulsing BT icon, packet count. */
   void drawBleSpammer(int packetCount);
 
+  /** BADWOLF USB HID: skull/wolf icon, ARMED status, Short/Long labels. */
+  void drawBadWolf();
+
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
    * valueYOffset: extra pixels to move value baseline down (e.g. 6 for

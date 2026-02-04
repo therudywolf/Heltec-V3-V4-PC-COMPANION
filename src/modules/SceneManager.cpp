@@ -870,11 +870,11 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
            glitchEnabled ? "ON" : "OFF");
 
-  const char *items[] = {row0Buf,        row1Buf,      row2Buf,
-                         "RUN: DAEMON",  "RUN: RADAR", "RUN: LORA",
-                         "RUN: PHANTOM", "EXIT"};
-  const int count = 8;
-  const int startY = 16;
+  const char *items[] = {row0Buf,       row1Buf,        row2Buf,
+                         "RUN: DAEMON", "RUN: RADAR",   "RUN: BADWOLF",
+                         "RUN: LORA",   "RUN: PHANTOM", "EXIT"};
+  const int count = 9;
+  const int startY = 14;
   const int rowH = 6;
 
   u8g2.setFont(LABEL_FONT);
@@ -1160,6 +1160,41 @@ void SceneManager::drawBleSpammer(int packetCount) {
   u8g2.print("PACKETS SENT: [");
   u8g2.print(packetCount);
   u8g2.print("]");
+
+  disp_.drawGreebles();
+}
+
+// ---------------------------------------------------------------------------
+// BADWOLF USB HID: skull with wolf ears, ARMED, Short=Matrix / Long=Sniffer
+// ---------------------------------------------------------------------------
+#define BADWOLF_HEADER_H 10
+#define BADWOLF_ICON_CX 64
+#define BADWOLF_ICON_CY 28
+#define BADWOLF_SKULL_R 10
+#define BADWOLF_FOOTER_Y 52
+
+void SceneManager::drawBadWolf() {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, BADWOLF_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("USB STATUS: ARMED");
+  u8g2.setDrawColor(1);
+
+  int cx = BADWOLF_ICON_CX;
+  int cy = BADWOLF_ICON_CY;
+  u8g2.drawCircle(cx, cy, BADWOLF_SKULL_R);
+  u8g2.drawCircle(cx - 4, cy - 2, 2);
+  u8g2.drawCircle(cx + 4, cy - 2, 2);
+  u8g2.drawTriangle(cx - 10, cy - 8, cx - 6, cy - 14, cx - 2, cy - 8);
+  u8g2.drawTriangle(cx + 2, cy - 8, cx + 6, cy - 14, cx + 10, cy - 8);
+
+  u8g2.drawLine(0, BADWOLF_FOOTER_Y - 1, NOCT_DISP_W, BADWOLF_FOOTER_Y - 1);
+  u8g2.setCursor(2, BADWOLF_FOOTER_Y + 6);
+  u8g2.print("Short: MATRIX | Long: SNIFFER");
 
   disp_.drawGreebles();
 }
