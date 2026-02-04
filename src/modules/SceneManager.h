@@ -9,6 +9,8 @@
 #include "../../include/nocturne/config.h"
 #include "DisplayEngine.h"
 
+class LoraManager;
+
 class SceneManager {
 public:
   SceneManager(DisplayEngine &disp, AppState &state);
@@ -46,6 +48,9 @@ public:
   void drawDaemon();
   /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security. */
   void drawWiFiScanner(int selectedIndex, int pageOffset);
+  /** Cyberdeck: LoRa sniffer (868 MHz) — noise floor, packet count, last hex.
+   */
+  void drawLoraSniffer(LoraManager &lora);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
