@@ -10,7 +10,6 @@
 #include <WiFi.h>
 #include <math.h>
 
-
 // ===========================================================================
 // ASSETS: 32x32 PIXEL PERFECT WOLF (High contrast for OLED)
 // ===========================================================================
@@ -764,6 +763,32 @@ void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
   else
     bits = icon_weather_cloud_32_bits; /* unknown WMO → cloud */
   u8g2.drawXBM(x, y, WEATHER_ICON_W, WEATHER_ICON_H, bits);
+}
+
+void SceneManager::drawPowerStatus(int pct, bool isCharging) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+
+  int x = 100;
+  int y = 8;
+
+  u8g2.drawFrame(x, y - 6, 12, 6);
+  u8g2.drawBox(x + 12, y - 4, 2, 2);
+
+  if (pct > 10)
+    u8g2.drawBox(x + 2, y - 5, 2, 4);
+  if (pct > 40)
+    u8g2.drawBox(x + 5, y - 5, 2, 4);
+  if (pct > 80)
+    u8g2.drawBox(x + 8, y - 5, 2, 4);
+
+  u8g2.setCursor(x - 22, y);
+  if (isCharging) {
+    u8g2.print("CHG");
+  } else {
+    u8g2.print(pct);
+    u8g2.print("%");
+  }
 }
 
 void SceneManager::drawNoDataCross(int x, int y, int w, int h) {

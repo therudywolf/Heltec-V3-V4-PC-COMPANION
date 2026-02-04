@@ -681,7 +681,8 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   const int barH = NOCT_HEADER_H;
   const int baselineY = 11;
   const int nameX = 4;
-  const int rightAnchor = 124;
+  /* Leave space for battery HUD (icon + %) to the right of WOOF! */
+  const int rightAnchor = 76;
 
   u8g2_.setDrawColor(1);
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);

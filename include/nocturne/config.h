@@ -14,6 +14,12 @@
 #define NOCT_LED_ALERT_PIN                                                     \
   35 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
+/* Battery (Heltec V4: GPIO 1, 1/2 divider → ×2 for voltage) */
+#define NOCT_BAT_PIN 1
+#define NOCT_BAT_READ_DELAY 10
+#define NOCT_VOLT_MIN 3.3f
+#define NOCT_VOLT_MAX 4.2f
+
 #define NOCT_ALERT_LED_BLINK_MS 175
 #define NOCT_ALERT_LED_BLINKS 5 /* 5 blinks then fade out */
 #define NOCT_ALERT_MAX_BLINKS 2 /* Strict limit: 2 blinks only */
