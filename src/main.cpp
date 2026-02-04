@@ -16,6 +16,7 @@
 #include "modules/LoraManager.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
+#include "modules/UsbManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 #include "secrets.h"
@@ -27,6 +28,7 @@ DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
 NetManager netManager;
 LoraManager loraManager;
 BleManager bleManager;
+UsbManager usbManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
@@ -57,10 +59,17 @@ unsigned long predatorEnterTime = 0;
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
 #define WOLF_MENU_ITEMS                                                        \
-  8 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, LORA, PHANTOM, EXIT */
+  9 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, BADWOLF, LORA, PHANTOM, EXIT */
 
 // --- Cyberdeck Modes ---
-enum AppMode { MODE_NORMAL, MODE_DAEMON, MODE_RADAR, MODE_LORA, MODE_BLE_SPAM };
+enum AppMode {
+  MODE_NORMAL,
+  MODE_DAEMON,
+  MODE_RADAR,
+  MODE_LORA,
+  MODE_BLE_SPAM,
+  MODE_BADWOLF
+};
 AppMode currentMode = MODE_NORMAL;
 
 // --- Netrunner WiFi Scanner ---
@@ -217,6 +226,8 @@ void loop() {
             bleManager.stop();
             WiFi.mode(WIFI_STA);
           }
+          if (currentMode == MODE_BADWOLF)
+            usbManager.stop();
           currentMode = MODE_NORMAL;
           WiFi.scanDelete();
           netManager.setSuspend(false);
@@ -234,6 +245,9 @@ void loop() {
         if (currentMode == MODE_LORA) {
           loraManager.replayLast();
           needRedraw = true;
+        } else if (currentMode == MODE_BADWOLF) {
+          usbManager.runSniffer();
+          needRedraw = true;
         } else if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
           if (n > 0) {
@@ -249,6 +263,9 @@ void loop() {
       } else {
         if (currentMode == MODE_LORA) {
           loraManager.clearBuffer();
+          needRedraw = true;
+        } else if (currentMode == MODE_BADWOLF) {
+          usbManager.runMatrix();
           needRedraw = true;
         } else if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
@@ -303,20 +320,25 @@ void loop() {
           WiFi.mode(WIFI_STA);
           WiFi.scanNetworks(true);
         } else if (quickMenuItem == 5) {
+          currentMode = MODE_BADWOLF;
+          quickMenuOpen = false;
+          usbManager.begin();
+          Serial.println("[SYS] BADWOLF USB HID ARMED.");
+        } else if (quickMenuItem == 6) {
           currentMode = MODE_LORA;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           WiFi.mode(WIFI_OFF);
           loraManager.setMode(true);
           Serial.println("[SYS] LORA SNIFFER ON.");
-        } else if (quickMenuItem == 6) {
+        } else if (quickMenuItem == 7) {
           currentMode = MODE_BLE_SPAM;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           WiFi.mode(WIFI_OFF);
           bleManager.begin();
           Serial.println("[SYS] BLE PHANTOM ACTIVE.");
-        } else if (quickMenuItem == 7) {
+        } else if (quickMenuItem == 8) {
           quickMenuOpen = false;
         }
       } else {
@@ -478,6 +500,8 @@ void loop() {
         bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
       display.applyGlitch();
     lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
+  } else if (currentMode == MODE_BADWOLF) {
+    sceneManager.drawBadWolf();
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
