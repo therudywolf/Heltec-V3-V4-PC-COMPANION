@@ -182,7 +182,8 @@ void loop() {
         if (currentMode != MODE_NORMAL) {
           currentMode = MODE_NORMAL;
           WiFi.scanDelete();
-          Serial.println("[UI] Triple Click: EXIT APP");
+          netManager.setSuspend(false);
+          Serial.println("[SYS] NETMANAGER RESUMED.");
         } else {
           quickMenuOpen = false;
         }
@@ -190,26 +191,20 @@ void loop() {
       }
     }
 
-    // STANDARD LOGIC
+    // IN APP MODE: short = navigate, long = action (JAMMER in Radar)
     if (currentMode != MODE_NORMAL) {
       if (duration >= NOCT_BUTTON_LONG_MS) {
         if (currentMode == MODE_RADAR) {
           int n = WiFi.scanComplete();
-          if (n > 0 && wifiScanSelected < n) {
-            if (WiFi.SSID(wifiScanSelected) == WiFi.SSID()) {
-              Serial.println("[NETRUNNER] Disconnecting from current AP.");
-              WiFi.disconnect();
-            } else {
-              Serial.println("[NETRUNNER] Rescanning...");
-              WiFi.scanNetworks(true);
-              wifiScanSelected = 0;
-              wifiListPage = 0;
-            }
-          } else {
+          if (n > 0) {
+            Serial.println("[RADAR] INITIATING DISCONNECT...");
+            WiFi.disconnect(true);
+            WiFi.mode(WIFI_OFF);
+            delay(100);
+            WiFi.mode(WIFI_STA);
+            Serial.println("[RADAR] RADIO RESET.");
             WiFi.scanNetworks(true);
           }
-        } else {
-          currentMode = MODE_NORMAL;
         }
       } else {
         if (currentMode == MODE_RADAR) {
@@ -259,6 +254,11 @@ void loop() {
         } else if (quickMenuItem == 4) {
           currentMode = MODE_RADAR;
           quickMenuOpen = false;
+          netManager.setSuspend(true);
+          Serial.println("[SYS] NETMANAGER SUSPENDED. RADIO FREE.");
+          WiFi.disconnect();
+          WiFi.mode(WIFI_STA);
+          WiFi.scanNetworks(true);
         } else if (quickMenuItem == 5) {
           quickMenuOpen = false;
         }

@@ -87,7 +87,20 @@ void NetManager::setServer(const char *ip, uint16_t port) {
   serverPort_ = port;
 }
 
+void NetManager::setSuspend(bool suspend) {
+  suspended_ = suspend;
+  if (suspend) {
+    disconnectTcp();
+    Serial.println("[NET] Logic Suspended.");
+  } else {
+    lastWifiRetry_ = 0;
+    Serial.println("[NET] Logic Resumed.");
+  }
+}
+
 void NetManager::tick(unsigned long now) {
+  if (suspended_)
+    return;
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiConnected_) {
       wifiConnected_ = true;

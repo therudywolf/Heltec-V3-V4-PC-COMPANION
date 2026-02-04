@@ -889,42 +889,43 @@ void DisplayEngine::drawAlertBorder() {
 }
 
 // ===========================================================================
-// CYBERPUNK VFX: V-HOLD + digital artifacts (no scanline grid).
+// BLADE RUNNER VFX: Analog noise (pixel dust), V-Sync loss (screen roll),
+// Chromatic shift (text tearing). No grid/scanlines.
 // ===========================================================================
 void DisplayEngine::applyGlitch() {
   unsigned long now = millis();
 
-  // --- LAYER 2: V-HOLD TRIP (Rare) ---
-  static unsigned long lastVHoldTrip = 0;
-  static int vHoldOffset = 0;
-  if (now - lastVHoldTrip > random(8000, 15000) && vHoldOffset == 0) {
-    lastVHoldTrip = now;
-    vHoldOffset = random(-8, 8);
-  }
-
-  if (vHoldOffset != 0) {
-    u8g2_.setDrawColor(0);
-    int barH = abs(vHoldOffset) * 2;
-    int barY = (millis() / 15) % (64 + barH) - barH;
-    u8g2_.drawBox(0, barY, 128, barH);
-    u8g2_.setDrawColor(1);
-
-    if (vHoldOffset > 0)
-      vHoldOffset--;
-    else
-      vHoldOffset++;
-  }
-
-  // --- LAYER 3: DIGITAL ARTIFACTS (Subtle) ---
-  if (random(100) > 92) {
-    u8g2_.setDrawColor(2);
-    int type = random(3);
-    if (type == 0) {
-      int y = random(64);
-      u8g2_.drawBox(random(5), y, random(60, 120), 1);
-    } else if (type == 1) {
-      u8g2_.drawBox(random(120), random(60), random(4, 8), random(4, 8));
+  // 1. ANALOG NOISE (Pixel Dust) — "Film Grain"
+  if (random(100) > 60) {
+    u8g2_.setDrawColor(2); // XOR
+    for (int i = 0; i < 10; i++) {
+      u8g2_.drawPixel(random(128), random(64));
     }
+    u8g2_.setDrawColor(1);
+  }
+
+  // 2. V-SYNC FAILURE (Screen Roll) — "Cyberpunk" look
+  static int vShift = 0;
+  static unsigned long lastGlitch = 0;
+  if (random(1000) > 990 && vShift == 0) {
+    vShift = random(-5, 5);
+    lastGlitch = now;
+  }
+
+  if (vShift != 0) {
+    u8g2_.setDrawColor(0);
+    int y = (millis() / 5) % 70;
+    u8g2_.drawBox(0, y, 128, 2);
+    u8g2_.setDrawColor(1);
+    if (now - lastGlitch > 200)
+      vShift = 0;
+  }
+
+  // 3. CHROMATIC SHIFT (Text Tearing)
+  if (random(100) > 95) {
+    u8g2_.setDrawColor(2); // XOR
+    int y = random(64);
+    u8g2_.drawBox(random(10), y, 100, 1);
     u8g2_.setDrawColor(1);
   }
 }

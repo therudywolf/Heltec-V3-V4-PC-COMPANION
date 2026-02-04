@@ -31,6 +31,7 @@ public:
   size_t print(const String &s) { return client_.print(s); }
   size_t print(const char *s) { return client_.print(s); }
 
+  void setSuspend(bool suspend);
   void disconnectTcp();
   void markDataReceived(unsigned long now);
   void appendLineBuffer(char c);
@@ -60,6 +61,7 @@ private:
   bool tcpConnected_;
   bool firstDataReceived_;
   bool searchMode_;
+  bool suspended_ = false;
   int rssi_;
   int lastSentScreen_;
 };
