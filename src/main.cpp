@@ -13,14 +13,17 @@
 #include "modules/BleManager.h"
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
+#include "modules/KickManager.h"
 #include "modules/LoraManager.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
 #include "modules/TrapManager.h"
 #include "modules/UsbManager.h"
+#include "modules/VaultManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 #include "secrets.h"
+
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -31,6 +34,8 @@ LoraManager loraManager;
 BleManager bleManager;
 UsbManager usbManager;
 TrapManager trapManager;
+KickManager kickManager;
+VaultManager vaultManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
@@ -60,20 +65,21 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define WOLF_MENU_ITEMS                                                        \
-  11 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, BADWOLF, LORA, SILENCE, PHANTOM,    \
-        TRAP, EXIT */
+#define WOLF_MENU_ITEMS 14
 
 // --- Cyberdeck Modes ---
 enum AppMode {
   MODE_NORMAL,
   MODE_DAEMON,
   MODE_RADAR,
+  MODE_WIFI_DEAUTH,
   MODE_LORA,
   MODE_LORA_JAM,
   MODE_BLE_SPAM,
   MODE_BADWOLF,
-  MODE_WIFI_TRAP
+  MODE_WIFI_TRAP,
+  MODE_VAULT,
+  MODE_LORA_SENSE
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -165,6 +171,7 @@ void setup() {
 
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
+  vaultManager.begin();
 
   updateBatteryState();
   lastBatteryReadMs = millis();
@@ -230,7 +237,8 @@ void loop() {
       if (clickCount >= 3) {
         clickCount = 0;
         if (currentMode != MODE_NORMAL) {
-          if (currentMode == MODE_LORA)
+          if (currentMode == MODE_LORA || currentMode == MODE_LORA_JAM ||
+              currentMode == MODE_LORA_SENSE)
             loraManager.setMode(false);
           if (currentMode == MODE_LORA_JAM) {
             loraManager.stopJamming();
@@ -246,6 +254,8 @@ void loop() {
             trapManager.stop();
             WiFi.mode(WIFI_STA);
           }
+          if (currentMode == MODE_WIFI_DEAUTH)
+            kickManager.stopAttack();
           currentMode = MODE_NORMAL;
           WiFi.scanDelete();
           netManager.setSuspend(false);
@@ -260,7 +270,13 @@ void loop() {
     // IN APP MODE: short = navigate/clear, long = action (REPLAY in LORA)
     if (currentMode != MODE_NORMAL) {
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        if (currentMode == MODE_LORA) {
+        if (currentMode == MODE_WIFI_DEAUTH) {
+          if (kickManager.isAttacking())
+            kickManager.stopAttack();
+          else
+            kickManager.startAttack();
+          needRedraw = true;
+        } else if (currentMode == MODE_LORA) {
           loraManager.replayLast();
           needRedraw = true;
         } else if (currentMode == MODE_BADWOLF) {
@@ -279,7 +295,24 @@ void loop() {
           }
         }
       } else {
-        if (currentMode == MODE_LORA) {
+        if (currentMode == MODE_VAULT) {
+          int n = vaultManager.getAccountCount();
+          if (n > 0)
+            vaultManager.setCurrentIndex((vaultManager.getCurrentIndex() + 1) %
+                                         n);
+          needRedraw = true;
+        } else if (currentMode == MODE_WIFI_DEAUTH) {
+          int n = WiFi.scanComplete();
+          if (n > 0) {
+            wifiScanSelected = (wifiScanSelected + 1) % n;
+            kickManager.setTargetFromScan(wifiScanSelected);
+            if (wifiScanSelected >= wifiListPage + 5)
+              wifiListPage = wifiScanSelected - 4;
+            else if (wifiScanSelected < wifiListPage)
+              wifiListPage = wifiScanSelected;
+          }
+          needRedraw = true;
+        } else if (currentMode == MODE_LORA) {
           loraManager.clearBuffer();
           needRedraw = true;
         } else if (currentMode == MODE_BADWOLF) {
@@ -338,38 +371,61 @@ void loop() {
           WiFi.mode(WIFI_STA);
           WiFi.scanNetworks(true);
         } else if (quickMenuItem == 5) {
+          currentMode = MODE_WIFI_DEAUTH;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.disconnect();
+          WiFi.mode(WIFI_STA);
+          WiFi.scanNetworks(true);
+          wifiScanSelected = 0;
+          wifiListPage = 0;
+          kickManager.setTargetFromScan(0);
+          Serial.println("[SYS] KICK MODE. Short=target Long=ATTACK.");
+        } else if (quickMenuItem == 6) {
           currentMode = MODE_BADWOLF;
           quickMenuOpen = false;
           usbManager.begin();
           Serial.println("[SYS] BADWOLF USB HID ARMED.");
-        } else if (quickMenuItem == 6) {
+        } else if (quickMenuItem == 7) {
           currentMode = MODE_LORA;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           WiFi.mode(WIFI_OFF);
           loraManager.setMode(true);
           Serial.println("[SYS] LORA SNIFFER ON.");
-        } else if (quickMenuItem == 7) {
+        } else if (quickMenuItem == 8) {
           currentMode = MODE_LORA_JAM;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           WiFi.mode(WIFI_OFF);
           loraManager.startJamming(869.525f);
           Serial.println("[SYS] SILENCE JAMMER ON.");
-        } else if (quickMenuItem == 8) {
+        } else if (quickMenuItem == 9) {
           currentMode = MODE_BLE_SPAM;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           WiFi.mode(WIFI_OFF);
           bleManager.begin();
           Serial.println("[SYS] BLE PHANTOM ACTIVE.");
-        } else if (quickMenuItem == 9) {
+        } else if (quickMenuItem == 10) {
           currentMode = MODE_WIFI_TRAP;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           trapManager.start();
           Serial.println("[SYS] TRAP AP ON.");
-        } else if (quickMenuItem == 10) {
+        } else if (quickMenuItem == 11) {
+          currentMode = MODE_VAULT;
+          quickMenuOpen = false;
+          vaultManager.trySyncNtp();
+          Serial.println("[SYS] VAULT OPEN.");
+        } else if (quickMenuItem == 12) {
+          currentMode = MODE_LORA_SENSE;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          loraManager.startSense();
+          Serial.println("[SYS] GHOSTS SENSE ON.");
+        } else if (quickMenuItem == 13) {
           quickMenuOpen = false;
         }
       } else {
@@ -519,6 +575,17 @@ void loop() {
     sceneManager.drawDaemon();
   } else if (currentMode == MODE_RADAR) {
     sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage);
+  } else if (currentMode == MODE_WIFI_DEAUTH) {
+    static bool kickTargetInitialized = false;
+    if (WiFi.scanComplete() <= 0)
+      kickTargetInitialized = false;
+    else if (!kickTargetInitialized) {
+      kickManager.setTargetFromScan(wifiScanSelected >= 0 ? wifiScanSelected
+                                                          : 0);
+      kickTargetInitialized = true;
+    }
+    kickManager.tick();
+    sceneManager.drawKickMode(kickManager);
   } else if (currentMode == MODE_LORA) {
     loraManager.tick();
     sceneManager.drawLoraSniffer(loraManager);
@@ -540,6 +607,16 @@ void loop() {
     sceneManager.drawTrapMode(
         trapManager.getClientCount(), trapManager.getLogsCaptured(),
         trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil());
+  } else if (currentMode == MODE_VAULT) {
+    vaultManager.tick();
+    static char codeBuf[8];
+    vaultManager.getCurrentCode(codeBuf, sizeof(codeBuf));
+    sceneManager.drawVaultMode(
+        vaultManager.getAccountName(vaultManager.getCurrentIndex()), codeBuf,
+        vaultManager.getCountdownSeconds());
+  } else if (currentMode == MODE_LORA_SENSE) {
+    loraManager.tick();
+    sceneManager.drawGhostsMode(loraManager);
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);

@@ -5,6 +5,7 @@
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
+#include "KickManager.h"
 #include "LoraManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
@@ -934,11 +935,12 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
            glitchEnabled ? "ON" : "OFF");
 
-  const char *items[] = {row0Buf,       row1Buf,        row2Buf,
-                         "RUN: DAEMON", "RUN: RADAR",   "RUN: BADWOLF",
-                         "RUN: LORA",   "RUN: SILENCE", "RUN: PHANTOM",
-                         "RUN: TRAP",   "EXIT"};
-  const int count = 11;
+  const char *items[] = {row0Buf,        row1Buf,      row2Buf,
+                         "RUN: DAEMON",  "RUN: RADAR", "RUN: KICK",
+                         "RUN: BADWOLF", "RUN: LORA",  "RUN: SILENCE",
+                         "RUN: PHANTOM", "RUN: TRAP",  "RUN: VAULT",
+                         "RUN: GHOSTS",  "EXIT"};
+  const int count = 14;
   const int startY = 16;
 
   int firstVisible = menuItem - MENU_VISIBLE_ROWS / 2;
@@ -1408,6 +1410,136 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
 
   u8g2.drawLine(0, TRAP_FOOTER_Y - 1, NOCT_DISP_W, TRAP_FOOTER_Y - 1);
   u8g2.setCursor(2, TRAP_FOOTER_Y + 5);
+  u8g2.print("Triple-click: EXIT");
+
+  disp_.drawGreebles();
+}
+
+// --- KICK (WiFi Deauth) ---
+#define KICK_HEADER_H 10
+#define KICK_ICON_X 48
+#define KICK_ICON_Y 14
+#define KICK_FOOTER_Y 56
+
+void SceneManager::drawKickMode(KickManager &kick) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  bool attacking = kick.isAttacking();
+  int sx = attacking ? (int)((millis() / 25) % 5) - 2 : 0;
+  int sy = attacking ? (int)((millis() / 33) % 5) - 2 : 0;
+
+  u8g2.drawBox(0 + sx, 0 + sy, NOCT_DISP_W, KICK_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2 + sx, 7 + sy);
+  u8g2.print("KICKER");
+  u8g2.setDrawColor(1);
+
+  u8g2.drawXBM(KICK_ICON_X + sx, KICK_ICON_Y + sy, 32, 32, wolf_aggressive);
+
+  static char targetBuf[44];
+  static char bssidBuf[20];
+  kick.getTargetSSID(targetBuf, sizeof(targetBuf));
+  kick.getTargetBSSIDStr(bssidBuf, sizeof(bssidBuf));
+  if (targetBuf[0] == '\0')
+    snprintf(targetBuf, sizeof(targetBuf), "%s", bssidBuf);
+  u8g2.setCursor(2 + sx, 48 + sy);
+  u8g2.print("TARGET: ");
+  u8g2.print(targetBuf[0] ? targetBuf : "(none)");
+  u8g2.setCursor(2 + sx, 56 + sy);
+  u8g2.print(attacking ? "STATUS: INJECTING" : "STATUS: IDLE");
+  u8g2.setCursor(2 + sx, 62 + sy);
+  u8g2.print("PKTS: ");
+  u8g2.print(kick.getPacketCount());
+
+  if (kick.isTargetOwnAP()) {
+    u8g2.setCursor(70 + sx, 48 + sy);
+    u8g2.print("[OWN AP]");
+  }
+
+  disp_.drawGreebles();
+}
+
+// --- VAULT (TOTP 2FA) ---
+#define VAULT_HEADER_H 10
+#define VAULT_CHEST_X 24
+#define VAULT_CHEST_Y 22
+#define VAULT_FOOTER_Y 56
+
+void SceneManager::drawVaultMode(const char *accountName, const char *code6,
+                                 int countdownSec) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, VAULT_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("VAULT");
+  u8g2.setDrawColor(1);
+
+  int cx = VAULT_CHEST_X;
+  int cy = VAULT_CHEST_Y;
+  u8g2.drawRFrame(cx - 2, cy - 4, 20, 14, 2);
+  u8g2.drawRFrame(cx + 2, cy - 2, 12, 10, 1);
+  u8g2.drawCircle(cx + 8, cy + 2, 2);
+  u8g2.drawDisc(cx + 8, cy + 2, 1);
+  u8g2.drawTriangle(cx + 28, cy - 2, cx + 36, cy + 2, cx + 28, cy + 6);
+  u8g2.drawTriangle(cx + 32, cy, cx + 38, cy + 2, cx + 32, cy + 4);
+
+  u8g2.setCursor(2, 14);
+  u8g2.print(accountName && accountName[0] ? accountName : "(no account)");
+  u8g2.setFont(u8g2_font_logisoso24_tr);
+  int codeW = code6 ? u8g2.getUTF8Width(code6) : 0;
+  u8g2.setCursor((NOCT_DISP_W - codeW) / 2, 44);
+  u8g2.print(code6 && code6[0] ? code6 : "------");
+  u8g2.setFont(TINY_FONT);
+  int pct = (countdownSec >= 0 && countdownSec <= 30)
+                ? (int)((countdownSec * 100) / 30)
+                : 100;
+  disp_.drawProgressBar(4, 48, NOCT_DISP_W - 8, 4, 100 - pct);
+  u8g2.setCursor(2, VAULT_FOOTER_Y + 5);
+  u8g2.print("Short: next account");
+
+  disp_.drawGreebles();
+}
+
+// --- GHOSTS (868 MHz sensor sniffer) ---
+#define GHOSTS_HEADER_H 10
+#define GHOSTS_LIST_Y 14
+#define GHOSTS_ROW_H 10
+
+void SceneManager::drawGhostsMode(LoraManager &lora) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, GHOSTS_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("GHOSTS 868.3");
+  u8g2.setDrawColor(1);
+
+  unsigned long t = millis() / 80;
+  int sweepX = (int)(64 + 40 * cos((t % 360) * 3.14159265359 / 180.0));
+  int sweepY = (int)(32 + 24 * sin((t % 360) * 3.14159265359 / 180.0));
+  u8g2.drawLine(64, 32, sweepX, sweepY);
+
+  int n = lora.getSenseCount();
+  for (int i = 0; i < n && i < 4; i++) {
+    const LoraManager::SenseEntry *e = lora.getSenseEntry(i);
+    if (!e)
+      continue;
+    int y = GHOSTS_LIST_Y + i * GHOSTS_ROW_H;
+    u8g2.setCursor(2, y);
+    u8g2.print(e->hex[0] ? e->hex : "...");
+    u8g2.setCursor(100, y);
+    u8g2.print((int)e->rssi);
+  }
+
+  u8g2.drawLine(0, 55, NOCT_DISP_W, 55);
+  u8g2.setCursor(2, 62);
   u8g2.print("Triple-click: EXIT");
 
   disp_.drawGreebles();

@@ -9,7 +9,9 @@
 #include "../../include/nocturne/config.h"
 #include "DisplayEngine.h"
 
+class KickManager;
 class LoraManager;
+class VaultManager;
 
 class SceneManager {
 public:
@@ -68,6 +70,19 @@ public:
   /** TRAP: Evil twin / captive portal — clients, logs, last bite. */
   void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
                     unsigned long passwordShowUntil);
+
+  /** KICK: WiFi deauth — wolf baring teeth, shake when attacking,
+   * TARGET/STATUS/PKTS. */
+  void drawKickMode(KickManager &kick);
+
+  /** VAULT: TOTP 2FA — locked chest + paw, account name, 6-digit code, 30s bar.
+   */
+  void drawVaultMode(const char *accountName, const char *code6,
+                     int countdownSec);
+
+  /** GHOSTS: 868 MHz sensor sniffer — radar sweep, scrolling list RSSI + hex.
+   */
+  void drawGhostsMode(LoraManager &lora);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
