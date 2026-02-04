@@ -25,6 +25,64 @@
 #include "secrets.h"
 
 // ---------------------------------------------------------------------------
+// Input: Event-based (SHORT = navigate, LONG = select, DOUBLE = back/menu)
+// ---------------------------------------------------------------------------
+enum ButtonEvent { EV_NONE, EV_SHORT, EV_LONG, EV_DOUBLE };
+
+struct InputSystem {
+  const int pin;
+  unsigned long pressTime = 0;
+  unsigned long releaseTime = 0;
+  bool btnState = false;
+  int clickCount = 0;
+
+  InputSystem(int p) : pin(p) { pinMode(pin, INPUT_PULLUP); }
+
+  ButtonEvent update() {
+    bool down = (digitalRead(pin) == LOW);
+    unsigned long now = millis();
+    ButtonEvent event = EV_NONE;
+
+    if (down && !btnState) {
+      btnState = true;
+      pressTime = now;
+    } else if (!down && btnState) {
+      btnState = false;
+      unsigned long duration = now - pressTime;
+      if (duration > 50 && duration < 500) {
+        clickCount++;
+        releaseTime = now;
+      } else if (duration >= 500) {
+        clickCount = 0;
+        return EV_LONG;
+      }
+    }
+
+    if (clickCount > 0 && !btnState && (now - releaseTime > 250)) {
+      if (clickCount == 1)
+        event = EV_SHORT;
+      else if (clickCount >= 2)
+        event = EV_DOUBLE;
+      clickCount = 0;
+    }
+    return event;
+  }
+};
+
+struct IntervalTimer {
+  unsigned long intervalMs;
+  unsigned long lastMs = 0;
+  IntervalTimer(unsigned long interval) : intervalMs(interval) {}
+  bool check(unsigned long now) {
+    if (now - lastMs >= intervalMs) {
+      lastMs = now;
+      return true;
+    }
+    return false;
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
@@ -38,6 +96,10 @@ VaultManager vaultManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
+InputSystem input(NOCT_BUTTON_PIN);
+IntervalTimer guiTimer(NOCT_REDRAW_INTERVAL_MS);
+IntervalTimer batTimer(NOCT_BAT_READ_INTERVAL_MS);
+
 Settings &settings = state.settings;
 unsigned long bootTime = 0;
 unsigned long splashStart = 0;
@@ -47,10 +109,6 @@ int previousScene = 0;
 unsigned long transitionStart = 0;
 bool inTransition = false;
 
-unsigned long btnPressTime = 0;
-bool btnHeld = false;
-int clickCount = 0;
-unsigned long lastClickTime = 0;
 unsigned long lastCarousel = 0;
 unsigned long lastFanAnim = 0;
 int fanAnimFrame = 0;
@@ -105,9 +163,7 @@ int wifiListPage = 0;
 #define NOCT_BAT_READ_INTERVAL_MS 5000
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
-static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
-static unsigned long lastBatteryReadMs = 0;
 
 /** Get battery voltage from ADC (GPIO 1). Heltec V4: 1/2 divider → ×2; 1.1
  * calibration. */
@@ -187,15 +243,40 @@ void setup() {
   vaultManager.begin();
 
   updateBatteryState();
-  lastBatteryReadMs = millis();
 }
 
 // ---------------------------------------------------------------------------
-// Loop
+// Loop: Event-based input, switch(mode) render, header then battery
 // ---------------------------------------------------------------------------
+static void exitAppModeToNormal() {
+  if (currentMode == MODE_LORA || currentMode == MODE_LORA_JAM ||
+      currentMode == MODE_LORA_SENSE) {
+    if (currentMode == MODE_LORA_JAM)
+      loraManager.stopJamming();
+    loraManager.setMode(false);
+  }
+  if (currentMode == MODE_BLE_SPAM) {
+    bleManager.stop();
+    WiFi.mode(WIFI_STA);
+  }
+  if (currentMode == MODE_BADWOLF)
+    usbManager.stop();
+  if (currentMode == MODE_WIFI_TRAP) {
+    trapManager.stop();
+    WiFi.mode(WIFI_STA);
+  }
+  if (currentMode == MODE_WIFI_DEAUTH)
+    kickManager.stopAttack();
+  currentMode = MODE_NORMAL;
+  WiFi.scanDelete();
+  netManager.setSuspend(false);
+  Serial.println("[SYS] NETMANAGER RESUMED.");
+}
+
 void loop() {
   unsigned long now = millis();
 
+  // 1. Critical background tasks
   netManager.tick(now);
 
   if (netManager.isTcpConnected()) {
@@ -227,285 +308,28 @@ void loop() {
     }
   }
 
-  // --- BUTTON LOGIC WITH TRIPLE CLICK ---
-  int btnState = digitalRead(NOCT_BUTTON_PIN);
+  // 2. Non-blocking input
+  ButtonEvent event = input.update();
 
-  if (btnState == LOW && !btnHeld) {
-    btnHeld = true;
-    btnPressTime = now;
-  }
-
-  if (btnState == HIGH && btnHeld) {
-    btnHeld = false;
-    unsigned long duration = now - btnPressTime;
-    needRedraw = true;
-
-    // TRIPLE CLICK: Count fast clicks
-    if (duration < 500) {
-      if (now - lastClickTime > 600)
-        clickCount = 0;
-      clickCount++;
-      lastClickTime = now;
-
-      if (clickCount >= 3) {
-        clickCount = 0;
-        if (currentMode != MODE_NORMAL) {
-          if (currentMode == MODE_LORA || currentMode == MODE_LORA_JAM ||
-              currentMode == MODE_LORA_SENSE)
-            loraManager.setMode(false);
-          if (currentMode == MODE_LORA_JAM) {
-            loraManager.stopJamming();
-            loraManager.setMode(false);
-          }
-          if (currentMode == MODE_BLE_SPAM) {
-            bleManager.stop();
-            WiFi.mode(WIFI_STA);
-          }
-          if (currentMode == MODE_BADWOLF)
-            usbManager.stop();
-          if (currentMode == MODE_WIFI_TRAP) {
-            trapManager.stop();
-            WiFi.mode(WIFI_STA);
-          }
-          if (currentMode == MODE_WIFI_DEAUTH)
-            kickManager.stopAttack();
-          currentMode = MODE_NORMAL;
-          WiFi.scanDelete();
-          netManager.setSuspend(false);
-          Serial.println("[SYS] NETMANAGER RESUMED.");
-        } else if (quickMenuOpen) {
-          if (menuState != MENU_MAIN)
-            menuState = MENU_MAIN;
-          else
-            quickMenuOpen = false;
-        }
-        return;
-      }
-    }
-
-    // IN APP MODE: short = navigate/clear, long = action (REPLAY in LORA)
+  // 3. Global: DOUBLE = back / enter menu
+  if (event == EV_DOUBLE) {
     if (currentMode != MODE_NORMAL) {
-      if (duration >= NOCT_BUTTON_LONG_MS) {
-        if (currentMode == MODE_WIFI_DEAUTH) {
-          if (kickManager.isAttacking())
-            kickManager.stopAttack();
-          else
-            kickManager.startAttack();
-          needRedraw = true;
-        } else if (currentMode == MODE_LORA) {
-          loraManager.replayLast();
-          needRedraw = true;
-        } else if (currentMode == MODE_BADWOLF) {
-          usbManager.runSniffer();
-          needRedraw = true;
-        } else if (currentMode == MODE_RADAR) {
-          int n = WiFi.scanComplete();
-          if (n > 0) {
-            Serial.println("[RADAR] INITIATING DISCONNECT...");
-            WiFi.disconnect(true);
-            WiFi.mode(WIFI_OFF);
-            delay(100);
-            WiFi.mode(WIFI_STA);
-            Serial.println("[RADAR] RADIO RESET.");
-            WiFi.scanNetworks(true);
-          }
-        }
-      } else {
-        if (currentMode == MODE_VAULT) {
-          int n = vaultManager.getAccountCount();
-          if (n > 0)
-            vaultManager.setCurrentIndex((vaultManager.getCurrentIndex() + 1) %
-                                         n);
-          needRedraw = true;
-        } else if (currentMode == MODE_WIFI_DEAUTH) {
-          int n = WiFi.scanComplete();
-          if (n > 0) {
-            wifiScanSelected = (wifiScanSelected + 1) % n;
-            kickManager.setTargetFromScan(wifiScanSelected);
-            if (wifiScanSelected >= wifiListPage + 5)
-              wifiListPage = wifiScanSelected - 4;
-            else if (wifiScanSelected < wifiListPage)
-              wifiListPage = wifiScanSelected;
-          }
-          needRedraw = true;
-        } else if (currentMode == MODE_LORA) {
-          loraManager.clearBuffer();
-          needRedraw = true;
-        } else if (currentMode == MODE_BADWOLF) {
-          usbManager.runMatrix();
-          needRedraw = true;
-        } else if (currentMode == MODE_RADAR) {
-          int n = WiFi.scanComplete();
-          if (n > 0) {
-            wifiScanSelected = (wifiScanSelected + 1) % n;
-            if (wifiScanSelected >= wifiListPage + 5)
-              wifiListPage = wifiScanSelected - 4;
-            else if (wifiScanSelected < wifiListPage)
-              wifiListPage = wifiScanSelected;
-          }
-        }
-      }
-    } else if (quickMenuOpen) {
-      if (duration >= NOCT_BUTTON_LONG_MS) {
-        if (menuState == MENU_SUB_WIFI) {
-          if (submenuIndex == SUB_WIFI_COUNT - 1) {
-            menuState = MENU_MAIN;
-          } else if (submenuIndex == 0) {
-            currentMode = MODE_RADAR;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            WiFi.disconnect();
-            WiFi.mode(WIFI_STA);
-            WiFi.scanNetworks(true);
-            Serial.println("[SYS] WIFI SCAN.");
-          } else if (submenuIndex == 1) {
-            currentMode = MODE_WIFI_DEAUTH;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            WiFi.disconnect();
-            WiFi.mode(WIFI_STA);
-            WiFi.scanNetworks(true);
-            wifiScanSelected = 0;
-            wifiListPage = 0;
-            kickManager.setTargetFromScan(0);
-            Serial.println("[SYS] DEAUTH. Short=target Long=Fire 3x Out.");
-          } else {
-            currentMode = MODE_WIFI_TRAP;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            trapManager.start();
-            Serial.println("[SYS] PORTAL ON.");
-          }
-        } else if (menuState == MENU_SUB_RADIO) {
-          if (submenuIndex == SUB_RADIO_COUNT - 1) {
-            menuState = MENU_MAIN;
-          } else if (submenuIndex == 0) {
-            currentMode = MODE_LORA;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            WiFi.mode(WIFI_OFF);
-            loraManager.setMode(true);
-            Serial.println("[SYS] SNIFF ON.");
-          } else if (submenuIndex == 1) {
-            currentMode = MODE_LORA_JAM;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            WiFi.mode(WIFI_OFF);
-            loraManager.startJamming(869.525f);
-            Serial.println("[SYS] JAM ON.");
-          } else {
-            currentMode = MODE_LORA_SENSE;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            WiFi.mode(WIFI_OFF);
-            loraManager.startSense();
-            Serial.println("[SYS] SENSE ON.");
-          }
-        } else if (menuState == MENU_SUB_TOOLS) {
-          if (submenuIndex == SUB_TOOLS_COUNT - 1) {
-            menuState = MENU_MAIN;
-          } else if (submenuIndex == 0) {
-            currentMode = MODE_VAULT;
-            quickMenuOpen = false;
-            vaultManager.trySyncNtp();
-            Serial.println("[SYS] VAULT OPEN.");
-          } else if (submenuIndex == 1) {
-            currentMode = MODE_DAEMON;
-            quickMenuOpen = false;
-            Serial.println("[SYS] DAEMON.");
-          } else {
-            Serial.println(
-                "[SYS] Rebooting for Meshtastic flash. Hold BOOT to enter "
-                "download mode.");
-            esp_restart();
-          }
-        } else {
-          if (quickMenuItem == 0) {
-            if (!settings.carouselEnabled) {
-              settings.carouselEnabled = true;
-              settings.carouselIntervalSec = 5;
-            } else if (settings.carouselIntervalSec == 5)
-              settings.carouselIntervalSec = 10;
-            else if (settings.carouselIntervalSec == 10)
-              settings.carouselIntervalSec = 15;
-            else
-              settings.carouselEnabled = false;
-            Preferences prefs;
-            prefs.begin("nocturne", false);
-            prefs.putBool("carousel", settings.carouselEnabled);
-            prefs.putInt("carouselSec", settings.carouselIntervalSec);
-            prefs.end();
-          } else if (quickMenuItem == 1) {
-            display.flipScreen();
-            settings.displayInverted = display.isScreenFlipped();
-            Preferences prefs;
-            prefs.begin("nocturne", false);
-            prefs.putBool("inverted", settings.displayInverted);
-            prefs.end();
-          } else if (quickMenuItem == 2) {
-            settings.glitchEnabled = !settings.glitchEnabled;
-            Preferences prefs;
-            prefs.begin("nocturne", false);
-            prefs.putBool("glitch", settings.glitchEnabled);
-            prefs.end();
-          } else if (quickMenuItem == MAIN_IDX_WIFI) {
-            menuState = MENU_SUB_WIFI;
-            submenuIndex = 0;
-          } else if (quickMenuItem == MAIN_IDX_RADIO) {
-            menuState = MENU_SUB_RADIO;
-            submenuIndex = 0;
-          } else if (quickMenuItem == MAIN_IDX_BLE) {
-            currentMode = MODE_BLE_SPAM;
-            quickMenuOpen = false;
-            netManager.setSuspend(true);
-            WiFi.mode(WIFI_OFF);
-            bleManager.begin();
-            Serial.println("[SYS] BLE SPAM.");
-          } else if (quickMenuItem == MAIN_IDX_USB) {
-            currentMode = MODE_BADWOLF;
-            quickMenuOpen = false;
-            usbManager.begin();
-            Serial.println("[SYS] USB HID.");
-          } else if (quickMenuItem == MAIN_IDX_TOOLS) {
-            menuState = MENU_SUB_TOOLS;
-            submenuIndex = 0;
-          } else if (quickMenuItem == MAIN_IDX_EXIT) {
-            quickMenuOpen = false;
-          }
-        }
-      } else {
-        if (menuState == MENU_MAIN) {
-          quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
-        } else if (menuState == MENU_SUB_WIFI) {
-          submenuIndex = (submenuIndex + 1) % SUB_WIFI_COUNT;
-        } else if (menuState == MENU_SUB_RADIO) {
-          submenuIndex = (submenuIndex + 1) % SUB_RADIO_COUNT;
-        } else {
-          submenuIndex = (submenuIndex + 1) % SUB_TOOLS_COUNT;
-        }
-      }
+      exitAppModeToNormal();
     } else {
-      if (duration >= NOCT_BUTTON_LONG_MS) {
-        quickMenuOpen = true;
-        quickMenuItem = 0;
+      quickMenuOpen = !quickMenuOpen;
+      if (quickMenuOpen) {
         menuState = MENU_MAIN;
-      } else if (!state.alertActive) {
-        previousScene = currentScene;
-        currentScene = (currentScene + 1) % sceneManager.totalScenes();
-        if (previousScene != currentScene) {
-          inTransition = true;
-          transitionStart = now;
-        }
-        lastCarousel = now;
+        quickMenuItem = 0;
       }
     }
+    needRedraw = true;
   }
 
+  // Alert / carousel / screen sync / fan animation
   if (state.alertActive) {
     currentScene = state.alertTargetScene;
     needRedraw = true;
   }
-
   if (settings.carouselEnabled && !predatorMode && !state.alertActive) {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
@@ -520,7 +344,6 @@ void loop() {
       lastCarousel = now;
     }
   }
-
   if (netManager.isTcpConnected() &&
       netManager.getLastSentScreen() != currentScene) {
     netManager.print("screen:");
@@ -528,19 +351,16 @@ void loop() {
     netManager.print("\n");
     netManager.setLastSentScreen(currentScene);
   }
-
   if (now - lastFanAnim >= 100) {
     fanAnimFrame = (fanAnimFrame + 1) % 12;
     lastFanAnim = now;
   }
 
-  /* Battery: read every 5s to save power */
-  if (now - lastBatteryReadMs >= (unsigned long)NOCT_BAT_READ_INTERVAL_MS) {
-    lastBatteryReadMs = now;
+  // Battery: periodic update
+  if (batTimer.check(now))
     updateBatteryState();
-  }
 
-  /* Alert LED: double-tap (2 blinks then silence); predator breath. */
+  // LED: predator breath / alert blink / cursor blink
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   if (predatorMode) {
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -552,38 +372,27 @@ void loop() {
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   } else {
-    // --- ALERT LED LOGIC (DOUBLE TAP) ---
-
-    // 1. Detect New Alert Edge -> Reset Counter
     if (state.alertActive && !lastAlertActive) {
       alertBlinkCounter = 0;
-      blinkState = true; // Start ON
+      blinkState = true;
       digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
       lastBlink = now;
     }
     lastAlertActive = state.alertActive;
-
-    // 2. Process Blinking
     if (state.alertActive) {
       if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS) {
         lastBlink = now;
-
-        // Count phases: 2 blinks = 4 phases (On, Off, On, Off)
         if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
           blinkState = !blinkState;
           digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
           alertBlinkCounter++;
         } else {
-          // Limit reached: Silence
-          blinkState = false;                    // Value stays solid on screen
-          digitalWrite(NOCT_LED_ALERT_PIN, LOW); // LED Off
+          blinkState = false;
+          digitalWrite(NOCT_LED_ALERT_PIN, LOW);
         }
       }
     } else {
-      // No Alert -> LED Off
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-
-      // Standard UI cursor blink (non-alert)
       if (now - lastBlink > 500) {
         blinkState = !blinkState;
         lastBlink = now;
@@ -600,118 +409,400 @@ void loop() {
     }
   }
 
-  // ----- Render (throttle: only when needed or every NOCT_REDRAW_INTERVAL_MS)
-  // -----
+  // 4. Mode handling: menu vs app
+  if (quickMenuOpen) {
+    if (event == EV_SHORT) {
+      if (menuState == MENU_MAIN)
+        quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
+      else if (menuState == MENU_SUB_WIFI)
+        submenuIndex = (submenuIndex + 1) % SUB_WIFI_COUNT;
+      else if (menuState == MENU_SUB_RADIO)
+        submenuIndex = (submenuIndex + 1) % SUB_RADIO_COUNT;
+      else
+        submenuIndex = (submenuIndex + 1) % SUB_TOOLS_COUNT;
+      needRedraw = true;
+    } else if (event == EV_LONG) {
+      if (menuState == MENU_MAIN) {
+        if (quickMenuItem == 0) {
+          if (!settings.carouselEnabled) {
+            settings.carouselEnabled = true;
+            settings.carouselIntervalSec = 5;
+          } else if (settings.carouselIntervalSec == 5)
+            settings.carouselIntervalSec = 10;
+          else if (settings.carouselIntervalSec == 10)
+            settings.carouselIntervalSec = 15;
+          else
+            settings.carouselEnabled = false;
+          Preferences prefs;
+          prefs.begin("nocturne", false);
+          prefs.putBool("carousel", settings.carouselEnabled);
+          prefs.putInt("carouselSec", settings.carouselIntervalSec);
+          prefs.end();
+        } else if (quickMenuItem == 1) {
+          display.flipScreen();
+          settings.displayInverted = display.isScreenFlipped();
+          Preferences prefs;
+          prefs.begin("nocturne", false);
+          prefs.putBool("inverted", settings.displayInverted);
+          prefs.end();
+        } else if (quickMenuItem == 2) {
+          settings.glitchEnabled = !settings.glitchEnabled;
+          Preferences prefs;
+          prefs.begin("nocturne", false);
+          prefs.putBool("glitch", settings.glitchEnabled);
+          prefs.end();
+        } else if (quickMenuItem == MAIN_IDX_WIFI) {
+          menuState = MENU_SUB_WIFI;
+          submenuIndex = 0;
+        } else if (quickMenuItem == MAIN_IDX_RADIO) {
+          menuState = MENU_SUB_RADIO;
+          submenuIndex = 0;
+        } else if (quickMenuItem == MAIN_IDX_BLE) {
+          currentMode = MODE_BLE_SPAM;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          bleManager.begin();
+          Serial.println("[SYS] BLE SPAM.");
+        } else if (quickMenuItem == MAIN_IDX_USB) {
+          currentMode = MODE_BADWOLF;
+          quickMenuOpen = false;
+          usbManager.begin();
+          Serial.println("[SYS] USB HID.");
+        } else if (quickMenuItem == MAIN_IDX_TOOLS) {
+          menuState = MENU_SUB_TOOLS;
+          submenuIndex = 0;
+        } else if (quickMenuItem == MAIN_IDX_EXIT) {
+          quickMenuOpen = false;
+        }
+      } else if (menuState == MENU_SUB_WIFI) {
+        if (submenuIndex == SUB_WIFI_COUNT - 1)
+          menuState = MENU_MAIN;
+        else if (submenuIndex == 0) {
+          currentMode = MODE_RADAR;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.disconnect();
+          WiFi.mode(WIFI_STA);
+          WiFi.scanNetworks(true);
+          Serial.println("[SYS] WIFI SCAN.");
+        } else if (submenuIndex == 1) {
+          currentMode = MODE_WIFI_DEAUTH;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.disconnect();
+          WiFi.mode(WIFI_STA);
+          WiFi.scanNetworks(true);
+          wifiScanSelected = 0;
+          wifiListPage = 0;
+          kickManager.setTargetFromScan(0);
+          Serial.println("[SYS] DEAUTH. Short=target Long=Fire 2x Out.");
+        } else {
+          currentMode = MODE_WIFI_TRAP;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          trapManager.start();
+          Serial.println("[SYS] PORTAL ON.");
+        }
+      } else if (menuState == MENU_SUB_RADIO) {
+        if (submenuIndex == SUB_RADIO_COUNT - 1)
+          menuState = MENU_MAIN;
+        else if (submenuIndex == 0) {
+          currentMode = MODE_LORA;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          loraManager.setMode(true);
+          Serial.println("[SYS] SNIFF ON.");
+        } else if (submenuIndex == 1) {
+          currentMode = MODE_LORA_JAM;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          loraManager.startJamming(869.525f);
+          Serial.println("[SYS] JAM ON.");
+        } else {
+          currentMode = MODE_LORA_SENSE;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          loraManager.startSense();
+          Serial.println("[SYS] SENSE ON.");
+        }
+      } else if (menuState == MENU_SUB_TOOLS) {
+        if (submenuIndex == SUB_TOOLS_COUNT - 1)
+          menuState = MENU_MAIN;
+        else if (submenuIndex == 0) {
+          currentMode = MODE_VAULT;
+          quickMenuOpen = false;
+          vaultManager.trySyncNtp();
+          Serial.println("[SYS] VAULT OPEN.");
+        } else if (submenuIndex == 1) {
+          currentMode = MODE_DAEMON;
+          quickMenuOpen = false;
+          Serial.println("[SYS] DAEMON.");
+        } else {
+          Serial.println(
+              "[SYS] Rebooting for Meshtastic flash. Hold BOOT to enter "
+              "download mode.");
+          esp_restart();
+        }
+      }
+      needRedraw = true;
+    }
+  } else {
+    // App mode: SHORT = navigate, LONG = action (or predator in normal)
+    switch (currentMode) {
+    case MODE_NORMAL:
+      if (event == EV_SHORT && !state.alertActive) {
+        previousScene = currentScene;
+        currentScene = (currentScene + 1) % sceneManager.totalScenes();
+        if (previousScene != currentScene) {
+          inTransition = true;
+          transitionStart = now;
+        }
+        lastCarousel = now;
+        needRedraw = true;
+      } else if (event == EV_LONG) {
+        predatorMode = !predatorMode;
+        predatorEnterTime = now;
+        needRedraw = true;
+      }
+      break;
+    case MODE_WIFI_DEAUTH:
+      if (event == EV_SHORT) {
+        int n = WiFi.scanComplete();
+        if (n > 0) {
+          wifiScanSelected = (wifiScanSelected + 1) % n;
+          kickManager.setTargetFromScan(wifiScanSelected);
+          if (wifiScanSelected >= wifiListPage + 5)
+            wifiListPage = wifiScanSelected - 4;
+          else if (wifiScanSelected < wifiListPage)
+            wifiListPage = wifiScanSelected;
+        }
+        needRedraw = true;
+      } else if (event == EV_LONG) {
+        if (kickManager.isAttacking())
+          kickManager.stopAttack();
+        else
+          kickManager.startAttack();
+        needRedraw = true;
+      }
+      break;
+    case MODE_RADAR:
+      if (event == EV_SHORT) {
+        int n = WiFi.scanComplete();
+        if (n > 0) {
+          wifiScanSelected = (wifiScanSelected + 1) % n;
+          if (wifiScanSelected >= wifiListPage + 5)
+            wifiListPage = wifiScanSelected - 4;
+          else if (wifiScanSelected < wifiListPage)
+            wifiListPage = wifiScanSelected;
+        }
+        needRedraw = true;
+      } else if (event == EV_LONG) {
+        int n = WiFi.scanComplete();
+        if (n > 0) {
+          Serial.println("[RADAR] INITIATING DISCONNECT...");
+          WiFi.disconnect(true);
+          WiFi.mode(WIFI_OFF);
+          delay(100);
+          WiFi.mode(WIFI_STA);
+          Serial.println("[RADAR] RADIO RESET.");
+          WiFi.scanNetworks(true);
+        }
+      }
+      break;
+    case MODE_LORA:
+      if (event == EV_SHORT) {
+        loraManager.clearBuffer();
+        needRedraw = true;
+      } else if (event == EV_LONG) {
+        loraManager.replayLast();
+        needRedraw = true;
+      }
+      break;
+    case MODE_VAULT:
+      if (event == EV_SHORT) {
+        int n = vaultManager.getAccountCount();
+        if (n > 0)
+          vaultManager.setCurrentIndex((vaultManager.getCurrentIndex() + 1) %
+                                       n);
+        needRedraw = true;
+      }
+      break;
+    case MODE_BADWOLF:
+      if (event == EV_SHORT) {
+        usbManager.runMatrix();
+        needRedraw = true;
+      } else if (event == EV_LONG) {
+        usbManager.runSniffer();
+        needRedraw = true;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+
+  // 5. Render (throttle: needRedraw or guiTimer)
   if (predatorMode) {
     display.clearBuffer();
     display.sendBuffer();
     delay(10);
+    yield();
     return;
   }
 
-  if (!needRedraw &&
-      (now - lastRedrawMs < (unsigned long)NOCT_REDRAW_INTERVAL_MS)) {
+  if (!needRedraw && !guiTimer.check(now)) {
     delay(10);
+    yield();
     return;
   }
-  lastRedrawMs = now;
   needRedraw = false;
 
   display.clearBuffer();
   bool signalLost = splashDone && netManager.isSignalLost(now);
-
   if (signalLost && netManager.isTcpConnected() && netManager.hasReceivedData())
     netManager.disconnectTcp();
 
   if (!splashDone) {
     display.drawSplash();
-  } else if (currentMode == MODE_DAEMON) {
-    sceneManager.drawDaemon();
-  } else if (currentMode == MODE_RADAR) {
-    sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage);
-  } else if (currentMode == MODE_WIFI_DEAUTH) {
-    static bool kickTargetInitialized = false;
-    if (WiFi.scanComplete() <= 0)
-      kickTargetInitialized = false;
-    else if (!kickTargetInitialized) {
-      kickManager.setTargetFromScan(wifiScanSelected >= 0 ? wifiScanSelected
-                                                          : 0);
-      kickTargetInitialized = true;
-    }
-    kickManager.tick();
-    sceneManager.drawKickMode(kickManager);
-  } else if (currentMode == MODE_LORA) {
-    loraManager.tick();
-    sceneManager.drawLoraSniffer(loraManager);
-  } else if (currentMode == MODE_LORA_JAM) {
-    loraManager.tick();
-    sceneManager.drawSilenceMode();
-  } else if (currentMode == MODE_BLE_SPAM) {
-    static int lastPhantomPayloadIndex = -1;
-    bleManager.tick();
-    sceneManager.drawBleSpammer(bleManager.getPacketCount());
-    if (lastPhantomPayloadIndex >= 0 &&
-        bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
-      display.applyGlitch();
-    lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
-  } else if (currentMode == MODE_BADWOLF) {
-    sceneManager.drawBadWolf();
-  } else if (currentMode == MODE_WIFI_TRAP) {
-    trapManager.tick();
-    sceneManager.drawTrapMode(
-        trapManager.getClientCount(), trapManager.getLogsCaptured(),
-        trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil());
-  } else if (currentMode == MODE_VAULT) {
-    vaultManager.tick();
-    static char codeBuf[8];
-    vaultManager.getCurrentCode(codeBuf, sizeof(codeBuf));
-    sceneManager.drawVaultMode(
-        vaultManager.getAccountName(vaultManager.getCurrentIndex()), codeBuf,
-        vaultManager.getCountdownSeconds());
-  } else if (currentMode == MODE_LORA_SENSE) {
-    loraManager.tick();
-    sceneManager.drawGhostsMode(loraManager);
-  } else if (!netManager.isWifiConnected()) {
-    display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
-    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
-    sceneManager.drawNoSignal(false, false, 0, blinkState);
-  } else if (!netManager.isTcpConnected()) {
-    display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
-    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
-    sceneManager.drawConnecting(netManager.rssi(), blinkState);
-  } else if (netManager.isSearchMode() || signalLost) {
-    display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
+  } else if (quickMenuOpen) {
+    display.drawGlobalHeader("MENU", nullptr, netManager.rssi(),
                              netManager.isWifiConnected());
     sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
-    int scanPhase = (int)(now / 100) % 12;
-    sceneManager.drawSearchMode(scanPhase);
+    sceneManager.drawMenu((int)menuState, quickMenuItem, submenuIndex,
+                          settings.carouselEnabled,
+                          settings.carouselIntervalSec,
+                          settings.displayInverted, settings.glitchEnabled);
   } else {
-    display.drawGlobalHeader(
-        quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
-        nullptr, netManager.rssi(), netManager.isWifiConnected());
-    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
-
-    if (quickMenuOpen) {
-      sceneManager.drawMenu((int)menuState, quickMenuItem, submenuIndex,
-                            settings.carouselEnabled,
-                            settings.carouselIntervalSec,
-                            settings.displayInverted, settings.glitchEnabled);
-    } else if (inTransition) {
-      unsigned long elapsed = now - transitionStart;
-      int progress =
-          (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
-      if (progress > NOCT_DISP_W)
-        progress = NOCT_DISP_W;
-      int offsetA = -progress;
-      int offsetB = NOCT_DISP_W - progress;
-      sceneManager.drawWithOffset(previousScene, offsetA, bootTime, blinkState,
-                                  fanAnimFrame);
-      sceneManager.drawWithOffset(currentScene, offsetB, bootTime, blinkState,
-                                  fanAnimFrame);
-      if (progress >= NOCT_DISP_W)
-        inTransition = false;
-    } else {
-      sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
+    switch (currentMode) {
+    case MODE_NORMAL: {
+      if (!netManager.isWifiConnected()) {
+        display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
+        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+        sceneManager.drawNoSignal(false, false, 0, blinkState);
+      } else if (!netManager.isTcpConnected()) {
+        display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
+        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+        sceneManager.drawConnecting(netManager.rssi(), blinkState);
+      } else if (netManager.isSearchMode() || signalLost) {
+        display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
+                                 netManager.isWifiConnected());
+        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+        int scanPhase = (int)(now / 100) % 12;
+        sceneManager.drawSearchMode(scanPhase);
+      } else {
+        display.drawGlobalHeader(sceneManager.getSceneName(currentScene),
+                                 nullptr, netManager.rssi(),
+                                 netManager.isWifiConnected());
+        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+        if (inTransition) {
+          unsigned long elapsed = now - transitionStart;
+          int progress =
+              (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
+          if (progress > NOCT_DISP_W)
+            progress = NOCT_DISP_W;
+          int offsetA = -progress;
+          int offsetB = NOCT_DISP_W - progress;
+          sceneManager.drawWithOffset(previousScene, offsetA, bootTime,
+                                      blinkState, fanAnimFrame);
+          sceneManager.drawWithOffset(currentScene, offsetB, bootTime,
+                                      blinkState, fanAnimFrame);
+          if (progress >= NOCT_DISP_W)
+            inTransition = false;
+        } else {
+          sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
+        }
+      }
+      break;
+    }
+    case MODE_DAEMON:
+      display.drawGlobalHeader("DAEMON", nullptr, netManager.rssi(), true);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawDaemon();
+      break;
+    case MODE_RADAR:
+      display.drawGlobalHeader("RADAR", nullptr, netManager.rssi(), false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage);
+      break;
+    case MODE_WIFI_DEAUTH: {
+      static bool kickTargetInitialized = false;
+      if (WiFi.scanComplete() <= 0)
+        kickTargetInitialized = false;
+      else if (!kickTargetInitialized) {
+        kickManager.setTargetFromScan(wifiScanSelected >= 0 ? wifiScanSelected
+                                                            : 0);
+        kickTargetInitialized = true;
+      }
+      kickManager.tick();
+      display.drawGlobalHeader("DEAUTH", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawKickMode(kickManager);
+      break;
+    }
+    case MODE_LORA:
+      loraManager.tick();
+      display.drawGlobalHeader("SIGINT", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawLoraSniffer(loraManager);
+      break;
+    case MODE_LORA_JAM:
+      loraManager.tick();
+      display.drawGlobalHeader("JAM", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawSilenceMode();
+      break;
+    case MODE_BLE_SPAM: {
+      static int lastPhantomPayloadIndex = -1;
+      bleManager.tick();
+      display.drawGlobalHeader("BLE", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawBleSpammer(bleManager.getPacketCount());
+      if (lastPhantomPayloadIndex >= 0 &&
+          bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
+        display.applyGlitch();
+      lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
+      break;
+    }
+    case MODE_BADWOLF:
+      display.drawGlobalHeader("USB HID", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawBadWolf();
+      break;
+    case MODE_WIFI_TRAP:
+      trapManager.tick();
+      display.drawGlobalHeader("PORTAL", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawTrapMode(trapManager.getClientCount(),
+                                trapManager.getLogsCaptured(),
+                                trapManager.getLastPassword(),
+                                trapManager.getLastPasswordShowUntil());
+      break;
+    case MODE_VAULT: {
+      vaultManager.tick();
+      static char codeBuf[8];
+      vaultManager.getCurrentCode(codeBuf, sizeof(codeBuf));
+      display.drawGlobalHeader("VAULT", nullptr, 0,
+                               netManager.isWifiConnected());
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawVaultMode(
+          vaultManager.getAccountName(vaultManager.getCurrentIndex()), codeBuf,
+          vaultManager.getCountdownSeconds());
+      break;
+    }
+    case MODE_LORA_SENSE:
+      loraManager.tick();
+      display.drawGlobalHeader("SENSE", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      sceneManager.drawGhostsMode(loraManager);
+      break;
+    default:
+      display.drawGlobalHeader("HUB", nullptr, 0, false);
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
+      break;
     }
   }
 
@@ -719,4 +810,5 @@ void loop() {
     display.applyGlitch();
   display.sendBuffer();
   delay(10);
+  yield();
 }

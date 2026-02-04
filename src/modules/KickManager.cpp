@@ -108,7 +108,7 @@ void KickManager::tick() {
   if (now - lastBurstMs_ < (unsigned long)DEAUTH_INTERVAL_MS)
     return;
   lastBurstMs_ = now;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 3; i++) {
     sendDeauthBurst();
   }
 }
