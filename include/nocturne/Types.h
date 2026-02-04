@@ -77,9 +77,10 @@ struct AppState {
   bool alertActive = false;
   int alertTargetScene = 0; /* NOCT_SCENE_MAIN/CPU/GPU/RAM/DISKS/MEDIA */
   int alertMetric = -1;     /* 0=ct, 1=gt, 2=cl, 3=gl, 4=gv, 5=ram; -1=none */
-  /* Battery HUD: 0..100%, voltage for charging detection (>4.3V = USB) */
+  /* Battery HUD: 0..100%, voltage, charging (visible in header) */
   int batteryPct = 0;
   float batteryVoltage = 0.0f;
+  bool isCharging = false;
 };
 
 #endif
