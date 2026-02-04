@@ -35,11 +35,10 @@ public:
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
-  /** Tactical HUD Menu: 3 rows. Row0=AUTO (5s/10s/15s/OFF), Row1=FLIP
-   * (0/180deg), Row2=EXIT. menuItem 0/1/2. carouselOn+carouselSec and
-   * screenRotated for row labels. */
+  /** Tactical HUD Menu: 6 rows. AUTO, FLIP, GLITCH, RUN:DAEMON, RUN:RADAR,
+   * EXIT. menuItem 0..5. */
   void drawMenu(int menuItem, bool carouselOn, int carouselSec,
-                bool screenRotated);
+                bool screenRotated, bool glitchEnabled);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
