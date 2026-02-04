@@ -96,9 +96,16 @@ Long-press interaction model for quick adjustments without rebooting.
 ## 🚀 Installation
 
 ### Prerequisites
-
-- **VS Code** with **PlatformIO**.
-- **Python 3** (for the Host Monitor script).
+1.  **VS Code** with **PlatformIO** (for firmware).
+2.  **Python 3.x** (for the Host Monitor script).
+3.  **Libre Hardware Monitor** (CRITICAL):
+    * This software acts as the telemetry source for Windows.
+    * [Download Latest Release](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+    * **Setup:**
+        1.  Unzip and run `LibreHardwareMonitor.exe` **as Administrator**.
+        2.  Go to `Options` -> Enable `Run On Windows Startup`.
+        3.  Go to `Options` -> `Remote Web Server` -> **Enable**.
+        4.  Ensure the port is **8085** (Default).
 
 ### Flashing (Firmware)
 
