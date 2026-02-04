@@ -44,8 +44,8 @@ public:
 
   /** Cyberdeck: Daemon mode (Wolf Soul). */
   void drawDaemon();
-  /** Cyberdeck: Netrunner WiFi Radar. */
-  void drawRadar();
+  /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security. */
+  void drawWiFiScanner(int selectedIndex, int pageOffset);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
