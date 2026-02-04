@@ -9,7 +9,6 @@
 #include <string.h>
 #include <time.h>
 
-
 static const char *VAULT_FILE = "/vault.json";
 
 VaultManager::VaultManager()
@@ -163,7 +162,7 @@ bool VaultManager::load() {
     Serial.println("[VAULT] JSON read error.");
     return false;
   }
-  if (doc.containsKey("to"))
+  if (doc["to"].is<long>())
     timeOffset_ = doc["to"].as<long>();
   JsonArray arr = doc["accounts"].as<JsonArray>();
   accountCount_ = 0;
