@@ -39,7 +39,6 @@ void UsbManager::stop() {
     delete s_keyboard;
     s_keyboard = nullptr;
   }
-  USB.end();
   active_ = false;
   Serial.println("[BADWOLF] USB HID disarmed.");
 #else

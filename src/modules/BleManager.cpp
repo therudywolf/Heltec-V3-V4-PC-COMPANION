@@ -4,7 +4,7 @@
 #include "BleManager.h"
 #include <NimBLEAdvertising.h>
 #include <NimBLEDevice.h>
-
+#include <vector>
 
 // Apple Action (AirPods / Apple TV / Vision Pro) — manufacturer 0x004C
 static const uint8_t kPayloadApple[] = {0x4C, 0x00, 0x07, 0x19,
@@ -46,7 +46,8 @@ void BleManager::setPayload(int index) {
     len = kPayloadAppleLen;
     break;
   }
-  advData.setManufacturerData(payload, len);
+  std::vector<uint8_t> vec(payload, payload + len);
+  advData.setManufacturerData(vec);
   pAdvertising->setAdvertisementData(advData);
   pAdvertising->start(0, nullptr);
   packetCount_++;
