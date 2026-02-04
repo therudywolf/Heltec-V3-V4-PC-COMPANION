@@ -104,20 +104,41 @@ Long-press interaction model for quick adjustments without rebooting.
 
 1.  Clone this repository.
 2.  Open in VS Code.
-3.  Edit `include/secrets.h` (create it if missing) with your WiFi creds:
+3.  Copy `include/secrets.h.example` to `include/secrets.h` and set your WiFi and PC IP (do not commit `secrets.h`):
     ```cpp
     #define WIFI_SSID "YourSSID"
     #define WIFI_PASS "YourPass"
-    #define PC_IP "192.168.1.100" // Your PC's IP
+    #define PC_IP "192.168.1.100"   // Your PC's IP
+    #define TCP_PORT 8888
     ```
 4.  Connect Heltec V4 via USB-C.
 5.  Run **PlatformIO: Upload**.
 
 ### Running (Host Monitor)
 
-1.  Go to `monitor/` folder.
-2.  Install requirements: `pip install psutil GPUtil py3nvml requests`.
-3.  Run: `python monitor.py`.
+1.  From the project root: `pip install -r requirements.txt`
+2.  Edit `config.json` if needed (LHM URL, port, weather city, limits).
+3.  Run: `python src/monitor.py` (or build a standalone exe with `NocturneServer.spec` + PyInstaller).
+
+---
+
+## 📁 Project Structure
+
+```
+├── include/
+│   ├── nocturne/         # config.h, Types.h
+│   └── secrets.h.example # template → copy to secrets.h (local only)
+├── src/
+│   ├── main.cpp          # firmware entry
+│   ├── monitor.py        # PC-side TCP server (LHM, weather, media)
+│   └── modules/          # DisplayEngine, SceneManager, NetManager, …
+├── config.json           # monitor: host, port, lhm_url, limits, weather_city
+├── platformio.ini        # ESP32 build (Heltec V3 profile for V4 board)
+├── requirements.txt      # Python deps for monitor
+└── NocturneServer.spec   # PyInstaller spec for one-click exe
+```
+
+**Not in the repo (see `.gitignore`):** `secrets.h`, `.env`, `.pio/`, build artifacts, logs.
 
 ---
 
@@ -126,6 +147,8 @@ Long-press interaction model for quick adjustments without rebooting.
 - **Concept & Code:** RudyWolf
 - **UI Design:** "Nocturne" Cyberpunk System
 - **Libraries:** U8g2 (Olikraus), ArduinoJson (Bblanchon)
+
+**License:** [MIT](LICENSE)
 
 ---
 
