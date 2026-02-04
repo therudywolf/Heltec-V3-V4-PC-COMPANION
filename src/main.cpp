@@ -24,7 +24,6 @@
 #include "nocturne/config.h"
 #include "secrets.h"
 
-
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
@@ -65,7 +64,21 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define WOLF_MENU_ITEMS 14
+#define WOLF_MENU_ITEMS 9
+
+enum MenuState { MENU_MAIN, MENU_SUB_WIFI, MENU_SUB_RADIO, MENU_SUB_TOOLS };
+MenuState menuState = MENU_MAIN;
+int submenuIndex = 0;
+
+#define MAIN_IDX_WIFI 3
+#define MAIN_IDX_RADIO 4
+#define MAIN_IDX_BLE 5
+#define MAIN_IDX_USB 6
+#define MAIN_IDX_TOOLS 7
+#define MAIN_IDX_EXIT 8
+#define SUB_WIFI_COUNT 4
+#define SUB_RADIO_COUNT 4
+#define SUB_TOOLS_COUNT 3
 
 // --- Cyberdeck Modes ---
 enum AppMode {
@@ -260,8 +273,11 @@ void loop() {
           WiFi.scanDelete();
           netManager.setSuspend(false);
           Serial.println("[SYS] NETMANAGER RESUMED.");
-        } else {
-          quickMenuOpen = false;
+        } else if (quickMenuOpen) {
+          if (menuState != MENU_MAIN)
+            menuState = MENU_MAIN;
+          else
+            quickMenuOpen = false;
         }
         return;
       }
@@ -331,110 +347,143 @@ void loop() {
       }
     } else if (quickMenuOpen) {
       if (duration >= NOCT_BUTTON_LONG_MS) {
-        if (quickMenuItem == 0) {
-          if (!settings.carouselEnabled) {
-            settings.carouselEnabled = true;
-            settings.carouselIntervalSec = 5;
-          } else if (settings.carouselIntervalSec == 5)
-            settings.carouselIntervalSec = 10;
-          else if (settings.carouselIntervalSec == 10)
-            settings.carouselIntervalSec = 15;
-          else
-            settings.carouselEnabled = false;
-          Preferences prefs;
-          prefs.begin("nocturne", false);
-          prefs.putBool("carousel", settings.carouselEnabled);
-          prefs.putInt("carouselSec", settings.carouselIntervalSec);
-          prefs.end();
-        } else if (quickMenuItem == 1) {
-          display.flipScreen();
-          settings.displayInverted = display.isScreenFlipped();
-          Preferences prefs;
-          prefs.begin("nocturne", false);
-          prefs.putBool("inverted", settings.displayInverted);
-          prefs.end();
-        } else if (quickMenuItem == 2) {
-          settings.glitchEnabled = !settings.glitchEnabled;
-          Preferences prefs;
-          prefs.begin("nocturne", false);
-          prefs.putBool("glitch", settings.glitchEnabled);
-          prefs.end();
-        } else if (quickMenuItem == 3) {
-          currentMode = MODE_DAEMON;
-          quickMenuOpen = false;
-        } else if (quickMenuItem == 4) {
-          currentMode = MODE_RADAR;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          Serial.println("[SYS] NETMANAGER SUSPENDED. RADIO FREE.");
-          WiFi.disconnect();
-          WiFi.mode(WIFI_STA);
-          WiFi.scanNetworks(true);
-        } else if (quickMenuItem == 5) {
-          currentMode = MODE_WIFI_DEAUTH;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          WiFi.disconnect();
-          WiFi.mode(WIFI_STA);
-          WiFi.scanNetworks(true);
-          wifiScanSelected = 0;
-          wifiListPage = 0;
-          kickManager.setTargetFromScan(0);
-          Serial.println("[SYS] KICK MODE. Short=target Long=ATTACK.");
-        } else if (quickMenuItem == 6) {
-          currentMode = MODE_BADWOLF;
-          quickMenuOpen = false;
-          usbManager.begin();
-          Serial.println("[SYS] BADWOLF USB HID ARMED.");
-        } else if (quickMenuItem == 7) {
-          currentMode = MODE_LORA;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          WiFi.mode(WIFI_OFF);
-          loraManager.setMode(true);
-          Serial.println("[SYS] LORA SNIFFER ON.");
-        } else if (quickMenuItem == 8) {
-          currentMode = MODE_LORA_JAM;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          WiFi.mode(WIFI_OFF);
-          loraManager.startJamming(869.525f);
-          Serial.println("[SYS] SILENCE JAMMER ON.");
-        } else if (quickMenuItem == 9) {
-          currentMode = MODE_BLE_SPAM;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          WiFi.mode(WIFI_OFF);
-          bleManager.begin();
-          Serial.println("[SYS] BLE PHANTOM ACTIVE.");
-        } else if (quickMenuItem == 10) {
-          currentMode = MODE_WIFI_TRAP;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          trapManager.start();
-          Serial.println("[SYS] TRAP AP ON.");
-        } else if (quickMenuItem == 11) {
-          currentMode = MODE_VAULT;
-          quickMenuOpen = false;
-          vaultManager.trySyncNtp();
-          Serial.println("[SYS] VAULT OPEN.");
-        } else if (quickMenuItem == 12) {
-          currentMode = MODE_LORA_SENSE;
-          quickMenuOpen = false;
-          netManager.setSuspend(true);
-          WiFi.mode(WIFI_OFF);
-          loraManager.startSense();
-          Serial.println("[SYS] GHOSTS SENSE ON.");
-        } else if (quickMenuItem == 13) {
-          quickMenuOpen = false;
+        if (menuState == MENU_SUB_WIFI) {
+          if (submenuIndex == SUB_WIFI_COUNT - 1) {
+            menuState = MENU_MAIN;
+          } else if (submenuIndex == 0) {
+            currentMode = MODE_RADAR;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            WiFi.disconnect();
+            WiFi.mode(WIFI_STA);
+            WiFi.scanNetworks(true);
+            Serial.println("[SYS] WIFI SCAN.");
+          } else if (submenuIndex == 1) {
+            currentMode = MODE_WIFI_DEAUTH;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            WiFi.disconnect();
+            WiFi.mode(WIFI_STA);
+            WiFi.scanNetworks(true);
+            wifiScanSelected = 0;
+            wifiListPage = 0;
+            kickManager.setTargetFromScan(0);
+            Serial.println("[SYS] DEAUTH. Short=target Long=Fire 3x Out.");
+          } else {
+            currentMode = MODE_WIFI_TRAP;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            trapManager.start();
+            Serial.println("[SYS] PORTAL ON.");
+          }
+        } else if (menuState == MENU_SUB_RADIO) {
+          if (submenuIndex == SUB_RADIO_COUNT - 1) {
+            menuState = MENU_MAIN;
+          } else if (submenuIndex == 0) {
+            currentMode = MODE_LORA;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            WiFi.mode(WIFI_OFF);
+            loraManager.setMode(true);
+            Serial.println("[SYS] SNIFF ON.");
+          } else if (submenuIndex == 1) {
+            currentMode = MODE_LORA_JAM;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            WiFi.mode(WIFI_OFF);
+            loraManager.startJamming(869.525f);
+            Serial.println("[SYS] JAM ON.");
+          } else {
+            currentMode = MODE_LORA_SENSE;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            WiFi.mode(WIFI_OFF);
+            loraManager.startSense();
+            Serial.println("[SYS] SENSE ON.");
+          }
+        } else if (menuState == MENU_SUB_TOOLS) {
+          if (submenuIndex == SUB_TOOLS_COUNT - 1) {
+            menuState = MENU_MAIN;
+          } else if (submenuIndex == 0) {
+            currentMode = MODE_VAULT;
+            quickMenuOpen = false;
+            vaultManager.trySyncNtp();
+            Serial.println("[SYS] VAULT OPEN.");
+          } else {
+            currentMode = MODE_DAEMON;
+            quickMenuOpen = false;
+            Serial.println("[SYS] DAEMON.");
+          }
+        } else {
+          if (quickMenuItem == 0) {
+            if (!settings.carouselEnabled) {
+              settings.carouselEnabled = true;
+              settings.carouselIntervalSec = 5;
+            } else if (settings.carouselIntervalSec == 5)
+              settings.carouselIntervalSec = 10;
+            else if (settings.carouselIntervalSec == 10)
+              settings.carouselIntervalSec = 15;
+            else
+              settings.carouselEnabled = false;
+            Preferences prefs;
+            prefs.begin("nocturne", false);
+            prefs.putBool("carousel", settings.carouselEnabled);
+            prefs.putInt("carouselSec", settings.carouselIntervalSec);
+            prefs.end();
+          } else if (quickMenuItem == 1) {
+            display.flipScreen();
+            settings.displayInverted = display.isScreenFlipped();
+            Preferences prefs;
+            prefs.begin("nocturne", false);
+            prefs.putBool("inverted", settings.displayInverted);
+            prefs.end();
+          } else if (quickMenuItem == 2) {
+            settings.glitchEnabled = !settings.glitchEnabled;
+            Preferences prefs;
+            prefs.begin("nocturne", false);
+            prefs.putBool("glitch", settings.glitchEnabled);
+            prefs.end();
+          } else if (quickMenuItem == MAIN_IDX_WIFI) {
+            menuState = MENU_SUB_WIFI;
+            submenuIndex = 0;
+          } else if (quickMenuItem == MAIN_IDX_RADIO) {
+            menuState = MENU_SUB_RADIO;
+            submenuIndex = 0;
+          } else if (quickMenuItem == MAIN_IDX_BLE) {
+            currentMode = MODE_BLE_SPAM;
+            quickMenuOpen = false;
+            netManager.setSuspend(true);
+            WiFi.mode(WIFI_OFF);
+            bleManager.begin();
+            Serial.println("[SYS] BLE SPAM.");
+          } else if (quickMenuItem == MAIN_IDX_USB) {
+            currentMode = MODE_BADWOLF;
+            quickMenuOpen = false;
+            usbManager.begin();
+            Serial.println("[SYS] USB HID.");
+          } else if (quickMenuItem == MAIN_IDX_TOOLS) {
+            menuState = MENU_SUB_TOOLS;
+            submenuIndex = 0;
+          } else if (quickMenuItem == MAIN_IDX_EXIT) {
+            quickMenuOpen = false;
+          }
         }
       } else {
-        quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
+        if (menuState == MENU_MAIN) {
+          quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
+        } else if (menuState == MENU_SUB_WIFI) {
+          submenuIndex = (submenuIndex + 1) % SUB_WIFI_COUNT;
+        } else if (menuState == MENU_SUB_RADIO) {
+          submenuIndex = (submenuIndex + 1) % SUB_RADIO_COUNT;
+        } else {
+          submenuIndex = (submenuIndex + 1) % SUB_TOOLS_COUNT;
+        }
       }
     } else {
       if (duration >= NOCT_BUTTON_LONG_MS) {
         quickMenuOpen = true;
         quickMenuItem = 0;
+        menuState = MENU_MAIN;
       } else if (!state.alertActive) {
         previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
@@ -638,7 +687,8 @@ void loop() {
     sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
 
     if (quickMenuOpen) {
-      sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
+      sceneManager.drawMenu((int)menuState, quickMenuItem, submenuIndex,
+                            settings.carouselEnabled,
                             settings.carouselIntervalSec,
                             settings.displayInverted, settings.glitchEnabled);
     } else if (inTransition) {
