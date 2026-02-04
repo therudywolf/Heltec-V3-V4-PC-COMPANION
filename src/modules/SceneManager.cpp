@@ -836,7 +836,7 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   const int boxX = 10;
   const int boxY = 10;
   const int boxW = 108;
-  const int boxH = 52; /* Taller for 6 rows */
+  const int boxH = 52; /* Taller for 8 rows */
 
   // 1. Dim background: clear center
   u8g2.setDrawColor(0);
@@ -870,11 +870,12 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
   snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
            glitchEnabled ? "ON" : "OFF");
 
-  const char *items[] = {row0Buf,      row1Buf,     row2Buf, "RUN: DAEMON",
-                         "RUN: RADAR", "RUN: LORA", "EXIT"};
-  const int count = 7;
-  const int startY = 22;
-  const int rowH = 7;
+  const char *items[] = {row0Buf,        row1Buf,      row2Buf,
+                         "RUN: DAEMON",  "RUN: RADAR", "RUN: LORA",
+                         "RUN: PHANTOM", "EXIT"};
+  const int count = 8;
+  const int startY = 16;
+  const int rowH = 6;
 
   u8g2.setFont(LABEL_FONT);
   for (int i = 0; i < count; i++) {
@@ -1112,4 +1113,53 @@ void SceneManager::drawLoraSniffer(LoraManager &lora) {
   u8g2.print("Short: Clear");
   u8g2.setCursor(70, LORA_FOOTER_Y + 6);
   u8g2.print("Long: REPLAY");
+}
+
+// ---------------------------------------------------------------------------
+// BLE PHANTOM SPAMMER: status bar, pulsing BT icon, packet count, glitch in
+// main
+// ---------------------------------------------------------------------------
+#define PHANTOM_HEADER_H 10
+#define PHANTOM_BT_CX 64
+#define PHANTOM_BT_CY 32
+#define PHANTOM_BT_R 12
+
+static void drawBtIcon(U8G2 &u8g2, int cx, int cy, int r, int pulse) {
+  int R = r + (pulse / 2);
+  if (R < 4)
+    R = 4;
+  u8g2.drawCircle(cx, cy, R);
+  u8g2.drawCircle(cx, cy, R - 2);
+  int tip = 4;
+  u8g2.drawTriangle(cx - tip, cy - R + 2, cx - tip, cy + R - 2, cx + tip, cy);
+  u8g2.drawLine(cx - tip, cy - R + 2, cx + R - 2, cy - 4);
+  u8g2.drawLine(cx - tip, cy + R - 2, cx + R - 2, cy + 4);
+}
+
+void SceneManager::drawBleSpammer(int packetCount) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  // Top bar: STATUS: PHANTOM ACTIVE
+  u8g2.drawBox(0, 0, NOCT_DISP_W, PHANTOM_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("STATUS: PHANTOM ACTIVE");
+  u8g2.setDrawColor(1);
+
+  // Pulsing Bluetooth icon (center)
+  unsigned long t = millis() / 100;
+  int pulse = (int)(t % 8) - 4;
+  if (pulse < 0)
+    pulse = -pulse;
+  drawBtIcon(u8g2, PHANTOM_BT_CX, PHANTOM_BT_CY, PHANTOM_BT_R, pulse);
+
+  // Packet counter
+  u8g2.setCursor(20, 54);
+  u8g2.print("PACKETS SENT: [");
+  u8g2.print(packetCount);
+  u8g2.print("]");
+
+  disp_.drawGreebles();
 }
