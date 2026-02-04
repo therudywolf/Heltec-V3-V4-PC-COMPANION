@@ -64,6 +64,8 @@ NetManager::NetManager()
       searchMode_(false), rssi_(0), lastSentScreen_(-1) {}
 
 void NetManager::begin(const char *ssid, const char *pass) {
+  storedSSID_ = ssid;
+  storedPass_ = pass;
   WiFi.onEvent(WiFiEvent);
   if (!ssid || strlen(ssid) == 0)
     return;
@@ -112,7 +114,7 @@ void NetManager::tick(unsigned long now) {
     searchMode_ = true;
     if (now - lastWifiRetry_ > NOCT_WIFI_RETRY_INTERVAL_MS) {
       WiFi.disconnect();
-      WiFi.begin(WiFi.SSID().c_str(), WiFi.psk().c_str());
+      WiFi.begin(storedSSID_.c_str(), storedPass_.c_str());
       lastWifiRetry_ = now;
     }
   }
