@@ -46,6 +46,8 @@ public:
 private:
   bool tryTcpConnect(unsigned long now);
 
+  String storedSSID_;
+  String storedPass_;
   WiFiClient client_;
   String lineBuffer_;
   const char *serverIp_;
