@@ -936,8 +936,9 @@ void SceneManager::drawMenu(int menuItem, bool carouselOn, int carouselSec,
 
   const char *items[] = {row0Buf,       row1Buf,        row2Buf,
                          "RUN: DAEMON", "RUN: RADAR",   "RUN: BADWOLF",
-                         "RUN: LORA",   "RUN: PHANTOM", "EXIT"};
-  const int count = 9;
+                         "RUN: LORA",   "RUN: SILENCE", "RUN: PHANTOM",
+                         "RUN: TRAP",   "EXIT"};
+  const int count = 11;
   const int startY = 16;
 
   int firstVisible = menuItem - MENU_VISIBLE_ROWS / 2;
@@ -1300,6 +1301,114 @@ void SceneManager::drawBadWolf() {
   u8g2.drawLine(0, BADWOLF_FOOTER_Y - 1, NOCT_DISP_W, BADWOLF_FOOTER_Y - 1);
   u8g2.setCursor(2, BADWOLF_FOOTER_Y + 6);
   u8g2.print("Short: MATRIX | Long: SNIFFER");
+
+  disp_.drawGreebles();
+}
+
+// --- SILENCE (868 MHz Jammer) ---
+#define SILENCE_HEADER_H 10
+#define SILENCE_FOOTER_Y 56
+
+void SceneManager::drawSilenceMode() {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, SILENCE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("STATUS: RADIATING SILENCE");
+  u8g2.setDrawColor(1);
+
+  // Static noise: intensity increases with time (jammer run duration)
+  unsigned long t = millis() / 500;
+  int noisePixels = 80 + (int)(t % 120);
+  for (int i = 0; i < noisePixels; i++)
+    u8g2.drawPixel(
+        2 + (esp_random() % (NOCT_DISP_W - 4)),
+        SILENCE_HEADER_H + 2 +
+            (esp_random() % (SILENCE_FOOTER_Y - SILENCE_HEADER_H - 6)));
+
+  // Muted speaker (cone + X) + wolf silhouette
+  int sx = 28;
+  int sy = 28;
+  u8g2.drawLine(sx - 10, sy, sx + 2, sy - 8);
+  u8g2.drawLine(sx - 10, sy, sx + 2, sy + 8);
+  u8g2.drawLine(sx + 2, sy - 8, sx + 10, sy - 4);
+  u8g2.drawLine(sx + 2, sy + 8, sx + 10, sy + 4);
+  u8g2.drawLine(sx + 10, sy - 4, sx + 10, sy + 4);
+  u8g2.drawLine(sx - 12, sy - 6, sx + 12, sy + 6);
+  u8g2.drawLine(sx - 12, sy + 6, sx + 12, sy - 6);
+  int wx = 88;
+  int wy = 28;
+  u8g2.drawDisc(wx, wy, 7);
+  u8g2.drawTriangle(wx - 6, wy - 6, wx - 2, wy - 10, wx + 2, wy - 6);
+  u8g2.drawTriangle(wx + 2, wy - 6, wx + 6, wy - 10, wx + 6, wy - 4);
+
+  u8g2.drawLine(0, SILENCE_FOOTER_Y - 1, NOCT_DISP_W, SILENCE_FOOTER_Y - 1);
+  u8g2.setCursor(2, SILENCE_FOOTER_Y + 5);
+  u8g2.print("MAX POWER: +22dBm");
+
+  disp_.drawGreebles();
+}
+
+// --- TRAP (Evil Twin / Captive Portal) ---
+#define TRAP_HEADER_H 10
+#define TRAP_WEB_CX 64
+#define TRAP_WEB_CY 28
+#define TRAP_FOOTER_Y 56
+
+void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
+                                const char *lastPassword,
+                                unsigned long passwordShowUntil) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, TRAP_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("TRAP // FREE_WIFI");
+  u8g2.setDrawColor(1);
+
+  unsigned long now = millis();
+  bool showBite =
+      lastPassword && lastPassword[0] != '\0' && now < passwordShowUntil;
+
+  if (showBite) {
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(0, TRAP_HEADER_H, NOCT_DISP_W, NOCT_DISP_H - TRAP_HEADER_H);
+    u8g2.setDrawColor(1);
+    u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
+    u8g2.setCursor(2, 50);
+    u8g2.print("BITE:");
+    u8g2.setCursor(2, 58);
+    u8g2.print(lastPassword);
+  } else {
+    int cx = TRAP_WEB_CX;
+    int cy = TRAP_WEB_CY;
+    for (int i = 0; i < 8; i++) {
+      double a = (i * 2.0 * 3.14159265359) / 8.0;
+      int x2 = cx + (int)(24 * cos(a));
+      int y2 = cy + (int)(24 * sin(a));
+      u8g2.drawLine(cx, cy, x2, y2);
+    }
+    u8g2.drawCircle(cx, cy, 8);
+    u8g2.drawCircle(cx, cy, 16);
+    u8g2.drawCircle(cx, cy, 24);
+
+    static char buf[24];
+    snprintf(buf, sizeof(buf), "CLIENTS: %d", clientCount);
+    u8g2.setCursor(2, 22);
+    u8g2.print(buf);
+    snprintf(buf, sizeof(buf), "LOGS: %d", logsCaptured);
+    u8g2.setCursor(2, 32);
+    u8g2.print(buf);
+  }
+
+  u8g2.drawLine(0, TRAP_FOOTER_Y - 1, NOCT_DISP_W, TRAP_FOOTER_Y - 1);
+  u8g2.setCursor(2, TRAP_FOOTER_Y + 5);
+  u8g2.print("Triple-click: EXIT");
 
   disp_.drawGreebles();
 }

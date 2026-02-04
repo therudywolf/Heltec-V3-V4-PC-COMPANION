@@ -16,6 +16,7 @@
 #include "modules/LoraManager.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
+#include "modules/TrapManager.h"
 #include "modules/UsbManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
@@ -29,6 +30,7 @@ NetManager netManager;
 LoraManager loraManager;
 BleManager bleManager;
 UsbManager usbManager;
+TrapManager trapManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
@@ -59,7 +61,8 @@ unsigned long predatorEnterTime = 0;
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
 #define WOLF_MENU_ITEMS                                                        \
-  9 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, BADWOLF, LORA, PHANTOM, EXIT */
+  11 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, BADWOLF, LORA, SILENCE, PHANTOM,    \
+        TRAP, EXIT */
 
 // --- Cyberdeck Modes ---
 enum AppMode {
@@ -67,8 +70,10 @@ enum AppMode {
   MODE_DAEMON,
   MODE_RADAR,
   MODE_LORA,
+  MODE_LORA_JAM,
   MODE_BLE_SPAM,
-  MODE_BADWOLF
+  MODE_BADWOLF,
+  MODE_WIFI_TRAP
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -227,12 +232,20 @@ void loop() {
         if (currentMode != MODE_NORMAL) {
           if (currentMode == MODE_LORA)
             loraManager.setMode(false);
+          if (currentMode == MODE_LORA_JAM) {
+            loraManager.stopJamming();
+            loraManager.setMode(false);
+          }
           if (currentMode == MODE_BLE_SPAM) {
             bleManager.stop();
             WiFi.mode(WIFI_STA);
           }
           if (currentMode == MODE_BADWOLF)
             usbManager.stop();
+          if (currentMode == MODE_WIFI_TRAP) {
+            trapManager.stop();
+            WiFi.mode(WIFI_STA);
+          }
           currentMode = MODE_NORMAL;
           WiFi.scanDelete();
           netManager.setSuspend(false);
@@ -337,13 +350,26 @@ void loop() {
           loraManager.setMode(true);
           Serial.println("[SYS] LORA SNIFFER ON.");
         } else if (quickMenuItem == 7) {
+          currentMode = MODE_LORA_JAM;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          loraManager.startJamming(869.525f);
+          Serial.println("[SYS] SILENCE JAMMER ON.");
+        } else if (quickMenuItem == 8) {
           currentMode = MODE_BLE_SPAM;
           quickMenuOpen = false;
           netManager.setSuspend(true);
           WiFi.mode(WIFI_OFF);
           bleManager.begin();
           Serial.println("[SYS] BLE PHANTOM ACTIVE.");
-        } else if (quickMenuItem == 8) {
+        } else if (quickMenuItem == 9) {
+          currentMode = MODE_WIFI_TRAP;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          trapManager.start();
+          Serial.println("[SYS] TRAP AP ON.");
+        } else if (quickMenuItem == 10) {
           quickMenuOpen = false;
         }
       } else {
@@ -496,6 +522,9 @@ void loop() {
   } else if (currentMode == MODE_LORA) {
     loraManager.tick();
     sceneManager.drawLoraSniffer(loraManager);
+  } else if (currentMode == MODE_LORA_JAM) {
+    loraManager.tick();
+    sceneManager.drawSilenceMode();
   } else if (currentMode == MODE_BLE_SPAM) {
     static int lastPhantomPayloadIndex = -1;
     bleManager.tick();
@@ -506,6 +535,11 @@ void loop() {
     lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
   } else if (currentMode == MODE_BADWOLF) {
     sceneManager.drawBadWolf();
+  } else if (currentMode == MODE_WIFI_TRAP) {
+    trapManager.tick();
+    sceneManager.drawTrapMode(
+        trapManager.getClientCount(), trapManager.getLogsCaptured(),
+        trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil());
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);

