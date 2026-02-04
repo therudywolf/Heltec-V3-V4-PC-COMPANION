@@ -44,9 +44,8 @@ void KickManager::setTargetFromScan(int scanIndex) {
   targetSet_ = true;
 
   if (WiFi.status() == WL_CONNECTED) {
-    uint8_t ourBssid[6];
-    WiFi.BSSID(ourBssid);
-    targetIsOwnAP_ = (memcmp(ourBssid, targetBSSID_, 6) == 0);
+    const uint8_t *curBssid = WiFi.BSSID(); // no-arg: current AP (STA)
+    targetIsOwnAP_ = (curBssid && memcmp(curBssid, targetBSSID_, 6) == 0);
   } else {
     targetIsOwnAP_ = false;
   }
