@@ -176,6 +176,19 @@ void DisplayEngine::drawGlitch(int intensity) {
 void DisplayEngine::drawScanline(int y) { (void)y; }
 
 // ---------------------------------------------------------------------------
+// drawCentered: center text horizontally at given Y. Uses current font.
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawCentered(int y, const char *text) {
+  if (!text || !text[0])
+    return;
+  int w = u8g2_.getUTF8Width(text);
+  int x = (NOCT_DISP_W - w) / 2;
+  if (x < 0)
+    x = 0;
+  u8g2_.drawUTF8(x, y, text);
+}
+
+// ---------------------------------------------------------------------------
 // drawRightAligned: width = getUTF8Width; draw at x_anchor - width (grid law).
 // Safety: if x - w < 0 (left overflow), switch to TINY_FONT and redraw.
 // ---------------------------------------------------------------------------
@@ -872,5 +885,35 @@ void DisplayEngine::drawAlertBorder() {
   const int thick = 3;
   for (int t = 0; t < thick; t++) {
     u8g2_.drawFrame(t, t, NOCT_DISP_W - 2 * t, NOCT_DISP_H - 2 * t);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// applyGlitch: Cyberpunk glitch effect (XOR noise, screen tear).
+// Call immediately BEFORE sendBuffer() when glitchEnabled.
+// ---------------------------------------------------------------------------
+void DisplayEngine::applyGlitch() {
+  if (random(100) > 90) { // 10% chance per frame to glitch
+    int type = random(3);
+
+    u8g2_.setDrawColor(2); // XOR Mode
+
+    if (type == 0) {
+      // Horizontal Tear
+      int y = random(64);
+      int h = random(2, 10);
+      u8g2_.drawBox(random(10), y, 118, h);
+    } else if (type == 1) {
+      // Noise Blocks
+      for (int i = 0; i < 5; i++) {
+        u8g2_.drawBox(random(128), random(64), random(10), random(10));
+      }
+    } else if (type == 2) {
+      // Vertical Shift (simulated by drawing a black bar)
+      u8g2_.setDrawColor(0);
+      u8g2_.drawBox(0, random(64), 128, 2);
+    }
+
+    u8g2_.setDrawColor(1); // Restore Normal
   }
 }
