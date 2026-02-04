@@ -79,28 +79,34 @@ int wifiListPage = 0;
 #define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
 #define NOCT_BAT_READ_INTERVAL_MS 5000
+#define NOCT_BAT_SAMPLES 20
+#define NOCT_BAT_CALIBRATION 1.1f
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
 static unsigned long lastBatteryReadMs = 0;
 
-/** Read ADC from battery pin (GPIO 1), convert to 0..100% and optional
- * voltage. Heltec V4: 1/2 divider → multiply by 2. */
-static int readBatteryPercentage(float *voltageOut = nullptr) {
-  uint32_t raw = 0;
-  for (int i = 0; i < 10; i++) {
-    raw += analogRead(NOCT_BAT_PIN);
+/** Get battery voltage from ADC (GPIO 1). Heltec V4: 1/2 divider → ×2; 1.1
+ * calibration. */
+static float getBatteryVoltage() {
+  uint32_t sum = 0;
+  for (int i = 0; i < NOCT_BAT_SAMPLES; i++) {
+    sum += analogRead(NOCT_BAT_PIN);
     if (NOCT_BAT_READ_DELAY > 0)
       delay(NOCT_BAT_READ_DELAY);
   }
-  float voltage = (raw / 10.0f) * (3.3f / 4095.0f) * 2.0f;
-  voltage += 0.15f; // calibration (may vary 0.1–0.2V per unit)
+  float avg = (float)sum / (float)NOCT_BAT_SAMPLES;
+  return (avg / 4095.0f) * 3.3f * 2.0f * NOCT_BAT_CALIBRATION;
+}
 
-  if (voltageOut)
-    *voltageOut = voltage;
-
-  int pct = (int)((voltage - NOCT_VOLT_MIN) / (NOCT_VOLT_MAX - NOCT_VOLT_MIN) *
-                  100.0f);
-  return constrain(pct, 0, 100);
+/** Update state.batteryVoltage, state.batteryPct, state.isCharging. Call every
+ * 5s from loop. */
+static void updateBatteryState() {
+  state.batteryVoltage = getBatteryVoltage();
+  state.isCharging = (state.batteryVoltage > 4.3f);
+  float v = state.batteryVoltage;
+  int pct =
+      (int)((v - NOCT_VOLT_MIN) / (NOCT_VOLT_MAX - NOCT_VOLT_MIN) * 100.0f);
+  state.batteryPct = constrain(pct, 0, 100);
 }
 
 static void VextON() {
@@ -155,8 +161,7 @@ void setup() {
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
 
-  state.batteryVoltage = 0.0f;
-  state.batteryPct = readBatteryPercentage(&state.batteryVoltage);
+  updateBatteryState();
   lastBatteryReadMs = millis();
 }
 
@@ -396,8 +401,7 @@ void loop() {
   /* Battery: read every 5s to save power */
   if (now - lastBatteryReadMs >= (unsigned long)NOCT_BAT_READ_INTERVAL_MS) {
     lastBatteryReadMs = now;
-    state.batteryVoltage = 0.0f;
-    state.batteryPct = readBatteryPercentage(&state.batteryVoltage);
+    updateBatteryState();
   }
 
   /* Alert LED: double-tap (2 blinks then silence); predator breath. */
@@ -504,23 +508,23 @@ void loop() {
     sceneManager.drawBadWolf();
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
-    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
+    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
     sceneManager.drawNoSignal(false, false, 0, blinkState);
   } else if (!netManager.isTcpConnected()) {
     display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
-    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
+    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
     sceneManager.drawConnecting(netManager.rssi(), blinkState);
   } else if (netManager.isSearchMode() || signalLost) {
     display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
                              netManager.isWifiConnected());
-    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
+    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
   } else {
     display.drawGlobalHeader(
         quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
         nullptr, netManager.rssi(), netManager.isWifiConnected());
-    sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
+    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging);
 
     if (quickMenuOpen) {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,

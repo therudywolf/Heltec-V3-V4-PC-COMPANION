@@ -818,30 +818,40 @@ void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
   u8g2.drawXBM(x, y, WEATHER_ICON_W, WEATHER_ICON_H, bits);
 }
 
+// Battery HUD: far right of top bar (x 95–125), 12x6 frame + 2x2 terminal,
+// 3 segments, smallest font. Draw color 0 so visible on white header.
 void SceneManager::drawPowerStatus(int pct, bool isCharging) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFont(TINY_FONT);
+  u8g2.setFont(UNIT_FONT);
 
-  int x = 100;
-  int y = 8;
+  const int frameW = 12;
+  const int frameH = 6;
+  const int termW = 2;
+  const int baselineY = 11;
+  int x = NOCT_DISP_W - frameW - termW;
+  int y = baselineY;
 
-  u8g2.drawFrame(x, y - 6, 12, 6);
-  u8g2.drawBox(x + 12, y - 4, 2, 2);
+  u8g2.setDrawColor(0);
+  u8g2.drawFrame(x, y - frameH, frameW, frameH);
+  u8g2.drawBox(x + frameW, y - frameH + 2, termW, termW);
 
   if (pct > 10)
-    u8g2.drawBox(x + 2, y - 5, 2, 4);
+    u8g2.drawBox(x + 2, y - frameH + 1, 2, 4);
   if (pct > 40)
-    u8g2.drawBox(x + 5, y - 5, 2, 4);
+    u8g2.drawBox(x + 5, y - frameH + 1, 2, 4);
   if (pct > 80)
-    u8g2.drawBox(x + 8, y - 5, 2, 4);
+    u8g2.drawBox(x + 8, y - frameH + 1, 2, 4);
 
-  u8g2.setCursor(x - 22, y);
+  static char buf[8];
   if (isCharging) {
-    u8g2.print("CHG");
+    snprintf(buf, sizeof(buf), "CHG");
   } else {
-    u8g2.print(pct);
-    u8g2.print("%");
+    snprintf(buf, sizeof(buf), "%d%%", pct);
   }
+  int tw = u8g2.getUTF8Width(buf);
+  u8g2.setCursor(x - tw - 2, y);
+  u8g2.print(buf);
+  u8g2.setDrawColor(1);
 }
 
 void SceneManager::drawNoDataCross(int x, int y, int w, int h) {
