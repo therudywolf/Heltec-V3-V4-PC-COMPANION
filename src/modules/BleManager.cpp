@@ -2,7 +2,6 @@
  * NOCTURNE_OS — BLE Phantom Spammer: rotate Apple / Google / Samsung payloads.
  */
 #include "BleManager.h"
-#include <NimBLEAdvertising.h>
 #include <NimBLEDevice.h>
 #include <vector>
 

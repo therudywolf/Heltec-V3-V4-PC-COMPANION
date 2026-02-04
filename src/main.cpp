@@ -25,6 +25,25 @@
 #include "secrets.h"
 
 // ---------------------------------------------------------------------------
+// Local constants (after includes, before any global object instantiations)
+// ---------------------------------------------------------------------------
+#define NOCT_REDRAW_INTERVAL_MS 500
+#define NOCT_CONFIG_MSG_MS 1500
+#define NOCT_BAT_READ_INTERVAL_MS 5000
+#define NOCT_BAT_SAMPLES 20
+#define NOCT_BAT_CALIBRATION 1.1f
+#define WOLF_MENU_ITEMS 9
+#define MAIN_IDX_WIFI 3
+#define MAIN_IDX_RADIO 4
+#define MAIN_IDX_BLE 5
+#define MAIN_IDX_USB 6
+#define MAIN_IDX_TOOLS 7
+#define MAIN_IDX_EXIT 8
+#define SUB_WIFI_COUNT 4
+#define SUB_RADIO_COUNT 4
+#define SUB_TOOLS_COUNT 4
+
+// ---------------------------------------------------------------------------
 // Input: Event-based (SHORT = navigate, LONG = select, DOUBLE = back/menu)
 // ---------------------------------------------------------------------------
 enum ButtonEvent { EV_NONE, EV_SHORT, EV_LONG, EV_DOUBLE };
@@ -122,21 +141,10 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define WOLF_MENU_ITEMS 9
 
 enum MenuState { MENU_MAIN, MENU_SUB_WIFI, MENU_SUB_RADIO, MENU_SUB_TOOLS };
 MenuState menuState = MENU_MAIN;
 int submenuIndex = 0;
-
-#define MAIN_IDX_WIFI 3
-#define MAIN_IDX_RADIO 4
-#define MAIN_IDX_BLE 5
-#define MAIN_IDX_USB 6
-#define MAIN_IDX_TOOLS 7
-#define MAIN_IDX_EXIT 8
-#define SUB_WIFI_COUNT 4
-#define SUB_RADIO_COUNT 4
-#define SUB_TOOLS_COUNT 4
 
 // --- Cyberdeck Modes ---
 enum AppMode {
@@ -158,11 +166,6 @@ AppMode currentMode = MODE_NORMAL;
 int wifiScanSelected = 0;
 int wifiListPage = 0;
 
-#define NOCT_REDRAW_INTERVAL_MS 500
-#define NOCT_CONFIG_MSG_MS 1500 // "CONFIG LOADED: ALERTS ON" display time
-#define NOCT_BAT_READ_INTERVAL_MS 5000
-#define NOCT_BAT_SAMPLES 20
-#define NOCT_BAT_CALIBRATION 1.1f
 static bool needRedraw = true;
 
 /** Get battery voltage from ADC (GPIO 1). Heltec V4: 1/2 divider → ×2; 1.1
