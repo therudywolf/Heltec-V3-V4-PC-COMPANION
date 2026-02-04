@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include <Wire.h>
 
+#include "modules/BleManager.h"
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
 #include "modules/LoraManager.h"
@@ -25,6 +26,7 @@
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
 NetManager netManager;
 LoraManager loraManager;
+BleManager bleManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
@@ -54,10 +56,11 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
-#define WOLF_MENU_ITEMS 7 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, LORA, EXIT */
+#define WOLF_MENU_ITEMS                                                        \
+  8 /* AUTO, FLIP, GLITCH, DAEMON, RADAR, LORA, PHANTOM, EXIT */
 
 // --- Cyberdeck Modes ---
-enum AppMode { MODE_NORMAL, MODE_DAEMON, MODE_RADAR, MODE_LORA };
+enum AppMode { MODE_NORMAL, MODE_DAEMON, MODE_RADAR, MODE_LORA, MODE_BLE_SPAM };
 AppMode currentMode = MODE_NORMAL;
 
 // --- Netrunner WiFi Scanner ---
@@ -210,6 +213,10 @@ void loop() {
         if (currentMode != MODE_NORMAL) {
           if (currentMode == MODE_LORA)
             loraManager.setMode(false);
+          if (currentMode == MODE_BLE_SPAM) {
+            bleManager.stop();
+            WiFi.mode(WIFI_STA);
+          }
           currentMode = MODE_NORMAL;
           WiFi.scanDelete();
           netManager.setSuspend(false);
@@ -303,6 +310,13 @@ void loop() {
           loraManager.setMode(true);
           Serial.println("[SYS] LORA SNIFFER ON.");
         } else if (quickMenuItem == 6) {
+          currentMode = MODE_BLE_SPAM;
+          quickMenuOpen = false;
+          netManager.setSuspend(true);
+          WiFi.mode(WIFI_OFF);
+          bleManager.begin();
+          Serial.println("[SYS] BLE PHANTOM ACTIVE.");
+        } else if (quickMenuItem == 7) {
           quickMenuOpen = false;
         }
       } else {
@@ -456,6 +470,14 @@ void loop() {
   } else if (currentMode == MODE_LORA) {
     loraManager.tick();
     sceneManager.drawLoraSniffer(loraManager);
+  } else if (currentMode == MODE_BLE_SPAM) {
+    static int lastPhantomPayloadIndex = -1;
+    bleManager.tick();
+    sceneManager.drawBleSpammer(bleManager.getPacketCount());
+    if (lastPhantomPayloadIndex >= 0 &&
+        bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
+      display.applyGlitch();
+    lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
   } else if (!netManager.isWifiConnected()) {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawPowerStatus(state.batteryPct, state.batteryVoltage > 4.3f);
