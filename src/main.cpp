@@ -56,7 +56,8 @@ int quickMenuItem = 0;
 static unsigned long lastRedrawMs = 0;
 static bool needRedraw = true;
 
-static void VextON() {
+static void VextON()
+{
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
   delay(100);
@@ -65,7 +66,8 @@ static void VextON() {
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
-void setup() {
+void setup()
+{
   bootTime = millis();
   setCpuFrequencyMhz(240); // V4: max speed (also set in platformio.ini)
   VextON();
@@ -102,7 +104,7 @@ void setup() {
 
   display.u8g2().setContrast((uint8_t)settings.displayContrast);
   display.setScreenFlipped(settings.displayInverted);
-  randomSeed(analogRead(0));
+  randomSeed(esp_random());
 
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
@@ -111,22 +113,29 @@ void setup() {
 // ---------------------------------------------------------------------------
 // Loop
 // ---------------------------------------------------------------------------
-void loop() {
+void loop()
+{
   unsigned long now = millis();
 
   netManager.tick(now);
 
-  if (netManager.isTcpConnected()) {
-    while (netManager.available()) {
+  if (netManager.isTcpConnected())
+  {
+    while (netManager.available())
+    {
       char c = (char)netManager.read();
-      if (c == '\n') {
+      if (c == '\n')
+      {
         String &buf = netManager.getLineBuffer();
-        if (buf.length() > 0) {
+        if (buf.length() > 0)
+        {
           JsonDocument doc;
           DeserializationError err = deserializeJson(doc, buf);
-          if (!err) {
+          if (!err)
+          {
             netManager.markDataReceived(now);
-            if (netManager.parsePayload(buf, &state)) {
+            if (netManager.parsePayload(buf, &state))
+            {
               needRedraw = true;
               HardwareData &hw = state.hw;
               display.cpuGraph.push((float)hw.cl);
@@ -139,7 +148,9 @@ void loop() {
           }
         }
         netManager.clearLineBuffer();
-      } else {
+      }
+      else
+      {
         netManager.appendLineBuffer(c);
       }
     }
@@ -148,29 +159,41 @@ void loop() {
   // Button: In menu: Short = NAVIGATE (next item), Long = INTERACT (change
   // value / execute). When closed: Long = open menu, Short = next scene.
   int btnState = digitalRead(NOCT_BUTTON_PIN);
-  if (btnState == LOW && !btnHeld) {
+  if (btnState == LOW && !btnHeld)
+  {
     btnHeld = true;
     btnPressTime = now;
   }
-  if (btnState == HIGH && btnHeld) {
+  if (btnState == HIGH && btnHeld)
+  {
     needRedraw = true;
     unsigned long duration = now - btnPressTime;
     btnHeld = false;
 
-    if (quickMenuOpen) {
+    if (quickMenuOpen)
+    {
       // --- MENU MODE ---
-      if (duration >= NOCT_BUTTON_LONG_MS) {
+      if (duration >= NOCT_BUTTON_LONG_MS)
+      {
         // LONG PRESS: INTERACT (change value / execute)
-        if (quickMenuItem == 0) {
+        if (quickMenuItem == 0)
+        {
           // Cycle Carousel: 5 -> 10 -> 15 -> OFF -> 5
-          if (!settings.carouselEnabled) {
+          if (!settings.carouselEnabled)
+          {
             settings.carouselEnabled = true;
             settings.carouselIntervalSec = 5;
-          } else if (settings.carouselIntervalSec == 5) {
+          }
+          else if (settings.carouselIntervalSec == 5)
+          {
             settings.carouselIntervalSec = 10;
-          } else if (settings.carouselIntervalSec == 10) {
+          }
+          else if (settings.carouselIntervalSec == 10)
+          {
             settings.carouselIntervalSec = 15;
-          } else {
+          }
+          else
+          {
             settings.carouselEnabled = false;
           }
           Preferences prefs;
@@ -178,7 +201,9 @@ void loop() {
           prefs.putBool("carousel", settings.carouselEnabled);
           prefs.putInt("carouselSec", settings.carouselIntervalSec);
           prefs.end();
-        } else if (quickMenuItem == 1) {
+        }
+        else if (quickMenuItem == 1)
+        {
           // Flip Screen
           display.flipScreen();
           settings.displayInverted = display.isScreenFlipped();
@@ -186,25 +211,35 @@ void loop() {
           prefs.begin("nocturne", false);
           prefs.putBool("inverted", settings.displayInverted);
           prefs.end();
-        } else if (quickMenuItem == 2) {
+        }
+        else if (quickMenuItem == 2)
+        {
           // Exit
           quickMenuOpen = false;
         }
-      } else {
+      }
+      else
+      {
         // SHORT PRESS: NAVIGATE (next item)
         quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
       }
-    } else {
+    }
+    else
+    {
       // --- NORMAL MODE ---
-      if (duration >= NOCT_BUTTON_LONG_MS) {
+      if (duration >= NOCT_BUTTON_LONG_MS)
+      {
         // Long press: Open Menu
         quickMenuOpen = true;
         quickMenuItem = 0;
-      } else if (!state.alertActive) {
+      }
+      else if (!state.alertActive)
+      {
         // Short press: Next Scene
         previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
-        if (previousScene != currentScene) {
+        if (previousScene != currentScene)
+        {
           inTransition = true;
           transitionStart = now;
         }
@@ -213,19 +248,23 @@ void loop() {
     }
   }
 
-  if (state.alertActive) {
+  if (state.alertActive)
+  {
     currentScene = state.alertTargetScene;
     needRedraw = true;
   }
 
-  if (settings.carouselEnabled && !predatorMode && !state.alertActive) {
+  if (settings.carouselEnabled && !predatorMode && !state.alertActive)
+  {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
-    if (now - lastCarousel > intervalMs) {
+    if (now - lastCarousel > intervalMs)
+    {
       needRedraw = true;
       previousScene = currentScene;
       currentScene = (currentScene + 1) % sceneManager.totalScenes();
-      if (previousScene != currentScene) {
+      if (previousScene != currentScene)
+      {
         inTransition = true;
         transitionStart = now;
       }
@@ -234,21 +273,24 @@ void loop() {
   }
 
   if (netManager.isTcpConnected() &&
-      netManager.getLastSentScreen() != currentScene) {
+      netManager.getLastSentScreen() != currentScene)
+  {
     netManager.print("screen:");
     netManager.print(String(currentScene));
     netManager.print("\n");
     netManager.setLastSentScreen(currentScene);
   }
 
-  if (now - lastFanAnim >= 100) {
+  if (now - lastFanAnim >= 100)
+  {
     fanAnimFrame = (fanAnimFrame + 1) % 12;
     lastFanAnim = now;
   }
 
   /* Alert LED: double-tap (2 blinks then silence); predator breath. */
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
-  if (predatorMode) {
+  if (predatorMode)
+  {
     unsigned long t = (now - predatorEnterTime) / 20;
     int breath = (int)(128 + 127 * sin(t * 0.1f));
     if (breath < 0)
@@ -257,11 +299,14 @@ void loop() {
       analogWrite(NOCT_LED_ALERT_PIN, breath);
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-  } else {
+  }
+  else
+  {
     // --- ALERT LED LOGIC (DOUBLE TAP) ---
 
     // 1. Detect New Alert Edge -> Reset Counter
-    if (state.alertActive && !lastAlertActive) {
+    if (state.alertActive && !lastAlertActive)
+    {
       alertBlinkCounter = 0;
       blinkState = true; // Start ON
       digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
@@ -270,37 +315,47 @@ void loop() {
     lastAlertActive = state.alertActive;
 
     // 2. Process Blinking
-    if (state.alertActive) {
-      if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS) {
+    if (state.alertActive)
+    {
+      if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS)
+      {
         lastBlink = now;
 
         // Count phases: 2 blinks = 4 phases (On, Off, On, Off)
-        if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
+        if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2)
+        {
           blinkState = !blinkState;
           digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
           alertBlinkCounter++;
-        } else {
+        }
+        else
+        {
           // Limit reached: Silence
           blinkState = false;                    // Value stays solid on screen
           digitalWrite(NOCT_LED_ALERT_PIN, LOW); // LED Off
         }
       }
-    } else {
+    }
+    else
+    {
       // No Alert -> LED Off
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
 
       // Standard UI cursor blink (non-alert)
-      if (now - lastBlink > 500) {
+      if (now - lastBlink > 500)
+      {
         blinkState = !blinkState;
         lastBlink = now;
       }
     }
   }
 
-  if (!splashDone) {
+  if (!splashDone)
+  {
     if (splashStart == 0)
       splashStart = now;
-    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS) {
+    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS)
+    {
       splashDone = true;
       needRedraw = true;
     }
@@ -308,7 +363,8 @@ void loop() {
 
   // ----- Render (throttle: only when needed or every NOCT_REDRAW_INTERVAL_MS)
   // -----
-  if (predatorMode) {
+  if (predatorMode)
+  {
     display.clearBuffer();
     display.sendBuffer();
     delay(10);
@@ -316,7 +372,8 @@ void loop() {
   }
 
   if (!needRedraw &&
-      (now - lastRedrawMs < (unsigned long)NOCT_REDRAW_INTERVAL_MS)) {
+      (now - lastRedrawMs < (unsigned long)NOCT_REDRAW_INTERVAL_MS))
+  {
     delay(10);
     return;
   }
@@ -329,29 +386,41 @@ void loop() {
   if (signalLost && netManager.isTcpConnected() && netManager.hasReceivedData())
     netManager.disconnectTcp();
 
-  if (!splashDone) {
+  if (!splashDone)
+  {
     display.drawSplash();
-  } else if (!netManager.isWifiConnected()) {
+  }
+  else if (!netManager.isWifiConnected())
+  {
     display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
     sceneManager.drawNoSignal(false, false, 0, blinkState);
-  } else if (!netManager.isTcpConnected()) {
+  }
+  else if (!netManager.isTcpConnected())
+  {
     display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
     sceneManager.drawConnecting(netManager.rssi(), blinkState);
-  } else if (netManager.isSearchMode() || signalLost) {
+  }
+  else if (netManager.isSearchMode() || signalLost)
+  {
     display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
                              netManager.isWifiConnected());
     int scanPhase = (int)(now / 100) % 12;
     sceneManager.drawSearchMode(scanPhase);
-  } else {
+  }
+  else
+  {
     display.drawGlobalHeader(
         quickMenuOpen ? "MENU" : sceneManager.getSceneName(currentScene),
         nullptr, netManager.rssi(), netManager.isWifiConnected());
 
-    if (quickMenuOpen) {
+    if (quickMenuOpen)
+    {
       sceneManager.drawMenu(quickMenuItem, settings.carouselEnabled,
                             settings.carouselIntervalSec,
                             settings.displayInverted);
-    } else if (inTransition) {
+    }
+    else if (inTransition)
+    {
       unsigned long elapsed = now - transitionStart;
       int progress =
           (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
@@ -365,7 +434,9 @@ void loop() {
                                   fanAnimFrame);
       if (progress >= NOCT_DISP_W)
         inTransition = false;
-    } else {
+    }
+    else
+    {
       sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
     }
   }
