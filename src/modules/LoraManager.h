@@ -60,6 +60,18 @@ public:
   void stopJamming();
   bool isJamming() const { return isJamming_; }
 
+  /** GHOSTS: FSK/OOK 868.3 MHz sensor sniffer (weather, TPMS, etc.). */
+  void startSense();
+  void stopSense();
+  bool isSensing() const { return isSensing_; }
+  static constexpr int SENSE_ENTRIES = 5;
+  struct SenseEntry {
+    char hex[28];
+    float rssi;
+  };
+  int getSenseCount() const { return senseCount_; }
+  const SenseEntry *getSenseEntry(int index) const;
+
 private:
   void captureAndStore(const uint8_t *rawData, size_t len, float rssi,
                        float snr);
@@ -88,4 +100,9 @@ private:
   bool isJamming_ = false;
   int jamHopIndex_ = 0;
   uint8_t jamBuf_[32];
+
+  bool isSensing_ = false;
+  SenseEntry senseEntries_[SENSE_ENTRIES];
+  int senseHead_ = 0;
+  int senseCount_ = 0;
 };
