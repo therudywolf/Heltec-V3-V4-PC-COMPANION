@@ -889,72 +889,42 @@ void DisplayEngine::drawAlertBorder() {
 }
 
 // ===========================================================================
-// CYBERPUNK VFX ENGINE: "BLADE RUNNER" PRESET
-// Creates CRT scanlines, vertical sync failures, and digital corruption
-// artifacts. Must be called immediately BEFORE u8g2_.sendBuffer().
+// CYBERPUNK VFX: V-HOLD + digital artifacts (no scanline grid).
 // ===========================================================================
 void DisplayEngine::applyGlitch() {
   unsigned long now = millis();
 
-  // --- LAYER 1: CRT SCANLINES (CONSTANT) ---
-  // Subtle darkening of every other line to simulate old CRT monitors.
-  u8g2_.setDrawColor(0); // Draw Black
-  for (int y = 0; y < 64; y += 2) {
-    // Draw thin lines, skip every other pixel horizontally for a mesh look
-    for (int x = 0; x < 128; x += 2) {
-      u8g2_.drawPixel(x, y);
-    }
-  }
-  u8g2_.setDrawColor(1); // Restore White
-
-  // --- LAYER 2: V-HOLD TRIP (RARE) ---
-  // Simulates a vertical synchronization failure where the screen rolls
-  // up/down. Occurs roughly every 5-10 seconds.
+  // --- LAYER 2: V-HOLD TRIP (Rare) ---
   static unsigned long lastVHoldTrip = 0;
   static int vHoldOffset = 0;
-  if (now - lastVHoldTrip > random(5000, 10000) && vHoldOffset == 0) {
+  if (now - lastVHoldTrip > random(8000, 15000) && vHoldOffset == 0) {
     lastVHoldTrip = now;
-    vHoldOffset = random(-15, 15); // Start trip
+    vHoldOffset = random(-8, 8);
   }
 
   if (vHoldOffset != 0) {
-    // Apply vertical shift (this requires u8g2 to support display offsets)
-    // Note: Not all u8g2 drivers support setDisplayOffset well.
-    // Alternative: Draw a massive black bar moving across the screen.
     u8g2_.setDrawColor(0);
     int barH = abs(vHoldOffset) * 2;
-    int barY = (millis() / 10) % (64 + barH) - barH;
+    int barY = (millis() / 15) % (64 + barH) - barH;
     u8g2_.drawBox(0, barY, 128, barH);
     u8g2_.setDrawColor(1);
 
-    // Decay the effect
     if (vHoldOffset > 0)
       vHoldOffset--;
     else
       vHoldOffset++;
   }
 
-  // --- LAYER 3: DIGITAL CORRUPTION (SEMI-FREQUENT) ---
-  // XOR noise blocks creating inverted artifacts.
-  if (random(100) > 85) {
-    u8g2_.setDrawColor(2); // XOR Mode (Invert underneath)
-    int numArtifacts = random(1, 4);
-    for (int i = 0; i < numArtifacts; i++) {
-      int type = random(3);
-      if (type == 0) {
-        // Horizontal tracking error
-        int y = random(64);
-        int h = random(2, 6);
-        u8g2_.drawBox(random(10), y, random(80, 120), h);
-      } else if (type == 1) {
-        // Data block corruption
-        u8g2_.drawBox(random(120), random(60), random(4, 16), random(4, 16));
-      } else {
-        // Vertical signal tear
-        int x = random(128);
-        u8g2_.drawBox(x, 0, random(1, 3), 64);
-      }
+  // --- LAYER 3: DIGITAL ARTIFACTS (Subtle) ---
+  if (random(100) > 92) {
+    u8g2_.setDrawColor(2);
+    int type = random(3);
+    if (type == 0) {
+      int y = random(64);
+      u8g2_.drawBox(random(5), y, random(60, 120), 1);
+    } else if (type == 1) {
+      u8g2_.drawBox(random(120), random(60), random(4, 8), random(4, 8));
     }
-    u8g2_.setDrawColor(1); // Restore Normal Mode
+    u8g2_.setDrawColor(1);
   }
 }
