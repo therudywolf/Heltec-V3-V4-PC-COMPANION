@@ -1,8 +1,11 @@
 /*
  * NOCTURNE_OS — BLE Phantom Spammer: rotate Apple / Google / Samsung payloads.
+ * Builds with or without NimBLE: if NimBLEDevice.h is not found, BLE is a
+ * no-op.
  */
 #include "BleManager.h"
-#include <NimBLEDevice.h>
+#if __has_include("NimBLEDevice.h")
+#include "NimBLEDevice.h"
 #include <vector>
 
 // Apple Action (AirPods / Apple TV / Vision Pro) — manufacturer 0x004C
@@ -17,10 +20,12 @@ static const size_t kPayloadGoogleLen = sizeof(kPayloadGoogle);
 // Samsung (SmartTag / Buds) — manufacturer 0x0075
 static const uint8_t kPayloadSamsung[] = {0x75, 0x00, 0x01, 0x02, 0x03, 0x04};
 static const size_t kPayloadSamsungLen = sizeof(kPayloadSamsung);
+#endif
 
 BleManager::BleManager() {}
 
 void BleManager::setPayload(int index) {
+#if __has_include("NimBLEDevice.h")
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   NimBLEAdvertisementData advData;
   advData.setFlags(0x06);
@@ -51,11 +56,19 @@ void BleManager::setPayload(int index) {
   pAdvertising->start(0, nullptr);
   packetCount_++;
   currentPayloadIndex_ = index;
+#else
+  (void)index;
+#endif
 }
 
-void BleManager::startSpam() { setPayload(0); }
+void BleManager::startSpam() {
+#if __has_include("NimBLEDevice.h")
+  setPayload(0);
+#endif
+}
 
 void BleManager::begin() {
+#if __has_include("NimBLEDevice.h")
   if (active_)
     return;
   NimBLEDevice::init("PHANTOM");
@@ -65,9 +78,13 @@ void BleManager::begin() {
   active_ = true;
   lastRotateMs_ = millis();
   Serial.println("[PHANTOM] BLE spam ACTIVE (WiFi off).");
+#else
+  Serial.println("[PHANTOM] BLE not available (NimBLE not found).");
+#endif
 }
 
 void BleManager::stop() {
+#if __has_include("NimBLEDevice.h")
   if (!active_)
     return;
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
@@ -75,9 +92,11 @@ void BleManager::stop() {
   NimBLEDevice::deinit(true);
   active_ = false;
   Serial.println("[PHANTOM] BLE spam STOPPED.");
+#endif
 }
 
 void BleManager::tick() {
+#if __has_include("NimBLEDevice.h")
   if (!active_)
     return;
   unsigned long now = millis();
@@ -88,4 +107,5 @@ void BleManager::tick() {
     pAdvertising->stop();
     setPayload(next);
   }
+#endif
 }

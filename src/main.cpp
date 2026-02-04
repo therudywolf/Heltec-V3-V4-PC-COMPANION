@@ -10,6 +10,14 @@
 #include <WiFi.h>
 #include <Wire.h>
 
+// --- FORCE DEPENDENCY VISIBILITY ---
+// Required here so LDF finds them for the sub-modules
+#include "USB.h"
+#include "USBHIDKeyboard.h"
+#include <NimBLEDevice.h>
+
+// -----------------------------------
+
 #include "modules/BleManager.h"
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
