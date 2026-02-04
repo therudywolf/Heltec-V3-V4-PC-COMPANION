@@ -7,7 +7,6 @@
 #include "DisplayEngine.h"
 #include <Arduino.h>
 
-
 static const char *biosLines[] = {
     "INIT MEMORY...",
     "MOUNTING /DEV/WOLF...",
@@ -44,31 +43,27 @@ static void phaseBiosPost(DisplayEngine &display, unsigned long &phaseStart) {
   display.sendBuffer();
 }
 
-// Phase 2: procedural "Digital Tree" (lines + triangles) + "FOREST OS v3.0"
-static void drawDigitalTree(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2) {
-  const int cx = NOCT_DISP_W / 2;
-  const int baseY = 50;
-  const int topY = 14;
-  // Trunk
-  u8g2.drawLine(cx, baseY, cx, baseY - 18);
-  // Branches (symmetrical)
-  u8g2.drawLine(cx, baseY - 12, cx - 14, baseY - 24);
-  u8g2.drawLine(cx, baseY - 12, cx + 14, baseY - 24);
-  u8g2.drawLine(cx - 14, baseY - 24, cx - 8, topY + 4);
-  u8g2.drawLine(cx + 14, baseY - 24, cx + 8, topY + 4);
-  // Small triangles as "leaves" / nodes
-  u8g2.drawTriangle(cx, topY, cx - 6, topY + 8, cx + 6, topY + 8);
-  u8g2.drawTriangle(cx - 14, baseY - 26, cx - 20, baseY - 18, cx - 8,
-                    baseY - 20);
-  u8g2.drawTriangle(cx + 14, baseY - 26, cx + 8, baseY - 20, cx + 20,
-                    baseY - 18);
-}
+// 32x32 Wolf Funny (boot logo)
+static const unsigned char wolf_funny_logo[] = {
+    0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x0e, 0x70, 0x00, 0x00, 0x0f,
+    0xf0, 0x01, 0x80, 0x0f, 0x50, 0x07, 0xe0, 0x0b, 0xc8, 0x6f, 0x74, 0x11,
+    0xc8, 0xfd, 0xbf, 0x11, 0x88, 0x79, 0xbf, 0x13, 0x08, 0xb3, 0xcc, 0x12,
+    0x88, 0x81, 0x8d, 0x13, 0xc8, 0xdf, 0x3b, 0x11, 0x50, 0xc0, 0x07, 0x0a,
+    0x70, 0x02, 0x01, 0x0c, 0xd0, 0x0e, 0x79, 0x09, 0xd8, 0x11, 0x89, 0x18,
+    0xcc, 0x19, 0x94, 0x38, 0x1e, 0x19, 0x98, 0x78, 0x14, 0x10, 0x08, 0x20,
+    0x12, 0xc0, 0x13, 0x40, 0x03, 0x20, 0x02, 0x40, 0x0f, 0xe0, 0x63, 0x70,
+    0x04, 0xc2, 0x41, 0x20, 0x02, 0x02, 0x20, 0x40, 0x10, 0x0c, 0x38, 0x08,
+    0x30, 0xf8, 0x1f, 0x08, 0xf0, 0x70, 0x0c, 0x0f, 0x60, 0x81, 0x84, 0x07,
+    0xc0, 0x25, 0x84, 0x03, 0x00, 0x1c, 0xf0, 0x00, 0x00, 0x10, 0x0c, 0x00,
+    0x00, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static void phaseLogo(DisplayEngine &display, unsigned long &phaseStart) {
-  unsigned long elapsed = millis() - phaseStart;
+  (void)phaseStart;
   display.clearBuffer();
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = display.u8g2();
-  drawDigitalTree(u8g2);
+  const int wolfW = 32;
+  const int wolfH = 32;
+  u8g2.drawXBMP((NOCT_DISP_W - wolfW) / 2, 10, wolfW, wolfH, wolf_funny_logo);
   u8g2.setFont(HEADER_FONT);
   const char *title = "FOREST OS v3.0";
   int tw = u8g2.getUTF8Width(title);
