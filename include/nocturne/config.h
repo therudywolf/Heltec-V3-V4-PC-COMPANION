@@ -111,6 +111,9 @@
 #define NOCT_BUTTON_PREDATOR_MS 2500
 #define NOCT_GLITCH_INTERVAL_MS 10000 /* Glitch once every 10s, subtle */
 #define NOCT_GLITCH_DURATION_MS 100
+/* GUI redraw interval (ms). Lower = smoother animations; 80–120 typical.
+ * Increase to 150–200 if display artifacts. */
+#define NOCT_REDRAW_INTERVAL_MS 100
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
 

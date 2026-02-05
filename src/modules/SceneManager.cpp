@@ -6,7 +6,6 @@
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
 #include "KickManager.h"
-#include "LoraManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
@@ -926,12 +925,25 @@ void SceneManager::drawSearchMode(int scanPhase) {
 }
 
 // ---------------------------------------------------------------------------
-// Tactical HUD Menu: ChamferBox with scroll. Uses NOCT_MENU_* from config.
-// Short = navigate (scroll), Long = interact.
+// Flipper-style two-level menu: level 0 = categories, level 1 = submenu.
+// Short = scroll, Long = enter/execute, Double = back/close.
 // ---------------------------------------------------------------------------
-static const int MENU_MAIN = 0;
+static int submenuCountForCategory(int cat) {
+  switch (cat) {
+  case 0:
+    return 3;
+  case 1:
+    return 3;
+  case 2:
+    return 4;
+  case 3:
+    return 2;
+  default:
+    return 3;
+  }
+}
 
-void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
+void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                             bool carouselOn, int carouselSec,
                             bool screenRotated, bool glitchEnabled,
                             bool rebootConfirmed) {
@@ -944,8 +956,58 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   u8g2.setDrawColor(0);
   u8g2.drawBox(boxX, boxY, boxW, boxH);
   u8g2.setDrawColor(1);
-
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
+
+  static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System"};
+  static char items[4][20];
+  int count;
+  const char *headerStr;
+
+  if (menuLevel == 0) {
+    count = 4;
+    headerStr = "// MENU";
+    for (int i = 0; i < 4; i++) {
+      strncpy(items[i], categoryNames[i], sizeof(items[i]) - 1);
+      items[i][sizeof(items[i]) - 1] = '\0';
+    }
+  } else {
+    count = submenuCountForCategory(menuCategory);
+    headerStr = categoryNames[menuCategory];
+    if (menuCategory == 0) {
+      if (!carouselOn)
+        snprintf(items[0], sizeof(items[0]), "AUTO: OFF");
+      else
+        snprintf(items[0], sizeof(items[0]), "AUTO: %ds", carouselSec);
+      snprintf(items[1], sizeof(items[1]), "FLIP: %s",
+               screenRotated ? "180deg" : "0deg");
+      snprintf(items[2], sizeof(items[2]), "GLITCH: %s",
+               glitchEnabled ? "ON" : "OFF");
+    } else if (menuCategory == 1) {
+      strncpy(items[0], "SCAN", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+      strncpy(items[1], "DEAUTH", sizeof(items[1]) - 1);
+      items[1][sizeof(items[1]) - 1] = '\0';
+      strncpy(items[2], "PORTAL", sizeof(items[2]) - 1);
+      items[2][sizeof(items[2]) - 1] = '\0';
+    } else if (menuCategory == 2) {
+      strncpy(items[0], "BLE SPAM", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+      strncpy(items[1], "USB HID", sizeof(items[1]) - 1);
+      items[1][sizeof(items[1]) - 1] = '\0';
+      strncpy(items[2], "VAULT", sizeof(items[2]) - 1);
+      items[2][sizeof(items[2]) - 1] = '\0';
+      strncpy(items[3], "DAEMON", sizeof(items[3]) - 1);
+      items[3][sizeof(items[3]) - 1] = '\0';
+    } else {
+      if (rebootConfirmed)
+        strncpy(items[0], "REBOOT [OK]", sizeof(items[0]) - 1);
+      else
+        strncpy(items[0], "REBOOT", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+      strncpy(items[1], "EXIT", sizeof(items[1]) - 1);
+      items[1][sizeof(items[1]) - 1] = '\0';
+    }
+  }
 
   u8g2.setDrawColor(1);
   u8g2.drawBox(NOCT_MENU_CONFIG_BAR_X, NOCT_MENU_CONFIG_BAR_Y,
@@ -955,73 +1017,10 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
                        NOCT_MENU_CONFIG_BAR_CHAMFER);
   u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(NOCT_MENU_CONFIG_BAR_X + 8, NOCT_HEADER_BASELINE_Y + 2,
-                "// CONFIG");
+  u8g2.drawUTF8(NOCT_MENU_CONFIG_BAR_X + 4, NOCT_HEADER_BASELINE_Y + 2,
+                headerStr);
   u8g2.setDrawColor(1);
 
-  static char row0Buf[16];
-  static char row1Buf[16];
-  static char row2Buf[16];
-  if (!carouselOn)
-    snprintf(row0Buf, sizeof(row0Buf), "AUTO: OFF");
-  else
-    snprintf(row0Buf, sizeof(row0Buf), "AUTO: %ds", carouselSec);
-  snprintf(row1Buf, sizeof(row1Buf), "FLIP: %s",
-           screenRotated ? "180deg" : "0deg");
-  snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
-           glitchEnabled ? "ON" : "OFF");
-
-  // Плоское меню со всеми режимами
-  static char mainItems[15][20];
-  static bool itemsInitialized = false;
-
-  // Инициализация фиксированных элементов выполняется один раз
-  if (!itemsInitialized) {
-    strncpy(mainItems[3], "WiFi SCAN", sizeof(mainItems[3]) - 1);
-    mainItems[3][sizeof(mainItems[3]) - 1] = '\0';
-    strncpy(mainItems[4], "WiFi DEAUTH", sizeof(mainItems[4]) - 1);
-    mainItems[4][sizeof(mainItems[4]) - 1] = '\0';
-    strncpy(mainItems[5], "WiFi PORTAL", sizeof(mainItems[5]) - 1);
-    mainItems[5][sizeof(mainItems[5]) - 1] = '\0';
-    strncpy(mainItems[6], "LoRa MESH", sizeof(mainItems[6]) - 1);
-    mainItems[6][sizeof(mainItems[6]) - 1] = '\0';
-    strncpy(mainItems[7], "LoRa JAM", sizeof(mainItems[7]) - 1);
-    mainItems[7][sizeof(mainItems[7]) - 1] = '\0';
-    strncpy(mainItems[8], "LoRa SENSE", sizeof(mainItems[8]) - 1);
-    mainItems[8][sizeof(mainItems[8]) - 1] = '\0';
-    strncpy(mainItems[9], "BLE SPAM", sizeof(mainItems[9]) - 1);
-    mainItems[9][sizeof(mainItems[9]) - 1] = '\0';
-    strncpy(mainItems[10], "USB HID", sizeof(mainItems[10]) - 1);
-    mainItems[10][sizeof(mainItems[10]) - 1] = '\0';
-    strncpy(mainItems[11], "VAULT", sizeof(mainItems[11]) - 1);
-    mainItems[11][sizeof(mainItems[11]) - 1] = '\0';
-    strncpy(mainItems[12], "DAEMON", sizeof(mainItems[12]) - 1);
-    mainItems[12][sizeof(mainItems[12]) - 1] = '\0';
-    strncpy(mainItems[14], "EXIT", sizeof(mainItems[14]) - 1);
-    mainItems[14][sizeof(mainItems[14]) - 1] = '\0';
-    itemsInitialized = true;
-  }
-
-  // Обновление динамических элементов (AUTO, FLIP, GLITCH) - каждый раз
-  // Копируем строки из буферов в mainItems
-  strncpy(mainItems[0], row0Buf, sizeof(mainItems[0]) - 1);
-  mainItems[0][sizeof(mainItems[0]) - 1] = '\0';
-  strncpy(mainItems[1], row1Buf, sizeof(mainItems[1]) - 1);
-  mainItems[1][sizeof(mainItems[1]) - 1] = '\0';
-  strncpy(mainItems[2], row2Buf, sizeof(mainItems[2]) - 1);
-  mainItems[2][sizeof(mainItems[2]) - 1] = '\0';
-
-  // REBOOT с индикацией подтверждения - обновляется каждый раз
-  if (rebootConfirmed) {
-    strncpy(mainItems[13], "REBOOT [OK]", sizeof(mainItems[13]) - 1);
-  } else {
-    strncpy(mainItems[13], "REBOOT", sizeof(mainItems[13]) - 1);
-  }
-  mainItems[13][sizeof(mainItems[13]) - 1] = '\0';
-
-  const int count = 15;
-
-  // Защита от выхода за границы массива
   int selected = mainIndex;
   if (selected < 0)
     selected = 0;
@@ -1035,60 +1034,35 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   if (firstVisible + NOCT_MENU_VISIBLE_ROWS > count)
     firstVisible = count - NOCT_MENU_VISIBLE_ROWS;
 
-  // Установка шрифта перед отрисовкой (как в других местах кода)
   u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
   u8g2.setDrawColor(1);
-
-  // Optimized caching: кэширование вычислений ширины текста для оптимизации
-  static int cachedTextWidths[15] = {-1};
-  static int cachedSelected = -1;
-  static bool cacheValid = false;
-
-  // Пересчитываем ширину текста только если изменился выбранный элемент или кэш
-  // невалиден
-  if (selected != cachedSelected || !cacheValid) {
-    cachedSelected = selected;
-    cacheValid = true;
-    for (int i = 0; i < count; i++) {
-      if (mainItems[i][0] != '\0') {
-        cachedTextWidths[i] = u8g2.getUTF8Width(mainItems[i]);
-      } else {
-        cachedTextWidths[i] = -1;
-      }
-    }
-  }
 
   for (int r = 0; r < NOCT_MENU_VISIBLE_ROWS; r++) {
     int i = firstVisible + r;
     if (i >= count || i < 0)
       break;
+    const char *itemText = items[i];
+    if (itemText[0] == '\0')
+      continue;
+    int y = startY + r * NOCT_MENU_ROW_H;
+    int textWidth = u8g2.getUTF8Width(itemText);
+    int textX = boxX + (boxW - textWidth) / 2;
+    if (textX < NOCT_MENU_LIST_LEFT + 10)
+      textX = NOCT_MENU_LIST_LEFT + 10;
 
-    // Используем mainItems напрямую
-    const char *itemText = mainItems[i];
-    // Проверяем, что строка не пустая
-    if (itemText[0] != '\0') {
-      int y = startY + r * NOCT_MENU_ROW_H;
-      int textWidth = cachedTextWidths[i] >= 0 ? cachedTextWidths[i]
-                                               : u8g2.getUTF8Width(itemText);
-      int textX = boxX + (boxW - textWidth) / 2;
-
-      if (i == selected) {
-        // Выделение фона для выбранного элемента
-        u8g2.setDrawColor(1);
-        u8g2.drawBox(NOCT_MENU_LIST_LEFT, y - 6, NOCT_MENU_LIST_W,
-                     NOCT_MENU_ROW_H);
-        // Белый текст на черном фоне
-        u8g2.setDrawColor(0);
-        u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + 2, y, ">");
-        u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + NOCT_MENU_LIST_W - 6, y, "<");
-        u8g2.drawUTF8(textX, y, itemText);
-        u8g2.setDrawColor(1); // Возврат к нормальному цвету
-      } else {
-        // Обычный текст для невыбранных элементов
-        u8g2.setDrawColor(1);
-        u8g2.drawUTF8(textX, y, itemText);
-      }
+    if (i == selected) {
+      u8g2.setDrawColor(1);
+      u8g2.drawBox(NOCT_MENU_LIST_LEFT, y - 6, NOCT_MENU_LIST_W,
+                   NOCT_MENU_ROW_H);
+      u8g2.setDrawColor(0);
+      u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + 2, y, ">");
+      u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + NOCT_MENU_LIST_W - 6, y, "<");
+      u8g2.drawUTF8(textX, y, itemText);
+      u8g2.setDrawColor(1);
+    } else {
+      u8g2.setDrawColor(1);
+      u8g2.drawUTF8(textX, y, itemText);
     }
   }
 
@@ -1470,89 +1444,6 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
 }
 
 // ---------------------------------------------------------------------------
-// SIGINT: LoRa Meshtastic sniffer — RSSI waterfall, packet console, REPLAY
-// Top: RSSI bar, Middle: [MESH] From: 0x... | SNR, Bottom: Short=Next
-// Long=REPLAY
-// ---------------------------------------------------------------------------
-#define LORA_HEADER_H 10
-#define LORA_RSSI_BAR_Y 12
-#define LORA_RSSI_BAR_H 6
-#define LORA_CONSOLE_Y 22
-#define LORA_CONSOLE_H 32
-#define LORA_FOOTER_Y 56
-
-void SceneManager::drawLoraSniffer(LoraManager &lora) {
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
-  u8g2.setDrawColor(1);
-
-  // --- Top: Header + real-time RSSI "waterfall" bar ---
-  u8g2.drawBox(0, 0, NOCT_DISP_W, LORA_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
-  u8g2.print("SIGINT 868MHz");
-  // Отображение частотного слота справа в заголовке
-  int slot = lora.getCurrentFreqSlot();
-  u8g2.setCursor(90, 7);
-  u8g2.printf("S%d", slot);
-  u8g2.setDrawColor(1);
-
-  int histLen = 0;
-  const int8_t *hist = lora.getRssiHistory(histLen);
-  int barW = NOCT_DISP_W;
-  int barY = LORA_RSSI_BAR_Y;
-  u8g2.drawFrame(0, barY, barW, LORA_RSSI_BAR_H);
-  if (histLen > 0) {
-    int L = LoraManager::rssiHistoryLen();
-    int head = lora.getRssiHistoryHead();
-    for (int i = 0; i < barW && i < histLen; i++) {
-      int idx = (head - histLen + i + L) % L;
-      int r = hist[idx];
-      int h = map(constrain(r, -120, -50), -120, -50, LORA_RSSI_BAR_H - 2, 0);
-      if (h > 0 && h < LORA_RSSI_BAR_H - 1)
-        u8g2.drawVLine(i, barY + LORA_RSSI_BAR_H - 1 - h, h);
-    }
-  } else {
-    float rssi = lora.getCurrentRSSI();
-    int w = map(constrain((int)rssi, -130, -50), -130, -50, 0, barW - 2);
-    if (w > 0)
-      u8g2.drawBox(1, barY + 1, w, LORA_RSSI_BAR_H - 2);
-  }
-
-  // --- Middle: Packet console [MESH] From: 0xDEADBEEF | SNR: 10 ---
-  u8g2.drawLine(0, LORA_CONSOLE_Y - 1, NOCT_DISP_W, LORA_CONSOLE_Y - 1);
-  int nPackets = lora.getPacketBufferCount();
-  static char lineBuf[32];
-
-  if (nPackets == 0) {
-    u8g2.setCursor(2, LORA_CONSOLE_Y + 6);
-    u8g2.print("[MESH] Listening...");
-    u8g2.setCursor(2, LORA_CONSOLE_Y + 14);
-    u8g2.print("No packets yet.");
-  } else {
-    for (int i = 0; i < nPackets && i < 3; i++) {
-      const LoraRawPacket *p = lora.getPacketInBuffer(i);
-      if (!p || p->len < 4)
-        continue;
-      int y = LORA_CONSOLE_Y + 2 + i * 10;
-      uint32_t fromId = 0;
-      if (p->len >= 4)
-        fromId = (uint32_t)p->data[0] | ((uint32_t)p->data[1] << 8) |
-                 ((uint32_t)p->data[2] << 16) | ((uint32_t)p->data[3] << 24);
-      snprintf(lineBuf, sizeof(lineBuf), "[MESH] 0x%lX | SNR %.0f RSSI %.0f",
-               (unsigned long)fromId, (double)p->snr, (double)p->rssi);
-      u8g2.setCursor(2, y);
-      u8g2.print(lineBuf);
-    }
-  }
-
-  u8g2.drawLine(0, LORA_FOOTER_Y - 1, NOCT_DISP_W, LORA_FOOTER_Y - 1);
-  u8g2.setCursor(2, LORA_FOOTER_Y + 6);
-  u8g2.print("Short: Clear | Long: REPLAY | 2x: Slot | 3x Out");
-}
-
-// ---------------------------------------------------------------------------
 // BLE PHANTOM SPAMMER: status bar, pulsing BT icon, packet count, glitch in
 // main
 // ---------------------------------------------------------------------------
@@ -1847,47 +1738,6 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
   disp_.drawProgressBar(4, 48, NOCT_DISP_W - 8, 4, 100 - pct);
   u8g2.setCursor(2, VAULT_FOOTER_Y + 5);
   u8g2.print("Short: next account | 3x Out");
-
-  disp_.drawGreebles();
-}
-
-// --- GHOSTS (868 MHz sensor sniffer) ---
-#define GHOSTS_HEADER_H 10
-#define GHOSTS_LIST_Y 14
-#define GHOSTS_ROW_H 10
-
-void SceneManager::drawGhostsMode(LoraManager &lora) {
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
-  u8g2.setDrawColor(1);
-
-  u8g2.drawBox(0, 0, NOCT_DISP_W, GHOSTS_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
-  u8g2.print("SENSE 868");
-  u8g2.setDrawColor(1);
-
-  unsigned long t = millis() / 80;
-  int sweepX = (int)(64 + 40 * cos((t % 360) * 3.14159265359 / 180.0));
-  int sweepY = (int)(32 + 24 * sin((t % 360) * 3.14159265359 / 180.0));
-  u8g2.drawLine(64, 32, sweepX, sweepY);
-
-  int n = lora.getSenseCount();
-  for (int i = 0; i < n && i < 4; i++) {
-    const LoraManager::SenseEntry *e = lora.getSenseEntry(i);
-    if (!e)
-      continue;
-    int y = GHOSTS_LIST_Y + i * GHOSTS_ROW_H;
-    u8g2.setCursor(2, y);
-    u8g2.print(e->hex[0] ? e->hex : "...");
-    u8g2.setCursor(100, y);
-    u8g2.print((int)e->rssi);
-  }
-
-  u8g2.drawLine(0, 55, NOCT_DISP_W, 55);
-  u8g2.setCursor(2, 62);
-  u8g2.print("3x Out");
 
   disp_.drawGreebles();
 }
