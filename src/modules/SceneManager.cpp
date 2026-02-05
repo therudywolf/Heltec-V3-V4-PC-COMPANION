@@ -957,12 +957,6 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   u8g2.drawBox(boxX, boxY, boxW, boxH);
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
-  // List area: white background so text is readable (black on white)
-  const int listAreaY = NOCT_MENU_START_Y - 2;
-  const int listAreaH = NOCT_MENU_VISIBLE_ROWS * NOCT_MENU_ROW_H + 4;
-  u8g2.setDrawColor(1);
-  u8g2.drawBox(NOCT_MENU_LIST_LEFT, listAreaY, NOCT_MENU_LIST_W, listAreaH);
-  u8g2.setDrawColor(0);
 
   static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System"};
   static char items[4][20];
@@ -1042,8 +1036,6 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 
   u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
-  // Text black on white list background for visibility
-  u8g2.setDrawColor(0);
 
   for (int r = 0; r < NOCT_MENU_VISIBLE_ROWS; r++) {
     int i = firstVisible + r;
@@ -1059,16 +1051,16 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       textX = NOCT_MENU_LIST_LEFT + 10;
 
     if (i == selected) {
-      u8g2.setDrawColor(0);
+      u8g2.setDrawColor(1);
       u8g2.drawBox(NOCT_MENU_LIST_LEFT, y - 6, NOCT_MENU_LIST_W,
                    NOCT_MENU_ROW_H);
-      u8g2.setDrawColor(1);
+      u8g2.setDrawColor(0);
       u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + 2, y, ">");
       u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + NOCT_MENU_LIST_W - 6, y, "<");
       u8g2.drawUTF8(textX, y, itemText);
-      u8g2.setDrawColor(0);
+      u8g2.setDrawColor(1);
     } else {
-      u8g2.setDrawColor(0);
+      u8g2.setDrawColor(1);
       u8g2.drawUTF8(textX, y, itemText);
     }
   }

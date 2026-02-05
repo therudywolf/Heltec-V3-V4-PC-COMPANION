@@ -70,21 +70,21 @@ struct InputSystem {
       if (duration > 50 && duration < 500) {
         clickCount++;
         releaseTime = now;
+        if (clickCount >= 2) {
+          clickCount = 0;
+          return EV_DOUBLE;
+        }
       } else if (duration >= 500) {
         clickCount = 0;
         return EV_LONG;
       }
     }
 
-    // Double-click window: wait long enough for 2nd tap before treating as
-    // single SHORT
-    const unsigned long doubleTapWindowMs = 450;
+    const unsigned long doubleTapWindowMs = 500;
     if (clickCount > 0 && !btnState &&
         (now - releaseTime > doubleTapWindowMs)) {
       if (clickCount == 1)
         event = EV_SHORT;
-      else if (clickCount >= 2)
-        event = EV_DOUBLE;
       clickCount = 0;
     }
     return event;
@@ -945,17 +945,15 @@ void loop() {
       }
     }
     needRedraw = true;
-  } else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen) {
-    // Long press in normal mode = open menu (reliable alternative to
-    // double-tap)
-    quickMenuOpen = true;
-    menuState = MENU_MAIN;
-    menuLevel = 0;
-    menuCategory = 0;
-    quickMenuItem = 0;
-    rebootConfirmed = false;
+  } else if (event == EV_LONG && currentMode == MODE_NORMAL) {
+    static bool lowBrightness = false;
+    lowBrightness = !lowBrightness;
+    uint8_t contrast = lowBrightness ? 25 : (uint8_t)settings.displayContrast;
+    if (contrast > 255)
+      contrast = 255;
+    display.u8g2().setContrast(contrast);
     needRedraw = true;
-    event = EV_NONE; // consumed so MODE_NORMAL doesn't toggle predator
+    event = EV_NONE;
   }
 
   // Alert / carousel / screen sync / fan animation
@@ -1108,10 +1106,6 @@ void loop() {
           transitionStart = now;
         }
         lastCarousel = now;
-        needRedraw = true;
-      } else if (event == EV_LONG) {
-        predatorMode = !predatorMode;
-        predatorEnterTime = now;
         needRedraw = true;
       }
       break;
