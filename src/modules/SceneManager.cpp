@@ -1134,6 +1134,55 @@ void SceneManager::drawConnecting(int rssi, bool blinkState) {
 }
 
 // ---------------------------------------------------------------------------
+// IDLE SCREENSAVER: Animated wolf (Daemon sprites) + cyberpunk/Blade Runner
+// vibes. Full screen, no header. Shown after NOCT_IDLE_SCREENSAVER_MS in
+// no-WiFi or linking state.
+// ---------------------------------------------------------------------------
+void SceneManager::drawIdleScreensaver(unsigned long now) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  const int wolfW = 32;
+  const int wolfH = 32;
+  const int wolfX = (NOCT_DISP_W - wolfW) / 2;
+  const int wolfY = (NOCT_DISP_H - wolfH) / 2;
+
+  /* Cycle: idle -> blink -> funny -> idle (~500ms per phase) */
+  unsigned long phase = (now / 500) % 12;
+  const unsigned char *wolfSprite = wolf_idle;
+  if (phase >= 2 && phase < 4)
+    wolfSprite = wolf_blink;
+  else if (phase >= 6 && phase < 9)
+    wolfSprite = wolf_funny;
+
+  u8g2.setDrawColor(1);
+  u8g2.drawXBMP(wolfX, wolfY, wolfW, wolfH, wolfSprite);
+
+  /* Tech bracket frame around wolf (viewfinder) */
+  disp_.drawTechBrackets(wolfX - 2, wolfY - 2, wolfW + 4, wolfH + 4, 4);
+
+  /* Hex stream columns left and right (cyberpunk data rain) */
+  disp_.drawHexStream(2, NOCT_CONTENT_TOP, 3);
+  disp_.drawHexStream(NOCT_DISP_W - 56, NOCT_CONTENT_TOP, 3);
+
+  /* Diagonal scratches / Blade Runner watermark */
+  disp_.drawCyberClaw(0, NOCT_DISP_H - 22);
+  disp_.drawCyberClaw(NOCT_DISP_W - 24, 0);
+
+  /* Bottom corner hex decor */
+  disp_.drawHexDecoration(0);
+  disp_.drawHexDecoration(1);
+
+  /* Subtle "SLEEP" or "STANDBY" at bottom center */
+  u8g2.setFont(LABEL_FONT);
+  const char *standby = "STANDBY";
+  int tw = u8g2.getUTF8Width(standby);
+  u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, NOCT_DISP_H - 4, standby);
+
+  /* Occasional horizontal slice glitch (Blade Runner VFX) */
+  if ((now / 200) % 7 == 0)
+    disp_.drawGlitch(1);
+}
+
+// ---------------------------------------------------------------------------
 // DAEMON MODE: Wolf (left) | CPU, GPU, RAM (right). Wolf sprites by mood.
 // Улучшенная анимация, обработка отсутствия данных, оптимизация.
 // Добавлена статистика времени работы и индикация сетевой активности.

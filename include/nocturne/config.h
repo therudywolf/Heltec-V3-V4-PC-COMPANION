@@ -102,6 +102,8 @@
 #define NOCT_SIGNAL_GRACE_MS 8000
 #define NOCT_WIFI_RETRY_INTERVAL_MS 30000
 #define NOCT_SPLASH_MS 2500
+/* After this many ms in no-WiFi or linking state, show wolf screensaver */
+#define NOCT_IDLE_SCREENSAVER_MS 10000
 #define NOCT_TRANSITION_MS 180
 #define NOCT_TRANSITION_STEP 32
 #define NOCT_BUTTON_SHORT_MS 500
