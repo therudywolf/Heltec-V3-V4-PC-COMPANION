@@ -76,7 +76,11 @@ struct InputSystem {
       }
     }
 
-    if (clickCount > 0 && !btnState && (now - releaseTime > 250)) {
+    // Double-click window: wait long enough for 2nd tap before treating as
+    // single SHORT
+    const unsigned long doubleTapWindowMs = 450;
+    if (clickCount > 0 && !btnState &&
+        (now - releaseTime > doubleTapWindowMs)) {
       if (clickCount == 1)
         event = EV_SHORT;
       else if (clickCount >= 2)
