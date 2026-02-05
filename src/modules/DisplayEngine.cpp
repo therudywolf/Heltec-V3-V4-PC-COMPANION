@@ -679,10 +679,9 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   (void)timeStr;
   (void)rssi;
   const int barH = NOCT_HEADER_H;
-  const int baselineY = 11;
-  const int nameX = 4;
-  /* Leave space for battery HUD (icon + %) to the right of WOOF! */
-  const int rightAnchor = 76;
+  const int baselineY = NOCT_HEADER_BASELINE_Y;
+  const int nameX = NOCT_MARGIN + 2;
+  const int rightAnchor = NOCT_HEADER_STATUS_RIGHT_ANCHOR;
 
   u8g2_.setDrawColor(1);
   u8g2_.drawBox(0, 0, NOCT_DISP_W, barH);
@@ -704,11 +703,10 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   int statusW = u8g2_.getUTF8Width(statusStr);
   u8g2_.drawUTF8(rightAnchor - statusW, baselineY, statusStr);
 
-  /* Separator at Y=13 */
-  u8g2_.setDrawColor(1);
-  const int sepY = 13;
-  u8g2_.drawHLine(0, sepY, NOCT_DISP_W / 2);
-  u8g2_.drawHLine(NOCT_DISP_W / 2 + 1, sepY, NOCT_DISP_W / 2 - 1);
+  /* Separator: black line for visible boundary below white header */
+  u8g2_.setDrawColor(0);
+  u8g2_.drawHLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W / 2);
+  u8g2_.drawHLine(NOCT_DISP_W / 2 + 1, NOCT_HEADER_SEP_Y, NOCT_DISP_W / 2 - 1);
   u8g2_.setDrawColor(1);
 }
 

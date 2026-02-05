@@ -87,22 +87,20 @@ static void phaseLoadingBar(DisplayEngine &display, unsigned long &phaseStart) {
 
   display.clearBuffer();
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = display.u8g2();
-  u8g2.drawFrame(barX, barY, barW, barH);
+  display.drawTechFrame(barX, barY, barW, barH);
   int segW = (barW - 2) / segCount;
   int filledSegs = (progress * segCount) / 100;
 
+  u8g2.setFont(LABEL_FONT);
   for (int i = 0; i < segCount; i++) {
     int sx = barX + 1 + i * segW;
     if (i < filledSegs) {
       u8g2.drawBox(sx, barY + 1, segW - 1, barH - 2);
     } else if (i == filledSegs && progress < 100) {
-      // Leading segment: show hex char that "solidifies"
       char h = hexChars[random(16)];
-      u8g2.setFont(LABEL_FONT);
       u8g2.drawUTF8(sx + 1, barY + 4, &h);
     }
   }
-  u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(barX, barY - 2, "LOADING");
   display.sendBuffer();
 }

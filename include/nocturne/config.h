@@ -46,6 +46,10 @@
 /* === Dimensions (Protocol Alpha Wolf) === */
 #define NOCT_HEADER_H 14
 #define NOCT_HEADER_MARGIN 2
+#define NOCT_HEADER_BASELINE_Y 11
+#define NOCT_HEADER_SEP_Y 13
+/* Right edge of WOOF!/NET:-- status text; battery HUD sits to the right */
+#define NOCT_HEADER_STATUS_RIGHT_ANCHOR 76
 #define NOCT_CONTENT_START                                                     \
   17 /* Breathing room below header (physical bezel)                           \
       */
@@ -60,6 +64,7 @@
 #define MAIN_TOP_H 28        /* Height of CPU/GPU brackets */
 #define MAIN_BAR_Y_OFFSET 32 /* Relative to bracket top */
 #define MAIN_BAR_H 4         /* Slimmer bars */
+#define MAIN_LIFEBAR_H 3     /* CPU/GPU load bar height (visible on 128x64) */
 #define MAIN_RAM_Y 50        /* RAM box top */
 #define MAIN_RAM_H 13
 /* Legacy aliases for compatibility */
@@ -106,6 +111,28 @@
 #define NOCT_GLITCH_DURATION_MS 100
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
+
+/* Menu (CONFIG / mode list) */
+#define NOCT_MENU_BOX_X 10
+#define NOCT_MENU_BOX_Y 10
+#define NOCT_MENU_BOX_W 108
+#define NOCT_MENU_BOX_H 52
+#define NOCT_MENU_CONFIG_BAR_X 34
+#define NOCT_MENU_CONFIG_BAR_Y 6
+#define NOCT_MENU_CONFIG_BAR_W 60
+#define NOCT_MENU_CONFIG_BAR_H 9
+#define NOCT_MENU_CONFIG_BAR_CHAMFER 2
+#define NOCT_MENU_ROW_H 8
+#define NOCT_MENU_VISIBLE_ROWS 5
+#define NOCT_MENU_LIST_LEFT 14
+#define NOCT_MENU_LIST_W 82
+#define NOCT_MENU_START_Y 16
+
+/* Battery HUD in header (frame + terminal nub) */
+#define NOCT_BAT_FRAME_W 16
+#define NOCT_BAT_FRAME_H 8
+#define NOCT_BAT_TERM_W 3
+#define NOCT_BAT_TERM_H 3
 
 /* RED ALERT thresholds (must match monitor.py) */
 #ifndef CPU_TEMP_ALERT
