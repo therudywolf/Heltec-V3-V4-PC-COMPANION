@@ -1282,7 +1282,8 @@ void loop() {
     case MODE_NORMAL: {
       bool idleState =
           !netManager.isWifiConnected() || !netManager.isTcpConnected();
-      if (netManager.isSearchMode() || signalLost)
+      if (netManager.isSearchMode() ||
+          (signalLost && netManager.isTcpConnected()))
         idleState = false;
       if (!idleState) {
         idleStateEnteredMs = 0;
