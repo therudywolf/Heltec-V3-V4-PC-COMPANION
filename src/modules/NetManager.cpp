@@ -61,11 +61,26 @@ NetManager::NetManager()
     : serverIp_(nullptr), serverPort_(0), lastTcpAttempt_(0),
       tcpConnectTime_(0), lastUpdate_(0), lastWifiRetry_(0),
       wifiConnected_(false), tcpConnected_(false), firstDataReceived_(false),
-      searchMode_(false), rssi_(0), lastSentScreen_(-1) {}
+      searchMode_(false), rssi_(0), lastSentScreen_(-1), lineBufferLen_(0) {
+  lineBuffer_[0] = '\0';
+  storedSSID_[0] = '\0';
+  storedPass_[0] = '\0';
+}
 
 void NetManager::begin(const char *ssid, const char *pass) {
-  storedSSID_ = ssid;
-  storedPass_ = pass;
+  // Copy SSID and password to static buffers
+  if (ssid) {
+    strncpy(storedSSID_, ssid, sizeof(storedSSID_) - 1);
+    storedSSID_[sizeof(storedSSID_) - 1] = '\0';
+  } else {
+    storedSSID_[0] = '\0';
+  }
+  if (pass) {
+    strncpy(storedPass_, pass, sizeof(storedPass_) - 1);
+    storedPass_[sizeof(storedPass_) - 1] = '\0';
+  } else {
+    storedPass_[0] = '\0';
+  }
   WiFi.onEvent(WiFiEvent);
   if (!ssid || strlen(ssid) == 0)
     return;
@@ -127,7 +142,7 @@ void NetManager::tick(unsigned long now) {
     searchMode_ = true;
     if (now - lastWifiRetry_ > NOCT_WIFI_RETRY_INTERVAL_MS) {
       WiFi.disconnect();
-      WiFi.begin(storedSSID_.c_str(), storedPass_.c_str());
+      WiFi.begin(storedSSID_, storedPass_);
       lastWifiRetry_ = now;
     }
   }
@@ -136,7 +151,8 @@ void NetManager::tick(unsigned long now) {
 void NetManager::disconnectTcp() {
   if (client_.connected())
     client_.stop();
-  lineBuffer_ = "";
+  lineBuffer_[0] = '\0';
+  lineBufferLen_ = 0;
   lastSentScreen_ = -1;
   tcpConnected_ = false;
   tcpConnectTime_ = 0;
@@ -159,7 +175,8 @@ bool NetManager::tryTcpConnect(unsigned long now) {
   client_.setTimeout(NOCT_TCP_CONNECT_TIMEOUT_MS / 1000);
 
   if (client_.connect(serverIp_, serverPort_)) {
-    lineBuffer_ = "";
+    lineBuffer_[0] = '\0';
+    lineBufferLen_ = 0;
     lastSentScreen_ = -1;
     tcpConnected_ = true;
     tcpConnectTime_ = now;
@@ -182,18 +199,27 @@ bool NetManager::isSignalLost(unsigned long now) const {
 }
 
 void NetManager::appendLineBuffer(char c) {
-  lineBuffer_ += c;
-  if (lineBuffer_.length() >= NOCT_TCP_LINE_MAX)
-    lineBuffer_ = "";
+  if (lineBufferLen_ < NOCT_TCP_LINE_MAX - 1) {
+    lineBuffer_[lineBufferLen_] = c;
+    lineBufferLen_++;
+    lineBuffer_[lineBufferLen_] = '\0';
+  } else {
+    // Buffer overflow - clear it
+    clearLineBuffer();
+  }
 }
 
-void NetManager::clearLineBuffer() { lineBuffer_ = ""; }
+void NetManager::clearLineBuffer() {
+  lineBuffer_[0] = '\0';
+  lineBufferLen_ = 0;
+}
 
-bool NetManager::parsePayload(const String &line, AppState *state) {
-  if (!state)
+bool NetManager::parsePayload(const char *line, size_t lineLen,
+                              AppState *state) {
+  if (!state || !line || lineLen == 0)
     return false;
   JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, line);
+  DeserializationError err = deserializeJson(doc, line, lineLen);
   if (err)
     return false;
 

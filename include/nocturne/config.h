@@ -10,15 +10,30 @@
 #define NOCT_SDA_PIN 17
 #define NOCT_SCL_PIN 18
 #define NOCT_RST_PIN 21
-#define NOCT_VEXT_PIN 36
+#define NOCT_VEXT_PIN                                                          \
+  36 /* Heltec V4: GPIO 36 controls Vext (LOW=Enable, HIGH=Disable) */
 #define NOCT_LED_ALERT_PIN                                                     \
   35 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
-/* Battery (Heltec V4: GPIO 1, 1/2 divider → ×2 for voltage) */
-#define NOCT_BAT_PIN 1
+/* Battery (Heltec V4: GPIO 1 for ADC read, GPIO 37 for divider control) */
+#define NOCT_BAT_PIN 1 /* ADC1_CH0 - Battery voltage read pin */
+#define NOCT_BAT_CTRL_PIN                                                      \
+  37 /* Control pin: HIGH=Enable divider, LOW=Disable                          \
+      */
 #define NOCT_BAT_READ_DELAY 10
-#define NOCT_VOLT_MIN 3.3f
-#define NOCT_VOLT_MAX 4.2f
+#define NOCT_BAT_DIVIDER_FACTOR                                                \
+  4.9f                          /* Voltage divider: (100+390)/100 = 4.9        \
+                                 */
+#define NOCT_VOLT_MIN 3.3f      /* 0% charge */
+#define NOCT_VOLT_MAX 4.2f      /* 100% charge */
+#define NOCT_VOLT_CHARGING 4.4f /* Above this voltage = charging */
+/* Adaptive battery reading intervals */
+#define NOCT_BAT_READ_INTERVAL_STABLE_MS                                       \
+  10000 /* Stable voltage: read every 10s */
+#define NOCT_BAT_READ_INTERVAL_CHARGING_MS                                     \
+  2000                                     /* Charging/discharging: every 2s */
+#define NOCT_BAT_READ_INTERVAL_LOW_MS 5000 /* Low battery (<20%): every 5s */
+#define NOCT_BAT_SMOOTHING_SAMPLES 3       /* Moving average samples */
 
 #define NOCT_ALERT_LED_BLINK_MS 175
 #define NOCT_ALERT_LED_BLINKS 5 /* 5 blinks then fade out */

