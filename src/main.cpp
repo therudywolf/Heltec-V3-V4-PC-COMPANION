@@ -315,8 +315,7 @@ static int batteryHistoryIndex = 0;
 static bool batteryHistoryFilled = false;
 static bool batCtrlPinState =
     false; // Track GPIO 37 state to avoid unnecessary writes
-static bool vextPinState =
-    false; // Track GPIO 36 (Vext) state to avoid unnecessary writes
+static bool vextPinState = false; // Track Vext pin (never drive HIGH)
 
 /** Get battery voltage from ADC (GPIO 1). Heltec V4: divider factor 4.9
  * (390k/100k resistors). Requires GPIO 37 (ADC control) to be HIGH to enable
@@ -461,14 +460,10 @@ static unsigned long updateBatteryState() {
 }
 
 static void VextON() {
-  // GPIO 36 (Vext) controls external power for OLED display
-  // LOW = Enable power, HIGH = Disable power
-  // MUST be set to LOW to power OLED display
+  // Vext (NOCT_VEXT_PIN): LOW = OLED powered, HIGH = off. Never drive HIGH.
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
   delay(100);
-  // CRITICAL: GPIO 36 must remain LOW permanently - do NOT set it HIGH
-  // anywhere!
 }
 
 // ---------------------------------------------------------------------------
@@ -479,35 +474,28 @@ void setup() {
   setCpuFrequencyMhz(240); // V4: max speed (also set in platformio.ini)
 
   // ========================================================================
-  // CRITICAL: GPIO 36 (Vext) controls external power for OLED display
-  // GPIO 21 is OLED RST pin (separate from Vext)
-  // On Heltec V4: GPIO 36 LOW = Enable external power (OLED), HIGH = Disable
+  // Power-On Kick: Force Vext ON and hard-reset OLED before display.begin()
+  // Vext (NOCT_VEXT_PIN) and RST (NOCT_OLED_RST) must never be driven HIGH.
   // ========================================================================
+  pinMode(NOCT_VEXT_PIN, OUTPUT);
+  digitalWrite(NOCT_VEXT_PIN, LOW);
 
-  // Enable external power by setting GPIO 36 to LOW (Vext)
-  // This must be done BEFORE display.begin() so the display has power
-  // Optimized: only change state if needed
-  if (!vextPinState || digitalRead(NOCT_VEXT_PIN) != LOW) {
-    pinMode(NOCT_VEXT_PIN, OUTPUT);
-    digitalWrite(NOCT_VEXT_PIN, LOW); // Enable power to OLED display
-    vextPinState = true;
-  }
+  pinMode(NOCT_OLED_RST, OUTPUT);
+  digitalWrite(NOCT_OLED_RST, LOW);
+  delay(50);
+  digitalWrite(NOCT_OLED_RST, HIGH);
+
+  vextPinState = true;
   delay(150); // Allow power to stabilize before initializing display
 
-  // Initialize OLED display
-  // u8g2 library will handle the reset sequence (GPIO 21 LOW -> HIGH -> LOW)
-  // automatically during begin()
   display.begin();
-  delay(100); // Additional delay to ensure display is ready
+  delay(100);
 
-  // CRITICAL: Ensure GPIO 36 remains LOW after display initialization
-  // This maintains power to the OLED display
-  // Optimized: only write if state changed
-  if (!vextPinState || digitalRead(NOCT_VEXT_PIN) != LOW) {
+  // Ensure Vext stays LOW (never drive HIGH)
+  if (digitalRead(NOCT_VEXT_PIN) != LOW) {
     digitalWrite(NOCT_VEXT_PIN, LOW);
-    vextPinState = true;
   }
-  delay(50); // Small delay to ensure pin state is stable
+  delay(50);
   drawBootSequence(display);
   splashDone = true;
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
