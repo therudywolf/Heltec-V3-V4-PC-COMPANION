@@ -822,9 +822,10 @@ void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
 }
 
 // Battery HUD: far right of top bar, slightly larger (16x8 frame).
-// Draw color 0 so visible on white header.
+// onWhiteHeader: true = draw in black (visible on white header); false = draw
+// in white (dark bg).
 void SceneManager::drawPowerStatus(int pct, bool isCharging,
-                                   float batteryVoltage) {
+                                   float batteryVoltage, bool onWhiteHeader) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
@@ -837,23 +838,18 @@ void SceneManager::drawPowerStatus(int pct, bool isCharging,
   int x = NOCT_DISP_W - frameW - termW;
   int y = baselineY;
 
+  // Цвет рисования: на белом хедере — чёрный (0), на тёмном фоне — белый (1)
+  int ink = onWhiteHeader ? 0 : 1;
+
   // Определяем, подключена ли батарея
-  // При работе от USB без аккумулятора напряжение может быть в
-  // диапазоне 3.3-4.2V Но если напряжение ниже 3.5V, это может быть USB питание
-  // без аккумулятора Батарея считается подключенной если напряжение >= 3.5V и
-  // <= 5.0V
   bool batteryConnected = (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f);
 
-  // Рисуем рамку батареи (белая на черном фоне)
-  // В режиме setFontMode(1) setDrawColor(1) рисует белым на черном
-  u8g2.setDrawColor(1);
+  u8g2.setDrawColor(ink);
   u8g2.drawFrame(x, y - frameH, frameW, frameH);
   u8g2.drawBox(x + frameW, y - frameH + (frameH - termH) / 2, termW, termH);
 
   if (batteryConnected && pct > 0) {
-    // Отображаем уровень заряда сегментами (белые на черном фоне)
-    // В режиме setFontMode(1) setDrawColor(1) рисует белым на черном
-    u8g2.setDrawColor(1);
+    u8g2.setDrawColor(ink);
     if (pct > 10)
       u8g2.drawBox(x + 2, y - frameH + 2, 3, 4);
     if (pct > 40)
@@ -861,22 +857,19 @@ void SceneManager::drawPowerStatus(int pct, bool isCharging,
     if (pct > 80)
       u8g2.drawBox(x + 10, y - frameH + 2, 3, 4);
 
-    // Индикатор зарядки - мигающий символ молнии или стрелка
     if (isCharging) {
-      // Показываем символ зарядки (молния) справа от иконки
-      unsigned long t = millis() / 300; // Мигание каждые 300мс
+      unsigned long t = millis() / 300;
       if (t % 2 == 0) {
-        // Рисуем символ "+" или стрелку вверх для индикации зарядки
         int chargeX = x + frameW + termW + 2;
         int chargeY = y - frameH / 2;
-        // Стрелка вверх (простая линия)
+        u8g2.setDrawColor(ink);
         u8g2.drawLine(chargeX, chargeY + 2, chargeX, chargeY - 2);
         u8g2.drawLine(chargeX - 1, chargeY - 1, chargeX, chargeY - 2);
         u8g2.drawLine(chargeX + 1, chargeY - 1, chargeX, chargeY - 2);
       }
     }
   } else {
-    // Батарея не подключена - показываем крестик внутри иконки
+    u8g2.setDrawColor(ink);
     u8g2.drawLine(x + 2, y - frameH + 2, x + frameW - 2, y - 2);
     u8g2.drawLine(x + frameW - 2, y - frameH + 2, x + 2, y - 2);
   }
@@ -889,6 +882,7 @@ void SceneManager::drawPowerStatus(int pct, bool isCharging,
   } else {
     snprintf(buf, sizeof(buf), "%d%%", pct);
   }
+  u8g2.setDrawColor(ink);
   int tw = u8g2.getUTF8Width(buf);
   u8g2.setCursor(x - tw - 2, y);
   u8g2.print(buf);
