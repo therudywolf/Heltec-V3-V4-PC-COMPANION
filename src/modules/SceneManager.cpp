@@ -243,7 +243,6 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
 #define MAIN_GPU_H 32
 #define MAIN_BRACKET_LEN 4
 #define MAIN_LIFEBAR_Y (NOCT_CONTENT_TOP + 26)
-#define MAIN_LIFEBAR_H 2
 #define MAIN_CPU_LIFEBAR_X 4
 #define MAIN_CPU_LIFEBAR_W 55
 #define MAIN_GPU_LIFEBAR_X 69
@@ -354,6 +353,7 @@ void SceneManager::drawGridCell(int x, int y, const char *label,
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(x + GRID_LBL_INSET, y + GRID_BASELINE_Y_OFF, label);
   int valueY = y + GRID_BASELINE_Y_OFF + valueYOffset + GRID_VALUE_Y_EXTRA;
+  u8g2.setFontPosBaseline();
   disp_.drawRightAligned(x + GRID_CELL_W - GRID_LBL_INSET, valueY, VALUE_FONT,
                          value);
 }
@@ -821,20 +821,20 @@ void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
   u8g2.drawXBM(x, y, WEATHER_ICON_W, WEATHER_ICON_H, bits);
 }
 
-// Battery HUD: far right of top bar, slightly larger (16x8 frame).
-// onWhiteHeader: true = draw in black (visible on white header); false = draw
-// in white (dark bg).
+// Battery HUD: far right of top bar. Uses NOCT_BAT_* and
+// NOCT_HEADER_BASELINE_Y. onWhiteHeader: true = draw in black (visible on white
+// header); false = white.
 void SceneManager::drawPowerStatus(int pct, bool isCharging,
                                    float batteryVoltage, bool onWhiteHeader) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
 
-  const int frameW = 16;
-  const int frameH = 8;
-  const int termW = 3;
-  const int termH = 3;
-  const int baselineY = 11;
+  const int frameW = NOCT_BAT_FRAME_W;
+  const int frameH = NOCT_BAT_FRAME_H;
+  const int termW = NOCT_BAT_TERM_W;
+  const int termH = NOCT_BAT_TERM_H;
+  const int baselineY = NOCT_HEADER_BASELINE_Y;
   int x = NOCT_DISP_W - frameW - termW;
   int y = baselineY;
 
@@ -850,17 +850,17 @@ void SceneManager::drawPowerStatus(int pct, bool isCharging,
 
   if (batteryConnected && pct > 0) {
     u8g2.setDrawColor(ink);
-    if (pct > 10)
-      u8g2.drawBox(x + 2, y - frameH + 2, 3, 4);
-    if (pct > 40)
-      u8g2.drawBox(x + 6, y - frameH + 2, 3, 4);
-    if (pct > 80)
-      u8g2.drawBox(x + 10, y - frameH + 2, 3, 4);
+    /* Smooth fill: one continuous bar by percentage (inner padding 2px) */
+    const int innerW = frameW - 4;
+    const int innerH = frameH - 4;
+    const int fillW = (pct * innerW + 50) / 100;
+    if (fillW > 0)
+      u8g2.drawBox(x + 2, y - frameH + 2, fillW, innerH);
 
     if (isCharging) {
       unsigned long t = millis() / 300;
       if (t % 2 == 0) {
-        int chargeX = x + frameW + termW + 2;
+        int chargeX = x + frameW + termW + NOCT_MARGIN;
         int chargeY = y - frameH / 2;
         u8g2.setDrawColor(ink);
         u8g2.drawLine(chargeX, chargeY + 2, chargeX, chargeY - 2);
@@ -926,14 +926,9 @@ void SceneManager::drawSearchMode(int scanPhase) {
 }
 
 // ---------------------------------------------------------------------------
-// Tactical HUD Menu: ChamferBox with scroll. Visible rows = 5, total = 9.
+// Tactical HUD Menu: ChamferBox with scroll. Uses NOCT_MENU_* from config.
 // Short = navigate (scroll), Long = interact.
 // ---------------------------------------------------------------------------
-#define MENU_VISIBLE_ROWS 5
-#define MENU_ROW_H 8
-#define MENU_LIST_LEFT 14
-#define MENU_LIST_W 82
-
 static const int MENU_MAIN = 0;
 
 void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
@@ -941,10 +936,10 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
                             bool screenRotated, bool glitchEnabled,
                             bool rebootConfirmed) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const int boxX = 10;
-  const int boxY = 10;
-  const int boxW = 108;
-  const int boxH = 52;
+  const int boxX = NOCT_MENU_BOX_X;
+  const int boxY = NOCT_MENU_BOX_Y;
+  const int boxW = NOCT_MENU_BOX_W;
+  const int boxH = NOCT_MENU_BOX_H;
 
   u8g2.setDrawColor(0);
   u8g2.drawBox(boxX, boxY, boxW, boxH);
@@ -953,11 +948,15 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
   u8g2.setDrawColor(1);
-  u8g2.drawBox(34, 6, 60, 9);
-  disp_.drawChamferBox(34, 6, 60, 9, 2);
+  u8g2.drawBox(NOCT_MENU_CONFIG_BAR_X, NOCT_MENU_CONFIG_BAR_Y,
+               NOCT_MENU_CONFIG_BAR_W, NOCT_MENU_CONFIG_BAR_H);
+  disp_.drawChamferBox(NOCT_MENU_CONFIG_BAR_X, NOCT_MENU_CONFIG_BAR_Y,
+                       NOCT_MENU_CONFIG_BAR_W, NOCT_MENU_CONFIG_BAR_H,
+                       NOCT_MENU_CONFIG_BAR_CHAMFER);
   u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(42, 13, "// CONFIG");
+  u8g2.drawUTF8(NOCT_MENU_CONFIG_BAR_X + 8, NOCT_HEADER_BASELINE_Y + 2,
+                "// CONFIG");
   u8g2.setDrawColor(1);
 
   static char row0Buf[16];
@@ -1029,12 +1028,12 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   if (selected >= count)
     selected = count - 1;
 
-  const int startY = 16;
-  int firstVisible = selected - MENU_VISIBLE_ROWS / 2;
+  const int startY = NOCT_MENU_START_Y;
+  int firstVisible = selected - NOCT_MENU_VISIBLE_ROWS / 2;
   if (firstVisible < 0)
     firstVisible = 0;
-  if (firstVisible + MENU_VISIBLE_ROWS > count)
-    firstVisible = count - MENU_VISIBLE_ROWS;
+  if (firstVisible + NOCT_MENU_VISIBLE_ROWS > count)
+    firstVisible = count - NOCT_MENU_VISIBLE_ROWS;
 
   // Установка шрифта перед отрисовкой (как в других местах кода)
   u8g2.setFontMode(1);
@@ -1060,7 +1059,7 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
     }
   }
 
-  for (int r = 0; r < MENU_VISIBLE_ROWS; r++) {
+  for (int r = 0; r < NOCT_MENU_VISIBLE_ROWS; r++) {
     int i = firstVisible + r;
     if (i >= count || i < 0)
       break;
@@ -1069,7 +1068,7 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
     const char *itemText = mainItems[i];
     // Проверяем, что строка не пустая
     if (itemText[0] != '\0') {
-      int y = startY + r * MENU_ROW_H;
+      int y = startY + r * NOCT_MENU_ROW_H;
       int textWidth = cachedTextWidths[i] >= 0 ? cachedTextWidths[i]
                                                : u8g2.getUTF8Width(itemText);
       int textX = boxX + (boxW - textWidth) / 2;
@@ -1077,11 +1076,12 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
       if (i == selected) {
         // Выделение фона для выбранного элемента
         u8g2.setDrawColor(1);
-        u8g2.drawBox(MENU_LIST_LEFT, y - 6, MENU_LIST_W, MENU_ROW_H);
+        u8g2.drawBox(NOCT_MENU_LIST_LEFT, y - 6, NOCT_MENU_LIST_W,
+                     NOCT_MENU_ROW_H);
         // Белый текст на черном фоне
         u8g2.setDrawColor(0);
-        u8g2.drawUTF8(MENU_LIST_LEFT + 2, y, ">");
-        u8g2.drawUTF8(MENU_LIST_LEFT + MENU_LIST_W - 6, y, "<");
+        u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + 2, y, ">");
+        u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + NOCT_MENU_LIST_W - 6, y, "<");
         u8g2.drawUTF8(textX, y, itemText);
         u8g2.setDrawColor(1); // Возврат к нормальному цвету
       } else {
@@ -1092,8 +1092,9 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
     }
   }
 
-  disp_.drawScrollIndicator(startY - 2, MENU_VISIBLE_ROWS * MENU_ROW_H, count,
-                            MENU_VISIBLE_ROWS, firstVisible);
+  disp_.drawScrollIndicator(startY - 2,
+                            NOCT_MENU_VISIBLE_ROWS * NOCT_MENU_ROW_H, count,
+                            NOCT_MENU_VISIBLE_ROWS, firstVisible);
 }
 
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
