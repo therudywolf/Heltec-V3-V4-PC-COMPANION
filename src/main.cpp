@@ -548,7 +548,7 @@ void setup() {
     settings.displayContrast = 255;
   if (settings.displayContrast < 0)
     settings.displayContrast = 0;
-  settings.displayInverted = prefs.getBool("inverted", false);
+  settings.displayInverted = prefs.getBool("inverted", true);
   settings.glitchEnabled = prefs.getBool("glitch", false);
   prefs.end();
 
@@ -928,7 +928,7 @@ void loop() {
   // 2. Non-blocking input
   ButtonEvent event = input.update();
 
-  // 3. Global: DOUBLE = back / enter menu
+  // 3. Global: DOUBLE or LONG (in normal mode) = back / enter menu
   if (event == EV_DOUBLE) {
     if (currentMode != MODE_NORMAL) {
       exitAppModeToNormal();
@@ -941,10 +941,21 @@ void loop() {
         quickMenuItem = 0;
         rebootConfirmed = false;
       } else {
-        rebootConfirmed = false; // Сброс подтверждения при закрытии меню
+        rebootConfirmed = false;
       }
     }
     needRedraw = true;
+  } else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen) {
+    // Long press in normal mode = open menu (reliable alternative to
+    // double-tap)
+    quickMenuOpen = true;
+    menuState = MENU_MAIN;
+    menuLevel = 0;
+    menuCategory = 0;
+    quickMenuItem = 0;
+    rebootConfirmed = false;
+    needRedraw = true;
+    event = EV_NONE; // consumed so MODE_NORMAL doesn't toggle predator
   }
 
   // Alert / carousel / screen sync / fan animation
