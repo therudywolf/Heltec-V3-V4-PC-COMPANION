@@ -81,7 +81,7 @@ struct InputSystem {
       }
     }
 
-    const unsigned long multiTapWindowMs = 700;
+    const unsigned long multiTapWindowMs = 300;
     if (clickCount > 0 && !btnState && (now - releaseTime > multiTapWindowMs)) {
       if (clickCount == 1)
         event = EV_SHORT;
@@ -930,25 +930,19 @@ void loop() {
   // 2. Non-blocking input
   ButtonEvent event = input.update();
 
-  // 3. Global: DOUBLE or LONG (in normal mode) = back / enter menu
+  // 3. Global: DOUBLE = always open menu (even when exiting App Mode). Consume
+  // event so inner menu block does not process it again this frame.
   if (event == EV_DOUBLE) {
-    if (currentMode != MODE_NORMAL) {
+    if (currentMode != MODE_NORMAL)
       exitAppModeToNormal();
-    } else {
-      quickMenuOpen = !quickMenuOpen;
-      if (quickMenuOpen) {
-        menuState = MENU_MAIN;
-        menuLevel = 0;
-        menuCategory = 0;
-        quickMenuItem = 0;
-        rebootConfirmed = false;
-        lastMenuEventTime =
-            now; // So menu block won't treat this EV_DOUBLE as "close"
-      } else {
-        rebootConfirmed = false;
-      }
-    }
+    quickMenuOpen = true;
+    menuState = MENU_MAIN;
+    menuLevel = 0;
+    menuCategory = 0;
+    quickMenuItem = 0;
+    lastMenuEventTime = now;
     needRedraw = true;
+    event = EV_NONE;
   } else if (event == EV_LONG && currentMode == MODE_NORMAL) {
     static bool lowBrightness = false;
     lowBrightness = !lowBrightness;
@@ -1047,6 +1041,9 @@ void loop() {
       needRedraw = true;
     }
   }
+  // Render guarantee: menu has highest priority; never block menu with splash
+  if (quickMenuOpen)
+    splashDone = true;
 
   // 4. Mode handling: menu vs app
   if (quickMenuOpen) {
@@ -1085,7 +1082,7 @@ void loop() {
         if (menuCategory == 3 && quickMenuItem != 0)
           rebootConfirmed = false;
       }
-      needRedraw = true;
+      needRedraw = true; // Ensure redraw when quickMenuItem changes
     } else if (event == EV_LONG) {
       lastMenuEventTime = now;
       if (menuLevel == 0) {

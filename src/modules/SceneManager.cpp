@@ -1008,6 +1008,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       items[1][sizeof(items[1]) - 1] = '\0';
     }
   }
+  if (count <= 0)
+    count = 1;
 
   u8g2.setDrawColor(1);
   u8g2.drawBox(NOCT_MENU_CONFIG_BAR_X, NOCT_MENU_CONFIG_BAR_Y,

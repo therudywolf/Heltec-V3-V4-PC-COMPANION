@@ -10,9 +10,9 @@
 #define NOCT_SDA_PIN 17
 #define NOCT_SCL_PIN 18
 #define NOCT_RST_PIN 21
-/* Heltec V4: GPIO 36 = Vext. LOW = screen powered, HIGH = off. MUST stay LOW.
- */
-#define NOCT_VEXT_PIN 36
+/* Heltec V4: Vext often GPIO 21 (if screen black but code runs, use 21). LOW =
+ * screen powered, HIGH = off. MUST stay LOW. */
+#define NOCT_VEXT_PIN 21
 #define NOCT_LED_ALERT_PIN                                                     \
   35 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
