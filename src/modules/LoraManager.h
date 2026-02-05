@@ -49,6 +49,15 @@ public:
   /** Packet buffer for SIGINT: last 3 packets (0 = newest) */
   int getPacketBufferCount() const { return packetBufferCount_; }
   const LoraRawPacket *getPacketInBuffer(int index) const;
+  /** Set filter address (0 = disabled). Only packets from this address will be
+   * stored. */
+  void setFilterAddress(uint32_t addr);
+  /** Get current filter address (0 = disabled). */
+  uint32_t getFilterAddress() const { return filterAddress_; }
+  /** Switch frequency slot (0 or 2) for Russia region */
+  void switchFreqSlot();
+  /** Get current frequency slot */
+  int getCurrentFreqSlot() const { return currentFreqSlot_; }
 
   /** Replay last captured packet (REPLAY attack) */
   void replayLast();
@@ -59,6 +68,10 @@ public:
   void startJamming(float centerFreq = 869.5f);
   void stopJamming();
   bool isJamming() const { return isJamming_; }
+  /** Set jamming power (0-22 dBm). */
+  void setJamPower(int8_t power);
+  /** Get current jamming power. */
+  int8_t getJamPower() const { return jamPower_; }
 
   /** GHOSTS: FSK/OOK 868.3 MHz sensor sniffer (weather, TPMS, etc.). */
   void startSense();
@@ -99,10 +112,14 @@ private:
 
   bool isJamming_ = false;
   int jamHopIndex_ = 0;
+  int8_t jamPower_ = 22; // Default +22 dBm
   uint8_t jamBuf_[32];
 
   bool isSensing_ = false;
   SenseEntry senseEntries_[SENSE_ENTRIES];
   int senseHead_ = 0;
   int senseCount_ = 0;
+
+  uint32_t filterAddress_ = 0; // 0 = disabled, non-zero = filter by address
+  int currentFreqSlot_ = 0; // Current frequency slot (0 or 2) for Russia region
 };

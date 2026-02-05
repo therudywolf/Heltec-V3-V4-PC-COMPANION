@@ -21,10 +21,25 @@ void UsbManager::begin() {
 #if HAVE_USB_HID
   if (active_)
     return;
-  USB.begin();
+
+  // Правильный порядок инициализации для ESP32-S3
+  // КРИТИЧНО: Keyboard.begin() должен быть вызван ПЕРЕД USB.begin()
   if (!s_keyboard)
     s_keyboard = new USBHIDKeyboard();
+
+  if (!s_keyboard) {
+    Serial.println("[BADWOLF] ERROR: Failed to create keyboard object");
+    return;
+  }
+
+  // Сначала инициализируем HID клавиатуру
   s_keyboard->begin();
+  delay(300); // Дать время на инициализацию HID
+
+  // Теперь инициализируем USB
+  USB.begin();
+  delay(1000); // Увеличить задержку для стабилизации USB
+
   active_ = true;
   Serial.println("[BADWOLF] USB HID Keyboard ARMED.");
 #else
@@ -52,16 +67,16 @@ void UsbManager::ensureEnglishLayout() {
     return;
   s_keyboard->press(KEY_LEFT_ALT);
   s_keyboard->press(KEY_LEFT_SHIFT);
-  delay(50);
+  yield(); // Allow USB HID to process key press
   s_keyboard->releaseAll();
-  delay(100);
+  yield(); // Allow USB HID to process key release
 }
 
 void UsbManager::openPowerShell() {
   if (!s_keyboard)
     return;
   ensureEnglishLayout();
-  delay(200);
+  yield(); // Allow USB HID to process layout change
   s_keyboard->press(KEY_LEFT_GUI);
   s_keyboard->press('r');
   s_keyboard->releaseAll();

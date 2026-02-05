@@ -6,9 +6,11 @@
 #ifndef NOCTURNE_NET_MANAGER_H
 #define NOCTURNE_NET_MANAGER_H
 
+#include "../../include/nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
+
 
 struct AppState;
 
@@ -36,21 +38,23 @@ public:
   void markDataReceived(unsigned long now);
   void appendLineBuffer(char c);
   void clearLineBuffer();
-  String &getLineBuffer() { return lineBuffer_; }
+  char *getLineBuffer() { return lineBuffer_; }
+  size_t getLineBufferLen() const { return lineBufferLen_; }
   int getLastSentScreen() const { return lastSentScreen_; }
   void setLastSentScreen(int s) { lastSentScreen_ = s; }
 
   /** Parse one newline-terminated JSON line into AppState. Returns true on
    * success. */
-  bool parsePayload(const String &line, AppState *state);
+  bool parsePayload(const char *line, size_t lineLen, AppState *state);
 
 private:
   bool tryTcpConnect(unsigned long now);
 
-  String storedSSID_;
-  String storedPass_;
+  char storedSSID_[33]; // Max SSID length is 32 + null terminator
+  char storedPass_[65]; // Max password length is 64 + null terminator
   WiFiClient client_;
-  String lineBuffer_;
+  char lineBuffer_[NOCT_TCP_LINE_MAX];
+  size_t lineBufferLen_;
   const char *serverIp_;
   uint16_t serverPort_;
   unsigned long lastTcpAttempt_;

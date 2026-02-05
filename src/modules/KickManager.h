@@ -24,12 +24,18 @@ public:
   bool startAttack();
   void stopAttack();
   bool isAttacking() const { return attacking_; }
+  bool isTargetSet() const { return targetSet_; }
 
   int getPacketCount() const { return packetCount_; }
   void getTargetSSID(char *out, size_t maxLen) const;
   void getTargetBSSIDStr(char *out, size_t maxLen) const;
   /** True if current target is our connected AP (attack blocked). */
   bool isTargetOwnAP() const { return targetIsOwnAP_; }
+  /** Get encryption type of current target. Returns WIFI_AUTH_OPEN if not set.
+   */
+  wifi_auth_mode_t getTargetEncryption() const { return targetEncryption_; }
+  /** Check if target uses WPA3 or PMF (Protected Management Frames). */
+  bool isTargetProtected() const;
 
 private:
   void sendDeauthBurst();
@@ -41,6 +47,7 @@ private:
   bool attacking_;
   unsigned long lastBurstMs_;
   int packetCount_;
+  wifi_auth_mode_t targetEncryption_;
   uint8_t deauthBuf_[26];
 };
 

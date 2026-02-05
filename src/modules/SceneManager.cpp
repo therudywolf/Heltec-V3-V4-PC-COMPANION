@@ -10,6 +10,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
+#include <string.h>
 
 // ===========================================================================
 // ASSETS: 32x32 PIXEL PERFECT WOLF (High contrast for OLED)
@@ -348,6 +349,7 @@ void SceneManager::drawMain(bool blinkState, int xOff) {
 void SceneManager::drawGridCell(int x, int y, const char *label,
                                 const char *value, int valueYOffset) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   disp_.drawTechBracket(x, y, GRID_CELL_W, GRID_CELL_H, GRID_BRACKET_LEN);
   u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(x + GRID_LBL_INSET, y + GRID_BASELINE_Y_OFF, label);
@@ -821,8 +823,10 @@ void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode) {
 
 // Battery HUD: far right of top bar, slightly larger (16x8 frame).
 // Draw color 0 so visible on white header.
-void SceneManager::drawPowerStatus(int pct, bool isCharging) {
+void SceneManager::drawPowerStatus(int pct, bool isCharging,
+                                   float batteryVoltage) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
 
   const int frameW = 16;
@@ -833,19 +837,54 @@ void SceneManager::drawPowerStatus(int pct, bool isCharging) {
   int x = NOCT_DISP_W - frameW - termW;
   int y = baselineY;
 
-  u8g2.setDrawColor(0);
+  // Определяем, подключена ли батарея
+  // При работе от USB без аккумулятора напряжение может быть в
+  // диапазоне 3.3-4.2V Но если напряжение ниже 3.5V, это может быть USB питание
+  // без аккумулятора Батарея считается подключенной если напряжение >= 3.5V и
+  // <= 5.0V
+  bool batteryConnected = (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f);
+
+  // Рисуем рамку батареи (белая на черном фоне)
+  // В режиме setFontMode(1) setDrawColor(1) рисует белым на черном
+  u8g2.setDrawColor(1);
   u8g2.drawFrame(x, y - frameH, frameW, frameH);
   u8g2.drawBox(x + frameW, y - frameH + (frameH - termH) / 2, termW, termH);
 
-  if (pct > 10)
-    u8g2.drawBox(x + 2, y - frameH + 2, 3, 4);
-  if (pct > 40)
-    u8g2.drawBox(x + 6, y - frameH + 2, 3, 4);
-  if (pct > 80)
-    u8g2.drawBox(x + 10, y - frameH + 2, 3, 4);
+  if (batteryConnected && pct > 0) {
+    // Отображаем уровень заряда сегментами (белые на черном фоне)
+    // В режиме setFontMode(1) setDrawColor(1) рисует белым на черном
+    u8g2.setDrawColor(1);
+    if (pct > 10)
+      u8g2.drawBox(x + 2, y - frameH + 2, 3, 4);
+    if (pct > 40)
+      u8g2.drawBox(x + 6, y - frameH + 2, 3, 4);
+    if (pct > 80)
+      u8g2.drawBox(x + 10, y - frameH + 2, 3, 4);
+
+    // Индикатор зарядки - мигающий символ молнии или стрелка
+    if (isCharging) {
+      // Показываем символ зарядки (молния) справа от иконки
+      unsigned long t = millis() / 300; // Мигание каждые 300мс
+      if (t % 2 == 0) {
+        // Рисуем символ "+" или стрелку вверх для индикации зарядки
+        int chargeX = x + frameW + termW + 2;
+        int chargeY = y - frameH / 2;
+        // Стрелка вверх (простая линия)
+        u8g2.drawLine(chargeX, chargeY + 2, chargeX, chargeY - 2);
+        u8g2.drawLine(chargeX - 1, chargeY - 1, chargeX, chargeY - 2);
+        u8g2.drawLine(chargeX + 1, chargeY - 1, chargeX, chargeY - 2);
+      }
+    }
+  } else {
+    // Батарея не подключена - показываем крестик внутри иконки
+    u8g2.drawLine(x + 2, y - frameH + 2, x + frameW - 2, y - 2);
+    u8g2.drawLine(x + frameW - 2, y - frameH + 2, x + 2, y - 2);
+  }
 
   static char buf[8];
-  if (isCharging) {
+  if (!batteryConnected) {
+    snprintf(buf, sizeof(buf), "NO BAT");
+  } else if (isCharging) {
     snprintf(buf, sizeof(buf), "CHG");
   } else {
     snprintf(buf, sizeof(buf), "%d%%", pct);
@@ -860,6 +899,7 @@ void SceneManager::drawNoDataCross(int x, int y, int w, int h) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.drawLine(x, y, x + w - 1, y + h - 1);
   u8g2.drawLine(x + w - 1, y, x, y + h - 1);
+  u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
   const char *nd = "NO DATA";
   int tw = u8g2.getUTF8Width(nd);
@@ -875,6 +915,7 @@ void SceneManager::drawNoisePattern(int x, int y, int w, int h) {
 // ---------------------------------------------------------------------------
 void SceneManager::drawSearchMode(int scanPhase) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   int y0 = NOCT_CONTENT_TOP;
   int dy = NOCT_ROW_DY;
   u8g2.setFont(LABEL_FONT);
@@ -900,13 +941,11 @@ void SceneManager::drawSearchMode(int scanPhase) {
 #define MENU_LIST_W 82
 
 static const int MENU_MAIN = 0;
-static const int MENU_SUB_WIFI = 1;
-static const int MENU_SUB_RADIO = 2;
-static const int MENU_SUB_TOOLS = 3;
 
 void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
                             bool carouselOn, int carouselSec,
-                            bool screenRotated, bool glitchEnabled) {
+                            bool screenRotated, bool glitchEnabled,
+                            bool rebootConfirmed) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = 10;
   const int boxY = 10;
@@ -924,7 +963,7 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   disp_.drawChamferBox(34, 6, 60, 9, 2);
   u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(42, 13, menuStateVal == MENU_MAIN ? "// CONFIG" : "// SUBMENU");
+  u8g2.drawUTF8(42, 13, "// CONFIG");
   u8g2.setDrawColor(1);
 
   static char row0Buf[16];
@@ -939,28 +978,62 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   snprintf(row2Buf, sizeof(row2Buf), "GLITCH: %s",
            glitchEnabled ? "ON" : "OFF");
 
-  const char *mainItems[] = {row0Buf, row1Buf, row2Buf, "WIFI", "RADIO",
-                             "BLE",   "USB",   "TOOLS", "EXIT"};
-  static const char *subWifi[] = {"SCAN", "DEAUTH", "PORTAL", "BACK"};
-  static const char *subRadio[] = {"SNIFF", "JAM", "SENSE", "BACK"};
-  static const char *subTools[] = {"VAULT", "DAEMON", "MESH FLASH", "BACK"};
+  // Плоское меню со всеми режимами
+  static char mainItems[15][20];
+  static bool itemsInitialized = false;
 
-  const char **items = mainItems;
-  int count = 9;
-  int selected = mainIndex;
-  if (menuStateVal == MENU_SUB_WIFI) {
-    items = subWifi;
-    count = 4;
-    selected = submenuIndex;
-  } else if (menuStateVal == MENU_SUB_RADIO) {
-    items = subRadio;
-    count = 4;
-    selected = submenuIndex;
-  } else if (menuStateVal == MENU_SUB_TOOLS) {
-    items = subTools;
-    count = 3;
-    selected = submenuIndex;
+  // Инициализация фиксированных элементов выполняется один раз
+  if (!itemsInitialized) {
+    strncpy(mainItems[3], "WiFi SCAN", sizeof(mainItems[3]) - 1);
+    mainItems[3][sizeof(mainItems[3]) - 1] = '\0';
+    strncpy(mainItems[4], "WiFi DEAUTH", sizeof(mainItems[4]) - 1);
+    mainItems[4][sizeof(mainItems[4]) - 1] = '\0';
+    strncpy(mainItems[5], "WiFi PORTAL", sizeof(mainItems[5]) - 1);
+    mainItems[5][sizeof(mainItems[5]) - 1] = '\0';
+    strncpy(mainItems[6], "LoRa MESH", sizeof(mainItems[6]) - 1);
+    mainItems[6][sizeof(mainItems[6]) - 1] = '\0';
+    strncpy(mainItems[7], "LoRa JAM", sizeof(mainItems[7]) - 1);
+    mainItems[7][sizeof(mainItems[7]) - 1] = '\0';
+    strncpy(mainItems[8], "LoRa SENSE", sizeof(mainItems[8]) - 1);
+    mainItems[8][sizeof(mainItems[8]) - 1] = '\0';
+    strncpy(mainItems[9], "BLE SPAM", sizeof(mainItems[9]) - 1);
+    mainItems[9][sizeof(mainItems[9]) - 1] = '\0';
+    strncpy(mainItems[10], "USB HID", sizeof(mainItems[10]) - 1);
+    mainItems[10][sizeof(mainItems[10]) - 1] = '\0';
+    strncpy(mainItems[11], "VAULT", sizeof(mainItems[11]) - 1);
+    mainItems[11][sizeof(mainItems[11]) - 1] = '\0';
+    strncpy(mainItems[12], "DAEMON", sizeof(mainItems[12]) - 1);
+    mainItems[12][sizeof(mainItems[12]) - 1] = '\0';
+    strncpy(mainItems[14], "EXIT", sizeof(mainItems[14]) - 1);
+    mainItems[14][sizeof(mainItems[14]) - 1] = '\0';
+    itemsInitialized = true;
   }
+
+  // Обновление динамических элементов (AUTO, FLIP, GLITCH) - каждый раз
+  // Копируем строки из буферов в mainItems
+  strncpy(mainItems[0], row0Buf, sizeof(mainItems[0]) - 1);
+  mainItems[0][sizeof(mainItems[0]) - 1] = '\0';
+  strncpy(mainItems[1], row1Buf, sizeof(mainItems[1]) - 1);
+  mainItems[1][sizeof(mainItems[1]) - 1] = '\0';
+  strncpy(mainItems[2], row2Buf, sizeof(mainItems[2]) - 1);
+  mainItems[2][sizeof(mainItems[2]) - 1] = '\0';
+
+  // REBOOT с индикацией подтверждения - обновляется каждый раз
+  if (rebootConfirmed) {
+    strncpy(mainItems[13], "REBOOT [OK]", sizeof(mainItems[13]) - 1);
+  } else {
+    strncpy(mainItems[13], "REBOOT", sizeof(mainItems[13]) - 1);
+  }
+  mainItems[13][sizeof(mainItems[13]) - 1] = '\0';
+
+  const int count = 15;
+
+  // Защита от выхода за границы массива
+  int selected = mainIndex;
+  if (selected < 0)
+    selected = 0;
+  if (selected >= count)
+    selected = count - 1;
 
   const int startY = 16;
   int firstVisible = selected - MENU_VISIBLE_ROWS / 2;
@@ -969,24 +1042,60 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
   if (firstVisible + MENU_VISIBLE_ROWS > count)
     firstVisible = count - MENU_VISIBLE_ROWS;
 
+  // Установка шрифта перед отрисовкой (как в других местах кода)
+  u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
+  u8g2.setDrawColor(1);
+
+  // Optimized caching: кэширование вычислений ширины текста для оптимизации
+  static int cachedTextWidths[15] = {-1};
+  static int cachedSelected = -1;
+  static bool cacheValid = false;
+
+  // Пересчитываем ширину текста только если изменился выбранный элемент или кэш
+  // невалиден
+  if (selected != cachedSelected || !cacheValid) {
+    cachedSelected = selected;
+    cacheValid = true;
+    for (int i = 0; i < count; i++) {
+      if (mainItems[i][0] != '\0') {
+        cachedTextWidths[i] = u8g2.getUTF8Width(mainItems[i]);
+      } else {
+        cachedTextWidths[i] = -1;
+      }
+    }
+  }
+
   for (int r = 0; r < MENU_VISIBLE_ROWS; r++) {
     int i = firstVisible + r;
-    if (i >= count)
+    if (i >= count || i < 0)
       break;
-    int y = startY + r * MENU_ROW_H;
-    if (i == selected) {
-      u8g2.setDrawColor(1);
-      u8g2.drawBox(MENU_LIST_LEFT, y - 6, MENU_LIST_W, MENU_ROW_H);
-      u8g2.setDrawColor(0);
-      u8g2.drawUTF8(MENU_LIST_LEFT + 2, y, ">");
-      u8g2.drawUTF8(MENU_LIST_LEFT + MENU_LIST_W - 6, y, "<");
-    } else {
-      u8g2.setDrawColor(1);
+
+    // Используем mainItems напрямую
+    const char *itemText = mainItems[i];
+    // Проверяем, что строка не пустая
+    if (itemText[0] != '\0') {
+      int y = startY + r * MENU_ROW_H;
+      int textWidth = cachedTextWidths[i] >= 0 ? cachedTextWidths[i]
+                                               : u8g2.getUTF8Width(itemText);
+      int textX = boxX + (boxW - textWidth) / 2;
+
+      if (i == selected) {
+        // Выделение фона для выбранного элемента
+        u8g2.setDrawColor(1);
+        u8g2.drawBox(MENU_LIST_LEFT, y - 6, MENU_LIST_W, MENU_ROW_H);
+        // Белый текст на черном фоне
+        u8g2.setDrawColor(0);
+        u8g2.drawUTF8(MENU_LIST_LEFT + 2, y, ">");
+        u8g2.drawUTF8(MENU_LIST_LEFT + MENU_LIST_W - 6, y, "<");
+        u8g2.drawUTF8(textX, y, itemText);
+        u8g2.setDrawColor(1); // Возврат к нормальному цвету
+      } else {
+        // Обычный текст для невыбранных элементов
+        u8g2.setDrawColor(1);
+        u8g2.drawUTF8(textX, y, itemText);
+      }
     }
-    int tw = u8g2.getUTF8Width(items[i]);
-    u8g2.drawUTF8(boxX + (boxW - tw) / 2, y, items[i]);
-    u8g2.setDrawColor(1);
   }
 
   disp_.drawScrollIndicator(startY - 2, MENU_VISIBLE_ROWS * MENU_ROW_H, count,
@@ -996,6 +1105,7 @@ void SceneManager::drawMenu(int menuStateVal, int mainIndex, int submenuIndex,
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
                                 bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   int y0 = NOCT_CONTENT_TOP;
   int dy = NOCT_ROW_DY;
   u8g2.setFont(LABEL_FONT);
@@ -1014,6 +1124,7 @@ void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
 
 void SceneManager::drawConnecting(int rssi, bool blinkState) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   (void)rssi;
   (void)blinkState;
   int y0 = NOCT_CONTENT_TOP;
@@ -1029,30 +1140,99 @@ void SceneManager::drawConnecting(int rssi, bool blinkState) {
 
 // ---------------------------------------------------------------------------
 // DAEMON MODE: Wolf (left) | CPU, GPU, RAM (right). Wolf sprites by mood.
+// Улучшенная анимация, обработка отсутствия данных, оптимизация.
+// Добавлена статистика времени работы и индикация сетевой активности.
 // ---------------------------------------------------------------------------
-void SceneManager::drawDaemon() {
+void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
+                              bool tcpConnected, int rssi) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   HardwareData &hw = state_.hw;
 
-  int cpuTemp = (hw.ct > 0) ? hw.ct : 0;
-  int gpuTemp = (hw.gt > 0) ? hw.gt : 0;
-  int cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
-  int gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
-  float ramUsage = (hw.ra > 0) ? (hw.ru / hw.ra) * 100.0f : 0.0f;
-  bool alert = (cpuTemp > 75 || gpuTemp > 75 || ramUsage > 85);
+  // Проверка наличия данных
+  bool hasData = (hw.ct > 0 || hw.gt > 0 || hw.ra > 0);
 
-  const unsigned char *wolfSprite = wolf_idle;
-  if (alert) {
-    wolfSprite = wolf_aggressive;
+  // Оптимизированные вычисления (кэширование значений)
+  static int lastCpuTemp = 0, lastGpuTemp = 0;
+  static int lastCpuLoad = 0, lastGpuLoad = 0;
+  static float lastRamUsage = 0.0f;
+  static unsigned long lastUpdate = 0;
+
+  int cpuTemp = 0, gpuTemp = 0, cpuLoad = 0, gpuLoad = 0;
+  float ramUsage = 0.0f;
+
+  if (hasData) {
+    cpuTemp = (hw.ct > 0) ? hw.ct : 0;
+    gpuTemp = (hw.gt > 0) ? hw.gt : 0;
+    cpuLoad = (hw.cl >= 0 && hw.cl <= 100) ? hw.cl : 0;
+    gpuLoad = (hw.gl >= 0 && hw.gl <= 100) ? hw.gl : 0;
+    ramUsage = (hw.ra > 0) ? (hw.ru / hw.ra) * 100.0f : 0.0f;
+
+    // Обновление кэша только при изменении или раз в секунду
+    unsigned long now = millis();
+    if (now - lastUpdate > 1000 || cpuTemp != lastCpuTemp ||
+        gpuTemp != lastGpuTemp || cpuLoad != lastCpuLoad ||
+        gpuLoad != lastGpuLoad || abs(ramUsage - lastRamUsage) > 0.5f) {
+      lastCpuTemp = cpuTemp;
+      lastGpuTemp = gpuTemp;
+      lastCpuLoad = cpuLoad;
+      lastGpuLoad = gpuLoad;
+      lastRamUsage = ramUsage;
+      lastUpdate = now;
+    } else {
+      // Использование кэшированных значений
+      cpuTemp = lastCpuTemp;
+      gpuTemp = lastGpuTemp;
+      cpuLoad = lastCpuLoad;
+      gpuLoad = lastGpuLoad;
+      ramUsage = lastRamUsage;
+    }
   } else {
-    unsigned long t = millis() / 500;
-    int phase = (int)(t % 12);
-    if (phase == 9)
-      wolfSprite = wolf_blink;
-    else if (phase >= 10)
-      wolfSprite = wolf_funny;
-    else
+    // Использование последних известных значений при отсутствии данных
+    cpuTemp = lastCpuTemp;
+    gpuTemp = lastGpuTemp;
+    cpuLoad = lastCpuLoad;
+    gpuLoad = lastGpuLoad;
+    ramUsage = lastRamUsage;
+  }
+
+  // Улучшенная логика определения состояния HUNTING
+  bool alert = hasData && (cpuTemp > 75 || gpuTemp > 75 || ramUsage > 85);
+  bool criticalAlert =
+      hasData && (cpuTemp > 85 || gpuTemp > 85 || ramUsage > 95);
+
+  // Улучшенная анимация волка с более плавными переходами
+  const unsigned char *wolfSprite = wolf_idle;
+  unsigned long t = millis();
+
+  if (criticalAlert) {
+    // Критическое состояние - всегда агрессивная анимация
+    wolfSprite = wolf_aggressive;
+  } else if (alert) {
+    // HUNTING режим - чередование агрессивной и обычной анимации
+    int huntPhase = (int)((t / 400) % 6);
+    if (huntPhase < 3) {
+      wolfSprite = wolf_aggressive;
+    } else {
       wolfSprite = wolf_idle;
+    }
+  } else if (!hasData) {
+    // Моргание при отсутствии данных
+    int blinkPhase = (int)((t / 300) % 4);
+    if (blinkPhase == 0 || blinkPhase == 2) {
+      wolfSprite = wolf_blink;
+    } else {
+      wolfSprite = wolf_idle;
+    }
+  } else {
+    // Плавная анимация: idle -> blink -> funny -> idle
+    int phase = (int)((t / 600) % 16); // Более медленная смена фаз
+    if (phase == 10) {
+      wolfSprite = wolf_blink;
+    } else if (phase >= 11 && phase <= 13) {
+      wolfSprite = wolf_funny;
+    } else {
+      wolfSprite = wolf_idle;
+    }
   }
 
   u8g2.setDrawColor(1);
@@ -1065,40 +1245,94 @@ void SceneManager::drawDaemon() {
   const int rowH = 14;
   int y = 16;
 
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setCursor(dataX, y);
-  u8g2.print(alert ? "STATUS: HUNTING" : "STATUS: IDLE");
+  if (!hasData) {
+    u8g2.print("STATUS: NO DATA");
+  } else {
+    if (criticalAlert) {
+      u8g2.print("STATUS: CRITICAL");
+    } else if (alert) {
+      u8g2.print("STATUS: HUNTING");
+    } else {
+      u8g2.print("STATUS: IDLE");
+    }
+  }
+
+  // Индикация сетевой активности справа от статуса
+  if (wifiConnected) {
+    int netX = dataX + barW - 20;
+    if (tcpConnected) {
+      u8g2.setCursor(netX, y);
+      u8g2.print("[TCP]");
+    } else {
+      u8g2.setCursor(netX, y);
+      u8g2.print("[WiFi]");
+    }
+  }
+
   y += rowH;
 
-  u8g2.setCursor(dataX, y);
-  u8g2.printf("CPU: %d C %d%%", cpuTemp, cpuLoad);
-  u8g2.drawFrame(dataX, y + 2, barW, 3);
-  u8g2.drawBox(dataX + 1, y + 3, (int)map((long)cpuLoad, 0, 100, 0, barW - 2),
-               1);
-  y += rowH;
+  // Статистика времени работы системы (если есть данные)
+  if (hasData && bootTime > 0) {
+    unsigned long uptimeSec = (millis() - bootTime) / 1000;
+    unsigned long hours = uptimeSec / 3600;
+    unsigned long minutes = (uptimeSec % 3600) / 60;
+    u8g2.setCursor(dataX, y);
+    u8g2.printf("UPTIME: %lu:%02lu", hours, minutes);
+    y += rowH;
+  }
 
-  u8g2.setCursor(dataX, y);
-  u8g2.printf("GPU: %d C %d%%", gpuTemp, gpuLoad);
-  u8g2.drawFrame(dataX, y + 2, barW, 3);
-  u8g2.drawBox(dataX + 1, y + 3, (int)map((long)gpuLoad, 0, 100, 0, barW - 2),
-               1);
-  y += rowH;
+  if (!hasData) {
+    // Отображение сообщения об отсутствии данных
+    u8g2.setCursor(dataX, y);
+    u8g2.print("Waiting for");
+    y += rowH;
+    u8g2.setCursor(dataX, y);
+    u8g2.print("telemetry...");
+  } else {
+    // Отображение данных с оптимизированными вычислениями прогресс-баров
+    u8g2.setCursor(dataX, y);
+    u8g2.printf("CPU: %d C %d%%", cpuTemp, cpuLoad);
+    u8g2.drawFrame(dataX, y + 2, barW, 3);
+    int cpuBarWidth = (cpuLoad * (barW - 2) + 50) / 100;
+    if (cpuBarWidth > 0) {
+      u8g2.drawBox(dataX + 1, y + 3, cpuBarWidth, 1);
+    }
+    y += rowH;
 
-  u8g2.setCursor(dataX, y);
-  u8g2.printf("RAM: %0.1f%%", ramUsage);
-  u8g2.drawFrame(dataX, y + 2, barW, 3);
-  u8g2.drawBox(dataX + 1, y + 3,
-               (int)map((long)(ramUsage + 0.5f), 0, 100, 0, barW - 2), 1);
+    u8g2.setCursor(dataX, y);
+    u8g2.printf("GPU: %d C %d%%", gpuTemp, gpuLoad);
+    u8g2.drawFrame(dataX, y + 2, barW, 3);
+    int gpuBarWidth = (gpuLoad * (barW - 2) + 50) / 100;
+    if (gpuBarWidth > 0) {
+      u8g2.drawBox(dataX + 1, y + 3, gpuBarWidth, 1);
+    }
+    y += rowH;
+
+    u8g2.setCursor(dataX, y);
+    u8g2.printf("RAM: %0.1f%%", ramUsage);
+    u8g2.drawFrame(dataX, y + 2, barW, 3);
+    int ramBarWidth = ((int)(ramUsage + 0.5f) * (barW - 2) + 50) / 100;
+    if (ramBarWidth > 0) {
+      u8g2.drawBox(dataX + 1, y + 3, ramBarWidth, 1);
+    }
+  }
 }
 
 // ===========================================================================
 // NETRUNNER MODE: WiFi Scanner — more networks, fast scroll, JAMMER status
 // ===========================================================================
-void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
+void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
+                                   int *sortedIndices, int filteredCount) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
 
   int n = WiFi.scanComplete();
+  bool useFiltered = (sortedIndices != nullptr && filteredCount > 0);
+  int displayCount = useFiltered ? filteredCount : n;
 
   if (n == -2) {
     disp_.drawCentered(32, "INIT RADAR...");
@@ -1111,7 +1345,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
     u8g2.drawBox(34, 35, w, 4);
     return;
   }
-  if (n == 0) {
+  if (displayCount == 0) {
     disp_.drawCentered(32, "NO SIGNALS");
     disp_.drawCentered(45, "[PRESS TO RESCAN]");
     return;
@@ -1119,13 +1353,20 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
 
   // --- LIST RENDER ---
   u8g2.setCursor(2, 6);
-  u8g2.printf("TARGETS: %d", n);
+  if (useFiltered && filteredCount < n) {
+    u8g2.printf("TARGETS: %d/%d", filteredCount, n);
+  } else {
+    u8g2.printf("TARGETS: %d", displayCount);
+  }
   u8g2.drawLine(0, 8, 128, 8);
 
   int yStart = 16;
   int h = 10;
 
-  for (int i = pageOffset; i < (pageOffset + 5 < n ? pageOffset + 5 : n); i++) {
+  for (int i = pageOffset;
+       i < (pageOffset + 5 < displayCount ? pageOffset + 5 : displayCount);
+       i++) {
+    int actualIndex = useFiltered ? sortedIndices[i] : i;
     int y = yStart + ((i - pageOffset) * h);
 
     if (i == selectedIndex) {
@@ -1136,18 +1377,40 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
       u8g2.setDrawColor(1);
     }
 
-    String ssid = WiFi.SSID(i);
-    if (ssid.length() > 14)
-      ssid = ssid.substring(0, 13) + ".";
+    // Optimized: use c_str() and static buffer instead of String
+    const char *ssid = WiFi.SSID(actualIndex).c_str();
+    char ssidBuf[12]; // Max 10 chars + "." + null terminator
+    if (!ssid || strlen(ssid) == 0) {
+      strncpy(ssidBuf, "[HIDDEN]", sizeof(ssidBuf) - 1);
+    } else {
+      size_t len = strlen(ssid);
+      if (len > 10) {
+        strncpy(ssidBuf, ssid, 9);
+        ssidBuf[9] = '.';
+        ssidBuf[10] = '\0';
+      } else {
+        strncpy(ssidBuf, ssid, sizeof(ssidBuf) - 1);
+        ssidBuf[sizeof(ssidBuf) - 1] = '\0';
+      }
+    }
     u8g2.setCursor(2, y);
-    u8g2.print(ssid);
+    u8g2.print(ssidBuf);
 
-    u8g2.setCursor(95, y);
-    u8g2.print(WiFi.RSSI(i));
+    // RSSI и канал
+    int rssi = WiFi.RSSI(actualIndex);
+    int channel = WiFi.channel(actualIndex);
+    u8g2.setCursor(70, y);
+    u8g2.printf("%d CH%d", rssi, channel);
 
-    if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
+    // Индикация шифрования
+    wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
+    if (auth != WIFI_AUTH_OPEN) {
       u8g2.setCursor(120, y);
-      u8g2.print("*");
+      if (auth == WIFI_AUTH_WPA3_PSK || auth == WIFI_AUTH_WPA2_WPA3_PSK) {
+        u8g2.print("3"); // WPA3
+      } else {
+        u8g2.print("*"); // WPA/WPA2
+      }
     }
     u8g2.setDrawColor(1);
   }
@@ -1176,6 +1439,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset) {
 
 void SceneManager::drawLoraSniffer(LoraManager &lora) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1184,6 +1448,10 @@ void SceneManager::drawLoraSniffer(LoraManager &lora) {
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
   u8g2.print("SIGINT 868MHz");
+  // Отображение частотного слота справа в заголовке
+  int slot = lora.getCurrentFreqSlot();
+  u8g2.setCursor(90, 7);
+  u8g2.printf("S%d", slot);
   u8g2.setDrawColor(1);
 
   int histLen = 0;
@@ -1228,8 +1496,8 @@ void SceneManager::drawLoraSniffer(LoraManager &lora) {
       if (p->len >= 4)
         fromId = (uint32_t)p->data[0] | ((uint32_t)p->data[1] << 8) |
                  ((uint32_t)p->data[2] << 16) | ((uint32_t)p->data[3] << 24);
-      snprintf(lineBuf, sizeof(lineBuf), "[MESH] 0x%lX | SNR %.0f",
-               (unsigned long)fromId, (double)p->snr);
+      snprintf(lineBuf, sizeof(lineBuf), "[MESH] 0x%lX | SNR %.0f RSSI %.0f",
+               (unsigned long)fromId, (double)p->snr, (double)p->rssi);
       u8g2.setCursor(2, y);
       u8g2.print(lineBuf);
     }
@@ -1237,7 +1505,7 @@ void SceneManager::drawLoraSniffer(LoraManager &lora) {
 
   u8g2.drawLine(0, LORA_FOOTER_Y - 1, NOCT_DISP_W, LORA_FOOTER_Y - 1);
   u8g2.setCursor(2, LORA_FOOTER_Y + 6);
-  u8g2.print("Short: Clear | Long: REPLAY | 3x Out");
+  u8g2.print("Short: Clear | Long: REPLAY | 2x: Slot | 3x Out");
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,6 +1531,7 @@ static void drawBtIcon(U8G2 &u8g2, int cx, int cy, int r, int pulse) {
 
 void SceneManager::drawBleSpammer(int packetCount) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1300,6 +1569,7 @@ void SceneManager::drawBleSpammer(int packetCount) {
 
 void SceneManager::drawBadWolf() {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1328,8 +1598,9 @@ void SceneManager::drawBadWolf() {
 #define SILENCE_HEADER_H 10
 #define SILENCE_FOOTER_Y 56
 
-void SceneManager::drawSilenceMode() {
+void SceneManager::drawSilenceMode(int8_t power) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1366,7 +1637,9 @@ void SceneManager::drawSilenceMode() {
 
   u8g2.drawLine(0, SILENCE_FOOTER_Y - 1, NOCT_DISP_W, SILENCE_FOOTER_Y - 1);
   u8g2.setCursor(2, SILENCE_FOOTER_Y + 5);
-  u8g2.print("+22dBm | 3x Out");
+  static char powerBuf[16];
+  snprintf(powerBuf, sizeof(powerBuf), "+%ddBm | 3x Out", power);
+  u8g2.print(powerBuf);
 
   disp_.drawGreebles();
 }
@@ -1379,8 +1652,10 @@ void SceneManager::drawSilenceMode() {
 
 void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
                                 const char *lastPassword,
-                                unsigned long passwordShowUntil) {
+                                unsigned long passwordShowUntil,
+                                const char *clonedSSID) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1388,6 +1663,10 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
   u8g2.setDrawColor(0);
   u8g2.setCursor(2, 7);
   u8g2.print("PORTAL");
+  if (clonedSSID && clonedSSID[0] != '\0') {
+    u8g2.setCursor(60, 7);
+    u8g2.print("[CLONE]");
+  }
   u8g2.setDrawColor(1);
 
   unsigned long now = millis();
@@ -1440,6 +1719,7 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
 
 void SceneManager::drawKickMode(KickManager &kick) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1470,6 +1750,10 @@ void SceneManager::drawKickMode(KickManager &kick) {
   u8g2.print("PKTS: ");
   u8g2.print(kick.getPacketCount());
 
+  if (kick.isTargetProtected()) {
+    u8g2.setCursor(2, 58);
+    u8g2.print("WARNING: WPA3/PMF");
+  }
   if (kick.isTargetOwnAP()) {
     u8g2.setCursor(70 + sx, 48 + sy);
     u8g2.print("[OWN AP]");
@@ -1487,6 +1771,7 @@ void SceneManager::drawKickMode(KickManager &kick) {
 void SceneManager::drawVaultMode(const char *accountName, const char *code6,
                                  int countdownSec) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
@@ -1529,6 +1814,7 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
 
 void SceneManager::drawGhostsMode(LoraManager &lora) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 

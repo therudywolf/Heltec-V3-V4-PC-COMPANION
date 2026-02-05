@@ -7,7 +7,7 @@
 #include <Arduino.h>
 
 #define BLE_PHANTOM_ROTATE_MS 100
-#define BLE_PHANTOM_PAYLOAD_COUNT 3
+#define BLE_PHANTOM_PAYLOAD_COUNT 4
 
 class BleManager {
 public:
@@ -19,7 +19,8 @@ public:
 
   bool isActive() const { return active_; }
   int getPacketCount() const { return packetCount_; }
-  /** Last payload index (0=Apple, 1=Google, 2=Samsung) for UI glitch trigger */
+  /** Last payload index (0=Apple, 1=Google, 2=Samsung, 3=Windows) for UI glitch
+   * trigger */
   int getCurrentPayloadIndex() const { return currentPayloadIndex_; }
 
 private:
