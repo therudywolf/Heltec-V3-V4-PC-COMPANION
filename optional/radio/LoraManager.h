@@ -3,7 +3,7 @@
 #include <RadioLib.h>
 #include <SPI.h>
 
-// HELTEC V3/V4 PINS for SX1262
+// HELTEC V3/V4 PINS for SX1262 (see DataSheets/WiFi_LoRa_32_V4.2.0.pdf)
 #define LORA_NSS 8
 #define LORA_DIO1 14
 #define LORA_RST 12

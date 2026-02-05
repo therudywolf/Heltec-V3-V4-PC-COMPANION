@@ -411,11 +411,8 @@ void LoraManager::tick() {
       }
     } else if (state == RADIOLIB_ERR_RX_TIMEOUT) {
       // Таймаут - это нормально, продолжаем слушать
-      // Проверяем, что радио все еще в режиме приема
-      // Не нужно перезапускать прием при таймауте, но проверяем состояние
       return;
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-      // CRC ошибка - пакет поврежден, но продолжаем слушать
       int rxState = radio_.startReceive();
       if (rxState != RADIOLIB_ERR_NONE) {
         Serial.printf("[GHOSTS] Failed to resume after CRC error %d\n",
@@ -423,14 +420,12 @@ void LoraManager::tick() {
       }
       return;
     } else {
-      // Другие ошибки - попытка восстановления
       Serial.printf("[GHOSTS] readData error %d, attempting recovery...\n",
                     state);
       int rxState = radio_.startReceive();
       if (rxState != RADIOLIB_ERR_NONE) {
         Serial.printf("[GHOSTS] Error recovery failed %d, reinitializing...\n",
                       rxState);
-        // Критическая ошибка - переинициализация (optimized: reduced delay)
         stopSense();
         yield(); // Allow other tasks to run
         startSense();
@@ -447,15 +442,13 @@ void LoraManager::tick() {
       return;
     }
 
-    // Генерация случайного шума
     for (size_t i = 0; i < sizeof(jamBuf_); i++)
       jamBuf_[i] = (uint8_t)(esp_random() & 0xFF);
 
     int txState = radio_.transmit(jamBuf_, sizeof(jamBuf_));
     if (txState != RADIOLIB_ERR_NONE) {
       Serial.printf("[SILENCE] transmit failed %d\n", txState);
-      // Попытка восстановления при критических ошибках
-      if (txState < 0) { // Отрицательные коды - ошибки
+      if (txState < 0) {
         Serial.println("[SILENCE] Attempting radio reset...");
         stopJamming();
         yield(); // Allow other tasks to run
@@ -506,8 +499,7 @@ void LoraManager::tick() {
     int rxState = radio_.startReceive();
     if (rxState != RADIOLIB_ERR_NONE) {
       Serial.printf("[LORA] startReceive failed %d\n", rxState);
-      // Попытка восстановления при критических ошибках
-      if (rxState < 0) { // Отрицательные коды - ошибки
+      if (rxState < 0) {
         Serial.println("[LORA] Attempting radio reset...");
         setMode(false);
         yield(); // Allow other tasks to run
@@ -516,7 +508,6 @@ void LoraManager::tick() {
     }
   } else if (state != RADIOLIB_ERR_RX_TIMEOUT &&
              state != RADIOLIB_ERR_CRC_MISMATCH) {
-    // Восстановление приема при ошибках (кроме таймаута и CRC)
     Serial.printf("[LORA] readData error %d, recovering...\n", state);
     int rxState = radio_.startReceive();
     if (rxState != RADIOLIB_ERR_NONE) {
