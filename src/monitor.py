@@ -52,10 +52,13 @@ except ImportError:
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Logging: always to file (nocturne.log in project root); console only when --console
+# Logging: always to file (nocturne.log); when frozen, next to exe for autostart.
 # ---------------------------------------------------------------------------
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LOG_FILE = os.path.join(_PROJECT_ROOT, "nocturne.log")
+if getattr(sys, "frozen", False):
+    _LOG_FILE = os.path.join(os.path.dirname(sys.executable), "nocturne.log")
+else:
+    _LOG_FILE = os.path.join(_PROJECT_ROOT, "nocturne.log")
 
 def _setup_logging(console: bool = False) -> None:
     handlers: List[logging.Handler] = [
@@ -848,6 +851,7 @@ async def run():
     server = None
     executor = ThreadPoolExecutor(max_workers=6)
     log_info(f"Starting TCP server on {TCP_HOST}:{TCP_PORT}")
+    await asyncio.sleep(2)  # allow network/services to be ready (e.g. at autostart)
 
     try:
         server = await asyncio.start_server(handle_client, TCP_HOST, TCP_PORT)
@@ -994,7 +998,11 @@ def _on_restart(icon: "pystray.Icon", item: Any) -> None:
     stop_requested = False
     _server_thread_holder[0] = threading.Thread(target=_run_async_worker, daemon=True)
     _server_thread_holder[0].start()
-    log_info("Server restarted.")
+    time.sleep(2)
+    if not _server_thread_holder[0].is_alive():
+        log_err("Restart: server thread died immediately. Check nocturne.log for exception.")
+    else:
+        log_info("Server restarted.")
 
 
 def _on_exit(icon: "pystray.Icon", item: Any) -> None:
