@@ -10,7 +10,6 @@
 #include "DisplayEngine.h"
 
 class KickManager;
-class LoraManager;
 class VaultManager;
 
 class SceneManager {
@@ -39,9 +38,10 @@ public:
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
-  /** Two-level menu: menuState 0=main, 1=WIFI, 2=RADIO, 3=TOOLS; mainIndex or
-   * submenuIndex is selected. */
-  void drawMenu(int menuState, int mainIndex, int submenuIndex, bool carouselOn,
+  /** Flipper-style two-level menu: menuLevel 0 = 4 categories
+   * (Config/WiFi/Tools/System), menuLevel 1 = submenu; menuCategory = which
+   * category (0..3), mainIndex = selected item. */
+  void drawMenu(int menuLevel, int menuCategory, int mainIndex, bool carouselOn,
                 int carouselSec, bool screenRotated, bool glitchEnabled,
                 bool rebootConfirmed = false);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
@@ -57,9 +57,6 @@ public:
   /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security. */
   void drawWiFiScanner(int selectedIndex, int pageOffset,
                        int *sortedIndices = nullptr, int filteredCount = 0);
-  /** Cyberdeck: LoRa sniffer (868 MHz) — noise floor, packet count, last hex.
-   */
-  void drawLoraSniffer(LoraManager &lora);
 
   /** Battery HUD: icon + percent (or CHG when charging) in header, right of
    * WOOF!. pct: 0-100, isCharging: true if charging, batteryVoltage: voltage in
@@ -91,10 +88,6 @@ public:
    */
   void drawVaultMode(const char *accountName, const char *code6,
                      int countdownSec);
-
-  /** GHOSTS: 868 MHz sensor sniffer — radar sweep, scrolling list RSSI + hex.
-   */
-  void drawGhostsMode(LoraManager &lora);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).

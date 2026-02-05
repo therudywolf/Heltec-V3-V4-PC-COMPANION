@@ -22,7 +22,6 @@
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
 #include "modules/KickManager.h"
-#include "modules/LoraManager.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
 #include "modules/TrapManager.h"
@@ -35,12 +34,13 @@
 // ---------------------------------------------------------------------------
 // Local constants (after includes, before any global object instantiations)
 // ---------------------------------------------------------------------------
-#define NOCT_REDRAW_INTERVAL_MS 500
 #define NOCT_CONFIG_MSG_MS 1500
 #define NOCT_BAT_READ_INTERVAL_MS 5000
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
-#define WOLF_MENU_ITEMS 15
+// Flipper-style: level 0 = 4 categories, level 1 = submenu items
+#define MENU_CATEGORIES 4
+#define WOLF_MENU_ITEMS 12
 
 // ---------------------------------------------------------------------------
 // Input: Event-based (SHORT = navigate, LONG = select, DOUBLE = back/menu)
@@ -131,7 +131,6 @@ public:
 // ---------------------------------------------------------------------------
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
 NetManager netManager;
-LoraManager loraManager;
 BleManager bleManager;
 UsbManager usbManager;
 TrapManager trapManager;
@@ -168,6 +167,8 @@ unsigned long predatorEnterTime = 0;
 
 bool quickMenuOpen = false;
 int quickMenuItem = 0;
+int menuLevel = 0;    // 0 = categories (Config/WiFi/Tools/System), 1 = submenu
+int menuCategory = 0; // which category when in submenu (0..3)
 
 enum MenuState { MENU_MAIN };
 MenuState menuState = MENU_MAIN;
@@ -186,13 +187,10 @@ enum AppMode {
   MODE_DAEMON,
   MODE_RADAR,
   MODE_WIFI_DEAUTH,
-  MODE_LORA,
-  MODE_LORA_JAM,
   MODE_BLE_SPAM,
   MODE_BADWOLF,
   MODE_WIFI_TRAP,
-  MODE_VAULT,
-  MODE_LORA_SENSE
+  MODE_VAULT
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -568,15 +566,6 @@ void setup() {
 /** Очистка ресурсов режима перед переключением */
 static void cleanupMode(AppMode mode) {
   switch (mode) {
-  case MODE_LORA:
-  case MODE_LORA_JAM:
-  case MODE_LORA_SENSE:
-    if (mode == MODE_LORA_JAM)
-      loraManager.stopJamming();
-    else if (mode == MODE_LORA_SENSE)
-      loraManager.stopSense();
-    loraManager.setMode(false);
-    break;
   case MODE_BLE_SPAM:
     bleManager.stop();
     WiFi.mode(WIFI_STA);
@@ -609,10 +598,7 @@ static void cleanupMode(AppMode mode) {
 static void manageWiFiState(AppMode mode) {
   switch (mode) {
   case MODE_BLE_SPAM:
-  case MODE_LORA:
-  case MODE_LORA_JAM:
-  case MODE_LORA_SENSE:
-    // WiFi должен быть выключен для этих режимов
+    // WiFi должен быть выключен для этого режима
     if (WiFi.getMode() != WIFI_OFF) {
       WiFi.disconnect(true);
       // Non-blocking: use yield() instead of delay() for WiFi state change
@@ -655,44 +641,6 @@ static void manageWiFiState(AppMode mode) {
 /** Инициализация режима с проверкой ошибок */
 static bool initializeMode(AppMode mode) {
   switch (mode) {
-  case MODE_LORA:
-    manageWiFiState(mode);
-    // Остановить другие LoRa режимы перед запуском SNIFF
-    loraManager.stopJamming();
-    loraManager.stopSense();
-    yield(); // Allow LoRa stack to process stop commands
-    loraManager.setMode(true);
-    // Проверка успешности инициализации через проверку активного состояния
-    yield(); // Allow LoRa stack to initialize
-    Serial.println("[SYS] LoRa SNIFF mode initialized");
-    return true;
-
-  case MODE_LORA_JAM:
-    manageWiFiState(mode);
-    loraManager.stopSense();    // Остановить SENSE если активен
-    loraManager.setMode(false); // Остановить SNIFF если активен
-    yield();                    // Allow LoRa stack to process stop commands
-    loraManager.startJamming(869.5f);
-    if (!loraManager.isJamming()) {
-      Serial.println("[SYS] LoRa JAM init failed");
-      return false;
-    }
-    Serial.println("[SYS] LoRa JAM mode initialized");
-    return true;
-
-  case MODE_LORA_SENSE:
-    manageWiFiState(mode);
-    loraManager.stopJamming();  // Остановить JAM если активен
-    loraManager.setMode(false); // Остановить SNIFF если активен
-    yield();                    // Allow LoRa stack to process stop commands
-    loraManager.startSense();
-    if (!loraManager.isSensing()) {
-      Serial.println("[SYS] LoRa SENSE init failed");
-      return false;
-    }
-    Serial.println("[SYS] LoRa SENSE mode initialized");
-    return true;
-
   case MODE_BLE_SPAM:
     manageWiFiState(mode);
     if (WiFi.getMode() != WIFI_OFF) {
@@ -823,127 +771,116 @@ static void exitAppModeToNormal() {
 }
 
 // ---------------------------------------------------------------------------
-// Menu handlers - рефакторинг логики меню
+// Flipper-style menu: categories (0=Config, 1=WiFi, 2=Tools, 3=System) ->
+// submenus
 // ---------------------------------------------------------------------------
-static bool handleMainMenuAction(int item, unsigned long now) {
-  // Защита от выхода за границы
-  if (item < 0 || item >= WOLF_MENU_ITEMS) {
-    Serial.printf("[MENU] Invalid item index: %d (max: %d)\n", item,
-                  WOLF_MENU_ITEMS - 1);
-    return false;
+static int submenuCount(int category) {
+  switch (category) {
+  case 0:
+    return 3; // Config: AUTO, FLIP, GLITCH
+  case 1:
+    return 3; // WiFi: SCAN, DEAUTH, PORTAL
+  case 2:
+    return 4; // Tools: BLE, USB HID, VAULT, DAEMON
+  case 3:
+    return 2; // System: REBOOT, EXIT
+  default:
+    return 3;
   }
+}
 
-  if (item == 0) { // AUTO
-    settings.carouselEnabled = !settings.carouselEnabled;
-    Preferences prefs;
-    prefs.begin("nocturne", false);
-    prefs.putBool("carousel", settings.carouselEnabled);
-    prefs.end();
-    return true;
-  } else if (item == 1) { // FLIP
-    settings.displayInverted = !settings.displayInverted;
-    display.setScreenFlipped(settings.displayInverted);
-    Preferences prefs;
-    prefs.begin("nocturne", false);
-    prefs.putBool("inverted", settings.displayInverted);
-    prefs.end();
-    return true;
-  } else if (item == 2) { // GLITCH
-    settings.glitchEnabled = !settings.glitchEnabled;
-    Preferences prefs;
-    prefs.begin("nocturne", false);
-    prefs.putBool("glitch", settings.glitchEnabled);
-    prefs.end();
+/** Execute action for (category, item). Called when menuLevel==1 and user
+ * Long-press. */
+static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
+  if (cat == 0) {
+    // Config: toggle
+    if (item == 0) {
+      settings.carouselEnabled = !settings.carouselEnabled;
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putBool("carousel", settings.carouselEnabled);
+      prefs.end();
+    } else if (item == 1) {
+      settings.displayInverted = !settings.displayInverted;
+      display.setScreenFlipped(settings.displayInverted);
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putBool("inverted", settings.displayInverted);
+      prefs.end();
+    } else if (item == 2) {
+      settings.glitchEnabled = !settings.glitchEnabled;
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putBool("glitch", settings.glitchEnabled);
+      prefs.end();
+    }
     return true;
   }
-  // WiFi режимы (3-5)
-  else if (item == 3) { // WiFi SCAN
-    quickMenuOpen = false;
-    if (!switchToMode(MODE_RADAR)) {
-      Serial.println("[MENU] Failed to switch to RADAR");
-      return false;
-    }
-  } else if (item == 4) { // WiFi DEAUTH
-    quickMenuOpen = false;
-    wifiScanSelected = 0;
-    wifiListPage = 0;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_WIFI_DEAUTH)) {
-      Serial.println("[MENU] Failed to switch to DEAUTH");
-      return false;
-    }
-    kickManager.setTargetFromScan(0);
-  } else if (item == 5) { // WiFi PORTAL
+  if (cat == 1) {
     quickMenuOpen = false;
     rebootConfirmed = false;
-    if (!switchToMode(MODE_WIFI_TRAP)) {
-      Serial.println("[MENU] Failed to switch to TRAP");
-      return false;
+    if (item == 0) {
+      if (!switchToMode(MODE_RADAR)) {
+        Serial.println("[MENU] RADAR failed");
+        return false;
+      }
+    } else if (item == 1) {
+      wifiScanSelected = 0;
+      wifiListPage = 0;
+      if (!switchToMode(MODE_WIFI_DEAUTH)) {
+        Serial.println("[MENU] DEAUTH failed");
+        return false;
+      }
+      kickManager.setTargetFromScan(0);
+    } else if (item == 2) {
+      if (!switchToMode(MODE_WIFI_TRAP)) {
+        Serial.println("[MENU] TRAP failed");
+        return false;
+      }
     }
-  }
-  // LoRa режимы (6-8)
-  else if (item == 6) { // LoRa MESH
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_LORA)) {
-      Serial.println("[MENU] Failed to switch to MESH");
-      return false;
-    }
-  } else if (item == 7) { // LoRa JAM
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_LORA_JAM)) {
-      Serial.println("[MENU] Failed to switch to JAM");
-      return false;
-    }
-  } else if (item == 8) { // LoRa SENSE
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_LORA_SENSE)) {
-      Serial.println("[MENU] Failed to switch to SENSE");
-      return false;
-    }
-  }
-  // Прочие режимы (9-12)
-  else if (item == 9) { // BLE SPAM
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_BLE_SPAM)) {
-      Serial.println("[MENU] Failed to switch to BLE_SPAM");
-      return false;
-    }
-  } else if (item == 10) { // USB HID
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_BADWOLF)) {
-      Serial.println("[MENU] Failed to switch to BADWOLF");
-      return false;
-    }
-  } else if (item == 11) { // VAULT
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_VAULT)) {
-      Serial.println("[MENU] Failed to switch to VAULT");
-      return false;
-    }
-  } else if (item == 12) { // DAEMON
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (!switchToMode(MODE_DAEMON)) {
-      Serial.println("[MENU] Failed to switch to DAEMON");
-      return false;
-    }
-  } else if (item == 13) { // REBOOT
-    if (!rebootConfirmed) {
-      rebootConfirmed = true;
-      rebootConfirmTime = now;
-    } else {
-      rebootConfirmed = false;
-      esp_restart();
-    }
-  } else if (item == 14) { // EXIT
-    quickMenuOpen = false;
     return true;
+  }
+  if (cat == 2) {
+    quickMenuOpen = false;
+    rebootConfirmed = false;
+    if (item == 0) {
+      if (!switchToMode(MODE_BLE_SPAM)) {
+        Serial.println("[MENU] BLE failed");
+        return false;
+      }
+    } else if (item == 1) {
+      if (!switchToMode(MODE_BADWOLF)) {
+        Serial.println("[MENU] USB failed");
+        return false;
+      }
+    } else if (item == 2) {
+      if (!switchToMode(MODE_VAULT)) {
+        Serial.println("[MENU] VAULT failed");
+        return false;
+      }
+    } else if (item == 3) {
+      if (!switchToMode(MODE_DAEMON)) {
+        Serial.println("[MENU] DAEMON failed");
+        return false;
+      }
+    }
+    return true;
+  }
+  if (cat == 3) {
+    if (item == 0) { // REBOOT
+      if (!rebootConfirmed) {
+        rebootConfirmed = true;
+        rebootConfirmTime = now;
+      } else {
+        rebootConfirmed = false;
+        esp_restart();
+      }
+      return true;
+    }
+    if (item == 1) { // EXIT
+      quickMenuOpen = false;
+      return true;
+    }
   }
   return false;
 }
@@ -995,8 +932,10 @@ void loop() {
       quickMenuOpen = !quickMenuOpen;
       if (quickMenuOpen) {
         menuState = MENU_MAIN;
+        menuLevel = 0;
+        menuCategory = 0;
         quickMenuItem = 0;
-        rebootConfirmed = false; // Сброс подтверждения при открытии меню
+        rebootConfirmed = false;
       } else {
         rebootConfirmed = false; // Сброс подтверждения при закрытии меню
       }
@@ -1106,22 +1045,40 @@ void loop() {
       event = EV_NONE; // Игнорируем событие, если прошло слишком мало времени
     }
 
-    // --- MENU LOGIC (FLAT STRUCTURE) ---
-    if (event == EV_SHORT) {
+    // --- MENU LOGIC (Flipper-style: level 0 = categories, level 1 = submenu)
+    // ---
+    if (event == EV_DOUBLE) {
       lastMenuEventTime = now;
-      // SCROLL DOWN - только по главному меню
-      int oldItem = quickMenuItem;
-      quickMenuItem = (quickMenuItem + 1) % WOLF_MENU_ITEMS;
-      // Сброс подтверждения при прокрутке от REBOOT
-      if (oldItem == 13 && quickMenuItem != 13) {
+      if (menuLevel == 1) {
+        menuLevel = 0;
+        quickMenuItem = menuCategory;
+        rebootConfirmed = false;
+      } else {
+        quickMenuOpen = false;
         rebootConfirmed = false;
       }
       needRedraw = true;
-    } else if (event == EV_LONG) { // SELECT / ENTER
+    } else if (event == EV_SHORT) {
       lastMenuEventTime = now;
-      bool actionHandled = handleMainMenuAction(quickMenuItem, now);
-      if (actionHandled) {
-        needRedraw = true;
+      if (menuLevel == 0) {
+        quickMenuItem = (quickMenuItem + 1) % MENU_CATEGORIES;
+      } else {
+        int count = submenuCount(menuCategory);
+        quickMenuItem = (quickMenuItem + 1) % count;
+        if (menuCategory == 3 && quickMenuItem != 0)
+          rebootConfirmed = false;
+      }
+      needRedraw = true;
+    } else if (event == EV_LONG) {
+      lastMenuEventTime = now;
+      if (menuLevel == 0) {
+        menuLevel = 1;
+        menuCategory = quickMenuItem;
+        quickMenuItem = 0;
+      } else {
+        bool ok = handleMenuActionByCategory(menuCategory, quickMenuItem, now);
+        if (ok)
+          needRedraw = true;
       }
     }
   } else {
@@ -1201,19 +1158,6 @@ void loop() {
         needRedraw = true;
       }
       break;
-    case MODE_LORA:
-      if (event == EV_SHORT) {
-        loraManager.clearBuffer();
-        needRedraw = true;
-      } else if (event == EV_LONG) {
-        loraManager.replayLast();
-        needRedraw = true;
-      } else if (event == EV_DOUBLE) {
-        // Двойное нажатие для переключения частотного слота
-        loraManager.switchFreqSlot();
-        needRedraw = true;
-      }
-      break;
     case MODE_VAULT:
       if (event == EV_SHORT) {
         int n = vaultManager.getAccountCount();
@@ -1274,7 +1218,7 @@ void loop() {
     sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
                                  state.batteryVoltage);
     sceneManager.drawMenu(
-        (int)menuState, quickMenuItem, 0, settings.carouselEnabled,
+        menuLevel, menuCategory, quickMenuItem, settings.carouselEnabled,
         settings.carouselIntervalSec, settings.displayInverted,
         settings.glitchEnabled, rebootConfirmed);
   } else {
@@ -1405,24 +1349,6 @@ void loop() {
       sceneManager.drawKickMode(kickManager);
       break;
     }
-    case MODE_LORA:
-      if (loraManager.isReceiving()) {
-        loraManager.tick();
-      }
-      display.drawGlobalHeader("SIGINT", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
-      sceneManager.drawLoraSniffer(loraManager);
-      break;
-    case MODE_LORA_JAM:
-      if (loraManager.isJamming()) {
-        loraManager.tick();
-      }
-      display.drawGlobalHeader("JAM", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
-      sceneManager.drawSilenceMode(loraManager.getJamPower());
-      break;
     case MODE_BLE_SPAM: {
       static int lastPhantomPayloadIndex = -1;
       if (bleManager.isActive()) {
@@ -1469,15 +1395,6 @@ void loop() {
           vaultManager.getCountdownSeconds());
       break;
     }
-    case MODE_LORA_SENSE:
-      if (loraManager.isSensing()) {
-        loraManager.tick();
-      }
-      display.drawGlobalHeader("SENSE", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
-      sceneManager.drawGhostsMode(loraManager);
-      break;
     default:
       display.drawGlobalHeader("HUB", nullptr, 0, false);
       sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
