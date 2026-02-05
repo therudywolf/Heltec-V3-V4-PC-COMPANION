@@ -982,7 +982,7 @@ void loop() {
     netManager.print(screenMsg);
     netManager.setLastSentScreen(currentScene);
   }
-  if (now - lastFanAnim >= 100) {
+  if (now - lastFanAnim >= 50) {
     fanAnimFrame = (fanAnimFrame + 1) % 12;
     lastFanAnim = now;
   }
