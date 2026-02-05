@@ -70,7 +70,7 @@ struct InputSystem {
       if (duration > 50 && duration < 500) {
         clickCount++;
         releaseTime = now;
-        if (clickCount >= 2) {
+        if (clickCount >= 4) {
           clickCount = 0;
           return EV_DOUBLE;
         }
@@ -80,10 +80,11 @@ struct InputSystem {
       }
     }
 
-    const unsigned long doubleTapWindowMs = 500;
-    if (clickCount > 0 && !btnState &&
-        (now - releaseTime > doubleTapWindowMs)) {
+    const unsigned long multiTapWindowMs = 700;
+    if (clickCount > 0 && !btnState && (now - releaseTime > multiTapWindowMs)) {
       if (clickCount == 1)
+        event = EV_SHORT;
+      else if (clickCount >= 2 && clickCount < 4)
         event = EV_SHORT;
       clickCount = 0;
     }
