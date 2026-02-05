@@ -1280,11 +1280,15 @@ void loop() {
   } else {
     switch (currentMode) {
     case MODE_NORMAL: {
+      /* Idle = no WiFi or no server (linking). After 10s show wolf screensaver.
+       * Do NOT use isSearchMode() here: searchMode_ is true when WiFi is down
+       * or when linking, which are exactly the states we want screensaver for.
+       */
       bool idleState =
           !netManager.isWifiConnected() || !netManager.isTcpConnected();
-      if (netManager.isSearchMode() ||
-          (signalLost && netManager.isTcpConnected()))
-        idleState = false;
+      if (signalLost && netManager.isTcpConnected())
+        idleState =
+            false; /* TCP up but no data → show SEARCH, not screensaver */
       if (!idleState) {
         idleStateEnteredMs = 0;
       }
