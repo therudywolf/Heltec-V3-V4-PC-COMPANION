@@ -5,14 +5,16 @@
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
 
-/* V4 Pinout: OLED SDA=17, SCL=18, RST=21; LED=25 (White, do NOT use GPIO 35);
- * BUTTON=0 */
+/* V4 Pinout: OLED SDA=17, SCL=18; Vext=21 powers OLED; RST=18. LED=25; BUTTON=0
+ * Do NOT drive Vext HIGH — HIGH cuts power to OLED. RST uses LOW→HIGH for
+ * reset. */
 #define NOCT_SDA_PIN 17
 #define NOCT_SCL_PIN 18
-#define NOCT_RST_PIN 21
-/* Heltec V4: Vext often GPIO 21 (if screen black but code runs, use 21). LOW =
- * screen powered, HIGH = off. MUST stay LOW. */
-#define NOCT_VEXT_PIN 21
+#define NOCT_OLED_RST 18 /* OLED reset pin (V4: often 18) */
+#define NOCT_RST_PIN                                                           \
+  18 /* Alias for DisplayEngine; keep same as NOCT_OLED_RST */
+#define NOCT_VEXT_PIN                                                          \
+  21 /* Vext: LOW = OLED powered, HIGH = off. MUST stay LOW. */
 #define NOCT_LED_ALERT_PIN                                                     \
   35 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
