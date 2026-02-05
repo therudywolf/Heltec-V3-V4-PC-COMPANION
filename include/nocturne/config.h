@@ -113,7 +113,7 @@
 #define NOCT_GLITCH_INTERVAL_MS 10000 /* Glitch once every 10s, subtle */
 #define NOCT_GLITCH_DURATION_MS 100
 /* GUI redraw interval (ms). 40 = ~25 FPS, max smoothness. */
-#define NOCT_REDRAW_INTERVAL_MS 40
+#define NOCT_REDRAW_INTERVAL_MS 17 /* ~60 FPS, test */
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
 
