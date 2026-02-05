@@ -70,6 +70,7 @@ struct InputSystem {
       if (duration > 50 && duration < 500) {
         clickCount++;
         releaseTime = now;
+        // Do NOT return here for 2 clicks — wait for multi-tap window to expire
         if (clickCount >= 4) {
           clickCount = 0;
           return EV_DOUBLE;
@@ -84,8 +85,8 @@ struct InputSystem {
     if (clickCount > 0 && !btnState && (now - releaseTime > multiTapWindowMs)) {
       if (clickCount == 1)
         event = EV_SHORT;
-      else if (clickCount >= 2 && clickCount < 4)
-        event = EV_SHORT;
+      else if (clickCount >= 2)
+        event = EV_DOUBLE; // Double-click = 2 (or more) short presses in window
       clickCount = 0;
     }
     return event;
@@ -941,6 +942,8 @@ void loop() {
         menuCategory = 0;
         quickMenuItem = 0;
         rebootConfirmed = false;
+        lastMenuEventTime =
+            now; // So menu block won't treat this EV_DOUBLE as "close"
       } else {
         rebootConfirmed = false;
       }
@@ -1205,7 +1208,9 @@ void loop() {
     return;
   }
 
-  if (!needRedraw && !guiTimer.check(now)) {
+  // Always render when menu is open so it is never overwritten by a skipped
+  // frame
+  if (!needRedraw && !guiTimer.check(now) && !quickMenuOpen) {
     // Минимальная задержка только при необходимости
     if (now - lastYield > 10) {
       yield();
