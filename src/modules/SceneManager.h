@@ -47,6 +47,10 @@ public:
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
+  /** Idle screensaver: animated wolf + cyberpunk/Blade Runner glitch. Shown
+   * after NOCT_IDLE_SCREENSAVER_MS in no-WiFi or linking state. */
+  void drawIdleScreensaver(unsigned long now);
+
   /** Cyberdeck: Daemon mode (Wolf Soul). */
   void drawDaemon(unsigned long bootTime = 0, bool wifiConnected = false,
                   bool tcpConnected = false, int rssi = 0);
