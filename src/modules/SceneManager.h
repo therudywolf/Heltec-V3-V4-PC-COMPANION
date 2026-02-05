@@ -59,8 +59,11 @@ public:
 
   /** Battery HUD: icon + percent (or CHG when charging) in header, right of
    * WOOF!. pct: 0-100, isCharging: true if charging, batteryVoltage: voltage in
-   * V (for detecting disconnected battery). */
-  void drawPowerStatus(int pct, bool isCharging, float batteryVoltage = 0.0f);
+   * V (for detecting disconnected battery). onWhiteHeader: true when drawn on
+   * the white header bar (use black ink); false for dark background (use
+   * white). */
+  void drawPowerStatus(int pct, bool isCharging, float batteryVoltage = 0.0f,
+                       bool onWhiteHeader = true);
 
   /** BLE Phantom Spammer UI: status bar, pulsing BT icon, packet count. */
   void drawBleSpammer(int packetCount);
