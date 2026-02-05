@@ -1323,9 +1323,7 @@ void loop() {
       break;
     }
     case MODE_DAEMON:
-      // Полноэкранный режим без хедера
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
+      // Полноэкранный режим без хедера; батарея не рисуем
       sceneManager.drawDaemon(bootTime, netManager.isWifiConnected(),
                               netManager.isTcpConnected(), netManager.rssi());
       break;
