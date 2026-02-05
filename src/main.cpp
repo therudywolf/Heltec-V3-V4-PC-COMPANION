@@ -156,6 +156,7 @@ bool inTransition = false;
 
 unsigned long lastCarousel = 0;
 unsigned long lastFanAnim = 0;
+static unsigned long idleStateEnteredMs = 0; /* For 10s -> wolf screensaver */
 int fanAnimFrame = 0;
 bool blinkState = false;
 int alertBlinkCounter = 0;
@@ -1279,16 +1280,40 @@ void loop() {
   } else {
     switch (currentMode) {
     case MODE_NORMAL: {
+      bool idleState =
+          !netManager.isWifiConnected() || !netManager.isTcpConnected();
+      if (netManager.isSearchMode() || signalLost)
+        idleState = false;
+      if (!idleState) {
+        idleStateEnteredMs = 0;
+      }
+      if (idleState && idleStateEnteredMs == 0) {
+        idleStateEnteredMs = now;
+      }
+      bool showScreensaver =
+          idleState && idleStateEnteredMs != 0 &&
+          (now - idleStateEnteredMs >= (unsigned long)NOCT_IDLE_SCREENSAVER_MS);
+
       if (!netManager.isWifiConnected()) {
-        display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
-        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                     state.batteryVoltage);
-        sceneManager.drawNoSignal(false, false, 0, blinkState);
+        if (showScreensaver) {
+          sceneManager.drawIdleScreensaver(now);
+          display.applyGlitch(); /* Always light glitch on screensaver */
+        } else {
+          display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
+          sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
+                                       state.batteryVoltage);
+          sceneManager.drawNoSignal(false, false, 0, blinkState);
+        }
       } else if (!netManager.isTcpConnected()) {
-        display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
-        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                     state.batteryVoltage);
-        sceneManager.drawConnecting(netManager.rssi(), blinkState);
+        if (showScreensaver) {
+          sceneManager.drawIdleScreensaver(now);
+          display.applyGlitch(); /* Always light glitch on screensaver */
+        } else {
+          display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
+          sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
+                                       state.batteryVoltage);
+          sceneManager.drawConnecting(netManager.rssi(), blinkState);
+        }
       } else if (netManager.isSearchMode() || signalLost) {
         display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
                                  netManager.isWifiConnected());
