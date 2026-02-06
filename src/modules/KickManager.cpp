@@ -54,7 +54,8 @@ void KickManager::setTargetFromScan(int scanIndex) {
   }
   targetEncryption_ = WiFi.encryptionType(scanIndex);
   targetSet_ = true;
-  targetIsOwnAP_ = false; /* Own-AP protection disabled by user request */
+  targetIsOwnAP_ =
+      false; /* Атака на свою сеть разрешена по запросу пользователя */
 }
 
 bool KickManager::startAttack() {
