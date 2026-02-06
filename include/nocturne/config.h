@@ -52,7 +52,7 @@
 /* Right edge of WOOF!/NET:-- status text; battery HUD sits to the right */
 #define NOCT_HEADER_STATUS_RIGHT_ANCHOR 76
 #define NOCT_CONTENT_START                                                     \
-  17 /* Breathing room below header (physical bezel)                           \
+  14 /* Content start just below header (NOCT_HEADER_H 14); was 17 (-3px)      \
       */
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
 #define NOCT_FOOTER_H 14
