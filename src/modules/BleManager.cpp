@@ -8,15 +8,15 @@
 #include <WiFi.h>
 #if __has_include("NimBLEDevice.h")
 #include "NimBLEDevice.h"
+#include <esp_bt.h>
 #include <string>
 #include <vector>
 
-// Apple AirPods — полный формат manufacturer data (31 байт, 0x004C)
-// Формат: 0x1e (length), 0xff (AD type), 0x4c 0x00 (Apple ID), затем данные
-// устройства Byte 7 определяет модель: 0x02=Gen1, 0x0e=Pro, 0x14=Pro Gen2
+// Apple AirPods — manufacturer data: company ID 0x004C (LE) + 27 bytes payload.
+// Byte 5 = model: 0x02=Gen1, 0x0e=Pro, 0x14=Pro Gen2 (Evil Apple Juice style).
 static const uint8_t kPayloadApple[] = {
-    0x1e, 0xff, 0x4c, 0x00, 0x07, 0x19, 0x07, 0x02, 0x20, 0x75, 0xaa,
-    0x30, 0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00,
+    0x4c, 0x00, 0x07, 0x19, 0x07, 0x02, 0x20, 0x75, 0xaa, 0x30,
+    0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 static const size_t kPayloadAppleLen = sizeof(kPayloadApple);
 
@@ -135,6 +135,8 @@ void BleManager::begin() {
     }
   }
 
+  delay(100);
+
 #if __has_include("NimBLEDevice.h")
   if (active_) {
     Serial.println("[PHANTOM] BLE already active");
@@ -152,6 +154,13 @@ void BleManager::begin() {
     active_ = false;
     return;
   }
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3) ||                                      \
+    defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32C2)
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P21);
+#else
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
+#endif
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   if (pAdvertising == nullptr) {
