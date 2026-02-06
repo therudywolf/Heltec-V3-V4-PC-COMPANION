@@ -106,6 +106,8 @@ static void phaseLoadingBar(DisplayEngine &display, unsigned long &phaseStart) {
 }
 
 void drawBootSequence(DisplayEngine &display) {
+  display.u8g2().setFlipMode(1);
+
   unsigned long phaseStart = millis();
   const unsigned long phase1Ms = 2200;
   const unsigned long phase2Ms = 1800;
@@ -127,4 +129,6 @@ void drawBootSequence(DisplayEngine &display) {
     phaseLoadingBar(display, phaseStart);
     delay(60);
   }
+
+  display.u8g2().setFlipMode(0);
 }

