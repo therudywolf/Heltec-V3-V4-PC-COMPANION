@@ -92,14 +92,14 @@ void BeaconManager::buildBeacon(const char *ssid, uint8_t channel) {
   beaconLen_ = p - beaconBuf_;
 }
 
-const char **BeaconManager::getCurrentSSIDList() const {
+const char *const *BeaconManager::getCurrentSSIDList() const {
   switch (mode_) {
   case BEACON_MODE_RICK_ROLL:
     return rickRollList_;
   case BEACON_MODE_FUNNY:
     return funnyList_;
   case BEACON_MODE_CUSTOM_LIST:
-    return (const char **)customSSIDs_;
+    return (const char *const *)customSSIDs_;
   default:
     return ssidList_;
   }
@@ -119,7 +119,7 @@ int BeaconManager::getCurrentListSize() const {
 }
 
 const char *BeaconManager::getCurrentSSID() const {
-  const char **list = getCurrentSSIDList();
+  const char *const *list = getCurrentSSIDList();
   int listSize = getCurrentListSize();
   if (listSize == 0)
     return "";
@@ -156,7 +156,7 @@ void BeaconManager::addCustomSSID(const char *ssid) {
 void BeaconManager::sendBeacon() {
   if (WiFi.getMode() == WIFI_OFF || beaconLen_ < 36)
     return;
-  const char **list = getCurrentSSIDList();
+  const char *const *list = getCurrentSSIDList();
   int listSize = getCurrentListSize();
   if (listSize == 0)
     return;

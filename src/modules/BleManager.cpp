@@ -560,7 +560,7 @@ void BleManager::setAttackPayload(BleAttackType attackType) {
     NimBLEUUID serviceUUID((uint16_t)0xFE2C);
     std::string serviceData((char *)googlePayload + 4, 10);
     advData.setServiceData(serviceUUID, serviceData);
-    advData.setTxPower((int8_t)googlePayload[13]);
+    advData.addTxPower((int8_t)googlePayload[13]);
     Serial.println("[BLE] SwiftPair Google payload set");
   } break;
 
