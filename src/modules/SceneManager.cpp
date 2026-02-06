@@ -1032,10 +1032,18 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       // Network Scans
       strncpy(items[12], "ARP SCAN", sizeof(items[12]) - 1);
       strncpy(items[13], "PORT SCAN", sizeof(items[13]) - 1);
+      strncpy(items[14], "PING SCAN", sizeof(items[14]) - 1);
+      strncpy(items[15], "DNS SCAN", sizeof(items[15]) - 1);
+      strncpy(items[16], "HTTP SCAN", sizeof(items[16]) - 1);
+      strncpy(items[17], "HTTPS SCAN", sizeof(items[17]) - 1);
+      strncpy(items[18], "SMTP SCAN", sizeof(items[18]) - 1);
+      strncpy(items[19], "RDP SCAN", sizeof(items[19]) - 1);
+      strncpy(items[20], "TELNET SCAN", sizeof(items[20]) - 1);
+      strncpy(items[21], "SSH SCAN", sizeof(items[21]) - 1);
       // Tools
-      strncpy(items[14], "USB HID", sizeof(items[14]) - 1);
+      strncpy(items[22], "USB HID", sizeof(items[22]) - 1);
       // Removed: VAULT, FAKE LOGIN, QR, DAEMON (moved to submenu or removed)
-      for (int i = 0; i < 15; i++)
+      for (int i = 0; i < 23; i++)
         items[i][sizeof(items[0]) - 1] = '\0';
     } else {
       if (rebootConfirmed)

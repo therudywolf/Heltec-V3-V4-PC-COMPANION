@@ -10,12 +10,22 @@
 #define WIFISNIFF_SSID_LEN 33
 #define WIFISNIFF_MAC_LEN 18
 #define WIFISNIFF_STATION_MAX 32
+#define WIFISNIFF_PROBE_MAX 32
 
 enum SniffMode {
   SNIFF_MODE_AP = 0,
   SNIFF_MODE_PACKET_MONITOR,
   SNIFF_MODE_EAPOL_CAPTURE,
-  SNIFF_MODE_STATION_SCAN
+  SNIFF_MODE_STATION_SCAN,
+  SNIFF_MODE_PROBE_SCAN,       // Probe request scanning
+  SNIFF_MODE_CHANNEL_ANALYZER, // Channel analyzer with graph
+  SNIFF_MODE_CHANNEL_ACTIVITY, // Channel activity summary
+  SNIFF_MODE_PACKET_RATE,      // Packet rate monitoring
+  SNIFF_MODE_PINESCAN,         // Pineapple detection
+  SNIFF_MODE_MULTISSID,        // MultiSSID detection
+  SNIFF_MODE_SIGNAL_STRENGTH,  // Signal strength scan
+  SNIFF_MODE_RAW_CAPTURE,      // Raw packet capture
+  SNIFF_MODE_AP_STA            // AP + Station combined scan
 };
 
 struct WifiSniffAp {
@@ -34,6 +44,16 @@ struct WifiStation {
   char apBSSIDStr[WIFISNIFF_MAC_LEN];
   int8_t rssi;
   uint32_t lastSeen;
+};
+
+struct ProbeRequest {
+  uint8_t mac[6];
+  char macStr[WIFISNIFF_MAC_LEN];
+  char ssid[WIFISNIFF_SSID_LEN];
+  int8_t rssi;
+  uint8_t channel;
+  uint32_t lastSeen;
+  uint32_t count; // How many times this probe was seen
 };
 
 struct PacketStats {
@@ -73,15 +93,27 @@ public:
   int getStationCount() const { return stationCount_; }
   const WifiStation *getStation(int index) const;
 
+  // Probe Scan
+  int getProbeCount() const { return probeCount_; }
+  const ProbeRequest *getProbe(int index) const;
+
+  // Channel Analyzer (for graph)
+  void getChannelActivity(uint32_t *channels, int maxChannels) const;
+
+  // Packet Rate
+  uint32_t getPacketsPerSecond() const;
+
   int getPacketCount() const { return packetCount_; }
 
 private:
   static void promiscuousCb(void *buf, wifi_promiscuous_pkt_type_t type);
   void processBeaconFrame(uint8_t *payload, size_t len, int8_t rssi);
+  void processProbeRequestFrame(uint8_t *payload, size_t len, int8_t rssi);
   void processDataFrame(uint8_t *payload, size_t len, int8_t rssi);
   void processEapolFrame(uint8_t *payload, size_t len);
   int findApByBSSID(uint8_t *bssid);
   int findStationByMAC(uint8_t *mac);
+  int findProbeByMAC(uint8_t *mac);
 
   bool active_ = false;
   SniffMode mode_ = SNIFF_MODE_AP;
@@ -89,9 +121,15 @@ private:
   int apCount_ = 0;
   WifiStation stations_[WIFISNIFF_STATION_MAX];
   int stationCount_ = 0;
+  ProbeRequest probes_[WIFISNIFF_PROBE_MAX];
+  int probeCount_ = 0;
   int packetCount_ = 0;
   int eapolCount_ = 0;
   PacketStats stats_;
+  uint32_t channelActivity_[14]; // Channels 1-14
+  uint32_t packetsPerSecond_ = 0;
+  uint32_t lastPacketRateCalc_ = 0;
+  uint32_t packetCountAtLastCalc_ = 0;
   unsigned long lastSortMs_ = 0;
   unsigned long lastStatsReset_ = 0;
 };

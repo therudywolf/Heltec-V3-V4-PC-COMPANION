@@ -27,8 +27,17 @@ void WifiSniffManager::promiscuousCb(void *buf,
   uint8_t frameType = (fc0 & 0x0C) >> 2;
   uint8_t frameSubtype = (fc0 & 0xF0) >> 4;
 
+  // Get current channel from packet
+  uint8_t currentChannel = pkt->rx_ctrl.channel;
+  if (currentChannel >= 1 && currentChannel <= 14) {
+    s_instance->channelActivity_[currentChannel - 1]++;
+  }
+
   // Packet Monitor: count all frame types
-  if (s_instance->mode_ == SNIFF_MODE_PACKET_MONITOR) {
+  if (s_instance->mode_ == SNIFF_MODE_PACKET_MONITOR ||
+      s_instance->mode_ == SNIFF_MODE_CHANNEL_ANALYZER ||
+      s_instance->mode_ == SNIFF_MODE_CHANNEL_ACTIVITY ||
+      s_instance->mode_ == SNIFF_MODE_PACKET_RATE) {
     if (frameType == 0) {
       s_instance->stats_.mgmtFrames++;
       if (frameSubtype == 8) {
@@ -45,10 +54,25 @@ void WifiSniffManager::promiscuousCb(void *buf,
       s_instance->stats_.maxRssi = rssi;
   }
 
+  // Calculate packet rate for Packet Rate mode
+  if (s_instance->mode_ == SNIFF_MODE_PACKET_RATE) {
+    unsigned long now = millis();
+    if (now - s_instance->lastPacketRateCalc_ >= 1000) {
+      uint32_t packetsDelta =
+          s_instance->packetCount_ - s_instance->packetCountAtLastCalc_;
+      s_instance->packetsPerSecond_ = packetsDelta;
+      s_instance->packetCountAtLastCalc_ = s_instance->packetCount_;
+      s_instance->lastPacketRateCalc_ = now;
+    }
+  }
+
   // Process management frames (beacons, probes, etc.)
   if (frameType == 0) {
     if (frameSubtype == 8) { // Beacon
       s_instance->processBeaconFrame(payload, len, rssi);
+    } else if (frameSubtype == 4 &&
+               s_instance->mode_ == SNIFF_MODE_PROBE_SCAN) { // Probe Request
+      s_instance->processProbeRequestFrame(payload, len, rssi);
     }
   }
 
@@ -169,6 +193,63 @@ void WifiSniffManager::processDataFrame(uint8_t *payload, size_t len,
   }
 }
 
+void WifiSniffManager::processProbeRequestFrame(uint8_t *payload, size_t len,
+                                                int8_t rssi) {
+  if (len < 24)
+    return;
+  // Probe Request: SA (offset 10) is the client MAC
+  uint8_t *clientMAC = payload + 10;
+  uint8_t channel = 0;
+  char ssid[WIFISNIFF_SSID_LEN];
+  ssid[0] = '\0';
+
+  // Extract SSID from tagged parameters (starts at offset 24)
+  if (len > 24) {
+    uint8_t *body = payload + 24;
+    size_t pos = 0;
+    while (pos + 2 <= len - 24) {
+      uint8_t tagId = body[pos];
+      uint8_t tagLen = body[pos + 1];
+      pos += 2;
+      if (pos + tagLen > len - 24)
+        break;
+      if (tagId == 0 && tagLen > 0 && tagLen < WIFISNIFF_SSID_LEN) {
+        memcpy(ssid, body + pos, tagLen);
+        ssid[tagLen] = '\0';
+      }
+      pos += tagLen;
+    }
+  }
+
+  // Find or add probe request
+  int probeIdx = findProbeByMAC(clientMAC);
+  if (probeIdx >= 0) {
+    // Update existing probe
+    probes_[probeIdx].rssi = rssi;
+    probes_[probeIdx].lastSeen = millis();
+    probes_[probeIdx].count++;
+    if (ssid[0] && strcmp(probes_[probeIdx].ssid, ssid) != 0) {
+      // SSID changed, update it
+      strncpy(probes_[probeIdx].ssid, ssid, WIFISNIFF_SSID_LEN - 1);
+      probes_[probeIdx].ssid[WIFISNIFF_SSID_LEN - 1] = '\0';
+    }
+  } else if (probeCount_ < WIFISNIFF_PROBE_MAX - 1) {
+    // Add new probe request
+    memcpy(probes_[probeCount_].mac, clientMAC, 6);
+    snprintf(probes_[probeCount_].macStr, WIFISNIFF_MAC_LEN,
+             "%02X:%02X:%02X:%02X:%02X:%02X", clientMAC[0], clientMAC[1],
+             clientMAC[2], clientMAC[3], clientMAC[4], clientMAC[5]);
+    strncpy(probes_[probeCount_].ssid, ssid[0] ? ssid : "(broadcast)",
+            WIFISNIFF_SSID_LEN - 1);
+    probes_[probeCount_].ssid[WIFISNIFF_SSID_LEN - 1] = '\0';
+    probes_[probeCount_].rssi = rssi;
+    probes_[probeCount_].channel = channel;
+    probes_[probeCount_].lastSeen = millis();
+    probes_[probeCount_].count = 1;
+    probeCount_++;
+  }
+}
+
 void WifiSniffManager::processEapolFrame(uint8_t *payload, size_t len) {
   eapolCount_++;
   // Check if EAPOL is from/to a known AP
@@ -191,10 +272,16 @@ void WifiSniffManager::processEapolFrame(uint8_t *payload, size_t len) {
 WifiSniffManager::WifiSniffManager() {
   memset(apList_, 0, sizeof(apList_));
   memset(stations_, 0, sizeof(stations_));
+  memset(probes_, 0, sizeof(probes_));
+  memset(channelActivity_, 0, sizeof(channelActivity_));
   memset(&stats_, 0, sizeof(stats_));
   stats_.minRssi = 0;
   stats_.maxRssi = -128;
   mode_ = SNIFF_MODE_AP;
+  probeCount_ = 0;
+  packetsPerSecond_ = 0;
+  lastPacketRateCalc_ = 0;
+  packetCountAtLastCalc_ = 0;
 }
 
 void WifiSniffManager::begin() { begin(SNIFF_MODE_AP); }
@@ -206,12 +293,17 @@ void WifiSniffManager::begin(SniffMode mode) {
   mode_ = mode;
   apCount_ = 0;
   stationCount_ = 0;
+  probeCount_ = 0;
   packetCount_ = 0;
   eapolCount_ = 0;
   memset(&stats_, 0, sizeof(stats_));
+  memset(channelActivity_, 0, sizeof(channelActivity_));
   stats_.minRssi = 0;
   stats_.maxRssi = -128;
   lastStatsReset_ = millis();
+  lastPacketRateCalc_ = millis();
+  packetCountAtLastCalc_ = 0;
+  packetsPerSecond_ = 0;
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true);
   delay(50);
@@ -247,9 +339,11 @@ void WifiSniffManager::stop() {
 
 void WifiSniffManager::tick() {
   (void)lastSortMs_;
+  unsigned long now = millis();
+
   // Reset packet stats every 10 seconds for Packet Monitor mode
-  if (mode_ == SNIFF_MODE_PACKET_MONITOR) {
-    unsigned long now = millis();
+  if (mode_ == SNIFF_MODE_PACKET_MONITOR ||
+      mode_ == SNIFF_MODE_CHANNEL_ANALYZER) {
     if (now - lastStatsReset_ > 10000) {
       // Keep max values, reset counters
       stats_.mgmtFrames = 0;
@@ -257,6 +351,14 @@ void WifiSniffManager::tick() {
       stats_.beaconFrames = 0;
       stats_.deauthFrames = 0;
       stats_.eapolFrames = 0;
+      lastStatsReset_ = now;
+    }
+  }
+
+  // Reset channel activity periodically for Channel Activity mode
+  if (mode_ == SNIFF_MODE_CHANNEL_ACTIVITY) {
+    if (now - lastStatsReset_ > 5000) {
+      memset(channelActivity_, 0, sizeof(channelActivity_));
       lastStatsReset_ = now;
     }
   }
@@ -278,6 +380,24 @@ const WifiStation *WifiSniffManager::getStation(int index) const {
   return &stations_[index];
 }
 
+const ProbeRequest *WifiSniffManager::getProbe(int index) const {
+  if (index < 0 || index >= probeCount_)
+    return nullptr;
+  return &probes_[index];
+}
+
+void WifiSniffManager::getChannelActivity(uint32_t *channels,
+                                          int maxChannels) const {
+  int count = maxChannels < 14 ? maxChannels : 14;
+  for (int i = 0; i < count; i++) {
+    channels[i] = channelActivity_[i];
+  }
+}
+
+uint32_t WifiSniffManager::getPacketsPerSecond() const {
+  return packetsPerSecond_;
+}
+
 int WifiSniffManager::findApByBSSID(uint8_t *bssid) {
   for (int i = 0; i < apCount_; i++) {
     if (memcmp(apList_[i].bssid, bssid, 6) == 0)
@@ -289,6 +409,14 @@ int WifiSniffManager::findApByBSSID(uint8_t *bssid) {
 int WifiSniffManager::findStationByMAC(uint8_t *mac) {
   for (int i = 0; i < stationCount_; i++) {
     if (memcmp(stations_[i].mac, mac, 6) == 0)
+      return i;
+  }
+  return -1;
+}
+
+int WifiSniffManager::findProbeByMAC(uint8_t *mac) {
+  for (int i = 0; i < probeCount_; i++) {
+    if (memcmp(probes_[i].mac, mac, 6) == 0)
       return i;
   }
   return -1;
