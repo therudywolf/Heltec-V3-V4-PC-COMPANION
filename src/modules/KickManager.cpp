@@ -54,17 +54,11 @@ void KickManager::setTargetFromScan(int scanIndex) {
   }
   targetEncryption_ = WiFi.encryptionType(scanIndex);
   targetSet_ = true;
-
-  if (WiFi.status() == WL_CONNECTED) {
-    const uint8_t *curBssid = WiFi.BSSID(); // no-arg: current AP (STA)
-    targetIsOwnAP_ = (curBssid && memcmp(curBssid, targetBSSID_, 6) == 0);
-  } else {
-    targetIsOwnAP_ = false;
-  }
+  targetIsOwnAP_ = false; /* Own-AP protection disabled by user request */
 }
 
 bool KickManager::startAttack() {
-  if (!targetSet_ || targetIsOwnAP_)
+  if (!targetSet_)
     return false;
   if (isTargetProtected()) {
     Serial.println("[KICK] WARNING: Target uses WPA3/PMF - attack may fail!");
@@ -136,7 +130,7 @@ void KickManager::sendDeauthBurst() {
 }
 
 void KickManager::tick() {
-  if (!attacking_ || !targetSet_ || targetIsOwnAP_)
+  if (!attacking_ || !targetSet_)
     return;
   unsigned long now = millis();
   if (now - lastBurstMs_ < (unsigned long)DEAUTH_INTERVAL_MS)

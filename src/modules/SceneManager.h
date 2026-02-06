@@ -57,9 +57,12 @@ public:
   /** Cyberdeck: Daemon mode (Wolf Soul). */
   void drawDaemon(unsigned long bootTime = 0, bool wifiConnected = false,
                   bool tcpConnected = false, int rssi = 0);
-  /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security. */
+  /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security.
+   * footerOverride: if non-null, used instead of "LINK: ONLINE" (e.g. DEAUTH).
+   */
   void drawWiFiScanner(int selectedIndex, int pageOffset,
-                       int *sortedIndices = nullptr, int filteredCount = 0);
+                       int *sortedIndices = nullptr, int filteredCount = 0,
+                       const char *footerOverride = nullptr);
 
   /** Battery HUD: icon + percent (or CHG when charging) in header, right of
    * WOOF!. pct: 0-100, isCharging: true if charging, batteryVoltage: voltage in

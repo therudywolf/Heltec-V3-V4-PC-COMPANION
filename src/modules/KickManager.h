@@ -1,7 +1,6 @@
 /*
  * NOCTURNE_OS — KickManager: WiFi deauth (802.11 frame injection).
  * Uses Radar scan list; short = cycle target, long = START/STOP attack.
- * Safety: will not attack the device's current AP.
  */
 #ifndef NOCTURNE_KICK_MANAGER_H
 #define NOCTURNE_KICK_MANAGER_H
@@ -20,7 +19,7 @@ public:
   /** Set target from current scan (index). Call when entering KICK or on short
    * press. */
   void setTargetFromScan(int scanIndex);
-  /** Start/stop injection. Returns false if target is our own AP. */
+  /** Start injection. Returns false if no target set. */
   bool startAttack();
   void stopAttack();
   bool isAttacking() const { return attacking_; }
@@ -29,8 +28,8 @@ public:
   int getPacketCount() const { return packetCount_; }
   void getTargetSSID(char *out, size_t maxLen) const;
   void getTargetBSSIDStr(char *out, size_t maxLen) const;
-  /** True if current target is our connected AP (attack blocked). */
-  bool isTargetOwnAP() const { return targetIsOwnAP_; }
+  /** Reserved (own-AP check disabled). */
+  bool isTargetOwnAP() const { return false; }
   /** Get encryption type of current target. Returns WIFI_AUTH_OPEN if not set.
    */
   wifi_auth_mode_t getTargetEncryption() const { return targetEncryption_; }

