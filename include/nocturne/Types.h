@@ -63,6 +63,8 @@ struct Settings {
   int displayContrast = 128;
   bool displayInverted = false;
   bool glitchEnabled = false;
+  bool lowBrightnessDefault =
+      false; /* NVS "lowBright": start with dim display */
 };
 
 /** Single app state: hardware, weather, media, process, alerts (filled by
