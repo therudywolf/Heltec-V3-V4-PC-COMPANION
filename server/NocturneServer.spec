@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['src\\monitor.py'],
+    ['monitor.py'],
     pathex=[],
     binaries=[],
     datas=[],

@@ -135,7 +135,7 @@
 - подсвечивает проблемную метрику (температура/нагрузка/RAM);
 - рисует толстую рамку по краям экрана (RED ALERT overlay).
 
-Пороги задаются в **`src/monitor.py`** (и при необходимости дублируются в **`include/nocturne/config.h`** для справки):
+Пороги задаются в **`server/monitor.py`** (и при необходимости дублируются в **`include/nocturne/config.h`** для справки):
 
 | Метрика   | Порог                    | Гистерезис (сброс) |
 | --------- | ------------------------ | ------------------ |
@@ -153,7 +153,7 @@
 ### Требования
 
 - **Прошивка:** VS Code + PlatformIO, проект открыт по корню репозитория.
-- **Сервер на ПК:** Python 3.x, зависимости из `requirements.txt`.
+- **Сервер на ПК:** Python 3.x, зависимости из `server/requirements.txt`.
 - **Телеметрия:** [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) — запуск **от имени администратора**, в настройках включён **Remote Web Server** (порт 8085 по умолчанию).
 
 ### Прошивка устройства
@@ -170,37 +170,40 @@
 
 ### Сервер на ПК (монитор)
 
+Всё, что относится к серверу телеметрии, находится в папке **`server/`**.
+
 ```bash
+cd server
 pip install -r requirements.txt
 ```
 
-При необходимости отредактировать `config.json` (хост, порт, `lhm_url`, город для погоды). Запуск:
+При необходимости отредактировать `server/config.json` (хост, порт, `lhm_url`, город для погоды). Запуск:
 
 ```bash
-python src/monitor.py
+cd server
+python monitor.py
 ```
 
 Варианты:
 
 - **С треем (по умолчанию):** иконка в трее, пункты: Add/Remove startup, Restart Server, Close.
-- **Без трея:** `python src/monitor.py --no-tray` или `--console` (логи в консоль).
+- **Без трея:** `python monitor.py --no-tray` или `--console` (логи в консоль).
 
 Логи пишутся в `nocturne.log` в корне проекта (или рядом с exe при сборке в один файл).
 
 ### Сборка exe (Windows)
 
-- Вручную: `pyinstaller --onefile --noconsole --name NocturneServer src/monitor.py`, затем скопировать `config.json` в `dist/`.
-- Или из корня проекта: `build_server.bat` — очистка, установка зависимостей, сборка exe, копирование `config.json` в `dist/`. Запуск: `dist\NocturneServer.exe`.
+Из папки **`server/`**: запустить `build_server.bat` — установка зависимостей, сборка exe, копирование `config.json` в `dist/`. Результат: **`server/dist/NocturneServer.exe`**.
 
 ---
 
 ## Конфигурация
 
-| Файл                            | Назначение                                                                                    |
-| ------------------------------- | --------------------------------------------------------------------------------------------- |
-| **`include/secrets.h`**         | Wi‑Fi SSID/пароль, IP ПК, TCP-порт. Не коммитить.                                             |
-| **`include/nocturne/config.h`** | Пины, размеры экрана, таймауты, пороги алертов (для справки), параметры меню и батареи.       |
-| **`config.json`**               | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city`. Рядом с exe или в корне проекта. |
+| Файл                            | Назначение                                                                                |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| **`include/secrets.h`**         | Wi‑Fi SSID/пароль, IP ПК, TCP-порт. Не коммитить.                                         |
+| **`include/nocturne/config.h`** | Пины, размеры экрана, таймауты, пороги алертов (для справки), параметры меню и батареи.   |
+| **`server/config.json`**        | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city`. Рядом с exe или в `server/`. |
 
 Пример `config.json`:
 
@@ -228,9 +231,14 @@ python src/monitor.py
 │   │   ├── config.h      # Пины, экран, меню, алерты, сцены
 │   │   └── Types.h      # Типы состояния
 │   └── secrets.h.example # Шаблон → копировать в secrets.h
+├── server/              # Сервер телеметрии (ПК)
+│   ├── monitor.py       # TCP-сервер: LHM, погода, медиа, алерты, трей
+│   ├── build_server.bat # Сборка → server/dist/NocturneServer.exe
+│   ├── NocturneServer.spec
+│   ├── requirements.txt
+│   └── config.json
 ├── src/
 │   ├── main.cpp         # Точка входа: WiFi, кнопка, меню, сцены, утилиты
-│   ├── monitor.py       # TCP-сервер: LHM, погода, медиа, алерты, трей
 │   └── modules/
 │       ├── DisplayEngine.*   # Буфер, примитивы, хедер, glitch, RED ALERT
 │       ├── SceneManager.*    # 9 сцен + меню + все утилиты (RADAR, Kick, BLE, …)
@@ -242,11 +250,8 @@ python src/monitor.py
 │       ├── UsbManager.*     # USB HID (BadWolf)
 │       ├── VaultManager.*   # TOTP
 │       └── RollingGraph.*   # Графики (sparkline)
-├── config.json          # Параметры монитора (host, port, lhm_url, weather_city)
+├── tests/               # Unit-тесты (monitor: config, payload)
 ├── platformio.ini       # Сборка ESP32 (env heltec_wifi_lora_32_V4, профиль V3 под железо V4)
-├── requirements.txt    # aiohttp, dotenv, winsdk, pystray, Pillow, psutil, pyinstaller
-├── build_server.bat    # Очистка + pip + PyInstaller → dist/NocturneServer.exe
-├── NocturneServer.spec # Спека PyInstaller
 ├── DataSheets/         # PDF платы
 └── optional/radio/     # LoRa (SX1262) — вынесено, подключается при необходимости
 ```

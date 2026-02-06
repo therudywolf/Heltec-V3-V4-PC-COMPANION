@@ -52,9 +52,10 @@ except ImportError:
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Logging: always to file (nocturne.log); when frozen, next to exe for autostart.
+# Logging: when frozen, next to exe; otherwise in project root (parent of server/).
 # ---------------------------------------------------------------------------
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SERVER_DIR)
 if getattr(sys, "frozen", False):
     _LOG_FILE = os.path.join(os.path.dirname(sys.executable), "nocturne.log")
 else:
@@ -85,11 +86,11 @@ def _get_config_path() -> str:
     if getattr(sys, "frozen", False):
         base = os.path.dirname(sys.executable)
         return os.path.join(base, "config.json")
-    base = os.path.dirname(os.path.abspath(__file__))
-    for candidate in [os.path.join(base, "..", "config.json"), os.path.join(base, "config.json")]:
+    # Prefer config in server/ folder, then project root
+    for candidate in [os.path.join(_SERVER_DIR, "config.json"), os.path.join(_PROJECT_ROOT, "config.json")]:
         if os.path.isfile(candidate):
             return candidate
-    return "config.json"
+    return os.path.join(_SERVER_DIR, "config.json")
 
 CONFIG_PATH = _get_config_path()
 
