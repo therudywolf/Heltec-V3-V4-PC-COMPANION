@@ -42,3 +42,6 @@ nocturne.log
 # Local dev / scratch (do not commit)
 serverpars.txt
 CURSOR_UI_REFACTOR.md
+
+# ESP32 Marauder firmware (reference only, do not commit)
+esp32_marauder/
