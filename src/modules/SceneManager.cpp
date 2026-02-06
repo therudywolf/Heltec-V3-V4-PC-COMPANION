@@ -1429,9 +1429,36 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
 
+  // If footerOverride is provided and no WiFi scan data, show simple status
+  if (footerOverride && filteredCount == 0 && sortedIndices == nullptr) {
+    u8g2.setDrawColor(1);
+    u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+    u8g2.setDrawColor(0);
+    u8g2.setCursor(2, 7);
+    u8g2.print("ACTIVE");
+    u8g2.setDrawColor(1);
+    u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+    u8g2.setCursor(2, 20);
+    char footer[48];
+    strncpy(footer, footerOverride, sizeof(footer) - 1);
+    footer[sizeof(footer) - 1] = '\0';
+    u8g2.print(footer);
+    u8g2.setCursor(2, 30);
+    u8g2.print("2x BACK to exit");
+    u8g2.setCursor(2, 40);
+    u8g2.print("Mode running...");
+    return;
+  }
+
   int n = WiFi.scanComplete();
   bool useFiltered = (sortedIndices != nullptr && filteredCount > 0);
   int displayCount = useFiltered ? filteredCount : n;
+
+  // If no WiFi scan data and no footer, show a default message
+  if (n == 0 && displayCount == 0 && !footerOverride) {
+    disp_.drawCentered(32, "NO DATA");
+    return;
+  }
 
   if (n == -2) {
     disp_.drawCentered(32, "INIT RADAR...");
@@ -1444,9 +1471,15 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     u8g2.drawBox(34, 35, w, 4);
     return;
   }
-  if (displayCount == 0) {
+  if (displayCount == 0 && !footerOverride) {
     disp_.drawCentered(32, "NO SIGNALS");
     disp_.drawCentered(45, "[PRESS TO RESCAN]");
+    return;
+  }
+
+  // If we have footer but no scan data, skip WiFi scan display logic
+  if (displayCount == 0 && footerOverride) {
+    // Already handled above
     return;
   }
 
@@ -1874,18 +1907,85 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr) {
   u8g2.setDrawColor(1);
   u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
   u8g2.setDrawColor(0);
+
+  // Show mode name in header
+  const char *modeName = "SNIFF";
+  SniffMode mode = mgr.getMode();
+  switch (mode) {
+  case SNIFF_MODE_PROBE_SCAN:
+    modeName = "PROBE";
+    break;
+  case SNIFF_MODE_EAPOL_CAPTURE:
+    modeName = "EAPOL";
+    break;
+  case SNIFF_MODE_STATION_SCAN:
+    modeName = "STATION";
+    break;
+  case SNIFF_MODE_PACKET_MONITOR:
+    modeName = "PKT MON";
+    break;
+  case SNIFF_MODE_CHANNEL_ANALYZER:
+    modeName = "CH ANALYZ";
+    break;
+  case SNIFF_MODE_CHANNEL_ACTIVITY:
+    modeName = "CH ACT";
+    break;
+  case SNIFF_MODE_PACKET_RATE:
+    modeName = "PKT RATE";
+    break;
+  case SNIFF_MODE_PINESCAN:
+    modeName = "PINESCAN";
+    break;
+  case SNIFF_MODE_MULTISSID:
+    modeName = "MULTISSID";
+    break;
+  case SNIFF_MODE_SIGNAL_STRENGTH:
+    modeName = "SIG STR";
+    break;
+  case SNIFF_MODE_RAW_CAPTURE:
+    modeName = "RAW CAP";
+    break;
+  case SNIFF_MODE_AP_STA:
+    modeName = "AP+STA";
+    break;
+  default:
+    break;
+  }
+
   u8g2.setCursor(2, 7);
-  u8g2.print("SNIFF");
+  u8g2.print(modeName);
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+
   int n = mgr.getApCount();
   int pkts = mgr.getPacketCount();
   int eapol = mgr.getEapolCount();
-  u8g2.setCursor(2, 18);
-  u8g2.print("PKTS:");
-  u8g2.print(pkts);
-  u8g2.print(" EAPOL:");
-  u8g2.print(eapol);
+
+  // Show different stats based on mode
+  if (mode == SNIFF_MODE_PROBE_SCAN) {
+    int probeCount = mgr.getProbeCount();
+    u8g2.setCursor(2, 18);
+    u8g2.print("Probes: ");
+    u8g2.print(probeCount);
+  } else if (mode == SNIFF_MODE_PACKET_RATE) {
+    uint32_t pps = mgr.getPacketsPerSecond();
+    u8g2.setCursor(2, 18);
+    u8g2.print("PPS: ");
+    u8g2.print(pps);
+  } else if (mode == SNIFF_MODE_CHANNEL_ACTIVITY ||
+             mode == SNIFF_MODE_CHANNEL_ANALYZER) {
+    uint32_t channels[14];
+    mgr.getChannelActivity(channels, 14);
+    u8g2.setCursor(2, 18);
+    u8g2.print("Ch Activity");
+  } else {
+    u8g2.setCursor(2, 18);
+    u8g2.print("PKTS:");
+    u8g2.print(pkts);
+    u8g2.print(" EAPOL:");
+    u8g2.print(eapol);
+  }
+
   if (n > 0 && selected < n) {
     const WifiSniffAp *ap = mgr.getAp(selected);
     if (ap) {
@@ -1920,19 +2020,77 @@ void SceneManager::drawBleScanMode(int selected, BleManager &mgr) {
   u8g2.setDrawColor(1);
   u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
   u8g2.setDrawColor(0);
+
+  // Show scan type in header
+  const char *scanTypeName = "BLE SCAN";
+  BleScanType scanType = mgr.getScanType();
+  switch (scanType) {
+  case BLE_SCAN_SKIMMERS:
+    scanTypeName = "SKIMMERS";
+    break;
+  case BLE_SCAN_AIRTAG:
+    scanTypeName = "AIRTAG";
+    break;
+  case BLE_SCAN_FLIPPER:
+    scanTypeName = "FLIPPER";
+    break;
+  case BLE_SCAN_FLOCK:
+    scanTypeName = "FLOCK";
+    break;
+  case BLE_SCAN_ANALYZER:
+    scanTypeName = "ANALYZER";
+    break;
+  case BLE_SCAN_SIMPLE:
+    scanTypeName = "SIMPLE";
+    break;
+  case BLE_SCAN_SIMPLE_TWO:
+    scanTypeName = "SIMPLE2";
+    break;
+  default:
+    break;
+  }
+
   u8g2.setCursor(2, 7);
-  u8g2.print("BLE SCAN");
+  u8g2.print(scanTypeName);
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
-  int n = mgr.getScanCount();
+
+  // Show count based on scan type
+  int n = 0;
+  if (scanType == BLE_SCAN_SKIMMERS) {
+    n = mgr.getSkimmerCount();
+  } else if (scanType == BLE_SCAN_AIRTAG || mgr.isAirTagMonitoring()) {
+    n = mgr.getAirTagCount();
+  } else if (scanType == BLE_SCAN_FLIPPER) {
+    n = mgr.getFlipperCount();
+  } else if (scanType == BLE_SCAN_FLOCK) {
+    n = mgr.getFlockCount();
+  } else if (scanType == BLE_SCAN_ANALYZER) {
+    n = mgr.getAnalyzerValue();
+  } else {
+    n = mgr.getScanCount();
+  }
+
   u8g2.setCursor(2, 18);
-  u8g2.print("Devices: ");
+  u8g2.print("Count: ");
   u8g2.print(n);
+
   if (mgr.isCloning()) {
     u8g2.setCursor(2, 28);
     u8g2.print("CLONE MODE");
   } else if (n > 0 && selected < n) {
-    const BleScanDevice *dev = mgr.getScanDevice(selected);
+    const BleScanDevice *dev = nullptr;
+    if (scanType == BLE_SCAN_SKIMMERS) {
+      dev = mgr.getSkimmer(selected);
+    } else if (scanType == BLE_SCAN_AIRTAG || mgr.isAirTagMonitoring()) {
+      dev = mgr.getAirTag(selected);
+    } else if (scanType == BLE_SCAN_FLIPPER) {
+      dev = mgr.getFlipper(selected);
+    } else if (scanType == BLE_SCAN_FLOCK) {
+      dev = mgr.getFlock(selected);
+    } else {
+      dev = mgr.getScanDevice(selected);
+    }
     if (dev) {
       u8g2.setCursor(2, 28);
       char line[20];
