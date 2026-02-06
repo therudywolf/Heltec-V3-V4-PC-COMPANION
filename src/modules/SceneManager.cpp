@@ -1019,8 +1019,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                        NOCT_MENU_CONFIG_BAR_CHAMFER);
   u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(NOCT_MENU_CONFIG_BAR_X + 4, NOCT_HEADER_BASELINE_Y + 2,
-                headerStr);
+  u8g2.drawUTF8(NOCT_MENU_CONFIG_BAR_X + 4,
+                NOCT_MENU_CONFIG_BAR_Y + NOCT_MENU_CONFIG_BAR_H - 2, headerStr);
   u8g2.setDrawColor(1);
 
   int selected = mainIndex;
