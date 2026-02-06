@@ -97,12 +97,12 @@
 
 ### Структура меню
 
-| Категория  | Пункты                           | Действия                                                                                |
-| ---------- | -------------------------------- | --------------------------------------------------------------------------------------- |
-| **Config** | AUTO, FLIP, GLITCH               | AUTO: цикл OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл эффекта. |
-| **WiFi**   | SCAN, DEAUTH, PORTAL             | Переход в RADAR, Deauth, Captive Portal (AP **MT_FREE**).                               |
-| **Tools**  | BLE SPAM, USB HID, VAULT, DAEMON | BLE Spam, BadWolf USB HID, TOTP Vault, экран Daemon (Wolf + телеметрия).                |
-| **System** | REBOOT, EXIT                     | Перезагрузка (с подтверждением), выход из меню.                                         |
+| Категория  | Пункты                           | Действия                                                                                                                                                 |
+| ---------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config** | AUTO, FLIP, GLITCH, LED, DIM     | AUTO: цикл OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. Все сохраняются в NVS. |
+| **WiFi**   | SCAN, DEAUTH, PORTAL             | Переход в RADAR, Deauth, Captive Portal (AP **MT_FREE**).                                                                                                |
+| **Tools**  | BLE SPAM, USB HID, VAULT, DAEMON | BLE Spam, BadWolf USB HID, TOTP Vault, экран Daemon (Wolf + телеметрия).                                                                                 |
+| **System** | REBOOT, VERSION, EXIT            | Перезагрузка (с подтверждением), показ версии (v1.0), выход из меню.                                                                                     |
 
 Настройки Config и яркость сохраняются в NVS.
 
@@ -214,6 +214,8 @@ python src/monitor.py
 }
 ```
 
+**Формат и значения по умолчанию:** при отсутствии файла или полей используются: `host` = `"0.0.0.0"`, `port` = `8090`, `lhm_url` = `"http://localhost:8085/data.json"`, `limits` = `{"gpu": 80, "cpu": 75}`, `weather_city` = `"Moscow"`. Поле `limits` задаёт пороги алертов (в °C для gpu/cpu при использовании в логике монитора; точные пороги см. в `monitor.py` и `config.h`).
+
 Порт в `config.json` должен совпадать с `TCP_PORT` в `secrets.h` (или с тем портом, на котором реально слушает монитор).
 
 ---
@@ -241,7 +243,7 @@ python src/monitor.py
 │       ├── VaultManager.*   # TOTP
 │       └── RollingGraph.*   # Графики (sparkline)
 ├── config.json          # Параметры монитора (host, port, lhm_url, weather_city)
-├── platformio.ini       # Сборка ESP32 (Heltec V3 profile под V4)
+├── platformio.ini       # Сборка ESP32 (env heltec_wifi_lora_32_V4, профиль V3 под железо V4)
 ├── requirements.txt    # aiohttp, dotenv, winsdk, pystray, Pillow, psutil, pyinstaller
 ├── build_server.bat    # Очистка + pip + PyInstaller → dist/NocturneServer.exe
 ├── NocturneServer.spec # Спека PyInstaller

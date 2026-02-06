@@ -200,6 +200,9 @@ COVER_SIZE = 64
 TOP_PROCS_CPU_N = 3
 TOP_PROCS_RAM_N = 2
 CLIENT_LINE_MAX = 4096
+# Max JSON line size sent to device (must not exceed firmware NOCT_TCP_LINE_MAX)
+MAX_PAYLOAD_BYTES = 4096
+SERVER_VERSION = "1.0"  # Sent in payload "sv" for client/debug
 TOP_PROCS_CACHE_TTL = 2.5
 POLL_INTERVAL = 0.5
 HEARTBEAT_INTERVAL = 2.8  # Send at most every 2.8s when unchanged (reduces traffic)
@@ -693,6 +696,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "art": media.get("art", ""), "trk": media.get("trk", ""),
         "mp": media.get("play", False), "idle": media.get("idle", False),
         "media_status": media_status,
+        "sv": SERVER_VERSION,
     }
 
     # RED ALERT: threshold with hysteresis; send alert_metric for value blink
@@ -776,7 +780,12 @@ def should_send_payload(payload: Dict, now: float) -> bool:
 async def send_data_to_client(writer, payload: Dict) -> bool:
     try:
         data = json.dumps(payload, separators=(",", ":")) + "\n"
-        writer.write(data.encode("utf-8"))
+        raw = data.encode("utf-8")
+        if len(raw) > MAX_PAYLOAD_BYTES:
+            logging.warning("Payload too large (%d bytes), sending minimal", len(raw))
+            minimal = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0}
+            raw = (json.dumps(minimal, separators=(",", ":")) + "\n").encode("utf-8")
+        writer.write(raw)
         await writer.drain()
         return True
     except Exception as e:

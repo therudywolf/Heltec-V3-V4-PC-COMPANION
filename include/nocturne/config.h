@@ -5,6 +5,8 @@
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
 
+#define NOCTURNE_VERSION "1.0"
+
 /* V4 Pinout (standard Heltec): SDA=17, SCL=18, RST=21, Vext=36. LED=25;
  * BUTTON=0 Vext=36: LOW = OLED powered. RST=21: reset pulse LOW then HIGH. */
 #define NOCT_SDA_PIN 17
