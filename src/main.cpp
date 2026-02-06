@@ -34,7 +34,6 @@
 #include "nocturne/config.h"
 #include "secrets.h"
 
-
 // ---------------------------------------------------------------------------
 // Local constants (after includes, before any global object instantiations)
 // ---------------------------------------------------------------------------
@@ -1160,7 +1159,8 @@ void loop() {
     if (state.alertActive && !lastAlertActive) {
       alertBlinkCounter = 0;
       blinkState = true;
-      digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
+      if (settings.ledEnabled)
+        digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
       lastBlink = now;
     }
     lastAlertActive = state.alertActive;
@@ -1169,20 +1169,25 @@ void loop() {
         lastBlink = now;
         if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
           blinkState = !blinkState;
-          digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
+          if (settings.ledEnabled)
+            digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
           alertBlinkCounter++;
         } else {
           blinkState = false;
-          digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+          if (settings.ledEnabled)
+            digitalWrite(NOCT_LED_ALERT_PIN, LOW);
         }
       }
     } else {
-      digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+      if (settings.ledEnabled)
+        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
       if (now - lastBlink > 500) {
         blinkState = !blinkState;
         lastBlink = now;
       }
     }
+    if (!settings.ledEnabled)
+      digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   }
 
   if (!splashDone) {
