@@ -124,3 +124,68 @@ void UsbManager::runSniffer() {
   (void)0;
 #endif
 }
+
+void UsbManager::runDuckyScript(int index) {
+#if HAVE_USB_HID
+  if (!s_keyboard || !active_)
+    return;
+  switch (index) {
+  case 0:
+    runMatrix();
+    break;
+  case 1:
+    runSniffer();
+    break;
+  case 2: {
+    ensureEnglishLayout();
+    delay(100);
+    s_keyboard->press(KEY_LEFT_GUI);
+    s_keyboard->press('r');
+    s_keyboard->releaseAll();
+    delay(600);
+    s_keyboard->print("cmd");
+    delay(200);
+    s_keyboard->press(KEY_RETURN);
+    s_keyboard->releaseAll();
+    Serial.println("[BADWOLF] Ducky: CMD.");
+    break;
+  }
+  case 3: {
+    openPowerShell();
+    s_keyboard->print(
+        "Get-Process | Out-File $env:TEMP\\p.txt; notepad $env:TEMP\\p.txt");
+    delay(200);
+    s_keyboard->press(KEY_RETURN);
+    s_keyboard->releaseAll();
+    Serial.println("[BADWOLF] Ducky: Process list.");
+    break;
+  }
+  case 4:
+    runBackdoor();
+    break;
+  default:
+    runMatrix();
+    break;
+  }
+#else
+  (void)index;
+#endif
+}
+
+void UsbManager::runBackdoor() {
+#if HAVE_USB_HID
+  if (!s_keyboard || !active_)
+    return;
+  ensureEnglishLayout();
+  delay(80);
+  s_keyboard->press(KEY_LEFT_GUI);
+  s_keyboard->press('r');
+  s_keyboard->releaseAll();
+  delay(500);
+  s_keyboard->print("cmd");
+  delay(150);
+  s_keyboard->press(KEY_RETURN);
+  s_keyboard->releaseAll();
+  Serial.println("[BADWOLF] Backdoor (cmd) sent.");
+#endif
+}

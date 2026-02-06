@@ -76,7 +76,7 @@ public:
   void drawBleSpammer(int packetCount);
 
   /** BADWOLF USB HID: skull/wolf icon, ARMED status, Short/Long labels. */
-  void drawBadWolf();
+  void drawBadWolf(int scriptIndex = 0);
 
   /** SILENCE: 868 MHz jammer UI — muted icon, static noise, status. */
   void drawSilenceMode(int8_t power = 22);
@@ -90,10 +90,15 @@ public:
    * TARGET/STATUS/PKTS. */
   void drawKickMode(KickManager &kick);
 
-  /** VAULT: TOTP 2FA — locked chest + paw, account name, 6-digit code, 30s bar.
-   */
   void drawVaultMode(const char *accountName, const char *code6,
                      int countdownSec);
+
+  void drawBeaconMode(const char *ssid, int beaconCount, int index, int total);
+  void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
+  void drawBleScanMode(int selected, class BleManager &mgr);
+  void drawFakeLoginMode();
+  void drawQrMode(const char *text);
+  void drawMdnsMode(const char *serviceName, bool active);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).

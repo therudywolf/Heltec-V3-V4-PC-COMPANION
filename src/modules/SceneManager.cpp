@@ -5,7 +5,9 @@
  */
 #include "SceneManager.h"
 #include "../../include/nocturne/config.h"
+#include "BleManager.h"
 #include "KickManager.h"
+#include "WifiSniffManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
@@ -933,9 +935,10 @@ static int submenuCountForCategory(int cat) {
   case 0:
     return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
-    return 3;
+    return 5; // WiFi: SCAN, DEAUTH, BEACON, SNIFF, PORTAL
   case 2:
-    return 4;
+    return 7; // Tools: BLE SPAM, BLE SCAN, USB HID, VAULT, FAKE LOGIN, QR,
+              // DAEMON
   case 3:
     return 3; // REBOOT, VERSION, EXIT
   default:
@@ -960,7 +963,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
   static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System"};
-  static char items[5][20];
+  static char items[8][20];
   int count;
   const char *headerStr;
 
@@ -989,20 +992,22 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                lowBrightnessDefault ? "ON" : "OFF");
     } else if (menuCategory == 1) {
       strncpy(items[0], "SCAN", sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
       strncpy(items[1], "DEAUTH", sizeof(items[1]) - 1);
-      items[1][sizeof(items[1]) - 1] = '\0';
-      strncpy(items[2], "PORTAL", sizeof(items[2]) - 1);
-      items[2][sizeof(items[2]) - 1] = '\0';
+      strncpy(items[2], "BEACON", sizeof(items[2]) - 1);
+      strncpy(items[3], "SNIFF", sizeof(items[3]) - 1);
+      strncpy(items[4], "PORTAL", sizeof(items[4]) - 1);
+      for (int i = 0; i < 5; i++)
+        items[i][sizeof(items[0]) - 1] = '\0';
     } else if (menuCategory == 2) {
       strncpy(items[0], "BLE SPAM", sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
-      strncpy(items[1], "USB HID", sizeof(items[1]) - 1);
-      items[1][sizeof(items[1]) - 1] = '\0';
-      strncpy(items[2], "VAULT", sizeof(items[2]) - 1);
-      items[2][sizeof(items[2]) - 1] = '\0';
-      strncpy(items[3], "DAEMON", sizeof(items[3]) - 1);
-      items[3][sizeof(items[3]) - 1] = '\0';
+      strncpy(items[1], "BLE SCAN", sizeof(items[1]) - 1);
+      strncpy(items[2], "USB HID", sizeof(items[2]) - 1);
+      strncpy(items[3], "VAULT", sizeof(items[3]) - 1);
+      strncpy(items[4], "FAKE LOGIN", sizeof(items[4]) - 1);
+      strncpy(items[5], "QR", sizeof(items[5]) - 1);
+      strncpy(items[6], "DAEMON", sizeof(items[6]) - 1);
+      for (int i = 0; i < 7; i++)
+        items[i][sizeof(items[0]) - 1] = '\0';
     } else {
       if (rebootConfirmed)
         strncpy(items[0], "REBOOT [OK]", sizeof(items[0]) - 1);
@@ -1544,7 +1549,10 @@ void SceneManager::drawBleSpammer(int packetCount) {
 #define BADWOLF_SKULL_R 10
 #define BADWOLF_FOOTER_Y 52
 
-void SceneManager::drawBadWolf() {
+static const char *const badWolfScriptNames[] = {"Matrix", "Sniffer", "CMD",
+                                                 "Process", "Backdoor"};
+
+void SceneManager::drawBadWolf(int scriptIndex) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
@@ -1564,9 +1572,15 @@ void SceneManager::drawBadWolf() {
   u8g2.drawTriangle(cx - 10, cy - 8, cx - 6, cy - 14, cx - 2, cy - 8);
   u8g2.drawTriangle(cx + 2, cy - 8, cx + 6, cy - 14, cx + 10, cy - 8);
 
+  if (scriptIndex >= 0 && scriptIndex <= 4) {
+    u8g2.setCursor(2, 42);
+    u8g2.print("Script: ");
+    u8g2.print(badWolfScriptNames[scriptIndex]);
+  }
+
   u8g2.drawLine(0, BADWOLF_FOOTER_Y - 1, NOCT_DISP_W, BADWOLF_FOOTER_Y - 1);
   u8g2.setCursor(2, BADWOLF_FOOTER_Y + 6);
-  u8g2.print("Short: MATRIX | Long: SNIFFER | 3x Out");
+  u8g2.print("1x next | 2s run | 3x Out");
 
   disp_.drawGreebles();
 }
@@ -1784,5 +1798,183 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
   u8g2.setCursor(2, VAULT_FOOTER_Y + 5);
   u8g2.print("Short: next account | 3x Out");
 
+  disp_.drawGreebles();
+}
+
+// --- BEACON SPAM ---
+void SceneManager::drawBeaconMode(const char *ssid, int beaconCount, int index,
+                                  int total) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("BEACON");
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  u8g2.setCursor(2, 18);
+  u8g2.print(ssid && ssid[0] ? ssid : "(none)");
+  u8g2.setCursor(2, 28);
+  u8g2.print("PKTS: ");
+  u8g2.print(beaconCount);
+  u8g2.setCursor(2, 38);
+  u8g2.print("SSID ");
+  u8g2.print(index + 1);
+  u8g2.print("/");
+  u8g2.print(total);
+  u8g2.setCursor(2, 54);
+  u8g2.print("1x next SSID | 2x back");
+  disp_.drawGreebles();
+}
+
+// --- WIFI SNIFF ---
+void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("SNIFF");
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  int n = mgr.getApCount();
+  int pkts = mgr.getPacketCount();
+  int eapol = mgr.getEapolCount();
+  u8g2.setCursor(2, 18);
+  u8g2.print("PKTS:");
+  u8g2.print(pkts);
+  u8g2.print(" EAPOL:");
+  u8g2.print(eapol);
+  if (n > 0 && selected < n) {
+    const WifiSniffAp *ap = mgr.getAp(selected);
+    if (ap) {
+      u8g2.setCursor(2, 28);
+      char line[22];
+      strncpy(line, ap->ssid, 18);
+      line[18] = '\0';
+      if (strlen(ap->ssid) > 18)
+        line[16] = '.';
+      u8g2.print(line);
+      u8g2.setCursor(2, 38);
+      u8g2.print(ap->bssidStr);
+      u8g2.setCursor(2, 48);
+      u8g2.print("CH:");
+      u8g2.print((int)ap->channel);
+      u8g2.print(" RSSI:");
+      u8g2.print(ap->rssi);
+      if (ap->hasEapol)
+        u8g2.print(" [EAPOL]");
+    }
+  }
+  u8g2.setCursor(2, 58);
+  u8g2.print("1x next | 2x back");
+  disp_.drawGreebles();
+}
+
+// --- BLE SCAN ---
+void SceneManager::drawBleScanMode(int selected, BleManager &mgr) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("BLE SCAN");
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  int n = mgr.getScanCount();
+  u8g2.setCursor(2, 18);
+  u8g2.print("Devices: ");
+  u8g2.print(n);
+  if (mgr.isCloning()) {
+    u8g2.setCursor(2, 28);
+    u8g2.print("CLONE MODE");
+  } else if (n > 0 && selected < n) {
+    const BleScanDevice *dev = mgr.getScanDevice(selected);
+    if (dev) {
+      u8g2.setCursor(2, 28);
+      char line[20];
+      strncpy(line, dev->name, 18);
+      line[18] = '\0';
+      u8g2.print(line);
+      u8g2.setCursor(2, 38);
+      u8g2.print(dev->addr);
+      u8g2.setCursor(2, 48);
+      u8g2.print("RSSI: ");
+      u8g2.print(dev->rssi);
+    }
+  }
+  u8g2.setCursor(2, 58);
+  u8g2.print("1x next | L=clone | 2x back");
+  disp_.drawGreebles();
+}
+
+// --- FAKE LOGIN ---
+void SceneManager::drawFakeLoginMode() {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setCursor(20, 14);
+  u8g2.print("Windows Security");
+  u8g2.drawLine(10, 18, NOCT_DISP_W - 10, 18);
+  u8g2.setCursor(14, 30);
+  u8g2.print("Enter password");
+  u8g2.setCursor(14, 42);
+  u8g2.print("for NOCTURNE:");
+  u8g2.drawRFrame(14, 48, NOCT_DISP_W - 28, 12, 1);
+  u8g2.setCursor(18, 57);
+  u8g2.print("********");
+  disp_.drawGreebles();
+}
+
+// --- QR / TEXT ---
+void SceneManager::drawQrMode(const char *text) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("QR / TEXT");
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  u8g2.setCursor(2, 22);
+  u8g2.print(text && text[0] ? text : "NOCTURNE_OS");
+  u8g2.setCursor(2, 36);
+  u8g2.print("https://nocturne.local");
+  u8g2.setCursor(2, 50);
+  u8g2.print("2x back");
+  disp_.drawGreebles();
+}
+
+// --- mDNS ---
+void SceneManager::drawMdnsMode(const char *serviceName, bool active) {
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("mDNS");
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  u8g2.setCursor(2, 22);
+  u8g2.print(serviceName && serviceName[0] ? serviceName : "NOCTURNE");
+  u8g2.setCursor(2, 34);
+  u8g2.print(active ? "ACTIVE" : "IDLE");
+  u8g2.setCursor(2, 48);
+  u8g2.print("1x change name");
+  u8g2.setCursor(2, 58);
+  u8g2.print("2x back");
   disp_.drawGreebles();
 }

