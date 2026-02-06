@@ -2215,21 +2215,6 @@ void loop() {
                                   beaconManager.getBeaconCount(),
                                   beaconManager.getCurrentIndex(), 8);
       break;
-    case MODE_WIFI_PROBE_SCAN:
-    case MODE_WIFI_EAPOL_SCAN:
-    case MODE_WIFI_STATION_SCAN:
-    case MODE_WIFI_PACKET_MONITOR:
-    case MODE_WIFI_CHANNEL_ANALYZER:
-    case MODE_WIFI_CHANNEL_ACTIVITY:
-    case MODE_WIFI_PACKET_RATE:
-    case MODE_WIFI_PINESCAN:
-    case MODE_WIFI_MULTISSID:
-    case MODE_WIFI_SIGNAL_STRENGTH:
-    case MODE_WIFI_RAW_CAPTURE:
-    case MODE_WIFI_AP_STA:
-      wifiSniffManager.tick();
-      sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
-      break;
     case MODE_WIFI_AUTH_ATTACK:
     case MODE_WIFI_MIMIC_FLOOD:
     case MODE_WIFI_AP_SPAM:
