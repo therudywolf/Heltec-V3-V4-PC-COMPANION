@@ -6,7 +6,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
-static const char *TRAP_SSID_DEFAULT = "FREE_WIFI_CONNECT";
+static const char *TRAP_SSID_DEFAULT = "MT_FREE";
 static const byte DNS_PORT = 53;
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_NETMASK(255, 255, 255, 0);
