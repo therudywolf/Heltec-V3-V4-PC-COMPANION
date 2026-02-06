@@ -146,8 +146,8 @@
 #ifndef GPU_TEMP_ALERT
 #define GPU_TEMP_ALERT 68
 #endif
-#define CPU_LOAD_ALERT 99
-#define GPU_LOAD_ALERT 99
+#define CPU_LOAD_ALERT 90
+#define GPU_LOAD_ALERT 100
 #define VRAM_LOAD_ALERT 95
 #define RAM_LOAD_ALERT 90
 

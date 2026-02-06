@@ -624,15 +624,17 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
 # Alert thresholds (RED ALERT when any is met; must match config.h)
 CPU_TEMP_ALERT = 87
 GPU_TEMP_ALERT = 68
-CPU_LOAD_ALERT = 99
-GPU_LOAD_ALERT = 99
+CPU_LOAD_ALERT = 90
+GPU_LOAD_ALERT = 100
 VRAM_LOAD_ALERT = 95
-RAM_LOAD_ALERT = 90
+RAM_LOAD_ALERT = 90   # unused when RAM_GB_ALERT is set; RAM alert by used GB
+RAM_GB_ALERT = 30    # alert when used RAM >= 30 GB
 # Hysteresis: clear alert only when value drops below (threshold - HYST_*)
 CPU_TEMP_HYST = 5
 GPU_TEMP_HYST = 5
 LOAD_HYST = 5
 RAM_LOAD_HYST = 5
+RAM_GB_HYST = 2      # clear RAM alert when used < 28 GB
 # Last active alert (target, metric) for hysteresis
 _last_alert: tuple = (None, None)  # ("CPU"|"GPU"|"RAM", "ct"|"gt"|"cl"|"gl"|"gv"|"ram")
 
@@ -707,7 +709,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         new_alert = ("GPU", "gl")
     elif gv >= VRAM_LOAD_ALERT:
         new_alert = ("GPU", "gv")
-    elif ram_pct >= RAM_LOAD_ALERT:
+    elif ram_used_f >= RAM_GB_ALERT:
         new_alert = ("RAM", "ram")
 
     if new_alert:
@@ -731,7 +733,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
             elif metric == "gv":
                 clear = gv < VRAM_LOAD_ALERT - LOAD_HYST
             elif metric == "ram":
-                clear = ram_pct < RAM_LOAD_ALERT - RAM_LOAD_HYST
+                clear = ram_used_f < RAM_GB_ALERT - RAM_GB_HYST
             else:
                 clear = True
             if clear:
