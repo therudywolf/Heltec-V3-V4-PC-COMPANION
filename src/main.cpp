@@ -929,10 +929,10 @@ void loop() {
     lastMenuEventTime = now;
     needRedraw = true;
     event = EV_NONE;
-  } else if (event == EV_LONG && currentMode == MODE_NORMAL) {
+  } else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen) {
     static bool lowBrightness = false;
     lowBrightness = !lowBrightness;
-    uint8_t contrast = lowBrightness ? 25 : (uint8_t)settings.displayContrast;
+    uint8_t contrast = lowBrightness ? 12 : (uint8_t)settings.displayContrast;
     if (contrast > 255)
       contrast = 255;
     display.u8g2().setContrast(contrast);
