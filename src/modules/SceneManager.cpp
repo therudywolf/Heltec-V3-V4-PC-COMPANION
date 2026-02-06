@@ -1035,6 +1035,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     firstVisible = 0;
   if (firstVisible + NOCT_MENU_VISIBLE_ROWS > count)
     firstVisible = count - NOCT_MENU_VISIBLE_ROWS;
+  if (firstVisible < 0)
+    firstVisible = 0; // when count < NOCT_MENU_VISIBLE_ROWS (e.g. 4 categories)
 
   u8g2.setFontMode(1);
   u8g2.setFont(LABEL_FONT);
