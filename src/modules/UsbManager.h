@@ -18,12 +18,14 @@ public:
   void stop();
   bool isActive() const { return active_; }
 
-  /** Payload A: Win+R -> powershell -> Matrix-style NOCTURNE_OS text (short).
-   */
   void runMatrix();
-  /** Payload B: Win+R -> powershell -> systeminfo/whoami/ipconfig -> Notepad
-   * (long). */
   void runSniffer();
+  /** Run Ducky-style script by index (0=Matrix, 1=Sniffer, 2=CMD, 3=Process
+   * list, 4=Backdoor). */
+  void runDuckyScript(int index);
+  /** Minimal backdoor: Win+R -> cmd -> Enter. */
+  void runBackdoor();
+  static constexpr int DUCKY_SCRIPT_COUNT = 5;
 
 private:
   bool active_ = false;

@@ -18,18 +18,22 @@
 
 // -----------------------------------
 
+#include "modules/BeaconManager.h"
 #include "modules/BleManager.h"
 #include "modules/BootAnim.h"
 #include "modules/DisplayEngine.h"
 #include "modules/KickManager.h"
+#include "modules/MdnsManager.h"
 #include "modules/NetManager.h"
 #include "modules/SceneManager.h"
 #include "modules/TrapManager.h"
 #include "modules/UsbManager.h"
 #include "modules/VaultManager.h"
+#include "modules/WifiSniffManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 #include "secrets.h"
+
 
 // ---------------------------------------------------------------------------
 // Local constants (after includes, before any global object instantiations)
@@ -141,6 +145,9 @@ BleManager bleManager;
 UsbManager usbManager;
 TrapManager trapManager;
 KickManager kickManager;
+BeaconManager beaconManager;
+WifiSniffManager wifiSniffManager;
+MdnsManager mdnsManager;
 VaultManager vaultManager;
 AppState state;
 SceneManager sceneManager(display, state);
@@ -197,10 +204,16 @@ enum AppMode {
   MODE_DAEMON,
   MODE_RADAR,
   MODE_WIFI_DEAUTH,
+  MODE_WIFI_BEACON,
+  MODE_WIFI_SNIFF,
   MODE_BLE_SPAM,
+  MODE_BLE_SCAN,
   MODE_BADWOLF,
   MODE_WIFI_TRAP,
-  MODE_VAULT
+  MODE_VAULT,
+  MODE_FAKE_LOGIN,
+  MODE_QR,
+  MODE_MDNS
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -212,8 +225,10 @@ int wifiRssiFilter = -100; // Минимальный RSSI для отображ�
 int wifiSortedIndices[32]; // Индексы отсортированных сетей
 int wifiFilteredCount = 0; // Количество отфильтрованных сетей
 // DEAUTH: индекс скана выбранной цели (-1 = ещё не выбирали долгим нажатием).
-// Своя сеть в списке не фильтруется — атака на неё разрешена.
 static int lastDeauthTargetScanIndex = -1;
+static int wifiSniffSelected = 0;
+static int bleScanSelected = 0;
+static int badWolfScriptIndex = 0;
 
 // Функция сортировки и фильтрации WiFi сетей
 static void sortAndFilterWiFiNetworks() {
@@ -588,6 +603,22 @@ static void cleanupMode(AppMode mode) {
     lastDeauthTargetScanIndex = -1;
     WiFi.scanDelete();
     break;
+  case MODE_WIFI_BEACON:
+    beaconManager.stop();
+    break;
+  case MODE_WIFI_SNIFF:
+    wifiSniffManager.stop();
+    break;
+  case MODE_BLE_SCAN:
+    bleManager.stopScan();
+    WiFi.mode(WIFI_STA);
+    break;
+  case MODE_FAKE_LOGIN:
+  case MODE_QR:
+    break;
+  case MODE_MDNS:
+    mdnsManager.stop();
+    break;
   case MODE_RADAR:
     WiFi.scanDelete();
     break;
@@ -605,20 +636,21 @@ static void cleanupMode(AppMode mode) {
 static void manageWiFiState(AppMode mode) {
   switch (mode) {
   case MODE_BLE_SPAM:
-    // WiFi должен быть выключен для этого режима
+  case MODE_BLE_SCAN:
     if (WiFi.getMode() != WIFI_OFF) {
       WiFi.disconnect(true);
-      // Non-blocking: use yield() instead of delay() for WiFi state change
-      yield(); // Allow WiFi stack to process disconnect
+      yield();
       WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for radio mode");
+      Serial.println("[SYS] WiFi OFF for BLE");
     }
     netManager.setSuspend(true);
     break;
   case MODE_RADAR:
   case MODE_WIFI_DEAUTH:
+  case MODE_WIFI_BEACON:
+  case MODE_WIFI_SNIFF:
   case MODE_WIFI_TRAP:
-    // WiFi нужен для этих режимов
+  case MODE_MDNS:
     if (WiFi.getMode() != WIFI_STA) {
       WiFi.mode(WIFI_STA);
       Serial.println("[SYS] WiFi STA for WiFi mode");
@@ -627,11 +659,11 @@ static void manageWiFiState(AppMode mode) {
     break;
   case MODE_VAULT:
   case MODE_DAEMON:
-    // WiFi может быть включен, но NetManager приостановлен
+  case MODE_FAKE_LOGIN:
+  case MODE_QR:
     netManager.setSuspend(false);
     break;
   case MODE_BADWOLF:
-    // USB режим - WiFi не нужен
     netManager.setSuspend(true);
     break;
   case MODE_NORMAL:
@@ -686,6 +718,40 @@ static bool initializeMode(AppMode mode) {
         "[SYS] DEAUTH mode initialized (WiFi disconnected for injection)");
     return true;
   }
+
+  case MODE_WIFI_BEACON:
+    manageWiFiState(mode);
+    beaconManager.begin();
+    Serial.println("[SYS] BEACON mode initialized");
+    return true;
+
+  case MODE_WIFI_SNIFF:
+    manageWiFiState(mode);
+    wifiSniffManager.begin();
+    Serial.println("[SYS] SNIFF mode initialized");
+    return true;
+
+  case MODE_BLE_SCAN:
+    manageWiFiState(mode);
+    bleManager.beginScan();
+    Serial.println("[SYS] BLE SCAN mode initialized");
+    return true;
+
+  case MODE_FAKE_LOGIN:
+    manageWiFiState(mode);
+    Serial.println("[SYS] FAKE LOGIN mode initialized");
+    return true;
+
+  case MODE_QR:
+    manageWiFiState(mode);
+    Serial.println("[SYS] QR mode initialized");
+    return true;
+
+  case MODE_MDNS:
+    manageWiFiState(mode);
+    mdnsManager.begin();
+    Serial.println("[SYS] MDNS mode initialized");
+    return true;
 
   case MODE_WIFI_TRAP: {
     manageWiFiState(mode);
@@ -790,9 +856,10 @@ static int submenuCount(int category) {
   case 0:
     return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
-    return 3; // WiFi: SCAN, DEAUTH, PORTAL
+    return 5; // WiFi: SCAN, DEAUTH, BEACON, SNIFF, PORTAL
   case 2:
-    return 4; // Tools: BLE, USB HID, VAULT, DAEMON
+    return 7; // Tools: BLE SPAM, BLE SCAN, USB HID, VAULT, FAKE LOGIN, QR,
+              // DAEMON
   case 3:
     return 3; // System: REBOOT, VERSION, EXIT
   default:
@@ -867,7 +934,6 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     rebootConfirmed = false;
     if (item == 0) {
       if (!switchToMode(MODE_RADAR)) {
-        Serial.println("[MENU] RADAR failed");
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
@@ -876,15 +942,25 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       wifiScanSelected = 0;
       wifiListPage = 0;
       if (!switchToMode(MODE_WIFI_DEAUTH)) {
-        Serial.println("[MENU] DEAUTH failed");
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
       kickManager.setTargetFromScan(0);
     } else if (item == 2) {
+      if (!switchToMode(MODE_WIFI_BEACON)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 3) {
+      if (!switchToMode(MODE_WIFI_SNIFF)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 4) {
       if (!switchToMode(MODE_WIFI_TRAP)) {
-        Serial.println("[MENU] TRAP failed");
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
@@ -897,28 +973,42 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     rebootConfirmed = false;
     if (item == 0) {
       if (!switchToMode(MODE_BLE_SPAM)) {
-        Serial.println("[MENU] BLE failed");
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     } else if (item == 1) {
-      if (!switchToMode(MODE_BADWOLF)) {
-        Serial.println("[MENU] USB failed");
+      if (!switchToMode(MODE_BLE_SCAN)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     } else if (item == 2) {
-      if (!switchToMode(MODE_VAULT)) {
-        Serial.println("[MENU] VAULT failed");
+      if (!switchToMode(MODE_BADWOLF)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     } else if (item == 3) {
+      if (!switchToMode(MODE_VAULT)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 4) {
+      if (!switchToMode(MODE_FAKE_LOGIN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 5) {
+      if (!switchToMode(MODE_QR)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 6) {
       if (!switchToMode(MODE_DAEMON)) {
-        Serial.println("[MENU] DAEMON failed");
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
@@ -1265,10 +1355,61 @@ void loop() {
       break;
     case MODE_BADWOLF:
       if (event == EV_SHORT) {
-        usbManager.runMatrix();
+        badWolfScriptIndex =
+            (badWolfScriptIndex + 1) % UsbManager::DUCKY_SCRIPT_COUNT;
         needRedraw = true;
       } else if (event == EV_LONG) {
-        usbManager.runSniffer();
+        if (badWolfScriptIndex == 4)
+          usbManager.runBackdoor();
+        else
+          usbManager.runDuckyScript(badWolfScriptIndex);
+        needRedraw = true;
+      }
+      break;
+    case MODE_WIFI_BEACON:
+      if (event == EV_SHORT) {
+        beaconManager.nextSSID();
+        needRedraw = true;
+      }
+      break;
+    case MODE_WIFI_SNIFF:
+      if (event == EV_SHORT) {
+        int n = wifiSniffManager.getApCount();
+        if (n > 0) {
+          wifiSniffSelected = (wifiSniffSelected + 1) % n;
+          needRedraw = true;
+        }
+      }
+      break;
+    case MODE_BLE_SCAN:
+      if (event == EV_SHORT) {
+        int n = bleManager.getScanCount();
+        if (n > 0) {
+          bleScanSelected = (bleScanSelected + 1) % n;
+          needRedraw = true;
+        }
+      } else if (event == EV_LONG) {
+        int n = bleManager.getScanCount();
+        if (n > 0) {
+          bleManager.cloneDevice(bleScanSelected);
+          needRedraw = true;
+        }
+      }
+      break;
+    case MODE_FAKE_LOGIN:
+    case MODE_QR:
+      if (event == EV_SHORT)
+        needRedraw = true;
+      break;
+    case MODE_MDNS:
+      if (event == EV_SHORT) {
+        static int mdnsNameIdx = 0;
+        const char *names[] = {"NOCTURNE", "HP-Print", "Chromecast", "AirPlay"};
+        mdnsNameIdx = (mdnsNameIdx + 1) % 4;
+        mdnsManager.setServiceName(names[mdnsNameIdx]);
+        if (mdnsManager.isActive())
+          mdnsManager.stop();
+        mdnsManager.begin();
         needRedraw = true;
       }
       break;
@@ -1413,6 +1554,19 @@ void loop() {
                                    wifiFilteredCount, deauthFooter);
       break;
     }
+    case MODE_WIFI_BEACON:
+      beaconManager.tick();
+      sceneManager.drawBeaconMode(beaconManager.getCurrentSSID(),
+                                  beaconManager.getBeaconCount(),
+                                  beaconManager.getCurrentIndex(), 8);
+      break;
+    case MODE_WIFI_SNIFF:
+      wifiSniffManager.tick();
+      sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
+      break;
+    case MODE_BLE_SCAN:
+      sceneManager.drawBleScanMode(bleScanSelected, bleManager);
+      break;
     case MODE_BLE_SPAM: {
       static int lastPhantomPayloadIndex = -1;
       if (bleManager.isActive()) {
@@ -1426,7 +1580,7 @@ void loop() {
       break;
     }
     case MODE_BADWOLF:
-      sceneManager.drawBadWolf();
+      sceneManager.drawBadWolf(badWolfScriptIndex);
       break;
     case MODE_WIFI_TRAP:
       if (trapManager.isActive()) {
@@ -1446,6 +1600,17 @@ void loop() {
           vaultManager.getCountdownSeconds());
       break;
     }
+    case MODE_FAKE_LOGIN:
+      sceneManager.drawFakeLoginMode();
+      break;
+    case MODE_QR:
+      sceneManager.drawQrMode("NOCTURNE_OS");
+      break;
+    case MODE_MDNS:
+      mdnsManager.tick();
+      sceneManager.drawMdnsMode(mdnsManager.getServiceName(),
+                                mdnsManager.isActive());
+      break;
     default:
       break;
     }
