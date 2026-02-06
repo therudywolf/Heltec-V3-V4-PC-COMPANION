@@ -1408,13 +1408,14 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
       u8g2.setDrawColor(1);
     }
 
-    // Optimized: use c_str() and static buffer instead of String
-    const char *ssid = WiFi.SSID(actualIndex).c_str();
+    // Copy SSID to local String so c_str() remains valid; then to buffer
+    String ssidStr = WiFi.SSID(actualIndex);
+    const char *ssid = ssidStr.c_str();
     char ssidBuf[12]; // Max 10 chars + "." + null terminator
-    if (!ssid || strlen(ssid) == 0) {
+    if (!ssid || ssidStr.length() == 0) {
       strncpy(ssidBuf, "[HIDDEN]", sizeof(ssidBuf) - 1);
     } else {
-      size_t len = strlen(ssid);
+      size_t len = ssidStr.length();
       if (len > 10) {
         strncpy(ssidBuf, ssid, 9);
         ssidBuf[9] = '.';

