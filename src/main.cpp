@@ -36,7 +36,6 @@
 #include "nocturne/config.h"
 #include "secrets.h"
 
-
 // ---------------------------------------------------------------------------
 // Local constants (after includes, before any global object instantiations)
 // ---------------------------------------------------------------------------
@@ -1479,10 +1478,13 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
           int idx = wifiSortedIndices[0];
           String ssid = WiFi.SSID(idx);
           uint8_t bssid[6];
-          WiFi.BSSID(idx, bssid);
-          wifiAttackManager.setTargetBSSID(bssid);
-          wifiAttackManager.setTargetSSID(ssid.c_str());
-          wifiAttackManager.setTargetChannel(WiFi.channel(idx));
+          uint8_t *bssidPtr = WiFi.BSSID(idx);
+          if (bssidPtr) {
+            memcpy(bssid, bssidPtr, 6);
+            wifiAttackManager.setTargetBSSID(bssid);
+            wifiAttackManager.setTargetSSID(ssid.c_str());
+            wifiAttackManager.setTargetChannel(WiFi.channel(idx));
+          }
         }
       }
     } else if (item == 19) {
