@@ -78,34 +78,47 @@ Long-press interaction model for quick adjustments without rebooting.
 
 **Button (GPIO 0):**
 
-| Action                | State     | Result                                 |
-| :-------------------- | :-------- | :------------------------------------- |
-| **Short Press** (<1s) | Normal    | **Next Scene** (Resets Carousel Timer) |
-|                       | Menu Open | **Next Menu Item** (Navigate)          |
-| **Long Press** (>1s)  | Normal    | **Open Menu**                          |
-|                       | Menu Open | **Interact / Change Value**            |
+| Action                | State     | Result                                           |
+| :-------------------- | :-------- | :----------------------------------------------- |
+| **Short press** (<1s) | Normal    | **Next scene** (resets carousel timer)           |
+|                       | Menu open | **Next item** (move highlight)                   |
+| **Long press** (>1s)  | Normal    | **Toggle brightness** (normal ↔ dim)             |
+|                       | Menu open | **Select** (enter submenu or run action)         |
+| **Double-tap** (2x)   | Normal    | **Open menu**                                    |
+|                       | Menu open | **Back** (from submenu) or **Close menu** (exit) |
 
-**Menu Items:**
+### How to use the menu
 
-1.  **AUTO:** Cycle Carousel (5s -> 10s -> 15s -> OFF).
-2.  **FLIP:** Rotate Screen 180°.
-3.  **EXIT:** Close Menu.
+1. **Open menu:** double-tap the button (two quick presses).
+2. **Move:** short press — next item (Config → WiFi → Tools → System, then submenu items).
+3. **Select / Enter:** long press — enter the selected category or run the selected action (e.g. SCAN, FLIP, EXIT).
+4. **Back / Close:** double-tap — from a submenu returns to categories; from categories closes the menu.
+
+_On-screen hint at the bottom of the menu: `1x next  2s ok  2x back`._
+
+**Menu structure:**
+
+- **Config:** AUTO (carousel 5s/10s/15s/OFF), FLIP (rotate 180°), GLITCH on/off.
+- **WiFi:** SCAN, DEAUTH, PORTAL.
+- **Tools:** BLE SPAM, USB HID, VAULT, DAEMON.
+- **System:** REBOOT, EXIT (close menu).
 
 ---
 
 ## 🚀 Installation
 
 ### Prerequisites
+
 1.  **VS Code** with **PlatformIO** (for firmware).
 2.  **Python 3.x** (for the Host Monitor script).
 3.  **Libre Hardware Monitor** (CRITICAL):
-    * This software acts as the telemetry source for Windows.
-    * [Download Latest Release](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-    * **Setup:**
-        1.  Unzip and run `LibreHardwareMonitor.exe` **as Administrator**.
-        2.  Go to `Options` -> Enable `Run On Windows Startup`.
-        3.  Go to `Options` -> `Remote Web Server` -> **Enable**.
-        4.  Ensure the port is **8085** (Default).
+    - This software acts as the telemetry source for Windows.
+    - [Download Latest Release](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+    - **Setup:**
+      1.  Unzip and run `LibreHardwareMonitor.exe` **as Administrator**.
+      2.  Go to `Options` -> Enable `Run On Windows Startup`.
+      3.  Go to `Options` -> `Remote Web Server` -> **Enable**.
+      4.  Ensure the port is **8085** (Default).
 
 ### Flashing (Firmware)
 

@@ -1072,6 +1072,16 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   disp_.drawScrollIndicator(startY - 2,
                             NOCT_MENU_VISIBLE_ROWS * NOCT_MENU_ROW_H, count,
                             NOCT_MENU_VISIBLE_ROWS, firstVisible);
+
+  /* Hint: how to use the menu */
+  u8g2.setFont(UNIT_FONT);
+  const char *hint = "1x next  2s ok  2x back";
+  int hintW = u8g2.getUTF8Width(hint);
+  int hintX = boxX + (boxW - hintW) / 2;
+  if (hintX < NOCT_MENU_LIST_LEFT)
+    hintX = NOCT_MENU_LIST_LEFT;
+  u8g2.setDrawColor(1);
+  u8g2.drawUTF8(hintX, boxY + boxH - 2, hint);
 }
 
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
