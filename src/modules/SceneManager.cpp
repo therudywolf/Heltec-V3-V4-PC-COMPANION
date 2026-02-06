@@ -1382,16 +1382,16 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     return;
   }
 
-  // --- LIST RENDER ---
-  u8g2.setCursor(2, 6);
+  // --- LIST RENDER (full screen, no header) ---
+  u8g2.setCursor(2, 2);
   if (useFiltered && filteredCount < n) {
     u8g2.printf("TARGETS: %d/%d", filteredCount, n);
   } else {
     u8g2.printf("TARGETS: %d", displayCount);
   }
-  u8g2.drawLine(0, 8, 128, 8);
+  u8g2.drawLine(0, 10, 128, 10);
 
-  int yStart = 16;
+  int yStart = 12;
   int h = 10;
 
   for (int i = pageOffset;
@@ -1448,8 +1448,8 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   }
 
   u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 55, 128, 55);
-  u8g2.setCursor(2, 63);
+  u8g2.drawLine(0, 56, 128, 56);
+  u8g2.setCursor(2, 62);
   if (WiFi.status() == WL_CONNECTED) {
     u8g2.print("LINK: ONLINE");
   } else {

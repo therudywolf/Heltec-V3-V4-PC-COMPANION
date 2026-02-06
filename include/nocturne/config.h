@@ -117,21 +117,21 @@
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
 
-/* Menu (CONFIG / mode list); box below header (NOCT_HEADER_H 14) */
-#define NOCT_MENU_BOX_X 10
-#define NOCT_MENU_BOX_Y 18
-#define NOCT_MENU_BOX_W 108
-#define NOCT_MENU_BOX_H 44
-#define NOCT_MENU_CONFIG_BAR_X 34
-#define NOCT_MENU_CONFIG_BAR_Y 18
-#define NOCT_MENU_CONFIG_BAR_W 60
-#define NOCT_MENU_CONFIG_BAR_H 9
+/* Menu: full screen (no header), box fills 128x64 */
+#define NOCT_MENU_BOX_X 0
+#define NOCT_MENU_BOX_Y 0
+#define NOCT_MENU_BOX_W 128
+#define NOCT_MENU_BOX_H 64
+#define NOCT_MENU_CONFIG_BAR_X 2
+#define NOCT_MENU_CONFIG_BAR_Y 0
+#define NOCT_MENU_CONFIG_BAR_W 124
+#define NOCT_MENU_CONFIG_BAR_H 10
 #define NOCT_MENU_CONFIG_BAR_CHAMFER 2
-#define NOCT_MENU_ROW_H 8
+#define NOCT_MENU_ROW_H 10
 #define NOCT_MENU_VISIBLE_ROWS 5
-#define NOCT_MENU_LIST_LEFT 14
-#define NOCT_MENU_LIST_W 82
-#define NOCT_MENU_START_Y 28
+#define NOCT_MENU_LIST_LEFT 2
+#define NOCT_MENU_LIST_W 124
+#define NOCT_MENU_START_Y 14
 
 /* Battery HUD in header (frame + terminal nub) */
 #define NOCT_BAT_FRAME_W 16
