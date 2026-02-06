@@ -5,16 +5,14 @@
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
 
-/* V4 Pinout: OLED SDA=17, SCL=18; Vext=21 powers OLED; RST=18. LED=25; BUTTON=0
- * Do NOT drive Vext HIGH — HIGH cuts power to OLED. RST uses LOW→HIGH for
- * reset. */
+/* V4 Pinout (standard Heltec): SDA=17, SCL=18, RST=21, Vext=36. LED=25;
+ * BUTTON=0 Vext=36: LOW = OLED powered. RST=21: reset pulse LOW then HIGH. */
 #define NOCT_SDA_PIN 17
 #define NOCT_SCL_PIN 18
-#define NOCT_OLED_RST 18 /* OLED reset pin (V4: often 18) */
-#define NOCT_RST_PIN                                                           \
-  18 /* Alias for DisplayEngine; keep same as NOCT_OLED_RST */
+#define NOCT_RST_PIN 21 /* OLED reset (do not use 18 — that is SCL) */
 #define NOCT_VEXT_PIN                                                          \
-  21 /* Vext: LOW = OLED powered, HIGH = off. MUST stay LOW. */
+  36 /* Vext: LOW = enable OLED power. Never drive HIGH.                       \
+      */
 #define NOCT_LED_ALERT_PIN                                                     \
   35 /* White programmable LED; blink on any active alert */
 #define NOCT_BUTTON_PIN 0
@@ -114,8 +112,8 @@
 #define NOCT_BUTTON_PREDATOR_MS 2500
 #define NOCT_GLITCH_INTERVAL_MS 10000 /* Glitch once every 10s, subtle */
 #define NOCT_GLITCH_DURATION_MS 100
-/* GUI redraw interval (ms). 40 = ~25 FPS, max smoothness. */
-#define NOCT_REDRAW_INTERVAL_MS 17 /* ~60 FPS, test */
+/* GUI redraw interval (ms). 17 = ~60 FPS. */
+#define NOCT_REDRAW_INTERVAL_MS 17 /* ~60 FPS */
 #define NOCT_GRAPH_SAMPLES 32 /* Lower = less RAM; 32 enough for sparkline */
 #define NOCT_GRAPH_HEIGHT 11
 
