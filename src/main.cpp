@@ -1171,12 +1171,22 @@ void loop() {
       if (event == EV_SHORT) {
         int n = WiFi.scanComplete();
         if (n > 0) {
-          wifiScanSelected = (wifiScanSelected + 1) % n;
-          kickManager.setTargetFromScan(wifiScanSelected);
-          if (wifiScanSelected >= wifiListPage + 5)
-            wifiListPage = wifiScanSelected - 4;
-          else if (wifiScanSelected < wifiListPage)
-            wifiListPage = wifiScanSelected;
+          sortAndFilterWiFiNetworks();
+          int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
+          if (count > 0) {
+            wifiScanSelected = (wifiScanSelected + 1) % count;
+            int actualIndex =
+                (wifiFilteredCount > 0 && wifiScanSelected < wifiFilteredCount)
+                    ? wifiSortedIndices[wifiScanSelected]
+                    : (wifiScanSelected >= 0 && wifiScanSelected < n
+                           ? wifiScanSelected
+                           : 0);
+            kickManager.setTargetFromScan(actualIndex);
+            if (wifiScanSelected >= wifiListPage + 5)
+              wifiListPage = wifiScanSelected - 4;
+            else if (wifiScanSelected < wifiListPage)
+              wifiListPage = wifiScanSelected;
+          }
         }
         needRedraw = true;
       } else if (event == EV_LONG) {
@@ -1388,15 +1398,15 @@ void loop() {
           kickTargetInitialized = true;
         }
       }
-      // Автоматический запуск атаки если цель установлена и атака не активна
-      if (!kickManager.isAttacking() && kickManager.isTargetSet() &&
-          !kickManager.isTargetOwnAP()) {
-        kickManager.startAttack();
-      }
-
-      // tick() должен вызываться всегда в активном режиме для обработки атаки
       kickManager.tick();
-      sceneManager.drawKickMode(kickManager);
+      static char deauthFooter[40];
+      snprintf(deauthFooter, sizeof(deauthFooter), "%s PKTS:%d  1x next 2s atk",
+               kickManager.isAttacking() ? "INJ" : "IDLE",
+               kickManager.getPacketCount());
+      sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage,
+                                   wifiFilteredCount > 0 ? wifiSortedIndices
+                                                         : nullptr,
+                                   wifiFilteredCount, deauthFooter);
       break;
     }
     case MODE_BLE_SPAM: {
