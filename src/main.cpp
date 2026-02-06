@@ -211,6 +211,9 @@ int wifiSortMode = 0;      // 0=RSSI desc, 1=alphabetical, 2=RSSI asc
 int wifiRssiFilter = -100; // Минимальный RSSI для отображения (-100 = все)
 int wifiSortedIndices[32]; // Индексы отсортированных сетей
 int wifiFilteredCount = 0; // Количество отфильтрованных сетей
+// DEAUTH: индекс скана выбранной цели (-1 = ещё не выбирали долгим нажатием).
+// Своя сеть в списке не фильтруется — атака на неё разрешена.
+static int lastDeauthTargetScanIndex = -1;
 
 // Функция сортировки и фильтрации WiFi сетей
 static void sortAndFilterWiFiNetworks() {
@@ -582,6 +585,7 @@ static void cleanupMode(AppMode mode) {
     break;
   case MODE_WIFI_DEAUTH:
     kickManager.stopAttack();
+    lastDeauthTargetScanIndex = -1;
     WiFi.scanDelete();
     break;
   case MODE_RADAR:
@@ -675,7 +679,7 @@ static bool initializeMode(AppMode mode) {
     wifiScanSelected = 0;
     wifiListPage = 0;
     wifiFilteredCount = 0;
-    kickManager.setTargetFromScan(0);
+    lastDeauthTargetScanIndex = -1;
     Serial.println("[SYS] DEAUTH mode initialized");
     return true;
 
@@ -1164,7 +1168,7 @@ void loop() {
         needRedraw = true;
       }
       break;
-    case MODE_WIFI_DEAUTH:
+    case MODE_WIFI_DEAUTH: {
       if (event == EV_SHORT) {
         int n = WiFi.scanComplete();
         if (n > 0) {
@@ -1172,13 +1176,6 @@ void loop() {
           int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
           if (count > 0) {
             wifiScanSelected = (wifiScanSelected + 1) % count;
-            int actualIndex =
-                (wifiFilteredCount > 0 && wifiScanSelected < wifiFilteredCount)
-                    ? wifiSortedIndices[wifiScanSelected]
-                    : (wifiScanSelected >= 0 && wifiScanSelected < n
-                           ? wifiScanSelected
-                           : 0);
-            kickManager.setTargetFromScan(actualIndex);
             if (wifiScanSelected >= wifiListPage + 5)
               wifiListPage = wifiScanSelected - 4;
             else if (wifiScanSelected < wifiListPage)
@@ -1187,13 +1184,34 @@ void loop() {
         }
         needRedraw = true;
       } else if (event == EV_LONG) {
-        if (kickManager.isAttacking())
+        if (kickManager.isAttacking()) {
           kickManager.stopAttack();
-        else
-          kickManager.startAttack();
+        } else {
+          int n = WiFi.scanComplete();
+          if (n > 0) {
+            sortAndFilterWiFiNetworks();
+            int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
+            if (count > 0) {
+              int actualIndex =
+                  (wifiFilteredCount > 0 &&
+                   wifiScanSelected < wifiFilteredCount)
+                      ? wifiSortedIndices[wifiScanSelected]
+                      : (wifiScanSelected >= 0 && wifiScanSelected < n
+                             ? wifiScanSelected
+                             : 0);
+              if (lastDeauthTargetScanIndex != actualIndex) {
+                kickManager.setTargetFromScan(actualIndex);
+                lastDeauthTargetScanIndex = actualIndex;
+              } else {
+                kickManager.startAttack();
+              }
+            }
+          }
+        }
         needRedraw = true;
       }
       break;
+    }
     case MODE_RADAR:
       if (event == EV_SHORT) {
         int n = WiFi.scanComplete();
@@ -1377,27 +1395,12 @@ void loop() {
     }
     case MODE_WIFI_DEAUTH: {
       int n = WiFi.scanComplete();
-      static bool kickTargetInitialized = false;
-      if (n <= 0) {
-        kickTargetInitialized = false;
-      } else {
-        if (wifiFilteredCount == 0) {
-          sortAndFilterWiFiNetworks();
-        }
-        if (!kickTargetInitialized) {
-          int actualIndex =
-              (wifiFilteredCount > 0 && wifiScanSelected < wifiFilteredCount)
-                  ? wifiSortedIndices[wifiScanSelected]
-                  : (wifiScanSelected >= 0 && wifiScanSelected < n
-                         ? wifiScanSelected
-                         : 0);
-          kickManager.setTargetFromScan(actualIndex);
-          kickTargetInitialized = true;
-        }
+      if (n > 0 && wifiFilteredCount == 0) {
+        sortAndFilterWiFiNetworks();
       }
       kickManager.tick();
-      static char deauthFooter[40];
-      snprintf(deauthFooter, sizeof(deauthFooter), "%s PKTS:%d  1x next 2s atk",
+      static char deauthFooter[48];
+      snprintf(deauthFooter, sizeof(deauthFooter), "%s PKTS:%d  L=sel L=atk",
                kickManager.isAttacking() ? "INJ" : "IDLE",
                kickManager.getPacketCount());
       sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage,
