@@ -117,8 +117,9 @@ void DisplayEngine::sendBuffer() { u8g2_.sendBuffer(); }
 void DisplayEngine::drawScanlines(bool everyFourth) { (void)everyFourth; }
 
 // ---------------------------------------------------------------------------
-// drawGlitch: horizontal slice offset 2–5px + random invert block. intensity
-// 1–3.
+// drawGlitch: Blade Runner 2049–style — multiple horizontal tear bands (each
+// with independent shift), optional ghost/echo band, small invert blocks.
+// intensity 1–3.
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawGlitch(int intensity) {
   if (intensity <= 0)
@@ -126,47 +127,84 @@ void DisplayEngine::drawGlitch(int intensity) {
   uint8_t *buf = u8g2_.getBufferPtr();
   if (!buf)
     return;
-  const int sliceH = 6;
-  int shift = 2 + (intensity >= 2 ? random(2, 6) : 2); // 2–5 px
-  int y0 = NOCT_HEADER_H + random(NOCT_DISP_H - sliceH - NOCT_HEADER_H - 4);
-  if (y0 < NOCT_HEADER_H)
-    y0 = NOCT_HEADER_H;
-  if (y0 + sliceH >= NOCT_DISP_H)
-    y0 = NOCT_DISP_H - sliceH - 1;
-  int p0 = y0 / 8;
-  int p1 = (y0 + sliceH - 1) / 8;
-  if (p1 >= 8)
-    p1 = 7;
-  uint8_t tmp[8 * 128];
-  for (int p = p0; p <= p1; p++) {
-    for (int c = 0; c < 128; c++)
-      tmp[(p - p0) * 128 + c] = buf[p * 128 + c];
-  }
-  int dir = (random(2) == 0) ? -shift : shift;
-  for (int p = p0; p <= p1; p++) {
-    for (int c = 0; c < 128; c++) {
-      int src = c - dir;
-      if (src < 0)
-        src += 128;
-      if (src >= 128)
-        src -= 128;
-      buf[p * 128 + c] = tmp[(p - p0) * 128 + src];
+  const int numBands = (intensity >= 2) ? (2 + random(0, 3)) : 2; // 2–4 bands
+  int ghostDstY = -1;
+  uint8_t ghostBuf[8 * 128];
+
+  for (int b = 0; b < numBands; b++) {
+    const int sliceH = 3 + random(4); // 3–6 px, thin strips like BR2049
+    int shift = 1 + random(1, 4);     // 1–4 px
+    if (random(2) == 0)
+      shift = -shift;
+    int y0 = NOCT_HEADER_H + random(NOCT_DISP_H - sliceH - NOCT_HEADER_H - 2);
+    if (y0 < NOCT_HEADER_H)
+      y0 = NOCT_HEADER_H;
+    if (y0 + sliceH >= NOCT_DISP_H)
+      y0 = NOCT_DISP_H - sliceH - 1;
+
+    int p0 = y0 / 8;
+    int p1 = (y0 + sliceH - 1) / 8;
+    if (p1 >= 8)
+      p1 = 7;
+    const int pageRows = p1 - p0 + 1;
+    for (int p = p0; p <= p1; p++) {
+      for (int c = 0; c < 128; c++)
+        ghostBuf[(p - p0) * 128 + c] = buf[p * 128 + c];
+    }
+    for (int p = p0; p <= p1; p++) {
+      for (int c = 0; c < 128; c++) {
+        int src = c - shift;
+        if (src < 0)
+          src += 128;
+        if (src >= 128)
+          src -= 128;
+        buf[p * 128 + c] = ghostBuf[(p - p0) * 128 + src];
+      }
+    }
+    // One band: ghost (echo) — duplicate this strip elsewhere, BR2049-style
+    if (b == 0 && intensity >= 2 && random(3) == 0) {
+      ghostDstY =
+          NOCT_HEADER_H + random(NOCT_DISP_H - sliceH - NOCT_HEADER_H - 2);
+      if (ghostDstY < NOCT_HEADER_H)
+        ghostDstY = NOCT_HEADER_H;
+      if (ghostDstY + sliceH >= NOCT_DISP_H)
+        ghostDstY = NOCT_DISP_H - sliceH - 1;
+      if (ghostDstY != y0) {
+        int dp0 = ghostDstY / 8;
+        int dp1 = (ghostDstY + sliceH - 1) / 8;
+        if (dp1 >= 8)
+          dp1 = 7;
+        int copyRows = pageRows;
+        if (dp1 - dp0 + 1 < copyRows)
+          copyRows = dp1 - dp0 + 1;
+        for (int i = 0; i < copyRows; i++) {
+          int p = dp0 + i;
+          if (p > 7)
+            break;
+          for (int c = 0; c < 128; c++)
+            buf[p * 128 + c] = ghostBuf[i * 128 + c];
+        }
+      }
     }
   }
-  // Invert a random rectangular block
-  int bx = 4 + random(NOCT_DISP_W - 24);
-  int by = NOCT_HEADER_H + 2 + random(NOCT_DISP_H - NOCT_HEADER_H - 14);
-  int bw = 10 + random(20);
-  int bh = 6 + random(8);
-  if (bx + bw > NOCT_DISP_W)
-    bw = NOCT_DISP_W - bx;
-  if (by + bh > NOCT_DISP_H)
-    bh = NOCT_DISP_H - by;
-  int rowStart = by / 8;
-  int rowEnd = (by + bh - 1) / 8;
-  for (int row = rowStart; row <= rowEnd; row++) {
-    for (int col = bx; col < bx + bw && col < 128; col++)
-      buf[row * 128 + col] ^= 0xFF;
+
+  // Invert 1–2 small rectangular blocks (signal corruption)
+  int numBlocks = (intensity >= 3) ? 2 : 1;
+  for (int n = 0; n < numBlocks; n++) {
+    int bx = 4 + random(NOCT_DISP_W - 20);
+    int by = NOCT_HEADER_H + 2 + random(NOCT_DISP_H - NOCT_HEADER_H - 12);
+    int bw = 8 + random(16);
+    int bh = 4 + random(6);
+    if (bx + bw > NOCT_DISP_W)
+      bw = NOCT_DISP_W - bx;
+    if (by + bh > NOCT_DISP_H)
+      bh = NOCT_DISP_H - by;
+    int rowStart = by / 8;
+    int rowEnd = (by + bh - 1) / 8;
+    for (int row = rowStart; row <= rowEnd; row++) {
+      for (int col = bx; col < bx + bw && col < 128; col++)
+        buf[row * 128 + col] ^= 0xFF;
+    }
   }
 }
 
@@ -888,43 +926,45 @@ void DisplayEngine::drawAlertBorder() {
 }
 
 // ===========================================================================
-// BLADE RUNNER VFX: Analog noise (pixel dust), V-Sync loss (screen roll),
-// Chromatic shift (text tearing). No grid/scanlines.
+// BLADE RUNNER 2049–style: subtle film grain, multi-band horizontal tear
+// (V-sync loss), occasional rolling tear. No grid/scanlines.
 // ===========================================================================
 void DisplayEngine::applyGlitch() {
   unsigned long now = millis();
 
-  // 1. ANALOG NOISE (Pixel Dust) — "Film Grain"
-  if (random(100) > 60) {
+  // 1. FILM GRAIN — sparse pixel dust, like BR2049 monitors
+  if (random(100) > 55) {
     u8g2_.setDrawColor(2); // XOR
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 4 + random(6); i++)
       u8g2_.drawPixel(random(128), random(64));
+    u8g2_.setDrawColor(1);
+  }
+
+  // 2. ROLLING TEAR — 2–3 thin horizontal bands that drift (V-sync loss)
+  static int tearActive = 0;
+  static unsigned long lastTear = 0;
+  if (random(1000) > 985 && tearActive == 0) {
+    tearActive = 1;
+    lastTear = now;
+  }
+  if (tearActive != 0) {
+    u8g2_.setDrawColor(0);
+    int t = (int)((now - lastTear) / 8) % 68;
+    for (int i = 0; i < 3; i++) {
+      int y = (t + i * 18) % 66;
+      if (y < 64)
+        u8g2_.drawBox(0, y, 128, 1);
     }
     u8g2_.setDrawColor(1);
+    if (now - lastTear > 180)
+      tearActive = 0;
   }
 
-  // 2. V-SYNC FAILURE (Screen Roll) — "Cyberpunk" look
-  static int vShift = 0;
-  static unsigned long lastGlitch = 0;
-  if (random(1000) > 990 && vShift == 0) {
-    vShift = random(-5, 5);
-    lastGlitch = now;
-  }
-
-  if (vShift != 0) {
-    u8g2_.setDrawColor(0);
-    int y = (millis() / 5) % 70;
-    u8g2_.drawBox(0, y, 128, 2);
-    u8g2_.setDrawColor(1);
-    if (now - lastGlitch > 200)
-      vShift = 0;
-  }
-
-  // 3. CHROMATIC SHIFT (Text Tearing)
-  if (random(100) > 95) {
-    u8g2_.setDrawColor(2); // XOR
-    int y = random(64);
-    u8g2_.drawBox(random(10), y, 100, 1);
+  // 3. HORIZONTAL TEAR LINES — single-line XOR flicker (chromatic/signal tear)
+  if (random(100) > 92) {
+    u8g2_.setDrawColor(2);
+    int y = 8 + random(48);
+    u8g2_.drawBox(4 + random(20), y, 80 + random(40), 1);
     u8g2_.setDrawColor(1);
   }
 }
