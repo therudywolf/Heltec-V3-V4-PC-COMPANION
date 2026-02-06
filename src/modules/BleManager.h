@@ -81,3 +81,4 @@ private:
   bool airTagMonitoring_ = false;
   BleScanDevice airTags_[BLE_SCAN_DEVICE_MAX];
   int airTagCount_ = 0;
+};
