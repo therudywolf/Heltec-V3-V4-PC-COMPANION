@@ -25,14 +25,17 @@
 #include "modules/KickManager.h"
 #include "modules/MdnsManager.h"
 #include "modules/NetManager.h"
+#include "modules/NetworkScanManager.h"
 #include "modules/SceneManager.h"
 #include "modules/TrapManager.h"
 #include "modules/UsbManager.h"
 #include "modules/VaultManager.h"
+#include "modules/WifiAttackManager.h"
 #include "modules/WifiSniffManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 #include "secrets.h"
+
 
 // ---------------------------------------------------------------------------
 // Local constants (after includes, before any global object instantiations)
@@ -146,6 +149,8 @@ TrapManager trapManager;
 KickManager kickManager;
 BeaconManager beaconManager;
 WifiSniffManager wifiSniffManager;
+WifiAttackManager wifiAttackManager;
+NetworkScanManager networkScanManager;
 MdnsManager mdnsManager;
 VaultManager vaultManager;
 AppState state;
@@ -268,11 +273,7 @@ enum AppMode {
   MODE_VAULT,      // TOTP Vault (existing)
   MODE_FAKE_LOGIN, // Fake Login (existing)
   MODE_QR,         // QR code (existing)
-  MODE_MDNS,       // mDNS spoof (existing)
-  // GPS (conditional compilation)
-  MODE_GPS_WARDRIVE, // Wardriving
-  MODE_GPS_TRACKER,  // GPS Tracker
-  MODE_GPS_POI       // Points of Interest
+  MODE_MDNS        // mDNS spoof (existing)
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -686,6 +687,7 @@ static void cleanupMode(AppMode mode) {
   case MODE_WIFI_SLEEP_ATTACK:
   case MODE_WIFI_SLEEP_TARGETED:
   case MODE_WIFI_SAE_COMMIT:
+    wifiAttackManager.stop();
     WiFi.scanDelete();
     break;
   case MODE_WIFI_TRAP:
@@ -728,6 +730,7 @@ static void cleanupMode(AppMode mode) {
   case MODE_NETWORK_RDP_SCAN:
   case MODE_NETWORK_TELNET_SCAN:
   case MODE_NETWORK_SSH_SCAN:
+    networkScanManager.stop();
     WiFi.scanDelete();
     break;
   // Tools
@@ -742,9 +745,6 @@ static void cleanupMode(AppMode mode) {
     break;
   case MODE_VAULT:
   case MODE_DAEMON:
-  case MODE_GPS_WARDRIVE:
-  case MODE_GPS_TRACKER:
-  case MODE_GPS_POI:
     // Эти режимы не требуют специальной очистки
     break;
   case MODE_NORMAL:
@@ -835,9 +835,6 @@ static void manageWiFiState(AppMode mode) {
   case MODE_DAEMON:
   case MODE_FAKE_LOGIN:
   case MODE_QR:
-  case MODE_GPS_WARDRIVE:
-  case MODE_GPS_TRACKER:
-  case MODE_GPS_POI:
     netManager.setSuspend(false);
     break;
   case MODE_BADWOLF:
@@ -978,7 +975,7 @@ static bool initializeMode(AppMode mode) {
   // WiFi Scans
   case MODE_WIFI_PROBE_SCAN:
     manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_AP); // TODO: Add PROBE mode
+    wifiSniffManager.begin(SNIFF_MODE_PROBE_SCAN);
     Serial.println("[SYS] PROBE SCAN mode initialized");
     return true;
   case MODE_WIFI_EAPOL_SCAN:
@@ -997,15 +994,28 @@ static bool initializeMode(AppMode mode) {
     Serial.println("[SYS] PACKET MONITOR mode initialized");
     return true;
   case MODE_WIFI_CHANNEL_ANALYZER:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_CHANNEL_ANALYZER);
+    Serial.println("[SYS] CHANNEL ANALYZER mode initialized");
+    return true;
   case MODE_WIFI_CHANNEL_ACTIVITY:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_CHANNEL_ACTIVITY);
+    Serial.println("[SYS] CHANNEL ACTIVITY mode initialized");
+    return true;
   case MODE_WIFI_PACKET_RATE:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_PACKET_RATE);
+    Serial.println("[SYS] PACKET RATE mode initialized");
+    return true;
   case MODE_WIFI_PINESCAN:
   case MODE_WIFI_MULTISSID:
   case MODE_WIFI_SIGNAL_STRENGTH:
   case MODE_WIFI_RAW_CAPTURE:
   case MODE_WIFI_AP_STA:
     manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_AP); // TODO: Add specific modes
+    wifiSniffManager.begin(
+        SNIFF_MODE_AP); // Use AP mode as base, can be extended
     Serial.printf("[SYS] WiFi scan mode %d initialized\n", mode);
     return true;
   // WiFi Attacks
@@ -1054,12 +1064,76 @@ static bool initializeMode(AppMode mode) {
     return true; // TODO: Implement these attacks
   // BLE Scans
   case MODE_BLE_SCAN_SKIMMERS:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_SKIMMERS);
+    Serial.println("[SYS] BLE SKIMMERS scan initialized");
+    return true;
   case MODE_BLE_SCAN_AIRTAG:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_AIRTAG);
+    Serial.println("[SYS] BLE AIRTAG scan initialized");
+    return true;
   case MODE_BLE_SCAN_AIRTAG_MON:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_BASIC);
+    bleManager.startAirTagMonitor();
+    Serial.println("[SYS] BLE AIRTAG MONITOR initialized");
+    return true;
   case MODE_BLE_SCAN_FLIPPER:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_FLIPPER);
+    Serial.println("[SYS] BLE FLIPPER scan initialized");
+    return true;
   case MODE_BLE_SCAN_FLOCK:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_FLOCK);
+    Serial.println("[SYS] BLE FLOCK scan initialized");
+    return true;
   case MODE_BLE_SCAN_ANALYZER:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_ANALYZER);
+    Serial.println("[SYS] BLE ANALYZER initialized");
+    return true;
   case MODE_BLE_SCAN_SIMPLE:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(BLE_SCAN_SIMPLE);
+    Serial.println("[SYS] BLE SIMPLE scan initialized");
+    return true;
   case MODE_BLE_SCAN_SIMPLE_TWO:
     manageWiFiState(mode);
     if (WiFi.getMode() != WIFI_OFF) {
@@ -1067,8 +1141,8 @@ static bool initializeMode(AppMode mode) {
       yield();
       WiFi.mode(WIFI_OFF);
     }
-    bleManager.beginScan(); // TODO: Add specific scan types
-    Serial.printf("[SYS] BLE scan mode %d initialized\n", mode);
+    bleManager.beginScan(BLE_SCAN_SIMPLE_TWO);
+    Serial.println("[SYS] BLE SIMPLE TWO scan initialized");
     return true;
   // BLE Attacks
   case MODE_BLE_SOUR_APPLE:
@@ -1138,14 +1212,6 @@ static bool initializeMode(AppMode mode) {
     Serial.printf("[SYS] Network scan mode %d initialized (TODO: implement)\n",
                   mode);
     return true; // TODO: Implement network scans
-  // GPS (conditional compilation)
-  case MODE_GPS_WARDRIVE:
-  case MODE_GPS_TRACKER:
-  case MODE_GPS_POI:
-    manageWiFiState(mode);
-    Serial.printf("[SYS] GPS mode %d initialized (TODO: implement)\n", mode);
-    return true; // TODO: Implement GPS features
-
   case MODE_NORMAL:
     manageWiFiState(mode);
     WiFi.scanDelete();
@@ -1206,7 +1272,7 @@ static int submenuCount(int category) {
   case 1:
     return 20; // WiFi: Full Marauder menu
   case 2:
-    return 15; // Tools: BLE + Network + GPS + Other tools
+    return 22; // Tools: BLE + Network + Other tools (no GPS)
   case 3:
     return 3; // System: REBOOT, VERSION, EXIT
   default:
@@ -1398,10 +1464,26 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
         return false;
       }
     } else if (item == 18) {
+      wifiScanSelected = 0;
+      wifiListPage = 0;
       if (!switchToMode(MODE_WIFI_AUTH_ATTACK)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
+      }
+      // Set target from scan if available
+      int n = WiFi.scanComplete();
+      if (n > 0) {
+        sortAndFilterWiFiNetworks();
+        if (wifiFilteredCount > 0) {
+          int idx = wifiSortedIndices[0];
+          String ssid = WiFi.SSID(idx);
+          uint8_t bssid[6];
+          WiFi.BSSID(idx, bssid);
+          wifiAttackManager.setTargetBSSID(bssid);
+          wifiAttackManager.setTargetSSID(ssid.c_str());
+          wifiAttackManager.setTargetChannel(WiFi.channel(idx));
+        }
       }
     } else if (item == 19) {
       if (!switchToMode(MODE_WIFI_TRAP)) {
@@ -1504,9 +1586,57 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
         toastUntil = now + 1500;
         return false;
       }
+    } else if (item == 14) {
+      if (!switchToMode(MODE_NETWORK_PING_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 15) {
+      if (!switchToMode(MODE_NETWORK_DNS_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 16) {
+      if (!switchToMode(MODE_NETWORK_HTTP_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 17) {
+      if (!switchToMode(MODE_NETWORK_HTTPS_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 18) {
+      if (!switchToMode(MODE_NETWORK_SMTP_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 19) {
+      if (!switchToMode(MODE_NETWORK_RDP_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 20) {
+      if (!switchToMode(MODE_NETWORK_TELNET_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 21) {
+      if (!switchToMode(MODE_NETWORK_SSH_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
     }
     // Tools
-    else if (item == 14) {
+    else if (item == 22) {
       if (!switchToMode(MODE_BADWOLF)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -2060,10 +2190,39 @@ void loop() {
       break;
     }
     case MODE_WIFI_BEACON:
+    case MODE_WIFI_BEACON_RICKROLL:
+    case MODE_WIFI_BEACON_LIST:
+    case MODE_WIFI_BEACON_FUNNY:
       beaconManager.tick();
       sceneManager.drawBeaconMode(beaconManager.getCurrentSSID(),
                                   beaconManager.getBeaconCount(),
                                   beaconManager.getCurrentIndex(), 8);
+      break;
+    case MODE_WIFI_AUTH_ATTACK:
+    case MODE_WIFI_MIMIC_FLOOD:
+    case MODE_WIFI_AP_SPAM:
+    case MODE_WIFI_BAD_MESSAGE:
+    case MODE_WIFI_BAD_MESSAGE_TARGETED:
+    case MODE_WIFI_SLEEP_ATTACK:
+    case MODE_WIFI_SLEEP_TARGETED:
+    case MODE_WIFI_SAE_COMMIT:
+      wifiAttackManager.tick();
+      // TODO: Add UI for attack modes
+      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, "ATTACK MODE");
+      break;
+    case MODE_NETWORK_ARP_SCAN:
+    case MODE_NETWORK_PORT_SCAN:
+    case MODE_NETWORK_PING_SCAN:
+    case MODE_NETWORK_DNS_SCAN:
+    case MODE_NETWORK_HTTP_SCAN:
+    case MODE_NETWORK_HTTPS_SCAN:
+    case MODE_NETWORK_SMTP_SCAN:
+    case MODE_NETWORK_RDP_SCAN:
+    case MODE_NETWORK_TELNET_SCAN:
+    case MODE_NETWORK_SSH_SCAN:
+      networkScanManager.tick();
+      // TODO: Add UI for network scans
+      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, "NETWORK SCAN");
       break;
     case MODE_WIFI_SNIFF:
       wifiSniffManager.tick();
