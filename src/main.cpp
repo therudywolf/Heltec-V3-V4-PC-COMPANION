@@ -785,12 +785,22 @@ static int submenuCount(int category) {
  * Long-press. */
 static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
   if (cat == 0) {
-    // Config: toggle
+    // Config: AUTO = cycle OFF -> 5s -> 10s -> 15s -> OFF
     if (item == 0) {
-      settings.carouselEnabled = !settings.carouselEnabled;
+      if (!settings.carouselEnabled) {
+        settings.carouselEnabled = true;
+        settings.carouselIntervalSec = 5;
+      } else if (settings.carouselIntervalSec == 5) {
+        settings.carouselIntervalSec = 10;
+      } else if (settings.carouselIntervalSec == 10) {
+        settings.carouselIntervalSec = 15;
+      } else {
+        settings.carouselEnabled = false;
+      }
       Preferences prefs;
       prefs.begin("nocturne", false);
       prefs.putBool("carousel", settings.carouselEnabled);
+      prefs.putInt("carouselSec", settings.carouselIntervalSec);
       prefs.end();
     } else if (item == 1) {
       settings.displayInverted = !settings.displayInverted;
@@ -916,9 +926,9 @@ void loop() {
   // 2. Non-blocking input
   ButtonEvent event = input.update();
 
-  // 3. Global: DOUBLE = always open menu (even when exiting App Mode). Consume
-  // event so inner menu block does not process it again this frame.
-  if (event == EV_DOUBLE) {
+  // 3. Global: DOUBLE = open menu when closed; when menu already open, leave
+  // EV_DOUBLE for menu block (back / close).
+  if (event == EV_DOUBLE && !quickMenuOpen) {
     if (currentMode != MODE_NORMAL)
       exitAppModeToNormal();
     quickMenuOpen = true;
@@ -1304,9 +1314,6 @@ void loop() {
       if (n > 0 && wifiFilteredCount == 0) {
         sortAndFilterWiFiNetworks();
       }
-      display.drawGlobalHeader("RADAR", nullptr, netManager.rssi(), false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage,
                                    wifiFilteredCount > 0 ? wifiSortedIndices
                                                          : nullptr,
@@ -1341,9 +1348,6 @@ void loop() {
 
       // tick() должен вызываться всегда в активном режиме для обработки атаки
       kickManager.tick();
-      display.drawGlobalHeader("DEAUTH", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       sceneManager.drawKickMode(kickManager);
       break;
     }
@@ -1352,9 +1356,6 @@ void loop() {
       if (bleManager.isActive()) {
         bleManager.tick();
       }
-      display.drawGlobalHeader("BLE", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       sceneManager.drawBleSpammer(bleManager.getPacketCount());
       if (lastPhantomPayloadIndex >= 0 &&
           bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
@@ -1363,18 +1364,12 @@ void loop() {
       break;
     }
     case MODE_BADWOLF:
-      display.drawGlobalHeader("USB HID", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       sceneManager.drawBadWolf();
       break;
     case MODE_WIFI_TRAP:
       if (trapManager.isActive()) {
         trapManager.tick();
       }
-      display.drawGlobalHeader("PORTAL", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       sceneManager.drawTrapMode(
           trapManager.getClientCount(), trapManager.getLogsCaptured(),
           trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
@@ -1384,19 +1379,12 @@ void loop() {
       vaultManager.tick();
       static char codeBuf[8];
       vaultManager.getCurrentCode(codeBuf, sizeof(codeBuf));
-      display.drawGlobalHeader("VAULT", nullptr, 0,
-                               netManager.isWifiConnected());
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       sceneManager.drawVaultMode(
           vaultManager.getAccountName(vaultManager.getCurrentIndex()), codeBuf,
           vaultManager.getCountdownSeconds());
       break;
     }
     default:
-      display.drawGlobalHeader("HUB", nullptr, 0, false);
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
       break;
     }
   }
