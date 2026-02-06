@@ -197,22 +197,82 @@ unsigned long lastMenuEventTime = 0;
 static char toastMsg[20] = "";
 static unsigned long toastUntil = 0;
 
-// --- Cyberdeck Modes ---
+// --- Cyberdeck Modes --- Full Marauder integration
 enum AppMode {
   MODE_NORMAL,
   MODE_DAEMON,
-  MODE_RADAR,
-  MODE_WIFI_DEAUTH,
-  MODE_WIFI_BEACON,
-  MODE_WIFI_SNIFF,
-  MODE_BLE_SPAM,
-  MODE_BLE_SCAN,
-  MODE_BADWOLF,
-  MODE_WIFI_TRAP,
-  MODE_VAULT,
-  MODE_FAKE_LOGIN,
-  MODE_QR,
-  MODE_MDNS
+  // WiFi Scans
+  MODE_RADAR,                 // AP Scan (existing)
+  MODE_WIFI_PROBE_SCAN,       // Probe requests
+  MODE_WIFI_EAPOL_SCAN,       // EAPOL handshake capture
+  MODE_WIFI_STATION_SCAN,     // Station scan (existing)
+  MODE_WIFI_PACKET_MONITOR,   // Packet Monitor (existing)
+  MODE_WIFI_CHANNEL_ANALYZER, // Channel Analyzer
+  MODE_WIFI_CHANNEL_ACTIVITY, // Channel Activity
+  MODE_WIFI_PACKET_RATE,      // Packet Rate
+  MODE_WIFI_PINESCAN,         // Pineapple detection
+  MODE_WIFI_MULTISSID,        // MultiSSID detection
+  MODE_WIFI_SIGNAL_STRENGTH,  // Signal Strength scan
+  MODE_WIFI_RAW_CAPTURE,      // Raw packet capture
+  MODE_WIFI_AP_STA,           // AP + Station scan
+  MODE_WIFI_SNIFF,            // Basic sniff (existing)
+  // WiFi Attacks
+  MODE_WIFI_DEAUTH,               // Deauth (existing)
+  MODE_WIFI_DEAUTH_TARGETED,      // Targeted deauth
+  MODE_WIFI_DEAUTH_MANUAL,        // Manual deauth
+  MODE_WIFI_BEACON,               // Beacon spam (existing)
+  MODE_WIFI_BEACON_RICKROLL,      // Rick Roll beacon
+  MODE_WIFI_BEACON_LIST,          // Beacon list spam
+  MODE_WIFI_BEACON_FUNNY,         // Funny beacon
+  MODE_WIFI_AUTH_ATTACK,          // Auth attack
+  MODE_WIFI_MIMIC_FLOOD,          // Mimic flood
+  MODE_WIFI_AP_SPAM,              // AP spam
+  MODE_WIFI_BAD_MESSAGE,          // Bad message attack
+  MODE_WIFI_BAD_MESSAGE_TARGETED, // Bad message targeted
+  MODE_WIFI_SLEEP_ATTACK,         // Sleep attack
+  MODE_WIFI_SLEEP_TARGETED,       // Sleep targeted
+  MODE_WIFI_SAE_COMMIT,           // SAE commit attack
+  MODE_WIFI_TRAP,                 // Evil Portal (existing)
+  // BLE Scans
+  MODE_BLE_SCAN,            // Basic scan (existing)
+  MODE_BLE_SCAN_SKIMMERS,   // Skimmers scan
+  MODE_BLE_SCAN_AIRTAG,     // AirTag scan
+  MODE_BLE_SCAN_AIRTAG_MON, // AirTag monitor
+  MODE_BLE_SCAN_FLIPPER,    // Flipper scan
+  MODE_BLE_SCAN_FLOCK,      // Flock detection
+  MODE_BLE_SCAN_ANALYZER,   // BLE Analyzer
+  MODE_BLE_SCAN_SIMPLE,     // Simple scan
+  MODE_BLE_SCAN_SIMPLE_TWO, // Simple scan variant
+  // BLE Attacks
+  MODE_BLE_SPAM,                // Basic spam (existing)
+  MODE_BLE_SOUR_APPLE,          // Sour Apple (existing)
+  MODE_BLE_SWIFTPAIR_MICROSOFT, // SwiftPair Microsoft
+  MODE_BLE_SWIFTPAIR_GOOGLE,    // SwiftPair Google
+  MODE_BLE_SWIFTPAIR_SAMSUNG,   // SwiftPair Samsung
+  MODE_BLE_SPAM_ALL,            // Spam all types
+  MODE_BLE_FLIPPER_SPAM,        // Flipper spam
+  MODE_BLE_AIRTAG_SPOOF,        // AirTag spoof
+  // Network Scans
+  MODE_NETWORK_ARP_SCAN,    // ARP scan
+  MODE_NETWORK_PORT_SCAN,   // Port scan
+  MODE_NETWORK_PING_SCAN,   // Ping scan
+  MODE_NETWORK_DNS_SCAN,    // DNS scan
+  MODE_NETWORK_HTTP_SCAN,   // HTTP scan
+  MODE_NETWORK_HTTPS_SCAN,  // HTTPS scan
+  MODE_NETWORK_SMTP_SCAN,   // SMTP scan
+  MODE_NETWORK_RDP_SCAN,    // RDP scan
+  MODE_NETWORK_TELNET_SCAN, // Telnet scan
+  MODE_NETWORK_SSH_SCAN,    // SSH scan
+  // Tools
+  MODE_BADWOLF,    // USB HID (existing)
+  MODE_VAULT,      // TOTP Vault (existing)
+  MODE_FAKE_LOGIN, // Fake Login (existing)
+  MODE_QR,         // QR code (existing)
+  MODE_MDNS,       // mDNS spoof (existing)
+  // GPS (conditional compilation)
+  MODE_GPS_WARDRIVE, // Wardriving
+  MODE_GPS_TRACKER,  // GPS Tracker
+  MODE_GPS_POI       // Points of Interest
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -586,31 +646,93 @@ void setup() {
 /** Очистка ресурсов режима перед переключением */
 static void cleanupMode(AppMode mode) {
   switch (mode) {
-  case MODE_BLE_SPAM:
-    bleManager.stop();
-    WiFi.mode(WIFI_STA);
+  // WiFi Scans
+  case MODE_RADAR:
+  case MODE_WIFI_PROBE_SCAN:
+  case MODE_WIFI_EAPOL_SCAN:
+  case MODE_WIFI_STATION_SCAN:
+  case MODE_WIFI_PACKET_MONITOR:
+  case MODE_WIFI_CHANNEL_ANALYZER:
+  case MODE_WIFI_CHANNEL_ACTIVITY:
+  case MODE_WIFI_PACKET_RATE:
+  case MODE_WIFI_PINESCAN:
+  case MODE_WIFI_MULTISSID:
+  case MODE_WIFI_SIGNAL_STRENGTH:
+  case MODE_WIFI_RAW_CAPTURE:
+  case MODE_WIFI_AP_STA:
+  case MODE_WIFI_SNIFF:
+    wifiSniffManager.stop();
+    WiFi.scanDelete();
     break;
-  case MODE_BADWOLF:
-    usbManager.stop();
-    break;
-  case MODE_WIFI_TRAP:
-    trapManager.stop();
-    WiFi.mode(WIFI_STA);
-    break;
+  // WiFi Attacks
   case MODE_WIFI_DEAUTH:
+  case MODE_WIFI_DEAUTH_TARGETED:
+  case MODE_WIFI_DEAUTH_MANUAL:
     kickManager.stopAttack();
     lastDeauthTargetScanIndex = -1;
     WiFi.scanDelete();
     break;
   case MODE_WIFI_BEACON:
+  case MODE_WIFI_BEACON_RICKROLL:
+  case MODE_WIFI_BEACON_LIST:
+  case MODE_WIFI_BEACON_FUNNY:
     beaconManager.stop();
     break;
-  case MODE_WIFI_SNIFF:
-    wifiSniffManager.stop();
+  case MODE_WIFI_AUTH_ATTACK:
+  case MODE_WIFI_MIMIC_FLOOD:
+  case MODE_WIFI_AP_SPAM:
+  case MODE_WIFI_BAD_MESSAGE:
+  case MODE_WIFI_BAD_MESSAGE_TARGETED:
+  case MODE_WIFI_SLEEP_ATTACK:
+  case MODE_WIFI_SLEEP_TARGETED:
+  case MODE_WIFI_SAE_COMMIT:
+    WiFi.scanDelete();
     break;
+  case MODE_WIFI_TRAP:
+    trapManager.stop();
+    WiFi.mode(WIFI_STA);
+    break;
+  // BLE Scans
   case MODE_BLE_SCAN:
+  case MODE_BLE_SCAN_SKIMMERS:
+  case MODE_BLE_SCAN_AIRTAG:
+  case MODE_BLE_SCAN_AIRTAG_MON:
+  case MODE_BLE_SCAN_FLIPPER:
+  case MODE_BLE_SCAN_FLOCK:
+  case MODE_BLE_SCAN_ANALYZER:
+  case MODE_BLE_SCAN_SIMPLE:
+  case MODE_BLE_SCAN_SIMPLE_TWO:
     bleManager.stopScan();
     WiFi.mode(WIFI_STA);
+    break;
+  // BLE Attacks
+  case MODE_BLE_SPAM:
+  case MODE_BLE_SOUR_APPLE:
+  case MODE_BLE_SWIFTPAIR_MICROSOFT:
+  case MODE_BLE_SWIFTPAIR_GOOGLE:
+  case MODE_BLE_SWIFTPAIR_SAMSUNG:
+  case MODE_BLE_SPAM_ALL:
+  case MODE_BLE_FLIPPER_SPAM:
+  case MODE_BLE_AIRTAG_SPOOF:
+    bleManager.stop();
+    WiFi.mode(WIFI_STA);
+    break;
+  // Network Scans
+  case MODE_NETWORK_ARP_SCAN:
+  case MODE_NETWORK_PORT_SCAN:
+  case MODE_NETWORK_PING_SCAN:
+  case MODE_NETWORK_DNS_SCAN:
+  case MODE_NETWORK_HTTP_SCAN:
+  case MODE_NETWORK_HTTPS_SCAN:
+  case MODE_NETWORK_SMTP_SCAN:
+  case MODE_NETWORK_RDP_SCAN:
+  case MODE_NETWORK_TELNET_SCAN:
+  case MODE_NETWORK_SSH_SCAN:
+    WiFi.scanDelete();
+    break;
+  // Tools
+  case MODE_BADWOLF:
+    usbManager.stop();
     break;
   case MODE_FAKE_LOGIN:
   case MODE_QR:
@@ -618,11 +740,11 @@ static void cleanupMode(AppMode mode) {
   case MODE_MDNS:
     mdnsManager.stop();
     break;
-  case MODE_RADAR:
-    WiFi.scanDelete();
-    break;
   case MODE_VAULT:
   case MODE_DAEMON:
+  case MODE_GPS_WARDRIVE:
+  case MODE_GPS_TRACKER:
+  case MODE_GPS_POI:
     // Эти режимы не требуют специальной очистки
     break;
   case MODE_NORMAL:
@@ -634,8 +756,24 @@ static void cleanupMode(AppMode mode) {
 /** Управление состоянием WiFi в зависимости от режима */
 static void manageWiFiState(AppMode mode) {
   switch (mode) {
+  // BLE modes - WiFi OFF
   case MODE_BLE_SPAM:
   case MODE_BLE_SCAN:
+  case MODE_BLE_SCAN_SKIMMERS:
+  case MODE_BLE_SCAN_AIRTAG:
+  case MODE_BLE_SCAN_AIRTAG_MON:
+  case MODE_BLE_SCAN_FLIPPER:
+  case MODE_BLE_SCAN_FLOCK:
+  case MODE_BLE_SCAN_ANALYZER:
+  case MODE_BLE_SCAN_SIMPLE:
+  case MODE_BLE_SCAN_SIMPLE_TWO:
+  case MODE_BLE_SOUR_APPLE:
+  case MODE_BLE_SWIFTPAIR_MICROSOFT:
+  case MODE_BLE_SWIFTPAIR_GOOGLE:
+  case MODE_BLE_SWIFTPAIR_SAMSUNG:
+  case MODE_BLE_SPAM_ALL:
+  case MODE_BLE_FLIPPER_SPAM:
+  case MODE_BLE_AIRTAG_SPOOF:
     if (WiFi.getMode() != WIFI_OFF) {
       WiFi.disconnect(true);
       yield();
@@ -644,22 +782,62 @@ static void manageWiFiState(AppMode mode) {
     }
     netManager.setSuspend(true);
     break;
+  // WiFi modes - WiFi STA
   case MODE_RADAR:
-  case MODE_WIFI_DEAUTH:
-  case MODE_WIFI_BEACON:
+  case MODE_WIFI_PROBE_SCAN:
+  case MODE_WIFI_EAPOL_SCAN:
+  case MODE_WIFI_STATION_SCAN:
+  case MODE_WIFI_PACKET_MONITOR:
+  case MODE_WIFI_CHANNEL_ANALYZER:
+  case MODE_WIFI_CHANNEL_ACTIVITY:
+  case MODE_WIFI_PACKET_RATE:
+  case MODE_WIFI_PINESCAN:
+  case MODE_WIFI_MULTISSID:
+  case MODE_WIFI_SIGNAL_STRENGTH:
+  case MODE_WIFI_RAW_CAPTURE:
+  case MODE_WIFI_AP_STA:
   case MODE_WIFI_SNIFF:
+  case MODE_WIFI_DEAUTH:
+  case MODE_WIFI_DEAUTH_TARGETED:
+  case MODE_WIFI_DEAUTH_MANUAL:
+  case MODE_WIFI_BEACON:
+  case MODE_WIFI_BEACON_RICKROLL:
+  case MODE_WIFI_BEACON_LIST:
+  case MODE_WIFI_BEACON_FUNNY:
+  case MODE_WIFI_AUTH_ATTACK:
+  case MODE_WIFI_MIMIC_FLOOD:
+  case MODE_WIFI_AP_SPAM:
+  case MODE_WIFI_BAD_MESSAGE:
+  case MODE_WIFI_BAD_MESSAGE_TARGETED:
+  case MODE_WIFI_SLEEP_ATTACK:
+  case MODE_WIFI_SLEEP_TARGETED:
+  case MODE_WIFI_SAE_COMMIT:
   case MODE_WIFI_TRAP:
   case MODE_MDNS:
+  case MODE_NETWORK_ARP_SCAN:
+  case MODE_NETWORK_PORT_SCAN:
+  case MODE_NETWORK_PING_SCAN:
+  case MODE_NETWORK_DNS_SCAN:
+  case MODE_NETWORK_HTTP_SCAN:
+  case MODE_NETWORK_HTTPS_SCAN:
+  case MODE_NETWORK_SMTP_SCAN:
+  case MODE_NETWORK_RDP_SCAN:
+  case MODE_NETWORK_TELNET_SCAN:
+  case MODE_NETWORK_SSH_SCAN:
     if (WiFi.getMode() != WIFI_STA) {
       WiFi.mode(WIFI_STA);
       Serial.println("[SYS] WiFi STA for WiFi mode");
     }
     netManager.setSuspend(true);
     break;
+  // Normal modes - WiFi STA, NetManager active
   case MODE_VAULT:
   case MODE_DAEMON:
   case MODE_FAKE_LOGIN:
   case MODE_QR:
+  case MODE_GPS_WARDRIVE:
+  case MODE_GPS_TRACKER:
+  case MODE_GPS_POI:
     netManager.setSuspend(false);
     break;
   case MODE_BADWOLF:
@@ -797,6 +975,177 @@ static bool initializeMode(AppMode mode) {
     Serial.println("[SYS] DAEMON mode initialized");
     return true;
 
+  // WiFi Scans
+  case MODE_WIFI_PROBE_SCAN:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_AP); // TODO: Add PROBE mode
+    Serial.println("[SYS] PROBE SCAN mode initialized");
+    return true;
+  case MODE_WIFI_EAPOL_SCAN:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_EAPOL_CAPTURE);
+    Serial.println("[SYS] EAPOL SCAN mode initialized");
+    return true;
+  case MODE_WIFI_STATION_SCAN:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_STATION_SCAN);
+    Serial.println("[SYS] STATION SCAN mode initialized");
+    return true;
+  case MODE_WIFI_PACKET_MONITOR:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_PACKET_MONITOR);
+    Serial.println("[SYS] PACKET MONITOR mode initialized");
+    return true;
+  case MODE_WIFI_CHANNEL_ANALYZER:
+  case MODE_WIFI_CHANNEL_ACTIVITY:
+  case MODE_WIFI_PACKET_RATE:
+  case MODE_WIFI_PINESCAN:
+  case MODE_WIFI_MULTISSID:
+  case MODE_WIFI_SIGNAL_STRENGTH:
+  case MODE_WIFI_RAW_CAPTURE:
+  case MODE_WIFI_AP_STA:
+    manageWiFiState(mode);
+    wifiSniffManager.begin(SNIFF_MODE_AP); // TODO: Add specific modes
+    Serial.printf("[SYS] WiFi scan mode %d initialized\n", mode);
+    return true;
+  // WiFi Attacks
+  case MODE_WIFI_DEAUTH_TARGETED:
+  case MODE_WIFI_DEAUTH_MANUAL:
+    manageWiFiState(mode);
+    WiFi.disconnect(true);
+    delay(80);
+    WiFi.scanNetworks(true, true);
+    wifiScanSelected = 0;
+    wifiListPage = 0;
+    wifiFilteredCount = 0;
+    lastDeauthTargetScanIndex = -1;
+    Serial.printf("[SYS] DEAUTH mode %d initialized\n", mode);
+    return true;
+  case MODE_WIFI_BEACON_RICKROLL:
+    manageWiFiState(mode);
+    beaconManager.setMode(BEACON_MODE_RICK_ROLL);
+    beaconManager.begin();
+    Serial.println("[SYS] BEACON RICKROLL mode initialized");
+    return true;
+  case MODE_WIFI_BEACON_LIST:
+    manageWiFiState(mode);
+    beaconManager.setMode(BEACON_MODE_CUSTOM_LIST);
+    beaconManager.begin();
+    Serial.println("[SYS] BEACON LIST mode initialized");
+    return true;
+  case MODE_WIFI_BEACON_FUNNY:
+    manageWiFiState(mode);
+    beaconManager.setMode(BEACON_MODE_FUNNY);
+    beaconManager.begin();
+    Serial.println("[SYS] BEACON FUNNY mode initialized");
+    return true;
+  case MODE_WIFI_AUTH_ATTACK:
+  case MODE_WIFI_MIMIC_FLOOD:
+  case MODE_WIFI_AP_SPAM:
+  case MODE_WIFI_BAD_MESSAGE:
+  case MODE_WIFI_BAD_MESSAGE_TARGETED:
+  case MODE_WIFI_SLEEP_ATTACK:
+  case MODE_WIFI_SLEEP_TARGETED:
+  case MODE_WIFI_SAE_COMMIT:
+    manageWiFiState(mode);
+    WiFi.scanNetworks(true, true);
+    Serial.printf("[SYS] WiFi attack mode %d initialized (TODO: implement)\n",
+                  mode);
+    return true; // TODO: Implement these attacks
+  // BLE Scans
+  case MODE_BLE_SCAN_SKIMMERS:
+  case MODE_BLE_SCAN_AIRTAG:
+  case MODE_BLE_SCAN_AIRTAG_MON:
+  case MODE_BLE_SCAN_FLIPPER:
+  case MODE_BLE_SCAN_FLOCK:
+  case MODE_BLE_SCAN_ANALYZER:
+  case MODE_BLE_SCAN_SIMPLE:
+  case MODE_BLE_SCAN_SIMPLE_TWO:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.beginScan(); // TODO: Add specific scan types
+    Serial.printf("[SYS] BLE scan mode %d initialized\n", mode);
+    return true;
+  // BLE Attacks
+  case MODE_BLE_SOUR_APPLE:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.startAttack(BLE_ATTACK_SOUR_APPLE);
+    Serial.println("[SYS] SOUR APPLE mode initialized");
+    return true;
+  case MODE_BLE_SWIFTPAIR_MICROSOFT:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_MICROSOFT);
+    Serial.println("[SYS] SWIFTPAIR MS mode initialized");
+    return true;
+  case MODE_BLE_SWIFTPAIR_GOOGLE:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_GOOGLE);
+    Serial.println("[SYS] SWIFTPAIR GOOGLE mode initialized");
+    return true;
+  case MODE_BLE_SWIFTPAIR_SAMSUNG:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_SAMSUNG);
+    Serial.println("[SYS] SWIFTPAIR SAMSUNG mode initialized");
+    return true;
+  case MODE_BLE_SPAM_ALL:
+  case MODE_BLE_FLIPPER_SPAM:
+  case MODE_BLE_AIRTAG_SPOOF:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    bleManager.startAttack(BLE_ATTACK_SPAM); // TODO: Add specific attack types
+    Serial.printf("[SYS] BLE attack mode %d initialized\n", mode);
+    return true;
+  // Network Scans
+  case MODE_NETWORK_ARP_SCAN:
+  case MODE_NETWORK_PORT_SCAN:
+  case MODE_NETWORK_PING_SCAN:
+  case MODE_NETWORK_DNS_SCAN:
+  case MODE_NETWORK_HTTP_SCAN:
+  case MODE_NETWORK_HTTPS_SCAN:
+  case MODE_NETWORK_SMTP_SCAN:
+  case MODE_NETWORK_RDP_SCAN:
+  case MODE_NETWORK_TELNET_SCAN:
+  case MODE_NETWORK_SSH_SCAN:
+    manageWiFiState(mode);
+    Serial.printf("[SYS] Network scan mode %d initialized (TODO: implement)\n",
+                  mode);
+    return true; // TODO: Implement network scans
+  // GPS (conditional compilation)
+  case MODE_GPS_WARDRIVE:
+  case MODE_GPS_TRACKER:
+  case MODE_GPS_POI:
+    manageWiFiState(mode);
+    Serial.printf("[SYS] GPS mode %d initialized (TODO: implement)\n", mode);
+    return true; // TODO: Implement GPS features
+
   case MODE_NORMAL:
     manageWiFiState(mode);
     WiFi.scanDelete();
@@ -855,10 +1204,9 @@ static int submenuCount(int category) {
   case 0:
     return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
-    return 5; // WiFi: SCAN, DEAUTH, BEACON, SNIFF, PORTAL
+    return 20; // WiFi: Full Marauder menu
   case 2:
-    return 7; // Tools: BLE SPAM, BLE SCAN, USB HID, VAULT, FAKE LOGIN, QR,
-              // DAEMON
+    return 15; // Tools: BLE + Network + GPS + Other tools
   case 3:
     return 3; // System: REBOOT, VERSION, EXIT
   default:
@@ -931,6 +1279,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
   if (cat == 1) {
     quickMenuOpen = false;
     rebootConfirmed = false;
+    // WiFi Scans
     if (item == 0) {
       if (!switchToMode(MODE_RADAR)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
@@ -938,6 +1287,80 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
         return false;
       }
     } else if (item == 1) {
+      if (!switchToMode(MODE_WIFI_PROBE_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 2) {
+      if (!switchToMode(MODE_WIFI_EAPOL_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 3) {
+      if (!switchToMode(MODE_WIFI_STATION_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 4) {
+      if (!switchToMode(MODE_WIFI_PACKET_MONITOR)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 5) {
+      if (!switchToMode(MODE_WIFI_CHANNEL_ANALYZER)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 6) {
+      if (!switchToMode(MODE_WIFI_CHANNEL_ACTIVITY)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 7) {
+      if (!switchToMode(MODE_WIFI_PACKET_RATE)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 8) {
+      if (!switchToMode(MODE_WIFI_PINESCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 9) {
+      if (!switchToMode(MODE_WIFI_MULTISSID)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 10) {
+      if (!switchToMode(MODE_WIFI_SIGNAL_STRENGTH)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 11) {
+      if (!switchToMode(MODE_WIFI_RAW_CAPTURE)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 12) {
+      if (!switchToMode(MODE_WIFI_AP_STA)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    // WiFi Attacks
+    else if (item == 13) {
       wifiScanSelected = 0;
       wifiListPage = 0;
       if (!switchToMode(MODE_WIFI_DEAUTH)) {
@@ -946,19 +1369,41 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
         return false;
       }
       kickManager.setTargetFromScan(0);
-    } else if (item == 2) {
+    } else if (item == 14) {
+      wifiScanSelected = 0;
+      wifiListPage = 0;
+      if (!switchToMode(MODE_WIFI_DEAUTH_TARGETED)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 15) {
+      wifiScanSelected = 0;
+      wifiListPage = 0;
+      if (!switchToMode(MODE_WIFI_DEAUTH_MANUAL)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 16) {
       if (!switchToMode(MODE_WIFI_BEACON)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 3) {
-      if (!switchToMode(MODE_WIFI_SNIFF)) {
+    } else if (item == 17) {
+      if (!switchToMode(MODE_WIFI_BEACON_RICKROLL)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 4) {
+    } else if (item == 18) {
+      if (!switchToMode(MODE_WIFI_AUTH_ATTACK)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 19) {
       if (!switchToMode(MODE_WIFI_TRAP)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -970,44 +1415,99 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
   if (cat == 2) {
     quickMenuOpen = false;
     rebootConfirmed = false;
+    // BLE Scans
     if (item == 0) {
-      if (!switchToMode(MODE_BLE_SPAM)) {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    } else if (item == 1) {
       if (!switchToMode(MODE_BLE_SCAN)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
+    } else if (item == 1) {
+      if (!switchToMode(MODE_BLE_SCAN_SKIMMERS)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
     } else if (item == 2) {
-      if (!switchToMode(MODE_BADWOLF)) {
+      if (!switchToMode(MODE_BLE_SCAN_AIRTAG)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     } else if (item == 3) {
-      if (!switchToMode(MODE_VAULT)) {
+      if (!switchToMode(MODE_BLE_SCAN_AIRTAG_MON)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     } else if (item == 4) {
-      if (!switchToMode(MODE_FAKE_LOGIN)) {
+      if (!switchToMode(MODE_BLE_SCAN_FLIPPER)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     } else if (item == 5) {
-      if (!switchToMode(MODE_QR)) {
+      if (!switchToMode(MODE_BLE_SCAN_ANALYZER)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 6) {
-      if (!switchToMode(MODE_DAEMON)) {
+    }
+    // BLE Attacks
+    else if (item == 6) {
+      if (!switchToMode(MODE_BLE_SPAM)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 7) {
+      if (!switchToMode(MODE_BLE_SOUR_APPLE)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 8) {
+      if (!switchToMode(MODE_BLE_SWIFTPAIR_MICROSOFT)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 9) {
+      if (!switchToMode(MODE_BLE_SWIFTPAIR_GOOGLE)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 10) {
+      if (!switchToMode(MODE_BLE_SWIFTPAIR_SAMSUNG)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 11) {
+      if (!switchToMode(MODE_BLE_FLIPPER_SPAM)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    // Network Scans
+    else if (item == 12) {
+      if (!switchToMode(MODE_NETWORK_ARP_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    } else if (item == 13) {
+      if (!switchToMode(MODE_NETWORK_PORT_SCAN)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    // Tools
+    else if (item == 14) {
+      if (!switchToMode(MODE_BADWOLF)) {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
