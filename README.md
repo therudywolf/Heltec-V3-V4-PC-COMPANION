@@ -1,174 +1,271 @@
-# NOCTURNE OS (v4.2.0)
+# NOCTURNE OS — WolfPet
 
-### High-Performance Cyberdeck Firmware for Heltec WiFi LoRa 32 V4
+**Ветка:** `WolfPet` · **Платформа:** Heltec WiFi LoRa 32 V4 (ESP32-S3) · **Лицензия:** [MIT](LICENSE)
 
-![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue) ![Status](https://img.shields.io/badge/status-STABLE-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue) ![Branch](https://img.shields.io/badge/branch-WolfPet-orange)
 
 > _"In the silence of the net, the wolf hunts alone."_
 
-**Nocturne OS** is a specialized firmware designed for the **Heltec V4** development board. It transforms the device into a dedicated, high-speed hardware monitor and cyberdeck interface, receiving telemetry from a host PC via TCP.
-
-Built for **visual aesthetics**, **low latency**, and **hardware resilience**.
+Прошивка **Nocturne OS** превращает **Heltec V4** в кибердек-монитор: OLED 128×64, телеметрия по TCP с ПК, тактическое меню, утилиты (Wi‑Fi сканер, Deauth, BLE Spam, USB HID, портал, Vault, Daemon) и система алертов по температуре/нагрузке/ОЗУ.
 
 ---
 
-## 🐺 Key Features
+## Содержание
 
-### 1. The "Unified Grid" Design System
-
-A strict, pixel-perfect 2x2 grid layout used across CPU, GPU, and Motherboard scenes.
-
-- **Tech Brackets:** Custom drawing primitives that frame data like a HUD.
-- **Chamfered Boxes:** Industrial aesthetics for menus and headers.
-- **Typography:** Hand-picked `ProFont10` (Data) and `HelvB10` (Headers) for maximum readability on 0.96" OLEDs.
-
-### 2. "Iron Grip" Connectivity
-
-The ESP32-S3 radio is notorious for aggressive power-saving drops. Nocturne OS bypasses this:
-
-- **Direct Driver Access:** Uses `esp_wifi_set_ps(WIFI_PS_NONE)` to lock the radio in high-performance mode.
-- **Latency:** Sub-50ms updates for real-time graphs.
-- **Self-Healing:** Auto-reconnect logic with configurable grace periods.
-
-### 3. "Stealth Hunter" Alert System
-
-A non-intrusive, tactical alert logic for critical temperatures/loads.
-
-- **Trigger:** Server sends `CRITICAL` state.
-- **Double Tap:** The White LED (GPIO 25) blinks **exactly 2 times** (Double Tap) to catch your eye.
-- **Silence:** After 2 blinks, the LED goes dark, but the specific metric on the screen freezes/highlights. No infinite annoying flashing.
-
-### 4. Tactical Menu (Overlay)
-
-Long-press interaction model for quick adjustments without rebooting.
-
-- **Carousel:** Auto-cycle screens (5s / 10s / 15s / OFF).
-- **Flip:** Rotate screen 180° (for cable management).
-- **Persistence:** Settings saved to NVS (Non-Volatile Storage).
+- [Возможности](#-возможности)
+- [Железо](#-железо)
+- [Экраны (сцены)](#-экраны-сцены)
+- [Управление](#-управление)
+- [Меню](#-меню)
+- [Утилиты (Tools)](#-утилиты-tools)
+- [Алерты (RED ALERT)](#-алерты-red-alert)
+- [Установка](#-установка)
+- [Конфигурация](#-конфигурация)
+- [Структура проекта](#-структура-проекта)
+- [Опционально: LoRa](#-опционально-lora)
+- [Авторы и лицензия](#-авторы-и-лицензия)
 
 ---
 
-## 🛠 Hardware Specs
+## Возможности
 
-| Component   | Specification                 | Notes                        |
-| ----------- | ----------------------------- | ---------------------------- |
-| **Board**   | Heltec WiFi LoRa 32 V4        | ESP32-S3R2 MCU               |
-| **Display** | 0.96" OLED (SSD1306)          | I2C (SDA 17, SCL 18)         |
-| **Clock**   | 240 MHz (CPU) / 800 kHz (I2C) | Overclocked I2C for 60FPS UI |
-| **LED**     | GPIO 25 (White)               | Programmable Alert LED       |
-| **Button**  | GPIO 0 (PRG)                  | Input (Pull-up)              |
-
----
-
-## 🖥️ Scenes
-
-1.  **MAIN:** Dashboard summary (CPU/GPU Temp bars + RAM usage).
-2.  **CPU:** Detailed Core Temp, Clock, Load, Power.
-3.  **GPU:** Core Temp, Clock, Load, VRAM Usage.
-4.  **RAM:** Top 2 memory-hogging processes + Total usage.
-5.  **DISKS:** 2x2 Grid showing Drive Letter + Temperature.
-6.  **MEDIA:** Current Track/Artist (Scrollable).
-7.  **FANS:** RPM & % for CPU, Pump, GPU, Case fans.
-8.  **MB:** Motherboard sensor array (VRM, Chipset, etc.).
-9.  **WEATHER:** XBM Pixel-art icons + Large Temp display.
+| Область     | Описание                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------- |
+| **Дизайн**  | Единая сетка 2×2, Tech Brackets, chamfered boxes, ProFont10 / HelvB10, ~60 FPS, glitch-эффекты.   |
+| **Связь**   | WiFi без power-saving (`WIFI_PS_NONE`), автореконнект, таймауты и grace period в `config.h`.      |
+| **Меню**    | Двухуровневое (категории → подменю), под хедером, подсказка внизу, сохранение в NVS.              |
+| **Утилиты** | Полноэкранные режимы без глобального хедера: RADAR, DEAUTH, BLE, USB HID, PORTAL, VAULT, DAEMON.  |
+| **Алерты**  | Пороги по CPU/GPU temp и load, ОЗУ по гигабайтам; двойной blink LED, подсветка метрики на экране. |
+| **Яркость** | Долгое нажатие вне меню переключает нормальную/пониженную яркость (контраст 12).                  |
 
 ---
 
-## 🎮 Controls
+## Железо
 
-**Button (GPIO 0):**
-
-| Action                | State     | Result                                           |
-| :-------------------- | :-------- | :----------------------------------------------- |
-| **Short press** (<1s) | Normal    | **Next scene** (resets carousel timer)           |
-|                       | Menu open | **Next item** (move highlight)                   |
-| **Long press** (>1s)  | Normal    | **Toggle brightness** (normal ↔ dim)             |
-|                       | Menu open | **Select** (enter submenu or run action)         |
-| **Double-tap** (2x)   | Normal    | **Open menu**                                    |
-|                       | Menu open | **Back** (from submenu) or **Close menu** (exit) |
-
-### How to use the menu
-
-1. **Open menu:** double-tap the button (two quick presses).
-2. **Move:** short press — next item (Config → WiFi → Tools → System, then submenu items).
-3. **Select / Enter:** long press — enter the selected category or run the selected action (e.g. SCAN, FLIP, EXIT).
-4. **Back / Close:** double-tap — from a submenu returns to categories; from categories closes the menu.
-
-_On-screen hint at the bottom of the menu: `1x next  2s ok  2x back`._
-
-**Menu structure:**
-
-- **Config:** AUTO (carousel 5s/10s/15s/OFF), FLIP (rotate 180°), GLITCH on/off.
-- **WiFi:** SCAN, DEAUTH, PORTAL.
-- **Tools:** BLE SPAM, USB HID, VAULT, DAEMON.
-- **System:** REBOOT, EXIT (close menu).
+| Компонент        | Параметр                     | Примечание                            |
+| ---------------- | ---------------------------- | ------------------------------------- |
+| **Плата**        | Heltec WiFi LoRa 32 V4       | ESP32-S3R2                            |
+| **Дисплей**      | 0.96" OLED SSD1306           | I2C: SDA 17, SCL 18, RST 21           |
+| **Питание OLED** | Vext GPIO 36                 | LOW = включено                        |
+| **Кнопка**       | GPIO 0 (PRG)                 | Pull-up, короткое/долгое/двойной тап  |
+| **LED**          | GPIO 35 (белый)              | Алерты, predator breath               |
+| **Батарея**      | ADC GPIO 1, контроль GPIO 37 | Делитель 4.9, калибровка в `config.h` |
+| **I2C**          | 800 kHz                      | Для стабильного 60 FPS                |
 
 ---
 
-## 🚀 Installation
+## Экраны (сцены)
 
-### Prerequisites
+В режиме **Normal** (мониторинг с ПК) доступны 9 сцен; переключение — короткое нажатие (карусель сбрасывается).
 
-1.  **VS Code** with **PlatformIO** (for firmware).
-2.  **Python 3.x** (for the Host Monitor script).
-3.  **Libre Hardware Monitor** (CRITICAL):
-    - This software acts as the telemetry source for Windows.
-    - [Download Latest Release](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-    - **Setup:**
-      1.  Unzip and run `LibreHardwareMonitor.exe` **as Administrator**.
-      2.  Go to `Options` -> Enable `Run On Windows Startup`.
-      3.  Go to `Options` -> `Remote Web Server` -> **Enable**.
-      4.  Ensure the port is **8085** (Default).
-
-### Flashing (Firmware)
-
-1.  Clone this repository.
-2.  Open in VS Code.
-3.  Copy `include/secrets.h.example` to `include/secrets.h` and set your WiFi and PC IP (do not commit `secrets.h`):
-    ```cpp
-    #define WIFI_SSID "YourSSID"
-    #define WIFI_PASS "YourPass"
-    #define PC_IP "192.168.1.100"   // Your PC's IP
-    #define TCP_PORT 8888
-    ```
-4.  Connect Heltec V4 via USB-C.
-5.  Run **PlatformIO: Upload**.
-
-### Running (Host Monitor)
-
-1.  From the project root: `pip install -r requirements.txt`
-2.  Edit `config.json` if needed (LHM URL, port, weather city, limits).
-3.  Run: `python src/monitor.py` (or build a standalone exe with `NocturneServer.spec` + PyInstaller).
+| №   | Сцена       | Содержимое                                           |
+| --- | ----------- | ---------------------------------------------------- |
+| 0   | **MAIN**    | CPU/GPU темпы и загрузка, RAM, lifebar               |
+| 1   | **CPU**     | Ядро, температура, частота, нагрузка, мощность       |
+| 2   | **GPU**     | Температура, частота, нагрузка, VRAM                 |
+| 3   | **RAM**     | Топ процессов по памяти, общее использование         |
+| 4   | **DISKS**   | Сетка 2×2: буква диска, температура                  |
+| 5   | **MEDIA**   | Трек/исполнитель (прокрутка), статус воспроизведения |
+| 6   | **FANS**    | RPM и % для CPU, Pump, GPU, Case                     |
+| 7   | **MB**      | Материнская плата: VRM, Chipset и др.                |
+| 8   | **WEATHER** | Иконка погоды (XBM), температура                     |
 
 ---
 
-## 📁 Project Structure
+## Управление
+
+Одна кнопка (GPIO 0):
+
+| Действие            | В обычном режиме            | В меню                            |
+| ------------------- | --------------------------- | --------------------------------- |
+| **Короткое** (<1 s) | Следующая сцена             | Следующий пункт меню              |
+| **Долгое** (>1 s)   | Вкл/выкл пониженной яркости | Выбор / вход / выполнение         |
+| **Двойной тап**     | Открыть меню                | Назад из подменю или закрыть меню |
+
+**Predator:** в нормальном режиме очень долгое нажатие (~2.5 s) включает режим «хищник»: экран гаснет, LED «дышит». Повтор — выход.
+
+---
+
+## Меню
+
+- **Открытие:** двойной тап по кнопке.
+- **Навигация:** короткое нажатие — следующий пункт.
+- **Выбор:** долгое нажатие — войти в категорию или выполнить действие.
+- **Назад/закрытие:** двойной тап (из подменю — назад, с уровня категорий — выход из меню).
+
+Внизу окна меню подсказка: `1x next  2s ok  2x back`.
+
+### Структура меню
+
+| Категория  | Пункты                           | Действия                                                                                |
+| ---------- | -------------------------------- | --------------------------------------------------------------------------------------- |
+| **Config** | AUTO, FLIP, GLITCH               | AUTO: цикл OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл эффекта. |
+| **WiFi**   | SCAN, DEAUTH, PORTAL             | Переход в RADAR, Deauth, Captive Portal (AP **MT_FREE**).                               |
+| **Tools**  | BLE SPAM, USB HID, VAULT, DAEMON | BLE Spam, BadWolf USB HID, TOTP Vault, экран Daemon (Wolf + телеметрия).                |
+| **System** | REBOOT, EXIT                     | Перезагрузка (с подтверждением), выход из меню.                                         |
+
+Настройки Config и яркость сохраняются в NVS.
+
+---
+
+## Утилиты (Tools)
+
+Режимы из меню **WiFi** и **Tools** рисуются **на весь экран без глобального хедера** (больше места под контент).
+
+| Режим                 | Описание                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| **RADAR**             | Wi‑Fi сканер: список сетей, RSSI, канал, тип шифрования; короткое нажатие — рескан/выбор. |
+| **DEAUTH**            | Цель из скана, deauth-пакеты; статус INJECTING/IDLE, счётчик пакетов.                     |
+| **BLE SPAM**          | NimBLE spam; счётчик пакетов, glitch при смене payload.                                   |
+| **USB HID** (BadWolf) | Режим USB HID (клавиатура).                                                               |
+| **PORTAL**            | Точка доступа + captive portal; имя сети по умолчанию **MT_FREE**; логи и пароли.         |
+| **VAULT**             | TOTP 2FA: аккаунт, 6-значный код, таймер.                                                 |
+| **DAEMON**            | Экран «Wolf Soul»: анимация волка + CPU/GPU/RAM, без хедера.                              |
+
+Выход из любого режима утилит: **двойной тап** → открывается меню, затем с уровня категорий снова двойной тап — закрытие меню и возврат в нормальный режим (или пункт EXIT в System).
+
+---
+
+## Алерты (RED ALERT)
+
+Сервер (`monitor.py`) при превышении порогов отправляет `alert: "CRITICAL"` и `alert_metric`. Устройство:
+
+- мигает белым LED **ровно 2 раза**;
+- переключает экран на нужную сцену (CPU/GPU/RAM);
+- подсвечивает проблемную метрику (температура/нагрузка/RAM);
+- рисует толстую рамку по краям экрана (RED ALERT overlay).
+
+Пороги задаются в **`src/monitor.py`** (и при необходимости дублируются в **`include/nocturne/config.h`** для справки):
+
+| Метрика   | Порог                    | Гистерезис (сброс) |
+| --------- | ------------------------ | ------------------ |
+| CPU temp  | 87 °C                    | −5 °C              |
+| GPU temp  | 68 °C                    | −5 °C              |
+| CPU load  | 90 %                     | −5 %               |
+| GPU load  | 100 %                    | −5 %               |
+| VRAM load | 95 %                     | −5 %               |
+| **RAM**   | **30 ГБ** (использовано) | &lt; 28 ГБ         |
+
+---
+
+## Установка
+
+### Требования
+
+- **Прошивка:** VS Code + PlatformIO, проект открыт по корню репозитория.
+- **Сервер на ПК:** Python 3.x, зависимости из `requirements.txt`.
+- **Телеметрия:** [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) — запуск **от имени администратора**, в настройках включён **Remote Web Server** (порт 8085 по умолчанию).
+
+### Прошивка устройства
+
+1. Клонировать репозиторий, открыть в VS Code.
+2. Скопировать `include/secrets.h.example` в `include/secrets.h`, прописать Wi‑Fi и IP ПК:
+   ```cpp
+   #define WIFI_SSID "YourNetwork"
+   #define WIFI_PASS "YourPassword"
+   #define PC_IP     "192.168.1.2"
+   #define TCP_PORT  8888
+   ```
+3. Подключить Heltec V4 по USB-C, выполнить **PlatformIO: Upload**.
+
+### Сервер на ПК (монитор)
+
+```bash
+pip install -r requirements.txt
+```
+
+При необходимости отредактировать `config.json` (хост, порт, `lhm_url`, город для погоды). Запуск:
+
+```bash
+python src/monitor.py
+```
+
+Варианты:
+
+- **С треем (по умолчанию):** иконка в трее, пункты: Add/Remove startup, Restart Server, Close.
+- **Без трея:** `python src/monitor.py --no-tray` или `--console` (логи в консоль).
+
+Логи пишутся в `nocturne.log` в корне проекта (или рядом с exe при сборке в один файл).
+
+### Сборка exe (Windows)
+
+- Вручную: `pyinstaller --onefile --noconsole --name NocturneServer src/monitor.py`, затем скопировать `config.json` в `dist/`.
+- Или из корня проекта: `build_server.bat` — очистка, установка зависимостей, сборка exe, копирование `config.json` в `dist/`. Запуск: `dist\NocturneServer.exe`.
+
+---
+
+## Конфигурация
+
+| Файл                            | Назначение                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| **`include/secrets.h`**         | Wi‑Fi SSID/пароль, IP ПК, TCP-порт. Не коммитить.                                             |
+| **`include/nocturne/config.h`** | Пины, размеры экрана, таймауты, пороги алертов (для справки), параметры меню и батареи.       |
+| **`config.json`**               | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city`. Рядом с exe или в корне проекта. |
+
+Пример `config.json`:
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8090,
+  "lhm_url": "http://localhost:8085/data.json",
+  "limits": { "gpu": 72, "cpu": 85 },
+  "weather_city": "London"
+}
+```
+
+Порт в `config.json` должен совпадать с `TCP_PORT` в `secrets.h` (или с тем портом, на котором реально слушает монитор).
+
+---
+
+## Структура проекта
 
 ```
 ├── include/
-│   ├── nocturne/         # config.h, Types.h
-│   └── secrets.h.example # template → copy to secrets.h (local only)
+│   ├── nocturne/
+│   │   ├── config.h      # Пины, экран, меню, алерты, сцены
+│   │   └── Types.h      # Типы состояния
+│   └── secrets.h.example # Шаблон → копировать в secrets.h
 ├── src/
-│   ├── main.cpp          # firmware entry
-│   ├── monitor.py        # PC-side TCP server (LHM, weather, media)
-│   └── modules/          # DisplayEngine, SceneManager, NetManager, …
-├── config.json           # monitor: host, port, lhm_url, limits, weather_city
-├── platformio.ini        # ESP32 build (Heltec V3 profile for V4 board)
-├── requirements.txt      # Python deps for monitor
-└── NocturneServer.spec   # PyInstaller spec for one-click exe
+│   ├── main.cpp         # Точка входа: WiFi, кнопка, меню, сцены, утилиты
+│   ├── monitor.py       # TCP-сервер: LHM, погода, медиа, алерты, трей
+│   └── modules/
+│       ├── DisplayEngine.*   # Буфер, примитивы, хедер, glitch, RED ALERT
+│       ├── SceneManager.*    # 9 сцен + меню + все утилиты (RADAR, Kick, BLE, …)
+│       ├── NetManager.*     # WiFi, TCP, парсинг JSON, таймауты
+│       ├── BootAnim.*       # Заставка при старте
+│       ├── TrapManager.*    # AP + captive portal (MT_FREE)
+│       ├── KickManager.*    # Deauth
+│       ├── BleManager.*     # BLE Spam
+│       ├── UsbManager.*     # USB HID (BadWolf)
+│       ├── VaultManager.*   # TOTP
+│       └── RollingGraph.*   # Графики (sparkline)
+├── config.json          # Параметры монитора (host, port, lhm_url, weather_city)
+├── platformio.ini       # Сборка ESP32 (Heltec V3 profile под V4)
+├── requirements.txt    # aiohttp, dotenv, winsdk, pystray, Pillow, psutil, pyinstaller
+├── build_server.bat    # Очистка + pip + PyInstaller → dist/NocturneServer.exe
+├── NocturneServer.spec # Спека PyInstaller
+├── DataSheets/         # PDF платы
+└── optional/radio/     # LoRa (SX1262) — вынесено, подключается при необходимости
 ```
 
-**Not in the repo (see `.gitignore`):** `secrets.h`, `.env`, `.pio/`, build artifacts, logs.
+В репозитории нет: `secrets.h`, `.env`, `.pio/`, артефактов сборки, логов.
 
 ---
 
-## ⚠️ Credits
+## Опционально: LoRa
 
-- **Concept & Code:** RudyWolf
-- **UI Design:** "Nocturne" Cyberpunk System
-- **Libraries:** U8g2 (Olikraus), ArduinoJson (Bblanchon)
+Радиомодуль SX1262 (LoRa/FSK) вынесен в `optional/radio/` для экономии Flash/RAM. Инструкция по возврату режимов LoRa (MESH, JAM, SENSE), пины и зависимости — в **`optional/radio/README.md`**.
 
-**License:** [MIT](LICENSE)
+---
+
+## Авторы и лицензия
+
+- **Концепция и код:** RudyWolf
+- **Оформление:** Nocturne / WolfPet
+- **Библиотеки:** U8g2 (Olikraus), ArduinoJson (Bblanchon), NimBLE-Arduino (h2zero)
+
+**Лицензия:** [MIT](LICENSE).
 
 ---
 
