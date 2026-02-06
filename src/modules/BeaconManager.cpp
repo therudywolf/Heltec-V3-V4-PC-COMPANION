@@ -26,6 +26,34 @@ BeaconManager::BeaconManager() {
       "NOCTURNE",  "Guest_Network", "Public_WiFi",   "Connect_Me"};
   for (int i = 0; i < BEACON_LIST_SIZE; i++)
     ssidList_[i] = defaultList[i];
+
+  // Rick Roll list
+  rickRollList_[0] = "01 Never gonna give you up";
+  rickRollList_[1] = "02 Never gonna let you down";
+  rickRollList_[2] = "03 Never gonna run around";
+  rickRollList_[3] = "04 and desert you";
+  rickRollList_[4] = "05 Never gonna make you cry";
+  rickRollList_[5] = "06 Never gonna say goodbye";
+  rickRollList_[6] = "07 Never gonna tell a lie";
+  rickRollList_[7] = "08 and hurt you";
+
+  // Funny beacon list
+  funnyList_[0] = "Abraham Linksys";
+  funnyList_[1] = "Benjamin FrankLAN";
+  funnyList_[2] = "Dora the Internet Explorer";
+  funnyList_[3] = "FBI Surveillance Van 4";
+  funnyList_[4] = "Get Off My LAN";
+  funnyList_[5] = "Loading...";
+  funnyList_[6] = "Martin Router King";
+  funnyList_[7] = "404 Wi-Fi Unavailable";
+  funnyList_[8] = "Test Wi-Fi Please Ignore";
+  funnyList_[9] = "This LAN is My LAN";
+  funnyList_[10] = "Titanic Syncing";
+  funnyList_[11] = "Winternet is Coming";
+
+  memset(customSSIDs_, 0, sizeof(customSSIDs_));
+  customSSIDCount_ = 0;
+  mode_ = BEACON_MODE_DEFAULT;
 }
 
 void BeaconManager::buildBeacon(const char *ssid, uint8_t channel) {
@@ -64,13 +92,78 @@ void BeaconManager::buildBeacon(const char *ssid, uint8_t channel) {
   beaconLen_ = p - beaconBuf_;
 }
 
+const char **BeaconManager::getCurrentSSIDList() const {
+  switch (mode_) {
+  case BEACON_MODE_RICK_ROLL:
+    return rickRollList_;
+  case BEACON_MODE_FUNNY:
+    return funnyList_;
+  case BEACON_MODE_CUSTOM_LIST:
+    return (const char **)customSSIDs_;
+  default:
+    return ssidList_;
+  }
+}
+
+int BeaconManager::getCurrentListSize() const {
+  switch (mode_) {
+  case BEACON_MODE_RICK_ROLL:
+    return BEACON_RICKROLL_SIZE;
+  case BEACON_MODE_FUNNY:
+    return BEACON_FUNNY_SIZE;
+  case BEACON_MODE_CUSTOM_LIST:
+    return customSSIDCount_;
+  default:
+    return BEACON_LIST_SIZE;
+  }
+}
+
+const char *BeaconManager::getCurrentSSID() const {
+  const char **list = getCurrentSSIDList();
+  int listSize = getCurrentListSize();
+  if (listSize == 0)
+    return "";
+  int idx = currentIndex_ % listSize;
+  return list[idx];
+}
+
+void BeaconManager::setMode(BeaconMode mode) {
+  if (mode_ == mode)
+    return;
+  mode_ = mode;
+  currentIndex_ = 0;
+  if (active_) {
+    int listSize = getCurrentListSize();
+    if (listSize > 0) {
+      buildBeacon(getCurrentSSID(), 6);
+    }
+  }
+}
+
+void BeaconManager::addCustomSSID(const char *ssid) {
+  if (!ssid || customSSIDCount_ >= BEACON_LIST_SIZE)
+    return;
+  size_t len = strlen(ssid);
+  if (len == 0 || len >= BEACON_SSID_MAX)
+    return;
+  strncpy(customSSIDs_[customSSIDCount_], ssid, BEACON_SSID_MAX - 1);
+  customSSIDs_[customSSIDCount_][BEACON_SSID_MAX - 1] = '\0';
+  customSSIDCount_++;
+  if (mode_ != BEACON_MODE_CUSTOM_LIST)
+    mode_ = BEACON_MODE_CUSTOM_LIST;
+}
+
 void BeaconManager::sendBeacon() {
   if (WiFi.getMode() == WIFI_OFF || beaconLen_ < 36)
+    return;
+  const char **list = getCurrentSSIDList();
+  int listSize = getCurrentListSize();
+  if (listSize == 0)
     return;
   uint8_t ch = 1 + (currentIndex_ % 13);
   if (ch > 13)
     ch = 6;
-  buildBeacon(ssidList_[currentIndex_], ch);
+  buildBeacon(list[currentIndex_ % listSize], ch);
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
   if (esp_wifi_80211_tx(WIFI_IF_STA, beaconBuf_, (int)beaconLen_, false) ==
       ESP_OK)
@@ -110,11 +203,17 @@ void BeaconManager::tick() {
 }
 
 void BeaconManager::nextSSID() {
-  currentIndex_ = (currentIndex_ + 1) % BEACON_LIST_SIZE;
+  int listSize = getCurrentListSize();
+  if (listSize == 0)
+    return;
+  currentIndex_ = (currentIndex_ + 1) % listSize;
 }
 
 void BeaconManager::prevSSID() {
+  int listSize = getCurrentListSize();
+  if (listSize == 0)
+    return;
   currentIndex_--;
   if (currentIndex_ < 0)
-    currentIndex_ = BEACON_LIST_SIZE - 1;
+    currentIndex_ = listSize - 1;
 }

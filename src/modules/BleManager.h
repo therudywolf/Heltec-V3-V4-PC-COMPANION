@@ -12,6 +12,17 @@
 #define BLE_DEVICE_NAME_LEN 32
 #define BLE_DEVICE_ADDR_LEN 18
 
+// Attack types
+enum BleAttackType {
+  BLE_ATTACK_SPAM = 0,
+  BLE_ATTACK_SOUR_APPLE,
+  BLE_ATTACK_SWIFTPAIR_MICROSOFT,
+  BLE_ATTACK_SWIFTPAIR_GOOGLE,
+  BLE_ATTACK_SWIFTPAIR_SAMSUNG,
+  BLE_ATTACK_AIRTAG_SPOOF,
+  BLE_ATTACK_FLIPPER_SPAM
+};
+
 struct BleScanDevice {
   char name[BLE_DEVICE_NAME_LEN];
   char addr[BLE_DEVICE_ADDR_LEN];
@@ -38,14 +49,26 @@ public:
   bool isCloning() const { return cloning_; }
   void onScanResult(void *device);
 
+  // New attack modes
+  void startAttack(BleAttackType attackType);
+  void startAirTagMonitor();
+  void stopAirTagMonitor();
+  bool isAirTagMonitoring() const { return airTagMonitoring_; }
+  int getAirTagCount() const { return airTagCount_; }
+  const BleScanDevice *getAirTag(int index) const;
+
 private:
   void startSpam();
   void setPayload(int index);
+  void setAttackPayload(BleAttackType attackType);
+  void generateRandomMac(uint8_t *mac);
+  void setBaseMacAddress(uint8_t *mac);
 
   bool active_ = false;
   int packetCount_ = 0;
   int currentPayloadIndex_ = 0;
   unsigned long lastRotateMs_ = 0;
+  BleAttackType currentAttackType_ = BLE_ATTACK_SPAM;
 
   bool scanning_ = false;
   BleScanDevice scanDevices_[BLE_SCAN_DEVICE_MAX];
@@ -53,4 +76,8 @@ private:
   bool cloning_ = false;
   char cloneName_[BLE_DEVICE_NAME_LEN];
   char cloneAddr_[BLE_DEVICE_ADDR_LEN];
-};
+
+  // AirTag monitoring
+  bool airTagMonitoring_ = false;
+  BleScanDevice airTags_[BLE_SCAN_DEVICE_MAX];
+  int airTagCount_ = 0;

