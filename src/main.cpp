@@ -2175,6 +2175,21 @@ void loop() {
                                    wifiFilteredCount);
       break;
     }
+    case MODE_WIFI_PROBE_SCAN:
+    case MODE_WIFI_EAPOL_SCAN:
+    case MODE_WIFI_STATION_SCAN:
+    case MODE_WIFI_PACKET_MONITOR:
+    case MODE_WIFI_CHANNEL_ANALYZER:
+    case MODE_WIFI_CHANNEL_ACTIVITY:
+    case MODE_WIFI_PACKET_RATE:
+    case MODE_WIFI_PINESCAN:
+    case MODE_WIFI_MULTISSID:
+    case MODE_WIFI_SIGNAL_STRENGTH:
+    case MODE_WIFI_RAW_CAPTURE:
+    case MODE_WIFI_AP_STA:
+      wifiSniffManager.tick();
+      sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
+      break;
     case MODE_WIFI_DEAUTH: {
       int n = WiFi.scanComplete();
       if (n > 0 && wifiFilteredCount == 0) {
@@ -2200,6 +2215,21 @@ void loop() {
                                   beaconManager.getBeaconCount(),
                                   beaconManager.getCurrentIndex(), 8);
       break;
+    case MODE_WIFI_PROBE_SCAN:
+    case MODE_WIFI_EAPOL_SCAN:
+    case MODE_WIFI_STATION_SCAN:
+    case MODE_WIFI_PACKET_MONITOR:
+    case MODE_WIFI_CHANNEL_ANALYZER:
+    case MODE_WIFI_CHANNEL_ACTIVITY:
+    case MODE_WIFI_PACKET_RATE:
+    case MODE_WIFI_PINESCAN:
+    case MODE_WIFI_MULTISSID:
+    case MODE_WIFI_SIGNAL_STRENGTH:
+    case MODE_WIFI_RAW_CAPTURE:
+    case MODE_WIFI_AP_STA:
+      wifiSniffManager.tick();
+      sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
+      break;
     case MODE_WIFI_AUTH_ATTACK:
     case MODE_WIFI_MIMIC_FLOOD:
     case MODE_WIFI_AP_SPAM:
@@ -2207,11 +2237,45 @@ void loop() {
     case MODE_WIFI_BAD_MESSAGE_TARGETED:
     case MODE_WIFI_SLEEP_ATTACK:
     case MODE_WIFI_SLEEP_TARGETED:
-    case MODE_WIFI_SAE_COMMIT:
+    case MODE_WIFI_SAE_COMMIT: {
       wifiAttackManager.tick();
-      // TODO: Add UI for attack modes
-      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, "ATTACK MODE");
+      static char attackFooter[48];
+      const char *attackNames[] = {"AUTH",      "MIMIC", "AP SPAM", "BAD MSG",
+                                   "BAD MSG T", "SLEEP", "SLEEP T", "SAE"};
+      int attackIdx = 0;
+      switch (currentMode) {
+      case MODE_WIFI_AUTH_ATTACK:
+        attackIdx = 0;
+        break;
+      case MODE_WIFI_MIMIC_FLOOD:
+        attackIdx = 1;
+        break;
+      case MODE_WIFI_AP_SPAM:
+        attackIdx = 2;
+        break;
+      case MODE_WIFI_BAD_MESSAGE:
+        attackIdx = 3;
+        break;
+      case MODE_WIFI_BAD_MESSAGE_TARGETED:
+        attackIdx = 4;
+        break;
+      case MODE_WIFI_SLEEP_ATTACK:
+        attackIdx = 5;
+        break;
+      case MODE_WIFI_SLEEP_TARGETED:
+        attackIdx = 6;
+        break;
+      case MODE_WIFI_SAE_COMMIT:
+        attackIdx = 7;
+        break;
+      default:
+        break;
+      }
+      snprintf(attackFooter, sizeof(attackFooter), "%s PKTS:%lu",
+               attackNames[attackIdx], wifiAttackManager.getPacketsSent());
+      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, attackFooter);
       break;
+    }
     case MODE_NETWORK_ARP_SCAN:
     case MODE_NETWORK_PORT_SCAN:
     case MODE_NETWORK_PING_SCAN:
@@ -2221,11 +2285,105 @@ void loop() {
     case MODE_NETWORK_SMTP_SCAN:
     case MODE_NETWORK_RDP_SCAN:
     case MODE_NETWORK_TELNET_SCAN:
-    case MODE_NETWORK_SSH_SCAN:
+    case MODE_NETWORK_SSH_SCAN: {
       networkScanManager.tick();
-      // TODO: Add UI for network scans
-      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, "NETWORK SCAN");
+      static char scanFooter[48];
+      const char *scanNames[] = {"ARP",   "PORT", "PING", "DNS",    "HTTP",
+                                 "HTTPS", "SMTP", "RDP",  "TELNET", "SSH"};
+      int scanIdx = 0;
+      switch (currentMode) {
+      case MODE_NETWORK_ARP_SCAN:
+        scanIdx = 0;
+        break;
+      case MODE_NETWORK_PORT_SCAN:
+        scanIdx = 1;
+        break;
+      case MODE_NETWORK_PING_SCAN:
+        scanIdx = 2;
+        break;
+      case MODE_NETWORK_DNS_SCAN:
+        scanIdx = 3;
+        break;
+      case MODE_NETWORK_HTTP_SCAN:
+        scanIdx = 4;
+        break;
+      case MODE_NETWORK_HTTPS_SCAN:
+        scanIdx = 5;
+        break;
+      case MODE_NETWORK_SMTP_SCAN:
+        scanIdx = 6;
+        break;
+      case MODE_NETWORK_RDP_SCAN:
+        scanIdx = 7;
+        break;
+      case MODE_NETWORK_TELNET_SCAN:
+        scanIdx = 8;
+        break;
+      case MODE_NETWORK_SSH_SCAN:
+        scanIdx = 9;
+        break;
+      default:
+        break;
+      }
+      snprintf(scanFooter, sizeof(scanFooter), "%s HOSTS:%d %s",
+               scanNames[scanIdx], networkScanManager.getHostCount(),
+               networkScanManager.isScanComplete() ? "DONE" : "SCAN");
+      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, scanFooter);
       break;
+    }
+    case MODE_BLE_SCAN_SKIMMERS:
+    case MODE_BLE_SCAN_AIRTAG:
+    case MODE_BLE_SCAN_FLIPPER:
+    case MODE_BLE_SCAN_FLOCK:
+    case MODE_BLE_SCAN_ANALYZER:
+    case MODE_BLE_SCAN_SIMPLE:
+    case MODE_BLE_SCAN_SIMPLE_TWO: {
+      static char bleFooter[48];
+      const char *scanNames[] = {"SKIMMERS", "AIRTAG", "FLIPPER", "FLOCK",
+                                 "ANALYZER", "SIMPLE", "SIMPLE2"};
+      int scanIdx = 0;
+      int count = 0;
+      switch (currentMode) {
+      case MODE_BLE_SCAN_SKIMMERS:
+        scanIdx = 0;
+        count = bleManager.getSkimmerCount();
+        break;
+      case MODE_BLE_SCAN_AIRTAG:
+        scanIdx = 1;
+        count = bleManager.getAirTagCount();
+        break;
+      case MODE_BLE_SCAN_FLIPPER:
+        scanIdx = 2;
+        count = bleManager.getFlipperCount();
+        break;
+      case MODE_BLE_SCAN_FLOCK:
+        scanIdx = 3;
+        count = bleManager.getFlockCount();
+        break;
+      case MODE_BLE_SCAN_ANALYZER:
+        scanIdx = 4;
+        count = bleManager.getAnalyzerValue();
+        break;
+      case MODE_BLE_SCAN_SIMPLE:
+      case MODE_BLE_SCAN_SIMPLE_TWO:
+        scanIdx = currentMode == MODE_BLE_SCAN_SIMPLE ? 5 : 6;
+        count = bleManager.getScanCount();
+        break;
+      default:
+        break;
+      }
+      snprintf(bleFooter, sizeof(bleFooter), "%s CNT:%d", scanNames[scanIdx],
+               count);
+      sceneManager.drawBleScanMode(bleScanSelected, bleManager);
+      break;
+    }
+    case MODE_BLE_SCAN_AIRTAG_MON: {
+      int count = bleManager.getAirTagCount();
+      static char airtagFooter[48];
+      snprintf(airtagFooter, sizeof(airtagFooter), "AIRTAG MON CNT:%d", count);
+      sceneManager.drawBleScanMode(bleScanSelected, bleManager);
+      break;
+    }
     case MODE_WIFI_SNIFF:
       wifiSniffManager.tick();
       sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
