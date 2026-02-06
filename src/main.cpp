@@ -673,15 +673,19 @@ static bool initializeMode(AppMode mode) {
     Serial.println("[SYS] RADAR mode initialized");
     return true;
 
-  case MODE_WIFI_DEAUTH:
+  case MODE_WIFI_DEAUTH: {
     manageWiFiState(mode);
+    WiFi.disconnect(true);
+    delay(80);
     WiFi.scanNetworks(true, true);
     wifiScanSelected = 0;
     wifiListPage = 0;
     wifiFilteredCount = 0;
     lastDeauthTargetScanIndex = -1;
-    Serial.println("[SYS] DEAUTH mode initialized");
+    Serial.println(
+        "[SYS] DEAUTH mode initialized (WiFi disconnected for injection)");
     return true;
+  }
 
   case MODE_WIFI_TRAP: {
     manageWiFiState(mode);
