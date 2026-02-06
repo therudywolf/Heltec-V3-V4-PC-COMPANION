@@ -651,7 +651,7 @@ static bool initializeMode(AppMode mode) {
 
   case MODE_RADAR:
     manageWiFiState(mode);
-    WiFi.scanNetworks(true);
+    WiFi.scanNetworks(true, true);
     wifiScanSelected = 0;
     wifiListPage = 0;
     wifiFilteredCount = 0;
@@ -660,7 +660,7 @@ static bool initializeMode(AppMode mode) {
 
   case MODE_WIFI_DEAUTH:
     manageWiFiState(mode);
-    WiFi.scanNetworks(true);
+    WiFi.scanNetworks(true, true);
     wifiScanSelected = 0;
     wifiListPage = 0;
     wifiFilteredCount = 0;
@@ -674,7 +674,7 @@ static bool initializeMode(AppMode mode) {
     // Если сканирование еще не завершено, запустим его
     int n = WiFi.scanComplete();
     if (n == -1) {
-      WiFi.scanNetworks(true);
+      WiFi.scanNetworks(true, true);
       Serial.println("[TRAP] Starting scan for SSID cloning...");
     }
     // Если есть завершенное сканирование и выбран индекс, клонируем SSID
@@ -1158,7 +1158,7 @@ void loop() {
           delay(100);
           WiFi.mode(WIFI_STA);
           Serial.println("[RADAR] RADIO RESET.");
-          WiFi.scanNetworks(true);
+          WiFi.scanNetworks(true, true);
           wifiFilteredCount = 0;
         }
         needRedraw = true;
@@ -1221,10 +1221,6 @@ void loop() {
   if (!splashDone) {
     display.drawSplash();
   } else if (quickMenuOpen) {
-    display.drawGlobalHeader("MENU", nullptr, netManager.rssi(),
-                             netManager.isWifiConnected());
-    sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                 state.batteryVoltage);
     sceneManager.drawMenu(
         menuLevel, menuCategory, quickMenuItem, settings.carouselEnabled,
         settings.carouselIntervalSec, settings.displayInverted,
@@ -1256,9 +1252,6 @@ void loop() {
           sceneManager.drawIdleScreensaver(now);
           display.applyGlitch(); /* Always light glitch on screensaver */
         } else {
-          display.drawGlobalHeader("NO SIGNAL", nullptr, 0, false);
-          sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                       state.batteryVoltage);
           sceneManager.drawNoSignal(false, false, 0, blinkState);
         }
       } else if (!netManager.isTcpConnected()) {
@@ -1266,16 +1259,9 @@ void loop() {
           sceneManager.drawIdleScreensaver(now);
           display.applyGlitch(); /* Always light glitch on screensaver */
         } else {
-          display.drawGlobalHeader("LINKING", nullptr, netManager.rssi(), true);
-          sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                       state.batteryVoltage);
           sceneManager.drawConnecting(netManager.rssi(), blinkState);
         }
       } else if (netManager.isSearchMode() || signalLost) {
-        display.drawGlobalHeader("SEARCH", nullptr, netManager.rssi(),
-                                 netManager.isWifiConnected());
-        sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                     state.batteryVoltage);
         int scanPhase = (int)(now / 100) % 12;
         sceneManager.drawSearchMode(scanPhase);
       } else {

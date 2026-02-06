@@ -6,7 +6,7 @@
 #pragma once
 #include <Arduino.h>
 
-#define BLE_PHANTOM_ROTATE_MS 100
+#define BLE_PHANTOM_ROTATE_MS 1500
 #define BLE_PHANTOM_PAYLOAD_COUNT 4
 
 class BleManager {
