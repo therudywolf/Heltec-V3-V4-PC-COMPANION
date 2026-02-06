@@ -20,7 +20,20 @@ enum BleAttackType {
   BLE_ATTACK_SWIFTPAIR_GOOGLE,
   BLE_ATTACK_SWIFTPAIR_SAMSUNG,
   BLE_ATTACK_AIRTAG_SPOOF,
-  BLE_ATTACK_FLIPPER_SPAM
+  BLE_ATTACK_FLIPPER_SPAM,
+  BLE_ATTACK_SPAM_ALL
+};
+
+// Scan types
+enum BleScanType {
+  BLE_SCAN_BASIC = 0,
+  BLE_SCAN_SKIMMERS,
+  BLE_SCAN_AIRTAG,
+  BLE_SCAN_FLIPPER,
+  BLE_SCAN_FLOCK,
+  BLE_SCAN_ANALYZER,
+  BLE_SCAN_SIMPLE,
+  BLE_SCAN_SIMPLE_TWO
 };
 
 struct BleScanDevice {
@@ -41,13 +54,30 @@ public:
   int getCurrentPayloadIndex() const { return currentPayloadIndex_; }
 
   void beginScan();
+  void beginScan(BleScanType scanType);
   void stopScan();
   bool isScanning() const { return scanning_; }
+  BleScanType getScanType() const { return scanType_; }
   int getScanCount() const { return scanCount_; }
   const BleScanDevice *getScanDevice(int index) const;
   void cloneDevice(int index);
   bool isCloning() const { return cloning_; }
   void onScanResult(void *device);
+
+  // Skimmer detection
+  int getSkimmerCount() const { return skimmerCount_; }
+  const BleScanDevice *getSkimmer(int index) const;
+
+  // Flipper detection
+  int getFlipperCount() const { return flipperCount_; }
+  const BleScanDevice *getFlipper(int index) const;
+
+  // Flock detection
+  int getFlockCount() const { return flockCount_; }
+  const BleScanDevice *getFlock(int index) const;
+
+  // Analyzer
+  uint32_t getAnalyzerValue() const { return analyzerValue_; }
 
   // New attack modes
   void startAttack(BleAttackType attackType);
@@ -71,6 +101,7 @@ private:
   BleAttackType currentAttackType_ = BLE_ATTACK_SPAM;
 
   bool scanning_ = false;
+  BleScanType scanType_ = BLE_SCAN_BASIC;
   BleScanDevice scanDevices_[BLE_SCAN_DEVICE_MAX];
   int scanCount_ = 0;
   bool cloning_ = false;
@@ -81,4 +112,25 @@ private:
   bool airTagMonitoring_ = false;
   BleScanDevice airTags_[BLE_SCAN_DEVICE_MAX];
   int airTagCount_ = 0;
+
+  // Skimmer detection
+  BleScanDevice skimmers_[BLE_SCAN_DEVICE_MAX];
+  int skimmerCount_ = 0;
+
+  // Flipper detection
+  BleScanDevice flippers_[BLE_SCAN_DEVICE_MAX];
+  int flipperCount_ = 0;
+
+  // Flock detection
+  BleScanDevice flocks_[BLE_SCAN_DEVICE_MAX];
+  int flockCount_ = 0;
+
+  // Analyzer
+  uint32_t analyzerValue_ = 0;
+  uint32_t analyzerFramesRecvd_ = 0;
+
+  // Helper functions for detection
+  bool isSkimmer(const uint8_t *payload, size_t len);
+  bool isFlipper(const uint8_t *payload, size_t len);
+  bool isFlock(const uint8_t *payload, size_t len, const char *name);
 };

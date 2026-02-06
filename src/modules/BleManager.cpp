@@ -59,9 +59,18 @@ BleManager::BleManager() {
 #if __has_include("NimBLEDevice.h")
   memset(scanDevices_, 0, sizeof(scanDevices_));
   memset(airTags_, 0, sizeof(airTags_));
+  memset(skimmers_, 0, sizeof(skimmers_));
+  memset(flippers_, 0, sizeof(flippers_));
+  memset(flocks_, 0, sizeof(flocks_));
   cloneName_[0] = '\0';
   cloneAddr_[0] = '\0';
   airTagCount_ = 0;
+  skimmerCount_ = 0;
+  flipperCount_ = 0;
+  flockCount_ = 0;
+  analyzerValue_ = 0;
+  analyzerFramesRecvd_ = 0;
+  scanType_ = BLE_SCAN_BASIC;
   currentAttackType_ = BLE_ATTACK_SPAM;
 #endif
 }
@@ -315,6 +324,7 @@ void BleManager::onScanResult(void *device) {
       if (isAirTag && airTagCount_ < BLE_SCAN_DEVICE_MAX) {
         std::string addr = dev->getAddress().toString();
         int rssi = dev->getRSSI();
+        std::string name = dev->getName();
         // Check if already in list
         for (int i = 0; i < airTagCount_; i++) {
           if (strcmp(airTags_[i].addr, addr.c_str()) == 0) {
@@ -326,7 +336,11 @@ void BleManager::onScanResult(void *device) {
         int i = airTagCount_++;
         strncpy(airTags_[i].addr, addr.c_str(), BLE_DEVICE_ADDR_LEN - 1);
         airTags_[i].addr[BLE_DEVICE_ADDR_LEN - 1] = '\0';
-        strncpy(airTags_[i].name, "AirTag", BLE_DEVICE_NAME_LEN - 1);
+        if (name.length() > 0) {
+          strncpy(airTags_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+        } else {
+          strncpy(airTags_[i].name, "AirTag", BLE_DEVICE_NAME_LEN - 1);
+        }
         airTags_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
         airTags_[i].rssi = rssi;
         Serial.printf("[BLE] AirTag detected: %s RSSI: %d\n", addr.c_str(),
@@ -334,6 +348,99 @@ void BleManager::onScanResult(void *device) {
       }
     }
     return; // Don't process regular scan when monitoring AirTags
+  }
+
+  // Get payload for detection (if needed)
+#ifndef HAS_NIMBLE_2
+  uint8_t *payLoad = dev->getPayload();
+  size_t len = dev->getPayloadLength();
+#else
+  const std::vector<unsigned char> &payLoadVec = dev->getPayload();
+  size_t len = payLoadVec.size();
+  uint8_t payLoad[256];
+  if (len > 256)
+    len = 256;
+  for (size_t i = 0; i < len; i++) {
+    payLoad[i] = payLoadVec[i];
+  }
+#endif
+
+  // Process based on scan type
+  if (scanType_ == BLE_SCAN_SKIMMERS) {
+    // Check for skimmer patterns
+    if (isSkimmer(payLoad, len)) {
+      if (skimmerCount_ < BLE_SCAN_DEVICE_MAX) {
+        std::string addr = dev->getAddress().toString();
+        std::string name = dev->getName();
+        int rssi = dev->getRSSI();
+        // Check if already in list
+        for (int i = 0; i < skimmerCount_; i++) {
+          if (strcmp(skimmers_[i].addr, addr.c_str()) == 0) {
+            skimmers_[i].rssi = rssi;
+            return;
+          }
+        }
+        int i = skimmerCount_++;
+        strncpy(skimmers_[i].addr, addr.c_str(), BLE_DEVICE_ADDR_LEN - 1);
+        skimmers_[i].addr[BLE_DEVICE_ADDR_LEN - 1] = '\0';
+        strncpy(skimmers_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+        skimmers_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
+        skimmers_[i].rssi = rssi;
+        Serial.printf("[BLE] Skimmer detected: %s\n", addr.c_str());
+      }
+      return;
+    }
+  } else if (scanType_ == BLE_SCAN_FLIPPER) {
+    // Check for Flipper Zero
+    if (isFlipper(payLoad, len)) {
+      if (flipperCount_ < BLE_SCAN_DEVICE_MAX) {
+        std::string addr = dev->getAddress().toString();
+        std::string name = dev->getName();
+        int rssi = dev->getRSSI();
+        for (int i = 0; i < flipperCount_; i++) {
+          if (strcmp(flippers_[i].addr, addr.c_str()) == 0) {
+            flippers_[i].rssi = rssi;
+            return;
+          }
+        }
+        int i = flipperCount_++;
+        strncpy(flippers_[i].addr, addr.c_str(), BLE_DEVICE_ADDR_LEN - 1);
+        flippers_[i].addr[BLE_DEVICE_ADDR_LEN - 1] = '\0';
+        strncpy(flippers_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+        flippers_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
+        flippers_[i].rssi = rssi;
+        Serial.printf("[BLE] Flipper detected: %s\n", addr.c_str());
+      }
+      return;
+    }
+  } else if (scanType_ == BLE_SCAN_FLOCK) {
+    // Check for Flock
+    std::string name = dev->getName();
+    if (isFlock(payLoad, len, name.c_str())) {
+      if (flockCount_ < BLE_SCAN_DEVICE_MAX) {
+        std::string addr = dev->getAddress().toString();
+        int rssi = dev->getRSSI();
+        for (int i = 0; i < flockCount_; i++) {
+          if (strcmp(flocks_[i].addr, addr.c_str()) == 0) {
+            flocks_[i].rssi = rssi;
+            return;
+          }
+        }
+        int i = flockCount_++;
+        strncpy(flocks_[i].addr, addr.c_str(), BLE_DEVICE_ADDR_LEN - 1);
+        flocks_[i].addr[BLE_DEVICE_ADDR_LEN - 1] = '\0';
+        strncpy(flocks_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+        flocks_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
+        flocks_[i].rssi = rssi;
+        Serial.printf("[BLE] Flock detected: %s\n", addr.c_str());
+      }
+      return;
+    }
+  } else if (scanType_ == BLE_SCAN_ANALYZER) {
+    analyzerValue_++;
+    if (analyzerFramesRecvd_ < 254)
+      analyzerFramesRecvd_++;
+    // Continue to regular scan for analyzer
   }
 
   // Regular scan
@@ -362,7 +469,9 @@ void BleManager::onScanResult(void *device) {
 }
 #endif
 
-void BleManager::beginScan() {
+void BleManager::beginScan() { beginScan(BLE_SCAN_BASIC); }
+
+void BleManager::beginScan(BleScanType scanType) {
 #if __has_include("NimBLEDevice.h")
   if (WiFi.getMode() != WIFI_OFF) {
     WiFi.disconnect(true);
@@ -375,10 +484,19 @@ void BleManager::beginScan() {
       stop();
   }
   s_bleManager = this;
+  scanType_ = scanType;
   if (!NimBLEDevice::getInitialized())
     NimBLEDevice::init("SCAN");
   scanCount_ = 0;
+  skimmerCount_ = 0;
+  flipperCount_ = 0;
+  flockCount_ = 0;
+  analyzerValue_ = 0;
+  analyzerFramesRecvd_ = 0;
   memset(scanDevices_, 0, sizeof(scanDevices_));
+  memset(skimmers_, 0, sizeof(skimmers_));
+  memset(flippers_, 0, sizeof(flippers_));
+  memset(flocks_, 0, sizeof(flocks_));
   NimBLEScan *pScan = NimBLEDevice::getScan();
   if (pScan) {
     if (s_scanCb == nullptr)
@@ -390,7 +508,7 @@ void BleManager::beginScan() {
     pScan->start(0, nullptr);
     scanning_ = true;
     active_ = true;
-    Serial.println("[BLE] Scan ACTIVE.");
+    Serial.printf("[BLE] Scan ACTIVE (type %d).\n", scanType);
   }
 #else
   scanning_ = false;
@@ -735,4 +853,76 @@ const BleScanDevice *BleManager::getAirTag(int index) const {
   if (index < 0 || index >= airTagCount_)
     return nullptr;
   return &airTags_[index];
+}
+
+const BleScanDevice *BleManager::getSkimmer(int index) const {
+  if (index < 0 || index >= skimmerCount_)
+    return nullptr;
+  return &skimmers_[index];
+}
+
+const BleScanDevice *BleManager::getFlipper(int index) const {
+  if (index < 0 || index >= flipperCount_)
+    return nullptr;
+  return &flippers_[index];
+}
+
+const BleScanDevice *BleManager::getFlock(int index) const {
+  if (index < 0 || index >= flockCount_)
+    return nullptr;
+  return &flocks_[index];
+}
+
+bool BleManager::isSkimmer(const uint8_t *payload, size_t len) {
+  // Skimmer detection: look for common credit card reader patterns
+  // Common patterns: MagStripe readers, NFC readers
+  // Check for manufacturer IDs associated with card readers
+  for (size_t i = 0; i + 3 < len; i++) {
+    if (payload[i] == 0xFF) { // Manufacturer Specific Data
+      // Common card reader manufacturers
+      // Check for known patterns (simplified)
+      if (i + 4 < len) {
+        uint16_t mfgId = (payload[i + 2] << 8) | payload[i + 1];
+        // Add known skimmer manufacturer IDs here
+        // This is a simplified check
+        if (mfgId == 0x0006 || mfgId == 0x004C) { // Example IDs
+          // Additional checks for card reader characteristics
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool BleManager::isFlipper(const uint8_t *payload, size_t len) {
+  // Flipper Zero detection: look for 0x81 0x30, 0x82 0x30, 0x83 0x30 patterns
+  for (size_t i = 0; i + 1 < len; i++) {
+    if ((payload[i] == 0x81 && payload[i + 1] == 0x30) ||
+        (payload[i] == 0x82 && payload[i + 1] == 0x30) ||
+        (payload[i] == 0x83 && payload[i + 1] == 0x30)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool BleManager::isFlock(const uint8_t *payload, size_t len, const char *name) {
+  // Flock detection: XUNTONG manufacturer (0x09C8) or Penguin name
+  if (name && strlen(name) > 0) {
+    // Check for old penguin name pattern
+    if (strncmp(name, "Penguin-", 8) == 0 && strlen(name) == 18) {
+      return true;
+    }
+  }
+
+  // Check for XUNTONG manufacturer ID
+  for (size_t i = 1; i + 3 < len; i++) {
+    if (payload[i] == 0xFF && // Manufacturer Specific Data
+        payload[i + 1] == 0xC8 && payload[i + 2] == 0x09) {
+      return true;
+    }
+  }
+
+  return false;
 }

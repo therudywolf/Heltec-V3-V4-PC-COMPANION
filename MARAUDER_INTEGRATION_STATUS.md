@@ -41,10 +41,10 @@
    - ✅ EAPOL Capture (MODE_WIFI_EAPOL_SCAN) - работает
    - ✅ Station Scan (MODE_WIFI_STATION_SCAN) - работает
    - ✅ Packet Monitor (MODE_WIFI_PACKET_MONITOR) - работает
-   - ⚠️ Probe Scan (MODE_WIFI_PROBE_SCAN) - нужен отдельный режим в WifiSniffManager
-   - ⚠️ Channel Analyzer (MODE_WIFI_CHANNEL_ANALYZER) - нужна реализация графика каналов
-   - ⚠️ Channel Activity (MODE_WIFI_CHANNEL_ACTIVITY) - нужна реализация активности каналов
-   - ⚠️ Packet Rate (MODE_WIFI_PACKET_RATE) - нужна статистика по времени
+   - ✅ Probe Scan (MODE_WIFI_PROBE_SCAN) - реализовано, отслеживает probe requests
+   - ✅ Channel Analyzer (MODE_WIFI_CHANNEL_ANALYZER) - реализовано, отслеживает активность каналов
+   - ✅ Channel Activity (MODE_WIFI_CHANNEL_ACTIVITY) - реализовано, статистика по каналам
+   - ✅ Packet Rate (MODE_WIFI_PACKET_RATE) - реализовано, считает пакеты в секунду
    - ⚠️ PineScan (MODE_WIFI_PINESCAN) - нужна детекция Pineapple
    - ⚠️ MultiSSID (MODE_WIFI_MULTISSID) - нужна детекция множественных SSID
    - ⚠️ Signal Strength (MODE_WIFI_SIGNAL_STRENGTH) - нужна визуализация силы сигнала
@@ -59,14 +59,14 @@
    - ✅ Beacon Spam (MODE_WIFI_BEACON) - работает
    - ✅ Beacon Rick Roll (MODE_WIFI_BEACON_RICKROLL) - работает
    - ✅ Beacon Funny (MODE_WIFI_BEACON_FUNNY) - работает
-   - ⚠️ Auth Attack (MODE_WIFI_AUTH_ATTACK) - нужна реализация auth flood
-   - ⚠️ Mimic Flood (MODE_WIFI_MIMIC_FLOOD) - нужна реализация mimic атаки
-   - ⚠️ AP Spam (MODE_WIFI_AP_SPAM) - нужна реализация AP spam
-   - ⚠️ Bad Message (MODE_WIFI_BAD_MESSAGE) - нужна реализация bad message атаки
-   - ⚠️ Bad Message Targeted (MODE_WIFI_BAD_MESSAGE_TARGETED) - нужна реализация
-   - ⚠️ Sleep Attack (MODE_WIFI_SLEEP_ATTACK) - нужна реализация sleep атаки
-   - ⚠️ Sleep Targeted (MODE_WIFI_SLEEP_TARGETED) - нужна реализация
-   - ⚠️ SAE Commit (MODE_WIFI_SAE_COMMIT) - нужна реализация SAE commit атаки
+   - ✅ Auth Attack (MODE_WIFI_AUTH_ATTACK) - реализовано в WifiAttackManager
+   - ✅ Mimic Flood (MODE_WIFI_MIMIC_FLOOD) - реализовано в WifiAttackManager
+   - ✅ AP Spam (MODE_WIFI_AP_SPAM) - реализовано в WifiAttackManager
+   - ✅ Bad Message (MODE_WIFI_BAD_MESSAGE) - реализовано в WifiAttackManager
+   - ✅ Bad Message Targeted (MODE_WIFI_BAD_MESSAGE_TARGETED) - реализовано в WifiAttackManager
+   - ✅ Sleep Attack (MODE_WIFI_SLEEP_ATTACK) - реализовано в WifiAttackManager
+   - ✅ Sleep Targeted (MODE_WIFI_SLEEP_TARGETED) - реализовано в WifiAttackManager
+   - ✅ SAE Commit (MODE_WIFI_SAE_COMMIT) - реализовано в WifiAttackManager (базовая версия)
 
 3. **BLE Scans - требуется доработка:**
 
