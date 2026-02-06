@@ -1661,10 +1661,13 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
 }
 
 // --- KICK (WiFi Deauth) ---
-#define KICK_HEADER_H 10
-#define KICK_ICON_X 48
-#define KICK_ICON_Y 14
-#define KICK_FOOTER_Y 56
+#define KICK_ROW_DY 10
+#define KICK_Y_TITLE 2
+#define KICK_Y_TARGET 12
+#define KICK_Y_BSSID 22
+#define KICK_Y_STATUS 32
+#define KICK_Y_PKTS 42
+#define KICK_Y_WARN 52
 
 void SceneManager::drawKickMode(KickManager &kick) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
@@ -1673,42 +1676,45 @@ void SceneManager::drawKickMode(KickManager &kick) {
   u8g2.setDrawColor(1);
 
   bool attacking = kick.isAttacking();
-  int sx = attacking ? (int)((millis() / 25) % 5) - 2 : 0;
-  int sy = attacking ? (int)((millis() / 33) % 5) - 2 : 0;
 
-  u8g2.drawBox(0 + sx, 0 + sy, NOCT_DISP_W, KICK_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(2 + sx, 7 + sy);
+  u8g2.setCursor(2, KICK_Y_TITLE);
   u8g2.print("DEAUTH");
-  u8g2.setDrawColor(1);
-
-  u8g2.drawXBM(KICK_ICON_X + sx, KICK_ICON_Y + sy, 32, 32, wolf_aggressive);
+  u8g2.drawLine(0, 9, NOCT_DISP_W, 9);
 
   static char targetBuf[44];
   static char bssidBuf[20];
   kick.getTargetSSID(targetBuf, sizeof(targetBuf));
   kick.getTargetBSSIDStr(bssidBuf, sizeof(bssidBuf));
-  if (targetBuf[0] == '\0')
-    snprintf(targetBuf, sizeof(targetBuf), "%s", bssidBuf);
-  u8g2.setCursor(2 + sx, 48 + sy);
-  u8g2.print("TARGET: ");
-  u8g2.print(targetBuf[0] ? targetBuf : "(none)");
-  u8g2.setCursor(2 + sx, 56 + sy);
+  const char *targetStr = targetBuf[0]  ? targetBuf
+                          : bssidBuf[0] ? bssidBuf
+                                        : "(none)";
+  char targetShort[18];
+  strncpy(targetShort, targetStr, sizeof(targetShort) - 1);
+  targetShort[sizeof(targetShort) - 1] = '\0';
+  if (strlen(targetStr) > sizeof(targetShort) - 1)
+    targetShort[sizeof(targetShort) - 2] = '.';
+
+  u8g2.setCursor(2, KICK_Y_TARGET);
+  u8g2.print("TGT: ");
+  u8g2.print(targetShort);
+
+  u8g2.setCursor(2, KICK_Y_BSSID);
+  u8g2.print(bssidBuf);
+
+  u8g2.setCursor(2, KICK_Y_STATUS);
   u8g2.print(attacking ? "STATUS: INJECTING" : "STATUS: IDLE");
-  u8g2.setCursor(2 + sx, 62 + sy);
+
+  u8g2.setCursor(2, KICK_Y_PKTS);
   u8g2.print("PKTS: ");
   u8g2.print(kick.getPacketCount());
 
-  if (kick.isTargetProtected()) {
-    u8g2.setCursor(2, 58);
-    u8g2.print("WARNING: WPA3/PMF");
-  }
   if (kick.isTargetOwnAP()) {
-    u8g2.setCursor(70 + sx, 48 + sy);
-    u8g2.print("[OWN AP]");
+    u8g2.setCursor(2, KICK_Y_WARN);
+    u8g2.print("[OWN AP - BLOCKED]");
+  } else if (kick.isTargetProtected()) {
+    u8g2.setCursor(2, KICK_Y_WARN);
+    u8g2.print("WPA3/PMF - may fail");
   }
-
-  disp_.drawGreebles();
 }
 
 // --- VAULT (TOTP 2FA) ---

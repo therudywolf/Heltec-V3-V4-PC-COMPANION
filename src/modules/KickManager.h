@@ -42,6 +42,7 @@ private:
 
   uint8_t targetBSSID_[6];
   char targetSSID_[KICK_TARGET_SSID_LEN];
+  uint8_t targetChannel_;
   bool targetSet_;
   bool targetIsOwnAP_;
   bool attacking_;
