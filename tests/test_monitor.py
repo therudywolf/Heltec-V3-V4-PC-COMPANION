@@ -7,8 +7,8 @@ import os
 import sys
 import tempfile
 
-# Allow importing monitor from src
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+# Allow importing monitor from server
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 import monitor  # noqa: E402
 
 

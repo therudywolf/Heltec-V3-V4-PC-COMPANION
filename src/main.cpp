@@ -549,9 +549,7 @@ void setup() {
 
   {
     uint8_t contrast =
-        settings.lowBrightnessDefault ? 12 : (uint8_t)settings.displayContrast;
-    if (contrast > 255)
-      contrast = 255;
+        settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX;
     display.u8g2().setContrast(contrast);
   }
   display.setScreenFlipped(settings.displayInverted);
@@ -845,8 +843,8 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     } else if (item == 4) {
       settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
       display.u8g2().setContrast(settings.lowBrightnessDefault
-                                     ? 12
-                                     : (uint8_t)settings.displayContrast);
+                                     ? NOCT_CONTRAST_MIN
+                                     : NOCT_CONTRAST_MAX);
       Preferences prefs;
       prefs.begin("nocturne", false);
       prefs.putBool("lowBright", settings.lowBrightnessDefault);
@@ -984,7 +982,8 @@ void loop() {
   ButtonEvent event = input.update();
 
   // 3. Global: DOUBLE = open menu when closed; when menu already open, leave
-  // EV_DOUBLE for menu block (back / close).
+  // EV_DOUBLE for menu block (back / close). Menu is available regardless of
+  // WiFi or TCP connection state.
   if (event == EV_DOUBLE && !quickMenuOpen) {
     if (currentMode != MODE_NORMAL)
       exitAppModeToNormal();
@@ -999,9 +998,7 @@ void loop() {
   } else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen) {
     settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
     uint8_t contrast =
-        settings.lowBrightnessDefault ? 12 : (uint8_t)settings.displayContrast;
-    if (contrast > 255)
-      contrast = 255;
+        settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX;
     display.u8g2().setContrast(contrast);
     Preferences prefs;
     prefs.begin("nocturne", false);
