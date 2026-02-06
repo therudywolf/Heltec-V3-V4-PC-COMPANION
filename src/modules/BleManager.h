@@ -1,27 +1,42 @@
 /*
- * NOCTURNE_OS — BLE Phantom Spammer (SIGINT).
- * Broadcasts pairing-style advertisements (Apple, Google Fast Pair, Samsung).
- * WiFi MUST be off while active (2.4 GHz antenna conflict).
+ * NOCTURNE_OS — BLE Phantom Spammer + BLE Scan + Clone.
+ * Spam: Apple/Google/Samsung/Windows. Scan: list devices. Clone: advertise as
+ * selected. WiFi MUST be off while active.
  */
 #pragma once
 #include <Arduino.h>
 
 #define BLE_PHANTOM_ROTATE_MS 1500
-#define BLE_PHANTOM_PAYLOAD_COUNT 4
+#define BLE_PHANTOM_PAYLOAD_COUNT 6
+#define BLE_SCAN_DEVICE_MAX 20
+#define BLE_DEVICE_NAME_LEN 32
+#define BLE_DEVICE_ADDR_LEN 18
+
+struct BleScanDevice {
+  char name[BLE_DEVICE_NAME_LEN];
+  char addr[BLE_DEVICE_ADDR_LEN];
+  int rssi;
+};
 
 class BleManager {
 public:
   BleManager();
-  void
-  begin(); // Init NimBLE and start advertising (call after WiFi.mode(WIFI_OFF))
-  void stop(); // Stop advertising and deinit
-  void tick(); // Rotate payload every 100ms, update packet count
+  void begin();
+  void stop();
+  void tick();
 
   bool isActive() const { return active_; }
   int getPacketCount() const { return packetCount_; }
-  /** Last payload index (0=Apple, 1=Google, 2=Samsung, 3=Windows) for UI glitch
-   * trigger */
   int getCurrentPayloadIndex() const { return currentPayloadIndex_; }
+
+  void beginScan();
+  void stopScan();
+  bool isScanning() const { return scanning_; }
+  int getScanCount() const { return scanCount_; }
+  const BleScanDevice *getScanDevice(int index) const;
+  void cloneDevice(int index);
+  bool isCloning() const { return cloning_; }
+  void onScanResult(void *device);
 
 private:
   void startSpam();
@@ -31,4 +46,11 @@ private:
   int packetCount_ = 0;
   int currentPayloadIndex_ = 0;
   unsigned long lastRotateMs_ = 0;
+
+  bool scanning_ = false;
+  BleScanDevice scanDevices_[BLE_SCAN_DEVICE_MAX];
+  int scanCount_ = 0;
+  bool cloning_ = false;
+  char cloneName_[BLE_DEVICE_NAME_LEN];
+  char cloneAddr_[BLE_DEVICE_ADDR_LEN];
 };
