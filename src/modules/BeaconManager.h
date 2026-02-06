@@ -39,7 +39,7 @@ public:
 private:
   void buildBeacon(const char *ssid, uint8_t channel);
   void sendBeacon();
-  const char **getCurrentSSIDList() const;
+  const char *const *getCurrentSSIDList() const;
   int getCurrentListSize() const;
 
   bool active_ = false;
