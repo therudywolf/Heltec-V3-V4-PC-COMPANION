@@ -207,6 +207,7 @@ SERVER_VERSION = "1.0"  # Sent in payload "sv" for client/debug
 TOP_PROCS_CACHE_TTL = 2.5
 POLL_INTERVAL = 0.5
 HEARTBEAT_INTERVAL = 0.5  # Send at least every 0.5s so display updates twice per second
+MEDIA_UPDATE_INTERVAL = 1.0  # Update media info every 1 second (reduces CPU load)
 HYSTERESIS_TEMP = 2
 HYSTERESIS_LOAD = 5
 HYSTERESIS_NET_KB = 100
@@ -273,6 +274,8 @@ last_sent_track_key: str = ""
 top_procs_cache: List = []
 top_procs_ram_cache: List = []
 last_top_procs_time: float = 0.0
+last_media_time: float = 0.0
+_media_manager: Optional[Any] = None  # Cached GlobalSystemMediaTransportControlsSessionManager
 last_net_bytes = {"sent": 0, "recv": 0, "time": 0.0}
 last_disk_bytes = {"read": 0, "write": 0, "time": 0.0}
 ping_latency_ms = 0
@@ -597,10 +600,14 @@ def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
 
 async def _get_media_info_async_impl() -> Dict:
     """Media: no Base64 art; only status PLAYING|PAUSED for procedural cassette animation."""
+    global _media_manager
     if not HAS_WINSDK:
         return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
     try:
-        manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+        # Reuse cached manager if available, otherwise create new one
+        if _media_manager is None:
+            _media_manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+        manager = _media_manager
         session = manager.get_current_session()
         if not session:
             return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
@@ -613,6 +620,8 @@ async def _get_media_info_async_impl() -> Dict:
         media_status = "PLAYING" if is_playing else "PAUSED"
         return {"art": artist, "trk": track, "play": is_playing, "idle": is_idle, "media_status": media_status}
     except Exception:
+        # If manager becomes invalid, reset it so it will be recreated next time
+        _media_manager = None
         return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
@@ -857,7 +866,7 @@ async def handle_client(reader, writer):
 
 async def run():
     global executor, last_sent_track_key, top_procs_cache, top_procs_ram_cache
-    global last_top_procs_time, ping_latency_ms, global_data_cache
+    global last_top_procs_time, last_media_time, ping_latency_ms, global_data_cache
     global _last_sent_snapshot, _last_heartbeat_time
 
     server = None
@@ -876,6 +885,7 @@ async def run():
     last_lhm_time = 0.0
     last_weather_time = 0.0
     last_ping_time = 0.0
+    last_media_time = 0.0
     session = aiohttp.ClientSession()
 
     try:
@@ -933,10 +943,12 @@ async def run():
                 except Exception as e:
                     log_debug(f"Ping: {e}")
 
-            try:
-                global_data_cache["media"] = await get_media_info(loop)
-            except Exception as e:
-                log_debug(f"Media: {e}")
+            if now - last_media_time >= MEDIA_UPDATE_INTERVAL:
+                last_media_time = now
+                try:
+                    global_data_cache["media"] = await get_media_info(loop)
+                except Exception as e:
+                    log_debug(f"Media: {e}")
 
             payload = build_payload(
                 global_data_cache["hw"], global_data_cache["media"],
