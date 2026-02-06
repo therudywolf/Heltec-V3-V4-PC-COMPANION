@@ -931,13 +931,13 @@ void SceneManager::drawSearchMode(int scanPhase) {
 static int submenuCountForCategory(int cat) {
   switch (cat) {
   case 0:
-    return 3;
+    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
     return 3;
   case 2:
     return 4;
   case 3:
-    return 2;
+    return 3; // REBOOT, VERSION, EXIT
   default:
     return 3;
   }
@@ -946,6 +946,7 @@ static int submenuCountForCategory(int cat) {
 void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                             bool carouselOn, int carouselSec,
                             bool screenRotated, bool glitchEnabled,
+                            bool ledEnabled, bool lowBrightnessDefault,
                             bool rebootConfirmed) {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = NOCT_MENU_BOX_X;
@@ -959,7 +960,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
   static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System"};
-  static char items[4][20];
+  static char items[5][20];
   int count;
   const char *headerStr;
 
@@ -982,6 +983,10 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                screenRotated ? "180deg" : "0deg");
       snprintf(items[2], sizeof(items[2]), "GLITCH: %s",
                glitchEnabled ? "ON" : "OFF");
+      snprintf(items[3], sizeof(items[3]), "LED: %s",
+               ledEnabled ? "ON" : "OFF");
+      snprintf(items[4], sizeof(items[4]), "DIM: %s",
+               lowBrightnessDefault ? "ON" : "OFF");
     } else if (menuCategory == 1) {
       strncpy(items[0], "SCAN", sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
@@ -1004,8 +1009,10 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       else
         strncpy(items[0], "REBOOT", sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
-      strncpy(items[1], "EXIT", sizeof(items[1]) - 1);
+      strncpy(items[1], "VERSION", sizeof(items[1]) - 1);
       items[1][sizeof(items[1]) - 1] = '\0';
+      strncpy(items[2], "EXIT", sizeof(items[2]) - 1);
+      items[2][sizeof(items[2]) - 1] = '\0';
     }
   }
   if (count <= 0)
@@ -1082,6 +1089,24 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     hintX = NOCT_MENU_LIST_LEFT;
   u8g2.setDrawColor(1);
   u8g2.drawUTF8(hintX, boxY + boxH - 2, hint);
+}
+
+void SceneManager::drawToast(const char *msg) {
+  if (!msg || !msg[0])
+    return;
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  const int barH = 12;
+  const int barY = NOCT_DISP_H - barH;
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, barY, NOCT_DISP_W, barH);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  int w = u8g2.getUTF8Width(msg);
+  int x = (NOCT_DISP_W - w) / 2;
+  if (x < 2)
+    x = 2;
+  u8g2.drawUTF8(x, barY + barH - 3, msg);
+  u8g2.setDrawColor(1);
 }
 
 void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,

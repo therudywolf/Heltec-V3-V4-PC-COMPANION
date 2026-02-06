@@ -187,6 +187,10 @@ unsigned long rebootConfirmTime = 0;
 unsigned long lastMenuEventTime = 0;
 #define MENU_EVENT_DEBOUNCE_MS 150
 
+// Toast: brief on-screen message (FAIL on mode error, Saved on Config save)
+static char toastMsg[20] = "";
+static unsigned long toastUntil = 0;
+
 // --- Cyberdeck Modes ---
 enum AppMode {
   MODE_NORMAL,
@@ -471,6 +475,8 @@ static void VextON() {
 // ---------------------------------------------------------------------------
 void setup() {
   bootTime = millis();
+  Serial.begin(115200);
+  Serial.println("[NOCT] Nocturne OS " NOCTURNE_VERSION);
   setCpuFrequencyMhz(240); // V4: max speed (also set in platformio.ini)
 
   // ========================================================================
@@ -538,9 +544,16 @@ void setup() {
     settings.displayContrast = 0;
   settings.displayInverted = prefs.getBool("inverted", true);
   settings.glitchEnabled = prefs.getBool("glitch", false);
+  settings.lowBrightnessDefault = prefs.getBool("lowBright", false);
   prefs.end();
 
-  display.u8g2().setContrast((uint8_t)settings.displayContrast);
+  {
+    uint8_t contrast =
+        settings.lowBrightnessDefault ? 12 : (uint8_t)settings.displayContrast;
+    if (contrast > 255)
+      contrast = 255;
+    display.u8g2().setContrast(contrast);
+  }
   display.setScreenFlipped(settings.displayInverted);
   randomSeed(esp_random());
 
@@ -769,13 +782,13 @@ static void exitAppModeToNormal() {
 static int submenuCount(int category) {
   switch (category) {
   case 0:
-    return 3; // Config: AUTO, FLIP, GLITCH
+    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
     return 3; // WiFi: SCAN, DEAUTH, PORTAL
   case 2:
     return 4; // Tools: BLE, USB HID, VAULT, DAEMON
   case 3:
-    return 2; // System: REBOOT, EXIT
+    return 3; // System: REBOOT, VERSION, EXIT
   default:
     return 3;
   }
@@ -802,6 +815,8 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       prefs.putBool("carousel", settings.carouselEnabled);
       prefs.putInt("carouselSec", settings.carouselIntervalSec);
       prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "Saved");
+      toastUntil = now + 800;
     } else if (item == 1) {
       settings.displayInverted = !settings.displayInverted;
       display.setScreenFlipped(settings.displayInverted);
@@ -809,12 +824,35 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       prefs.begin("nocturne", false);
       prefs.putBool("inverted", settings.displayInverted);
       prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "Saved");
+      toastUntil = now + 800;
     } else if (item == 2) {
       settings.glitchEnabled = !settings.glitchEnabled;
       Preferences prefs;
       prefs.begin("nocturne", false);
       prefs.putBool("glitch", settings.glitchEnabled);
       prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "Saved");
+      toastUntil = now + 800;
+    } else if (item == 3) {
+      settings.ledEnabled = !settings.ledEnabled;
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putBool("led", settings.ledEnabled);
+      prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "Saved");
+      toastUntil = now + 800;
+    } else if (item == 4) {
+      settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
+      display.u8g2().setContrast(settings.lowBrightnessDefault
+                                     ? 12
+                                     : (uint8_t)settings.displayContrast);
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putBool("lowBright", settings.lowBrightnessDefault);
+      prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "Saved");
+      toastUntil = now + 800;
     }
     return true;
   }
@@ -824,6 +862,8 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     if (item == 0) {
       if (!switchToMode(MODE_RADAR)) {
         Serial.println("[MENU] RADAR failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
     } else if (item == 1) {
@@ -831,12 +871,16 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       wifiListPage = 0;
       if (!switchToMode(MODE_WIFI_DEAUTH)) {
         Serial.println("[MENU] DEAUTH failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
       kickManager.setTargetFromScan(0);
     } else if (item == 2) {
       if (!switchToMode(MODE_WIFI_TRAP)) {
         Serial.println("[MENU] TRAP failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
     }
@@ -848,21 +892,29 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     if (item == 0) {
       if (!switchToMode(MODE_BLE_SPAM)) {
         Serial.println("[MENU] BLE failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
     } else if (item == 1) {
       if (!switchToMode(MODE_BADWOLF)) {
         Serial.println("[MENU] USB failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
     } else if (item == 2) {
       if (!switchToMode(MODE_VAULT)) {
         Serial.println("[MENU] VAULT failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
     } else if (item == 3) {
       if (!switchToMode(MODE_DAEMON)) {
         Serial.println("[MENU] DAEMON failed");
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
         return false;
       }
     }
@@ -879,7 +931,12 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       }
       return true;
     }
-    if (item == 1) { // EXIT
+    if (item == 1) { // VERSION
+      snprintf(toastMsg, sizeof(toastMsg), "v" NOCTURNE_VERSION);
+      toastUntil = now + 2000;
+      return true;
+    }
+    if (item == 2) { // EXIT
       quickMenuOpen = false;
       return true;
     }
@@ -899,7 +956,7 @@ void loop() {
       if (c == '\n') {
         char *buf = netManager.getLineBuffer();
         size_t bufLen = netManager.getLineBufferLen();
-        if (bufLen > 0) {
+        if (bufLen > 0 && bufLen <= NOCT_TCP_LINE_MAX) {
           JsonDocument doc;
           DeserializationError err = deserializeJson(doc, buf, bufLen);
           if (!err) {
@@ -940,12 +997,16 @@ void loop() {
     needRedraw = true;
     event = EV_NONE;
   } else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen) {
-    static bool lowBrightness = false;
-    lowBrightness = !lowBrightness;
-    uint8_t contrast = lowBrightness ? 12 : (uint8_t)settings.displayContrast;
+    settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
+    uint8_t contrast =
+        settings.lowBrightnessDefault ? 12 : (uint8_t)settings.displayContrast;
     if (contrast > 255)
       contrast = 255;
     display.u8g2().setContrast(contrast);
+    Preferences prefs;
+    prefs.begin("nocturne", false);
+    prefs.putBool("lowBright", settings.lowBrightnessDefault);
+    prefs.end();
     needRedraw = true;
     event = EV_NONE;
   }
@@ -1224,7 +1285,8 @@ void loop() {
     sceneManager.drawMenu(
         menuLevel, menuCategory, quickMenuItem, settings.carouselEnabled,
         settings.carouselIntervalSec, settings.displayInverted,
-        settings.glitchEnabled, rebootConfirmed);
+        settings.glitchEnabled, settings.ledEnabled,
+        settings.lowBrightnessDefault, rebootConfirmed);
   } else {
     switch (currentMode) {
     case MODE_NORMAL: {
@@ -1377,6 +1439,12 @@ void loop() {
 
   if (settings.glitchEnabled)
     display.applyGlitch();
+  if (toastUntil && now >= toastUntil) {
+    toastUntil = 0;
+    toastMsg[0] = '\0';
+  }
+  if (toastUntil && now < toastUntil && toastMsg[0])
+    sceneManager.drawToast(toastMsg);
   display.sendBuffer();
 
   // Оптимизированная задержка - yield только при необходимости

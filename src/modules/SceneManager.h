@@ -43,7 +43,10 @@ public:
    * category (0..3), mainIndex = selected item. */
   void drawMenu(int menuLevel, int menuCategory, int mainIndex, bool carouselOn,
                 int carouselSec, bool screenRotated, bool glitchEnabled,
+                bool ledEnabled, bool lowBrightnessDefault,
                 bool rebootConfirmed = false);
+  /** Brief toast overlay (e.g. "FAIL", "Saved"). Call after main content. */
+  void drawToast(const char *msg);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
   void drawConnecting(int rssi, bool blinkState);
 
