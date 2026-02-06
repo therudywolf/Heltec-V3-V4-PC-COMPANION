@@ -474,27 +474,25 @@ void setup() {
   setCpuFrequencyMhz(240); // V4: max speed (also set in platformio.ini)
 
   // ========================================================================
-  // Power-On Kick: Force Vext ON and hard-reset OLED before display.begin()
-  // Vext (NOCT_VEXT_PIN) and RST (NOCT_OLED_RST) must never be driven HIGH.
+  // Power-On Kick: Vext (36) LOW = power OLED. RST (21) pulse, then begin().
+  // Do NOT use GPIO 18 as RST — 18 is SCL (I2C). Standard V4: Vext=36, RST=21.
   // ========================================================================
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
-
-  pinMode(NOCT_OLED_RST, OUTPUT);
-  digitalWrite(NOCT_OLED_RST, LOW);
-  delay(50);
-  digitalWrite(NOCT_OLED_RST, HIGH);
-
   vextPinState = true;
-  delay(150); // Allow power to stabilize before initializing display
+  delay(100);
+
+  pinMode(NOCT_RST_PIN, OUTPUT);
+  digitalWrite(NOCT_RST_PIN, LOW);
+  delay(50);
+  digitalWrite(NOCT_RST_PIN, HIGH);
+  delay(50);
 
   display.begin();
   delay(100);
 
-  // Ensure Vext stays LOW (never drive HIGH)
-  if (digitalRead(NOCT_VEXT_PIN) != LOW) {
+  if (digitalRead(NOCT_VEXT_PIN) != LOW)
     digitalWrite(NOCT_VEXT_PIN, LOW);
-  }
   delay(50);
   drawBootSequence(display);
   splashDone = true;
