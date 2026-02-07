@@ -2159,53 +2159,76 @@ void SceneManager::drawQrMode(const char *text) {
 }
 
 // --- FORZA DASHBOARD (circular tach + gear + speed) ---
-// Layout: circular tach left (Forza/NFS style), gear prominent, speed compact
-#define FORZA_TACH_CX 34
-#define FORZA_TACH_CY 34
-#define FORZA_TACH_R 28
-#define FORZA_TACH_INNER_R 20
-#define FORZA_RIGHT_X 68
+// Layout: tach left (realistic arc, needle from bottom), gear + speed right
+#define FORZA_TACH_CX 36
+#define FORZA_TACH_CY 28
+#define FORZA_TACH_R 26
+#define FORZA_TACH_INNER_R 18
+#define FORZA_RIGHT_X 70
+// Arc: 240° (8 o'clock) -> 300° (4 o'clock) — нижняя полудуга как в Forza/NFS
+#define FORZA_TACH_START_DEG 240
+#define FORZA_TACH_SWEEP_DEG 120
 
-// Full circular tachometer (Forza / NFS Underground style radial gauge)
-// Arc: 225° (7 o'clock) -> 45° (1 o'clock), 180° sweep
+// Circular tachometer: arc in lower half, needle sweeps from left to right
+// Scale numbers 0,2,4,6,8,10 (×1000 RPM)
 static void drawTachometer(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
-                           float rpmPct, int rpm, int cx, int cy, int rOuter,
-                           int rInner) {
+                           float rpmPct, int rpm, float maxRpm, int cx, int cy,
+                           int rOuter, int rInner) {
   if (rpmPct > 1.0f) rpmPct = 1.0f;
   if (rpmPct < 0.0f) rpmPct = 0.0f;
   const float degToRad = 3.14159265f / 180.0f;
-  const int startDeg = 225;
-  const int sweepDeg = 180;
-  // Full circle outer ring
-  u8g2.drawCircle(cx, cy, rOuter);
-  u8g2.drawCircle(cx, cy, rInner);
-  // Tick marks at 0, 25, 50, 75, 100%
-  for (int t = 0; t <= 4; t++) {
-    float a = (startDeg + (sweepDeg * t) / 4) * degToRad;
+  const int startDeg = FORZA_TACH_START_DEG;
+  const int sweepDeg = FORZA_TACH_SWEEP_DEG;
+  // Outer arc only (lower semicircle)
+  for (int i = 0; i <= 24; i++) {
+    float a = (startDeg + (sweepDeg * i) / 24) * degToRad;
+    int px = cx + (int)(rOuter * cosf(a));
+    int py = cy + (int)(rOuter * sinf(a));
+    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
+      u8g2.drawPixel(px, py);
+  }
+  for (int i = 0; i <= 24; i++) {
+    float a = (startDeg + (sweepDeg * i) / 24) * degToRad;
+    int px = cx + (int)(rInner * cosf(a));
+    int py = cy + (int)(rInner * sinf(a));
+    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
+      u8g2.drawPixel(px, py);
+  }
+  // Tick marks + scale numbers 0, 2, 4, 6, 8, 10 (×1000)
+  int maxK = (maxRpm > 0) ? (int)(maxRpm / 1000.0f + 0.5f) : 10;
+  if (maxK < 2) maxK = 2;
+  u8g2.setFont(u8g2_font_4x6_tr);
+  for (int t = 0; t <= 5; t++) {
+    float pct = (float)t / 5.0f;
+    float a = (startDeg + sweepDeg * pct) * degToRad;
     int x1 = cx + (int)(rInner * cosf(a));
     int y1 = cy + (int)(rInner * sinf(a));
     int x2 = cx + (int)(rOuter * cosf(a));
     int y2 = cy + (int)(rOuter * sinf(a));
     u8g2.drawLine(x1, y1, x2, y2);
+    int val = (maxK * t) / 5;
+    int tx = cx + (int)((rOuter + 5) * cosf(a));
+    int ty = cy + (int)((rOuter + 5) * sinf(a));
+    if (ty < 0) ty = 0;
+    if (ty > NOCT_DISP_H - 6) ty = NOCT_DISP_H - 6;
+    static char numBuf[4];
+    snprintf(numBuf, sizeof(numBuf), "%d", val);
+    int nw = u8g2.getUTF8Width(numBuf);
+    u8g2.drawUTF8(tx - nw / 2, ty + 1, numBuf);
   }
-  // Filled arc (stays within left half, max x = cx + r*cos(315°) ≈ cx + r*0.7)
-  int fillSteps = (int)(rpmPct * 32.0f + 0.5f);
-  if (fillSteps > 0) {
-    for (int i = 1; i <= fillSteps; i++) {
-      float a = (startDeg + (sweepDeg * i) / 32.0f) * degToRad;
-      int ex = cx + (int)(rOuter * cosf(a));
-      int ey = cy + (int)(rOuter * sinf(a));
-      u8g2.drawLine(cx, cy, ex, ey);
-    }
-  }
-  // RPM value inside gauge
+  // Needle: line from center to rpmPct angle
+  float needleA = (startDeg + sweepDeg * rpmPct) * degToRad;
+  int nx = cx + (int)(rOuter * cosf(needleA));
+  int ny = cy + (int)(rOuter * sinf(needleA));
+  u8g2.drawLine(cx, cy, nx, ny);
+  // RPM value BELOW tachometer (arc bottom ≈ cy+rOuter)
   static char rpmBuf[8];
   snprintf(rpmBuf, sizeof(rpmBuf), "%d", rpm);
   u8g2.setFont(u8g2_font_6x10_tf);
   int rw = u8g2.getUTF8Width(rpmBuf);
-  u8g2.drawUTF8(cx - rw / 2, cy - 2, rpmBuf);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(cx - 6, cy + 10, "RPM");
+  int rpmY = cy + rOuter + 4;
+  if (rpmY > NOCT_DISP_H - 12) rpmY = NOCT_DISP_H - 12;
+  u8g2.drawUTF8(cx - rw / 2, rpmY, rpmBuf);
 }
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
@@ -2236,8 +2259,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- Left: circular tachometer (no fill overlap with right panel) ---
-  drawTachometer(u8g2, rpmPct, rpm, FORZA_TACH_CX, FORZA_TACH_CY,
+  // --- Left: circular tachometer (arc lower, needle, scale numbers, RPM below) ---
+  drawTachometer(u8g2, rpmPct, rpm, maxRpm, FORZA_TACH_CX, FORZA_TACH_CY,
                  FORZA_TACH_R, FORZA_TACH_INNER_R);
 
   // --- Right: Gear (prominent) + Speed (compact, secondary) ---
@@ -2265,19 +2288,19 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   u8g2.setFont(u8g2_font_logisoso34_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
-  u8g2.drawUTF8(rightX + (rightW - gearW) / 2, 28, gearStr);
+  u8g2.drawUTF8(rightX + (rightW - gearW) / 2, 16, gearStr);
 
-  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setFont(u8g2_font_helvB10_tr);
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
   int sw = u8g2.getUTF8Width(spdBuf);
   u8g2.drawUTF8(rightX + (rightW - sw) / 2, 52, spdBuf);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(rightX + (rightW - 24) / 2, 62, "km/h");
+  u8g2.drawUTF8(rightX + (rightW - 20) / 2, 62, "km/h");
 
   if (!s.connected) {
     u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(rightX + (rightW - 16) / 2, 42, "--");
+    u8g2.drawUTF8(rightX + (rightW - 16) / 2, 36, "--");
   }
 
   if (rpmPct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
