@@ -9,6 +9,7 @@ Run: python forza_udp_capture.py
 """
 import socket
 import sys
+import time
 
 PORT = 5300
 BUF_SIZE = 400
@@ -16,8 +17,9 @@ BUF_SIZE = 400
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.settimeout(0.5)
     try:
-        sock.bind(("0.0.0.0", PORT))  # All interfaces
+        sock.bind(("0.0.0.0", PORT))
     except OSError as e:
         print(f"Bind failed: {e}")
         print("Is another app using port 5300? Close Forza or the Wolf device.")
@@ -31,12 +33,12 @@ def main():
     while True:
         try:
             data, addr = sock.recvfrom(BUF_SIZE)
+        except socket.timeout:
+            continue
         except KeyboardInterrupt:
             break
         count += 1
         n = len(data)
-        # Throttle output
-        import time
         now = time.time()
         if now - last_print < 0.2 and count > 1:
             continue
