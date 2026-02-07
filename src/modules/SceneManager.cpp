@@ -2251,11 +2251,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawStr(126 - u8g2.getStrWidth("--"), 38, "--");
   }
 
-  // --- 5. SHIFT LIGHT (Flash) ---
-  if (maxRpm > 0.0f && s.currentRpm > 0.96f * maxRpm)
-    disp_.u8g2().setDisplayInverted(millis() % 200 < 100);
-  else
-    disp_.u8g2().setDisplayInverted(false);
+  // --- 5. SHIFT LIGHT (XOR FLASH) ---
+  if (maxRpm > 0.0f && s.currentRpm > 0.96f * maxRpm) {
+    // Blink every 100ms
+    if ((millis() % 200) < 100) {
+      u8g2.setDrawColor(2);  // 0=Clear, 1=Set, 2=XOR (Invert)
+      u8g2.drawBox(0, 0, 128, 64);
+      u8g2.setDrawColor(1);  // Restore default color
+    }
+  }
 }
 
 // --- mDNS ---
