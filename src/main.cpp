@@ -1819,7 +1819,7 @@ void loop() {
     batTimer.lastMs = now; // Reset timer with new interval
   }
 
-  // LED: predator breath / alert blink / cursor blink
+  // LED: predator breath / alert blink / Forza shift light / cursor blink
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   if (predatorMode) {
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -1830,6 +1830,22 @@ void loop() {
       analogWrite(NOCT_LED_ALERT_PIN, breath);
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+  } else if (currentMode == MODE_GAME_FORZA) {
+    const ForzaState &fs = forzaManager.getState();
+    if (fs.connected && fs.maxRpm > 0) {
+      float pct = fs.currentRpm / fs.maxRpm;
+      if (pct >= FORZA_SHIFT_THRESHOLD) {
+        bool flash = (now / 80) % 2 == 0;
+        if (settings.ledEnabled)
+          digitalWrite(NOCT_LED_ALERT_PIN, flash ? HIGH : LOW);
+      } else {
+        if (settings.ledEnabled)
+          digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+      }
+    } else {
+      if (settings.ledEnabled)
+        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+    }
   } else {
     if (state.alertActive && !lastAlertActive) {
       alertBlinkCounter = 0;

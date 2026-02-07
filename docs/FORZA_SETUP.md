@@ -9,7 +9,7 @@ The Wolf device acts as a real-time dashboard for Forza Horizon 4, Forza Horizon
 3. Enable it and set the following:
    - **IP Address:** The IP of your Wolf device (shown on the splash screen when you enter the mode).
    - **Port:** `5300`
-   - **Data Format:** Sled (default) or Dash, both supported.
+   - **Data Format:** Sled or Dash, both supported. Speed is shown for both (Sled uses velocity-derived speed).
 
 ## Getting the Wolf Device IP
 
@@ -42,7 +42,7 @@ The Wolf device acts as a real-time dashboard for Forza Horizon 4, Forza Horizon
 - **RPM bar** (top) — Current vs. max RPM
 - **Gear** (center) — R, N, or 1–10
 - **Speed** (bottom right) — km/h
-- **Shift light** — Full-screen flash when RPM > 95% of max
+- **Shift light** — Full-screen flash and LED blink when RPM ≥ 90% of max
 
 ## Exit
 

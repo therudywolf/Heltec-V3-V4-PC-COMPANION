@@ -4,6 +4,7 @@
 #include "ForzaManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <math.h>
 #include <string.h>
 
 ForzaManager::ForzaManager() {
@@ -59,12 +60,22 @@ void ForzaManager::parsePacket(const uint8_t *buf, size_t len) {
   state_.maxRpm = readFloatLE(buf + FORZA_OFF_ENGINE_MAX_RPM);
   state_.idleRpm = readFloatLE(buf + FORZA_OFF_ENGINE_IDLE_RPM);
   state_.currentRpm = readFloatLE(buf + FORZA_OFF_CURRENT_ENGINE_RPM);
-  state_.speedMs = readFloatLE(buf + FORZA_OFF_SPEED);
 
   if (state_.maxRpm < 100.0f || state_.maxRpm > 25000.0f)
     state_.maxRpm = 10000.0f;
 
-  if (len > (size_t)(FORZA_OFF_GEAR + 1)) {
+  // Speed: Dash has it at 244; Sled (232 bytes) must use Velocity
+  if (len >= 248) {
+    state_.speedMs = readFloatLE(buf + FORZA_OFF_SPEED);
+  } else if (len >= 44) {
+    float vx = readFloatLE(buf + FORZA_OFF_VELOCITY_X);
+    float vy = readFloatLE(buf + FORZA_OFF_VELOCITY_Y);
+    float vz = readFloatLE(buf + FORZA_OFF_VELOCITY_Z);
+    state_.speedMs = sqrtf(vx * vx + vy * vy + vz * vz);
+  }
+
+  // Gear: Dash only (offset 307)
+  if (len >= 308) {
     state_.gear = (int)(buf[FORZA_OFF_GEAR] & 0xFF);
   }
 }
