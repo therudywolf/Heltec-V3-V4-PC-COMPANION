@@ -2222,7 +2222,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   u8g2.setDrawColor(2);
-  u8g2.drawUTF8(2, 14, rpmTextBuf);
+  int rpmY = barH / 2 + 7;
+  u8g2.drawUTF8(2, rpmY, rpmTextBuf);
   u8g2.setDrawColor(1);
 
   // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE, always visible ---
@@ -2254,7 +2255,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
   int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(126 - sw, 48, spdBuf);
+  u8g2.drawUTF8(126 - sw, 52, spdBuf);
 
   u8g2.setFont(u8g2_font_profont12_tf);
   int kmhW = u8g2.getUTF8Width("km/h");
