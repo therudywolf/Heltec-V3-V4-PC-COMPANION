@@ -9,7 +9,7 @@ The Wolf device acts as a real-time dashboard for Forza Horizon 4, Forza Horizon
 3. Enable it and set the following:
    - **IP Address:** The IP of your Wolf device (shown on the splash screen when you enter the mode).
    - **Port:** `5300`
-   - **Data Format:** Use **Dash** (required for gear display). Sled has no gear data.
+   - **Data Format:** Use **Dash** (required). Sled packets are ignored.
 
 ## Getting the Wolf Device IP
 
@@ -40,9 +40,9 @@ The Wolf device acts as a real-time dashboard for Forza Horizon 4, Forza Horizon
 ## UDP Packet Format (port 5300)
 
 Forza sends raw binary UDP packets. Two formats are supported:
-- **Sled**: 232 bytes — no gear
-- **Dash FM7/FM8**: 311 bytes — gear at 307
-- **Dash FH4/FH5**: 323 bytes — gear at 319
+Only **Dash** format is accepted:
+- **FM7/FM8**: 311 bytes
+- **FH4/FH5**: 323 bytes
 
 Parsed offsets (little-endian):
 | Offset | Type | Field |
