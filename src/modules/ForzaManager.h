@@ -8,9 +8,9 @@
 #include <WiFiUdp.h>
 
 #define FORZA_UDP_PORT 5300
-#define FORZA_PACKET_MIN_SIZE 232
-#define FORZA_PACKET_SLED_SIZE 232
-#define FORZA_PACKET_DASH_SIZE 311
+#define FORZA_PACKET_MIN_SIZE 311   /* Dash only: FM7/FM8 311 bytes */
+#define FORZA_PACKET_DASH_FM 311
+#define FORZA_PACKET_DASH_FH 323
 #define FORZA_TIMEOUT_MS 3000
 #define FORZA_SHIFT_THRESHOLD 0.90f  // RPM % for shift light
 
@@ -19,19 +19,20 @@
 #define FORZA_OFF_ENGINE_MAX_RPM 8
 #define FORZA_OFF_ENGINE_IDLE_RPM 12
 #define FORZA_OFF_CURRENT_ENGINE_RPM 16
-#define FORZA_OFF_VELOCITY_X 32  // Sled: Velocity in car space (m/s)
-#define FORZA_OFF_VELOCITY_Y 36
-#define FORZA_OFF_VELOCITY_Z 40
+// FM7/FM8 Dash (311 bytes)
 #define FORZA_OFF_SPEED 244
 #define FORZA_OFF_TIRE_FL 256
-#define FORZA_OFF_TIRE_FR 260
-#define FORZA_OFF_TIRE_RL 264
-#define FORZA_OFF_TIRE_RR 268
 #define FORZA_OFF_FUEL 280
 #define FORZA_OFF_LAP 296
 #define FORZA_OFF_RACE_POS 298
-#define FORZA_OFF_GEAR 307           // FM7/FM8 Dash (311 bytes)
-#define FORZA_OFF_GEAR_HORIZON 319   // FH4/FH5 Dash (323 bytes, +12 hzn)
+#define FORZA_OFF_GEAR 307
+// FH4/FH5 Dash (323 bytes): +12 after NumCylinders
+#define FORZA_OFF_SPEED_FH 256
+#define FORZA_OFF_TIRE_FL_FH 268
+#define FORZA_OFF_FUEL_FH 292
+#define FORZA_OFF_LAP_FH 308
+#define FORZA_OFF_RACE_POS_FH 310
+#define FORZA_OFF_GEAR_FH 319
 
 struct ForzaState {
   float currentRpm;
@@ -69,7 +70,7 @@ private:
 
   WiFiUDP udp_;
   ForzaState state_;
-  uint8_t rxBuf_[FORZA_PACKET_DASH_SIZE];
+  uint8_t rxBuf_[FORZA_PACKET_DASH_FH];
 };
 
 #endif

@@ -77,38 +77,25 @@ void ForzaManager::parsePacket(const uint8_t *buf, size_t len) {
   if (state_.maxRpm < 100.0f || state_.maxRpm > 25000.0f)
     state_.maxRpm = 10000.0f;
 
-  // Speed: Dash has it at 244; Sled (232 bytes) must use Velocity
-  if (len >= 248) {
-    state_.speedMs = readFloatLE(buf + FORZA_OFF_SPEED);
-  } else if (len >= 44) {
-    float vx = readFloatLE(buf + FORZA_OFF_VELOCITY_X);
-    float vy = readFloatLE(buf + FORZA_OFF_VELOCITY_Y);
-    float vz = readFloatLE(buf + FORZA_OFF_VELOCITY_Z);
-    state_.speedMs = sqrtf(vx * vx + vy * vy + vz * vz);
-  }
+  bool isHorizon = (len >= FORZA_PACKET_DASH_FH);
+  int offSpeed = isHorizon ? FORZA_OFF_SPEED_FH : FORZA_OFF_SPEED;
+  int offTire = isHorizon ? FORZA_OFF_TIRE_FL_FH : FORZA_OFF_TIRE_FL;
+  int offFuel = isHorizon ? FORZA_OFF_FUEL_FH : FORZA_OFF_FUEL;
+  int offLap = isHorizon ? FORZA_OFF_LAP_FH : FORZA_OFF_LAP;
+  int offRacePos = isHorizon ? FORZA_OFF_RACE_POS_FH : FORZA_OFF_RACE_POS;
+  int offGear = isHorizon ? FORZA_OFF_GEAR_FH : FORZA_OFF_GEAR;
 
-  if (len >= 284) {
-    state_.tireFL = readFloatLE(buf + FORZA_OFF_TIRE_FL);
-    state_.tireFR = readFloatLE(buf + FORZA_OFF_TIRE_FR);
-    state_.tireRL = readFloatLE(buf + FORZA_OFF_TIRE_RL);
-    state_.tireRR = readFloatLE(buf + FORZA_OFF_TIRE_RR);
-  }
-  if (len >= 284) {
-    state_.fuel = readFloatLE(buf + FORZA_OFF_FUEL);
-    if (state_.fuel < 0.0f || state_.fuel > 1.0f)
-      state_.fuel = 1.0f;
-  }
-  if (len >= 298) {
-    state_.lapNumber = readU16LE(buf + FORZA_OFF_LAP);
-  }
-  if (len >= 299) {
-    state_.racePosition = buf[FORZA_OFF_RACE_POS] & 0xFF;
-  }
-  if (len >= 320) {
-    state_.gear = (int)(buf[FORZA_OFF_GEAR_HORIZON] & 0xFF);
-  } else if (len >= 308) {
-    state_.gear = (int)(buf[FORZA_OFF_GEAR] & 0xFF);
-  }
+  state_.speedMs = readFloatLE(buf + offSpeed);
+  state_.tireFL = readFloatLE(buf + offTire);
+  state_.tireFR = readFloatLE(buf + offTire + 4);
+  state_.tireRL = readFloatLE(buf + offTire + 8);
+  state_.tireRR = readFloatLE(buf + offTire + 12);
+  state_.fuel = readFloatLE(buf + offFuel);
+  if (state_.fuel < 0.0f || state_.fuel > 1.0f)
+    state_.fuel = 1.0f;
+  state_.lapNumber = readU16LE(buf + offLap);
+  state_.racePosition = buf[offRacePos] & 0xFF;
+  state_.gear = (int)(buf[offGear] & 0xFF);
 }
 
 void ForzaManager::tick() {
