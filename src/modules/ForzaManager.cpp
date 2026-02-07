@@ -9,10 +9,14 @@
 
 ForzaManager::ForzaManager() {
   state_.currentRpm = 0.0f;
-  state_.maxRpm = 10000.0f;  // fallback
+  state_.maxRpm = 10000.0f;
   state_.idleRpm = 0.0f;
   state_.speedMs = 0.0f;
   state_.gear = 0;
+  state_.tireFL = state_.tireFR = state_.tireRL = state_.tireRR = 0.0f;
+  state_.fuel = 1.0f;
+  state_.lapNumber = 0;
+  state_.racePosition = 0;
   state_.connected = false;
   state_.lastPacketMs = 0;
 }
@@ -32,6 +36,10 @@ float ForzaManager::readFloatLE(const uint8_t *p) {
 int32_t ForzaManager::readS32LE(const uint8_t *p) {
   return (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) |
                    ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24));
+}
+
+uint16_t ForzaManager::readU16LE(const uint8_t *p) {
+  return (uint16_t)(p[0] | (p[1] << 8));
 }
 
 void ForzaManager::begin() {
@@ -74,7 +82,23 @@ void ForzaManager::parsePacket(const uint8_t *buf, size_t len) {
     state_.speedMs = sqrtf(vx * vx + vy * vy + vz * vz);
   }
 
-  // Gear: Dash only (offset 307)
+  if (len >= 284) {
+    state_.tireFL = readFloatLE(buf + FORZA_OFF_TIRE_FL);
+    state_.tireFR = readFloatLE(buf + FORZA_OFF_TIRE_FR);
+    state_.tireRL = readFloatLE(buf + FORZA_OFF_TIRE_RL);
+    state_.tireRR = readFloatLE(buf + FORZA_OFF_TIRE_RR);
+  }
+  if (len >= 284) {
+    state_.fuel = readFloatLE(buf + FORZA_OFF_FUEL);
+    if (state_.fuel < 0.0f || state_.fuel > 1.0f)
+      state_.fuel = 1.0f;
+  }
+  if (len >= 298) {
+    state_.lapNumber = readU16LE(buf + FORZA_OFF_LAP);
+  }
+  if (len >= 299) {
+    state_.racePosition = buf[FORZA_OFF_RACE_POS] & 0xFF;
+  }
   if (len >= 308) {
     state_.gear = (int)(buf[FORZA_OFF_GEAR] & 0xFF);
   }
@@ -111,4 +135,16 @@ char ForzaManager::getGearChar() const {
   if (state_.gear >= 1 && state_.gear <= 10)
     return (char)('0' + state_.gear);
   return '-';
+}
+
+float ForzaManager::getFuelPct() const {
+  return (state_.fuel >= 0.0f && state_.fuel <= 1.0f) ? state_.fuel : 1.0f;
+}
+
+int ForzaManager::getRacePosition() const {
+  return (int)state_.racePosition;
+}
+
+uint16_t ForzaManager::getLapNumber() const {
+  return state_.lapNumber;
 }

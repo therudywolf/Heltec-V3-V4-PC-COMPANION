@@ -22,15 +22,26 @@
 #define FORZA_OFF_VELOCITY_X 32  // Sled: Velocity in car space (m/s)
 #define FORZA_OFF_VELOCITY_Y 36
 #define FORZA_OFF_VELOCITY_Z 40
-#define FORZA_OFF_SPEED 244     // Dash only: Speed m/s
-#define FORZA_OFF_GEAR 307      // Dash only: u8 0=R, 1-10=gears, 11=N
+#define FORZA_OFF_SPEED 244
+#define FORZA_OFF_TIRE_FL 256
+#define FORZA_OFF_TIRE_FR 260
+#define FORZA_OFF_TIRE_RL 264
+#define FORZA_OFF_TIRE_RR 268
+#define FORZA_OFF_FUEL 280
+#define FORZA_OFF_LAP 296
+#define FORZA_OFF_RACE_POS 298
+#define FORZA_OFF_GEAR 307
 
 struct ForzaState {
   float currentRpm;
   float maxRpm;
   float idleRpm;
-  float speedMs;   // m/s
-  int gear;        // 0=R, 1-10=gear, 11=N
+  float speedMs;
+  int gear;
+  float tireFL, tireFR, tireRL, tireRR;
+  float fuel;
+  uint16_t lapNumber;
+  uint8_t racePosition;
   bool connected;
   unsigned long lastPacketMs;
 };
@@ -43,13 +54,17 @@ public:
   void tick();
   bool isConnected() const { return state_.connected; }
   const ForzaState &getState() const { return state_; }
-  int getSpeedKmh() const;   // Speed in km/h
-  char getGearChar() const;  // 'R','N','1'-'9'
+  int getSpeedKmh() const;
+  char getGearChar() const;
+  float getFuelPct() const;
+  int getRacePosition() const;
+  uint16_t getLapNumber() const;
 
 private:
   void parsePacket(const uint8_t *buf, size_t len);
   float readFloatLE(const uint8_t *p);
   int32_t readS32LE(const uint8_t *p);
+  uint16_t readU16LE(const uint8_t *p);
 
   WiFiUDP udp_;
   ForzaState state_;
