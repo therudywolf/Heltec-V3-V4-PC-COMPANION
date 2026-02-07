@@ -2158,19 +2158,32 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (full screen) ---
-#define FORZA_RPM_H 12
-#define FORZA_GEAR_Y 14
-#define FORZA_GEAR_H 36
+// --- FORZA DASHBOARD ---
+#define FORZA_TOP_H 10
+#define FORZA_LEFT_W 62
+#define FORZA_RIGHT_X 64
 
-static void drawGaugeNeedle(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2, int cx,
-                            int cy, int r, float pct) {
-  if (pct < 0.01f)
-    return;
-  float a = 3.665f + pct * 2.094f;
-  int tx = cx + (int)((float)r * cosf(a));
-  int ty = cy + (int)((float)r * sinf(a));
-  u8g2.drawLine(cx, cy, tx, ty);
+static void drawTireIcon(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2, int x,
+                         int y, float fl, float fr, float rl, float rr) {
+  int cx = x + 14;
+  int cy = y + 12;
+  u8g2.drawFrame(x, y, 28, 24);
+  if (fl > 40.0f)
+    u8g2.drawBox(cx - 5, cy - 7, 3, 3);
+  else
+    u8g2.drawPixel(cx - 4, cy - 6);
+  if (fr > 40.0f)
+    u8g2.drawBox(cx + 2, cy - 7, 3, 3);
+  else
+    u8g2.drawPixel(cx + 4, cy - 6);
+  if (rl > 40.0f)
+    u8g2.drawBox(cx - 5, cy + 4, 3, 3);
+  else
+    u8g2.drawPixel(cx - 4, cy + 6);
+  if (rr > 40.0f)
+    u8g2.drawBox(cx + 2, cy + 4, 3, 3);
+  else
+    u8g2.drawPixel(cx + 4, cy + 6);
 }
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
@@ -2200,37 +2213,60 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   float rpmPct = (maxRpm > 0.0f) ? (s.currentRpm / maxRpm) : 0.0f;
   if (rpmPct > 1.0f)
     rpmPct = 1.0f;
-  float speedKmh = (float)forza.getSpeedKmh();
-  float spdPct = (speedKmh > 300.0f) ? 1.0f : (speedKmh / 300.0f);
+  int speedKmh = forza.getSpeedKmh();
 
-  const int TACH_CX = 32;
-  const int SPD_CX = 96;
-  const int GAUGE_CY = 28;
-  const int GAUGE_R = 26;
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
 
-  u8g2.drawCircle(TACH_CX, GAUGE_CY, GAUGE_R);
-  drawGaugeNeedle(u8g2, TACH_CX, GAUGE_CY, GAUGE_R - 2, rpmPct);
+  u8g2.drawCircle(16, 5, 3);
+  u8g2.drawCircle(40, 5, 3);
+  u8g2.drawCircle(64, 5, 3);
+  u8g2.drawCircle(88, 5, 3);
+  u8g2.drawCircle(112, 5, 3);
+  int pos = forza.getRacePosition();
+  if (pos >= 1 && pos <= 5) {
+    u8g2.drawDisc(16 + (pos - 1) * 24, 5, 3);
+  }
+  u8g2.setFont(LABEL_FONT);
+  static char posBuf[8];
+  snprintf(posBuf, sizeof(posBuf), "P%d", pos > 0 ? pos : 1);
+  u8g2.drawUTF8(54, 8, posBuf);
+  snprintf(posBuf, sizeof(posBuf), "L%d", (int)forza.getLapNumber());
+  u8g2.drawUTF8(90, 8, posBuf);
+
+  disp_.drawTechBrackets(0, FORZA_TOP_H, FORZA_LEFT_W, NOCT_DISP_H - FORZA_TOP_H, 3);
   u8g2.setFont(VALUE_FONT);
   static char rpmBuf[8];
   snprintf(rpmBuf, sizeof(rpmBuf), "%d", (int)(s.currentRpm + 0.5f));
-  int rw = u8g2.getUTF8Width(rpmBuf);
-  u8g2.drawUTF8(TACH_CX - rw / 2, GAUGE_CY + GAUGE_R + 8, rpmBuf);
+  u8g2.drawUTF8(4, FORZA_TOP_H + 12, rpmBuf);
+  u8g2.drawFrame(4, FORZA_TOP_H + 18, FORZA_LEFT_W - 10, 6);
+  int fillW = (int)(rpmPct * (FORZA_LEFT_W - 12) + 0.5f);
+  if (fillW > 0) {
+    u8g2.drawBox(5, FORZA_TOP_H + 19, fillW, 4);
+  }
+  drawTireIcon(u8g2, 4, FORZA_TOP_H + 28, s.tireFL, s.tireFR, s.tireRL, s.tireRR);
 
-  u8g2.drawCircle(SPD_CX, GAUGE_CY, GAUGE_R);
-  drawGaugeNeedle(u8g2, SPD_CX, GAUGE_CY, GAUGE_R - 2, spdPct);
-  static char spdBuf[10];
-  snprintf(spdBuf, sizeof(spdBuf), "%d", (int)(speedKmh + 0.5f));
-  int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(SPD_CX - sw / 2, GAUGE_CY + GAUGE_R + 8, spdBuf);
-
+  disp_.drawTechBrackets(FORZA_RIGHT_X, FORZA_TOP_H,
+                         NOCT_DISP_W - FORZA_RIGHT_X, NOCT_DISP_H - FORZA_TOP_H, 3);
   char gearStr[2] = {forza.getGearChar(), '\0'};
-  u8g2.setFont(u8g2_font_logisoso24_tn);
+  u8g2.setFont(u8g2_font_logisoso34_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
-  u8g2.drawUTF8(64 - gearW / 2, 60, gearStr);
+  u8g2.drawUTF8(FORZA_RIGHT_X + (NOCT_DISP_W - FORZA_RIGHT_X) / 2 - gearW / 2,
+                FORZA_TOP_H + 32, gearStr);
+  u8g2.setFont(VALUE_FONT);
+  static char spdBuf[12];
+  snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
+  int sw = u8g2.getUTF8Width(spdBuf);
+  u8g2.drawUTF8(FORZA_RIGHT_X + (NOCT_DISP_W - FORZA_RIGHT_X) / 2 - sw / 2,
+                FORZA_TOP_H + 48, spdBuf);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(FORZA_RIGHT_X + 2, FORZA_TOP_H + 50, "km/h");
+  int fuelPct = (int)(forza.getFuelPct() * 100.0f + 0.5f);
+  snprintf(spdBuf, sizeof(spdBuf), "F:%d%%", fuelPct);
+  u8g2.drawUTF8(NOCT_DISP_W - u8g2.getUTF8Width(spdBuf) - 4,
+                NOCT_DISP_H - 2, spdBuf);
 
   if (!s.connected) {
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(2, NOCT_DISP_H - 2, "NO SIGNAL");
+    u8g2.drawUTF8(4, NOCT_DISP_H - 2, "NO SIGNAL");
   }
 
   if (rpmPct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
