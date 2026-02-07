@@ -37,11 +37,37 @@ The Wolf device acts as a real-time dashboard for Forza Horizon 4, Forza Horizon
 - Wolf device connected to the **same Wi‑Fi network** as the PC/Xbox running Forza.
 - Forza configured to send telemetry to the Wolf device's IP on port 5300.
 
+## UDP Packet Format (port 5300)
+
+Forza sends raw binary UDP packets. Two formats are supported:
+- **Sled**: 232 bytes — speed from velocity (X,Y,Z)
+- **Dash**: 311 bytes — speed at offset 244
+
+Parsed offsets (little-endian):
+| Offset | Type | Field |
+|--------|------|-------|
+| 0 | int32 | isRaceOn |
+| 8 | float | EngineMaxRpm |
+| 12 | float | EngineIdleRpm |
+| 16 | float | CurrentEngineRpm |
+| 32-40 | float | Velocity X,Y,Z (m/s) |
+| 244 | float | Speed (m/s) — Dash only |
+| 256-268 | float | Tire temps FL, FR, RL, RR (°C) |
+| 280 | float | Fuel (0.0–1.0) |
+| 296 | uint16 | LapNumber |
+| 298 | uint8 | RacePosition |
+| 307 | uint8 | Gear (0=R, 11=N, 1–10) |
+
+**Debug**: In `config.h`, uncomment `#define FORZA_DEBUG_UDP` to log packet len, hex dump, and parsed values to Serial (~2 Hz).
+
 ## Displayed Data
 
-- **RPM bar** (top) — Current vs. max RPM
-- **Gear** (center) — R, N, or 1–10
-- **Speed** (bottom right) — km/h
+- **Tachometer** (left) — NFS Underground style semicircular gauge
+- **Gear** (right) — R, N, or 1–10
+- **Speed** (right) — km/h (large digits)
+- **Fuel** — Bar and % at bottom left
+- **Tires** — FL, FR, RL, RR bars (temp → fill)
+- **Position / Lap** — P3 L2 (top right)
 - **Shift light** — Full-screen flash and LED blink when RPM ≥ 90% of max
 
 ## Exit

@@ -2,10 +2,15 @@
  * NOCTURNE_OS — ForzaManager: UDP listener for Forza Data Out telemetry.
  */
 #include "ForzaManager.h"
+#include "../../include/nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
 #include <string.h>
+
+#ifdef FORZA_DEBUG_UDP
+#include <stdio.h>
+#endif
 
 ForzaManager::ForzaManager() {
   state_.currentRpm = 0.0f;
@@ -112,9 +117,28 @@ void ForzaManager::tick() {
     size_t toRead = (len > (int)sizeof(rxBuf_)) ? sizeof(rxBuf_) : (size_t)len;
     int n = udp_.read(rxBuf_, toRead);
     if (n >= (int)FORZA_PACKET_MIN_SIZE) {
+#ifdef FORZA_DEBUG_UDP
+      static unsigned long lastLogMs = 0;
+      if (now - lastLogMs > 500) {  // Throttle to ~2 Hz
+        lastLogMs = now;
+        Serial.printf("[FORZA] len=%d hex:", n);
+        for (int i = 0; i < (n < 32 ? n : 32); i++)
+          Serial.printf(" %02X", rxBuf_[i]);
+        Serial.println();
+      }
+#endif
       parsePacket(rxBuf_, (size_t)n);
       state_.lastPacketMs = now;
       state_.connected = true;
+#ifdef FORZA_DEBUG_UDP
+      static unsigned long lastParsedMs = 0;
+      if (now - lastParsedMs > 500) {
+        lastParsedMs = now;
+        Serial.printf("[FORZA] RPM=%.0f Speed=%.1f Gear=%d Fuel=%.2f Pos=%d Lap=%d\n",
+                      state_.currentRpm, state_.speedMs * 3.6f, state_.gear,
+                      state_.fuel, state_.racePosition, state_.lapNumber);
+      }
+#endif
     }
   }
 
