@@ -2159,10 +2159,12 @@ void SceneManager::drawQrMode(const char *text) {
 }
 
 // --- FORZA DASHBOARD ---
+#define FORZA_HEADER_H 10
 #define FORZA_RPM_BAR_Y 0
 #define FORZA_RPM_BAR_H 10
-#define FORZA_GEAR_Y 14
-#define FORZA_SPEED_Y 58
+#define FORZA_GEAR_BOX_Y 12
+#define FORZA_GEAR_BOX_H 38
+#define FORZA_SPEED_Y 56
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2192,33 +2194,35 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (pct > 1.0f)
     pct = 1.0f;
 
-  /* Top bar: RPM frame + fill */
-  u8g2.drawFrame(0, FORZA_RPM_BAR_Y, NOCT_DISP_W, FORZA_RPM_BAR_H);
-  int fillW = (int)(pct * (NOCT_DISP_W - 2) + 0.5f);
-  if (fillW > 0) {
-    u8g2.drawBox(1, FORZA_RPM_BAR_Y + 1, fillW, FORZA_RPM_BAR_H - 2);
-  }
+  /* Header bar: FM label + RPM bracketed bar */
+  u8g2.drawBox(0, 0, NOCT_DISP_W, FORZA_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(2, FORZA_HEADER_H - 2, "FM");
+  u8g2.setDrawColor(1);
+  disp_.drawBracketedBar(24, 2, NOCT_DISP_W - 28, 6,
+                        (int)(pct * 100.0f + 0.5f));
 
-  /* Center: GEAR - large font */
+  /* Center: GEAR in tech bracket */
+  disp_.drawTechBrackets(0, FORZA_GEAR_BOX_Y, NOCT_DISP_W, FORZA_GEAR_BOX_H, 4);
   char gearStr[2] = {forza.getGearChar(), '\0'};
   u8g2.setFont(u8g2_font_logisoso34_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
   int gearX = (NOCT_DISP_W - gearW) / 2;
-  u8g2.drawUTF8(gearX, FORZA_GEAR_Y + 34, gearStr);
+  u8g2.drawUTF8(gearX, FORZA_GEAR_BOX_Y + 32, gearStr);
 
-  /* Bottom: Speed km/h */
-  u8g2.setFont(LABEL_FONT);
+  /* Bottom: Speed (larger font) + status */
+  u8g2.setFont(VALUE_FONT);
   static char speedBuf[16];
   snprintf(speedBuf, sizeof(speedBuf), "%d km/h", forza.getSpeedKmh());
-  int speedW = u8g2.getUTF8Width(speedBuf);
-  int speedX = NOCT_DISP_W - speedW - 4;
-  u8g2.drawUTF8(speedX, FORZA_SPEED_Y, speedBuf);
+  disp_.drawRightAligned(NOCT_DISP_W - 2, FORZA_SPEED_Y, VALUE_FONT, speedBuf);
   if (!s.connected) {
+    u8g2.setFont(LABEL_FONT);
     u8g2.drawUTF8(2, FORZA_SPEED_Y, "NO SIGNAL");
   }
 
-  /* Shift light: full-screen flash when rpm > 95% */
-  if (pct >= 0.95f && (millis() / 100) % 2 == 0) {
+  /* Shift light: full-screen flash when rpm >= 90%, 80ms cycle */
+  if (pct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
     u8g2.setDrawColor(1);
     u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
   }
