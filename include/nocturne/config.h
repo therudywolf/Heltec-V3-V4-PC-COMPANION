@@ -49,6 +49,9 @@
 
 #define NOCT_DISP_W 128
 #define NOCT_DISP_H 64
+
+/* Uncomment to log incoming Forza UDP packets to Serial (len, hex, parsed) */
+/* #define FORZA_DEBUG_UDP */
 #define NOCT_MARGIN 2
 /* === Dimensions (Protocol Alpha Wolf) === */
 #define NOCT_HEADER_H 14
