@@ -2183,7 +2183,6 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawUTF8((NOCT_DISP_W - w2) / 2, 32, ipLine);
     int fw = u8g2.getUTF8Width("SET FORZA TO 'DATA OUT'");
     u8g2.drawUTF8((NOCT_DISP_W - fw) / 2, NOCT_DISP_H - 4, "SET FORZA TO 'DATA OUT'");
-    disp_.u8g2().setDisplayInverted(false);
     return;
   }
 
