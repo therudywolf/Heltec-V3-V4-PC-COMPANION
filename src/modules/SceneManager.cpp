@@ -2191,22 +2191,38 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- 2. RPM BAR (Top Strip) Y=0 to 14 — LARGER ---
-  const int barH = 14;
+  // --- 2. RPM BAR (Top Strip) — F1 dashboard style: bigger, segmented, red zone ---
+  const int barH = 18;
   u8g2.drawFrame(0, 0, 128, barH);
+  u8g2.drawFrame(1, 1, 126, barH - 2);
   int fillW =
       (maxRpm > 0.0f)
-          ? (int)((s.currentRpm / maxRpm) * 126)
+          ? (int)((s.currentRpm / maxRpm) * 124)
           : 0;
-  if (fillW > 126) fillW = 126;
-  if (fillW > 0)
-    u8g2.drawBox(1, 1, fillW, barH - 2);
-
-  u8g2.setFont(u8g2_font_helvB12_tr);
+  if (fillW > 124) fillW = 124;
+  const int segW = 5;
+  const int redZoneStart = (int)(0.85f * 124);
+  for (int x = 2; x < 2 + fillW; x += segW) {
+    int segEnd = (x + segW < 2 + fillW) ? x + segW : 2 + fillW;
+    int w = segEnd - x;
+    if (w < 1) continue;
+    bool inRedZone = (x >= 2 + redZoneStart) || (segEnd > 2 + redZoneStart);
+    if (inRedZone && rpm > (int)(0.85f * maxRpm)) {
+      for (int px = x; px < segEnd; px += 2)
+        u8g2.drawVLine(px, 2, barH - 4);
+    } else {
+      u8g2.drawBox(x, 2, w, barH - 4);
+    }
+  }
+  for (int t = 0; t <= 5; t++) {
+    int tx = 2 + (124 * t) / 5;
+    u8g2.drawVLine(tx, barH - 4, 4);
+  }
+  u8g2.setFont(u8g2_font_helvB14_tr);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   u8g2.setDrawColor(2);
-  u8g2.drawUTF8(2, 12, rpmTextBuf);
+  u8g2.drawUTF8(2, 14, rpmTextBuf);
   u8g2.setDrawColor(1);
 
   // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE, always visible ---
