@@ -100,6 +100,11 @@ public:
   void drawQrMode(const char *text);
   void drawMdnsMode(const char *serviceName, bool active);
 
+  /** Forza Horizon/Motorsport telemetry dashboard. showSplash: IP|PORT|WAITING
+   * for 3s on enter. localIp: WiFi.localIP() as uint32_t. */
+  void drawForzaDash(class ForzaManager &forza, bool showSplash,
+                     uint32_t localIp);
+
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
    * valueYOffset: extra pixels to move value baseline down (e.g. 6 for
