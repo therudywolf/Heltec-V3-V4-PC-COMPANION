@@ -2158,78 +2158,7 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (circular tach + gear + speed) ---
-// Layout: tach left (realistic arc, needle from bottom), gear + speed right
-#define FORZA_TACH_CX 36
-#define FORZA_TACH_CY 28
-#define FORZA_TACH_R 26
-#define FORZA_TACH_INNER_R 18
-#define FORZA_RIGHT_X 70
-// Arc: 240° (8 o'clock) -> 300° (4 o'clock) — нижняя полудуга как в Forza/NFS
-#define FORZA_TACH_START_DEG 240
-#define FORZA_TACH_SWEEP_DEG 120
-
-// Circular tachometer: arc in lower half, needle sweeps from left to right
-// Scale numbers 0,2,4,6,8,10 (×1000 RPM)
-static void drawTachometer(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
-                           float rpmPct, int rpm, float maxRpm, int cx, int cy,
-                           int rOuter, int rInner) {
-  if (rpmPct > 1.0f) rpmPct = 1.0f;
-  if (rpmPct < 0.0f) rpmPct = 0.0f;
-  const float degToRad = 3.14159265f / 180.0f;
-  const int startDeg = FORZA_TACH_START_DEG;
-  const int sweepDeg = FORZA_TACH_SWEEP_DEG;
-  // Outer arc only (lower semicircle)
-  for (int i = 0; i <= 24; i++) {
-    float a = (startDeg + (sweepDeg * i) / 24) * degToRad;
-    int px = cx + (int)(rOuter * cosf(a));
-    int py = cy + (int)(rOuter * sinf(a));
-    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
-      u8g2.drawPixel(px, py);
-  }
-  for (int i = 0; i <= 24; i++) {
-    float a = (startDeg + (sweepDeg * i) / 24) * degToRad;
-    int px = cx + (int)(rInner * cosf(a));
-    int py = cy + (int)(rInner * sinf(a));
-    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
-      u8g2.drawPixel(px, py);
-  }
-  // Tick marks + scale numbers 0, 2, 4, 6, 8, 10 (×1000)
-  int maxK = (maxRpm > 0) ? (int)(maxRpm / 1000.0f + 0.5f) : 10;
-  if (maxK < 2) maxK = 2;
-  u8g2.setFont(u8g2_font_4x6_tr);
-  for (int t = 0; t <= 5; t++) {
-    float pct = (float)t / 5.0f;
-    float a = (startDeg + sweepDeg * pct) * degToRad;
-    int x1 = cx + (int)(rInner * cosf(a));
-    int y1 = cy + (int)(rInner * sinf(a));
-    int x2 = cx + (int)(rOuter * cosf(a));
-    int y2 = cy + (int)(rOuter * sinf(a));
-    u8g2.drawLine(x1, y1, x2, y2);
-    int val = (maxK * t) / 5;
-    int tx = cx + (int)((rOuter + 5) * cosf(a));
-    int ty = cy + (int)((rOuter + 5) * sinf(a));
-    if (ty < 0) ty = 0;
-    if (ty > NOCT_DISP_H - 6) ty = NOCT_DISP_H - 6;
-    static char numBuf[4];
-    snprintf(numBuf, sizeof(numBuf), "%d", val);
-    int nw = u8g2.getUTF8Width(numBuf);
-    u8g2.drawUTF8(tx - nw / 2, ty + 1, numBuf);
-  }
-  // Needle: line from center to rpmPct angle
-  float needleA = (startDeg + sweepDeg * rpmPct) * degToRad;
-  int nx = cx + (int)(rOuter * cosf(needleA));
-  int ny = cy + (int)(rOuter * sinf(needleA));
-  u8g2.drawLine(cx, cy, nx, ny);
-  // RPM value BELOW tachometer (arc bottom ≈ cy+rOuter)
-  static char rpmBuf[8];
-  snprintf(rpmBuf, sizeof(rpmBuf), "%d", rpm);
-  u8g2.setFont(u8g2_font_6x10_tf);
-  int rw = u8g2.getUTF8Width(rpmBuf);
-  int rpmY = cy + rOuter + 4;
-  if (rpmY > NOCT_DISP_H - 12) rpmY = NOCT_DISP_H - 12;
-  u8g2.drawUTF8(cx - rw / 2, rpmY, rpmBuf);
-}
+// --- FORZA DASHBOARD (Cyber-Sport: horizontal RPM bar, gear, speed) ---
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2238,17 +2167,22 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(0);
 
+  // --- 1. CONNECTING STATE (Splash) ---
   if (showSplash) {
-    u8g2.setFont(LABEL_FONT);
+    u8g2.setFont(u8g2_font_profont12_tf);
     char ipBuf[20];
     snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d", (int)((localIp >> 24) & 0xFF),
              (int)((localIp >> 16) & 0xFF), (int)((localIp >> 8) & 0xFF),
              (int)(localIp & 0xFF));
-    u8g2.drawUTF8(2, 10, "IP:");
-    u8g2.drawUTF8(20, 10, ipBuf);
-    u8g2.drawUTF8(2, 22, "PORT: 5300");
-    u8g2.drawUTF8(2, 34, "WAITING...");
-    u8g2.drawUTF8(2, 50, "2x back to exit");
+    const char *line1 = "LISTENING ON PORT 5300";
+    static char ipLine[32];
+    snprintf(ipLine, sizeof(ipLine), "IP: %s", ipBuf);
+    int w1 = u8g2.getUTF8Width(line1);
+    int w2 = u8g2.getUTF8Width(ipLine);
+    u8g2.drawUTF8((NOCT_DISP_W - w1) / 2, 18, line1);
+    u8g2.drawUTF8((NOCT_DISP_W - w2) / 2, 32, ipLine);
+    int fw = u8g2.getUTF8Width("SET FORZA TO 'DATA OUT'");
+    u8g2.drawUTF8((NOCT_DISP_W - fw) / 2, NOCT_DISP_H - 4, "SET FORZA TO 'DATA OUT'");
     return;
   }
 
@@ -2258,15 +2192,26 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (rpmPct > 1.0f) rpmPct = 1.0f;
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
+  const int rpmBarH = 10;
+  const bool warningRpm = (maxRpm > 0.0f && s.currentRpm > 0.9f * maxRpm);
 
-  // --- Left: circular tachometer (arc lower, needle, scale numbers, RPM below) ---
-  drawTachometer(u8g2, rpmPct, rpm, maxRpm, FORZA_TACH_CX, FORZA_TACH_CY,
-                 FORZA_TACH_R, FORZA_TACH_INNER_R);
+  // --- 2. MAIN DASHBOARD ---
 
-  // --- Right: Gear (prominent) + Speed (compact, secondary) ---
-  int rightX = FORZA_RIGHT_X;
-  int rightW = NOCT_DISP_W - rightX;
+  // Top Bar (Y=0 to 10): RPM Gauge — frame then fill
+  u8g2.drawFrame(0, 0, NOCT_DISP_W, rpmBarH);
+  int fillW = (int)(rpmPct * (float)NOCT_DISP_W);
+  if (fillW > NOCT_DISP_W) fillW = NOCT_DISP_W;
+  if (fillW > 0) {
+    if (warningRpm) {
+      // Striped warning zone: every other column
+      for (int x = 0; x < fillW; x += 2)
+        u8g2.drawBox(x, 1, 1, rpmBarH - 2);
+    } else {
+      u8g2.drawBox(0, 1, fillW, rpmBarH - 2);
+    }
+  }
 
+  // Left sector (Y=12 to 64, X=0 to 50): GEAR — huge, bottom-left aligned
   static char gearStr[4];
   int gear = (int)s.gear;
   if (gear == 0) {
@@ -2286,26 +2231,46 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     gearStr[0] = '-';
     gearStr[1] = '\0';
   }
-  u8g2.setFont(u8g2_font_logisoso34_tn);
-  int gearW = u8g2.getUTF8Width(gearStr);
-  u8g2.drawUTF8(rightX + (rightW - gearW) / 2, 16, gearStr);
+  u8g2.setFont(u8g2_font_logisoso42_tn);
+  u8g2.drawUTF8(2, NOCT_DISP_H - 2, gearStr);  // Bottom-left aligned
 
-  u8g2.setFont(u8g2_font_helvB10_tr);
+  // Right sector (X=55 to 128): Speed + "km/h" + RPM text
+  const int rightX = 55;
+  const int rightW = NOCT_DISP_W - rightX;
+
+  u8g2.setFont(u8g2_font_profont12_tf);
+  static char rpmTextBuf[16];
+  snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d rpm", rpm);
+  int rpmTextW = u8g2.getUTF8Width(rpmTextBuf);
+  u8g2.drawUTF8(rightX + (rightW - rpmTextW) / 2, 24, rpmTextBuf);
+
+  u8g2.setFont(u8g2_font_logisoso28_tn);
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
   int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(rightX + (rightW - sw) / 2, 52, spdBuf);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(rightX + (rightW - 20) / 2, 62, "km/h");
+  int speedY = 48;
+  u8g2.drawUTF8(rightX + (rightW - sw) / 2, speedY, spdBuf);
+
+  u8g2.setFont(u8g2_font_profont12_tf);
+  int kmhW = u8g2.getUTF8Width("km/h");
+  u8g2.drawUTF8(rightX + (rightW - kmhW) / 2, 60, "km/h");
 
   if (!s.connected) {
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(rightX + (rightW - 16) / 2, 36, "--");
+    u8g2.setFont(u8g2_font_profont12_tf);
+    u8g2.drawUTF8(rightX + (rightW - 8) / 2, 38, "--");
   }
 
-  if (rpmPct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
-    u8g2.setDrawColor(1);
-    u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+  // --- 3. SHIFT LIGHT (critical) ---
+  if (maxRpm > 0.0f && s.currentRpm > 0.96f * maxRpm) {
+    if ((millis() / 100) % 2 == 0) {
+      u8g2.setDrawColor(2);  // XOR mode
+      u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+      u8g2.setDrawColor(1);
+    }
+    u8g2.setFont(u8g2_font_logisoso28_tn);
+    const char *shiftMsg = "SHIFT!";
+    int shiftW = u8g2.getUTF8Width(shiftMsg);
+    u8g2.drawUTF8((NOCT_DISP_W - shiftW) / 2, NOCT_DISP_H / 2 + 6, shiftMsg);
   }
 }
 
