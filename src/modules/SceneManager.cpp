@@ -2158,12 +2158,25 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD ---
-#define FORZA_RPM_BAR_Y 0
-#define FORZA_RPM_BAR_H 8
-#define FORZA_GEAR_BOX_Y 10
-#define FORZA_GEAR_BOX_H 40
-#define FORZA_SPEED_Y 56
+// --- FORZA DASHBOARD (E39 M5 style) ---
+#define FORZA_TACH_CX 36
+#define FORZA_SPD_CX 92
+#define FORZA_GAUGE_CY 34
+#define FORZA_GAUGE_R 26
+#define FORZA_GEAR_CX 64
+#define FORZA_GEAR_CY 28
+
+static void drawE39Gauge(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2, int cx,
+                         int cy, int r, float pct) {
+  u8g2.drawCircle(cx, cy, r);
+  u8g2.drawCircle(cx, cy, r - 1);
+  if (pct > 0.02f) {
+    float a = 3.14159f - pct * 3.14159f;
+    int tx = cx + (int)((float)r * cosf(a));
+    int ty = cy + (int)((float)r * sinf(a));
+    u8g2.drawLine(cx, cy, tx, ty);
+  }
+}
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2189,46 +2202,42 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
 
   const ForzaState &s = forza.getState();
   float maxRpm = (s.maxRpm > 0.0f) ? s.maxRpm : 10000.0f;
-  float pct = (maxRpm > 0.0f) ? (s.currentRpm / maxRpm) : 0.0f;
-  if (pct > 1.0f)
-    pct = 1.0f;
+  float rpmPct = (maxRpm > 0.0f) ? (s.currentRpm / maxRpm) : 0.0f;
+  if (rpmPct > 1.0f)
+    rpmPct = 1.0f;
+  float speedKmh = (float)forza.getSpeedKmh();
+  float spdPct = (speedKmh / 300.0f > 1.0f) ? 1.0f : (speedKmh / 300.0f);
 
-  /* Tachometer: RPM value left, bar right */
+  /* Left: tachometer (E39 style) */
+  drawE39Gauge(u8g2, FORZA_TACH_CX, FORZA_GAUGE_CY, FORZA_GAUGE_R, rpmPct);
   u8g2.setFont(LABEL_FONT);
-  static char rpmBuf[12];
+  static char rpmBuf[8];
   snprintf(rpmBuf, sizeof(rpmBuf), "%d", (int)(s.currentRpm + 0.5f));
-  u8g2.drawUTF8(2, FORZA_RPM_BAR_Y + FORZA_RPM_BAR_H - 2, rpmBuf);
-  const int barX = 40;
-  const int barW = NOCT_DISP_W - barX;
-  u8g2.drawFrame(barX, FORZA_RPM_BAR_Y, barW, FORZA_RPM_BAR_H);
-  int fillW = (int)(pct * (barW - 2) + 0.5f);
-  if (fillW > 0) {
-    u8g2.drawBox(barX + 1, FORZA_RPM_BAR_Y + 1, fillW, FORZA_RPM_BAR_H - 2);
-  }
+  int rw = u8g2.getUTF8Width(rpmBuf);
+  u8g2.drawUTF8(FORZA_TACH_CX - rw / 2, FORZA_GAUGE_CY + FORZA_GAUGE_R + 8,
+                rpmBuf);
 
-  /* Center: GEAR (large) + label */
-  disp_.drawTechBrackets(0, FORZA_GEAR_BOX_Y, NOCT_DISP_W, FORZA_GEAR_BOX_H, 4);
+  /* Right: speedometer */
+  drawE39Gauge(u8g2, FORZA_SPD_CX, FORZA_GAUGE_CY, FORZA_GAUGE_R, spdPct);
+  static char spdBuf[10];
+  snprintf(spdBuf, sizeof(spdBuf), "%d", (int)(speedKmh + 0.5f));
+  int sw = u8g2.getUTF8Width(spdBuf);
+  u8g2.drawUTF8(FORZA_SPD_CX - sw / 2, FORZA_GAUGE_CY + FORZA_GAUGE_R + 8,
+                spdBuf);
+
+  /* Center: gear (M5 cluster hood style) */
   char gearStr[2] = {forza.getGearChar(), '\0'};
-  u8g2.setFont(u8g2_font_logisoso34_tn);
+  u8g2.setFont(u8g2_font_logisoso24_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
-  int gearX = (NOCT_DISP_W - gearW) / 2;
-  u8g2.drawUTF8(gearX, FORZA_GEAR_BOX_Y + 34, gearStr);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8((NOCT_DISP_W - 16) / 2, FORZA_GEAR_BOX_Y + FORZA_GEAR_BOX_H - 2,
-                "GEAR");
+  u8g2.drawUTF8(FORZA_GEAR_CX - gearW / 2, FORZA_GEAR_CY + 18, gearStr);
 
-  /* Bottom: Speed + status */
-  u8g2.setFont(VALUE_FONT);
-  static char speedBuf[16];
-  snprintf(speedBuf, sizeof(speedBuf), "%d km/h", forza.getSpeedKmh());
-  disp_.drawRightAligned(NOCT_DISP_W - 2, FORZA_SPEED_Y, VALUE_FONT, speedBuf);
   if (!s.connected) {
     u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(2, FORZA_SPEED_Y, "NO SIGNAL");
+    u8g2.drawUTF8(2, NOCT_DISP_H - 2, "NO SIGNAL");
   }
 
   /* Shift light: full-screen flash when rpm >= 90%, 80ms cycle */
-  if (pct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
+  if (rpmPct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
     u8g2.setDrawColor(1);
     u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
   }
