@@ -104,7 +104,9 @@ void ForzaManager::parsePacket(const uint8_t *buf, size_t len) {
   if (len >= 299) {
     state_.racePosition = buf[FORZA_OFF_RACE_POS] & 0xFF;
   }
-  if (len >= 308) {
+  if (len >= 320) {
+    state_.gear = (int)(buf[FORZA_OFF_GEAR_HORIZON] & 0xFF);
+  } else if (len >= 308) {
     state_.gear = (int)(buf[FORZA_OFF_GEAR] & 0xFF);
   }
 }
