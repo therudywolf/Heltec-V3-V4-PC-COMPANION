@@ -9,16 +9,21 @@
 
 #define FORZA_UDP_PORT 5300
 #define FORZA_PACKET_MIN_SIZE 232
-#define FORZA_PACKET_SLED_SIZE 311
+#define FORZA_PACKET_SLED_SIZE 232
+#define FORZA_PACKET_DASH_SIZE 311
 #define FORZA_TIMEOUT_MS 3000
+#define FORZA_SHIFT_THRESHOLD 0.90f  // RPM % for shift light
 
-// Offsets from Forza Sled packet (little-endian)
+// Offsets from Forza packet (little-endian)
 #define FORZA_OFF_IS_RACE_ON 0
 #define FORZA_OFF_ENGINE_MAX_RPM 8
 #define FORZA_OFF_ENGINE_IDLE_RPM 12
 #define FORZA_OFF_CURRENT_ENGINE_RPM 16
-#define FORZA_OFF_SPEED 244   // m/s (Sled format)
-#define FORZA_OFF_GEAR 307    // u8: 0=R, 1-10=gears, 11=N
+#define FORZA_OFF_VELOCITY_X 32  // Sled: Velocity in car space (m/s)
+#define FORZA_OFF_VELOCITY_Y 36
+#define FORZA_OFF_VELOCITY_Z 40
+#define FORZA_OFF_SPEED 244     // Dash only: Speed m/s
+#define FORZA_OFF_GEAR 307      // Dash only: u8 0=R, 1-10=gears, 11=N
 
 struct ForzaState {
   float currentRpm;
@@ -48,7 +53,7 @@ private:
 
   WiFiUDP udp_;
   ForzaState state_;
-  uint8_t rxBuf_[FORZA_PACKET_SLED_SIZE];
+  uint8_t rxBuf_[FORZA_PACKET_DASH_SIZE];
 };
 
 #endif
