@@ -30,6 +30,7 @@
 #include "modules/TrapManager.h"
 #include "modules/UsbManager.h"
 #include "modules/VaultManager.h"
+#include "modules/ForzaManager.h"
 #include "modules/WifiAttackManager.h"
 #include "modules/WifiSniffManager.h"
 #include "nocturne/Types.h"
@@ -43,8 +44,8 @@
 #define NOCT_BAT_READ_INTERVAL_MS 5000
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
-// Flipper-style: level 0 = 4 categories, level 1 = submenu items
-#define MENU_CATEGORIES 4
+// Flipper-style: level 0 = 5 categories, level 1 = submenu items
+#define MENU_CATEGORIES 5
 #define WOLF_MENU_ITEMS 12
 
 // ---------------------------------------------------------------------------
@@ -151,6 +152,7 @@ WifiSniffManager wifiSniffManager;
 WifiAttackManager wifiAttackManager;
 NetworkScanManager networkScanManager;
 MdnsManager mdnsManager;
+ForzaManager forzaManager;
 VaultManager vaultManager;
 AppState state;
 SceneManager sceneManager(display, state);
@@ -200,6 +202,10 @@ unsigned long lastMenuEventTime = 0;
 // Toast: brief on-screen message (FAIL on mode error, Saved on Config save)
 static char toastMsg[20] = "";
 static unsigned long toastUntil = 0;
+
+// Forza: splash "IP | PORT | WAITING" shown for 3s on enter
+static unsigned long forzaSplashUntil = 0;
+#define FORZA_SPLASH_MS 3000
 
 // --- Cyberdeck Modes --- Full Marauder integration
 enum AppMode {
@@ -272,7 +278,8 @@ enum AppMode {
   MODE_VAULT,      // TOTP Vault (existing)
   MODE_FAKE_LOGIN, // Fake Login (existing)
   MODE_QR,         // QR code (existing)
-  MODE_MDNS        // mDNS spoof (existing)
+  MODE_MDNS,       // mDNS spoof (existing)
+  MODE_GAME_FORZA  // Forza Horizon/Motorsport telemetry dashboard
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -742,6 +749,9 @@ static void cleanupMode(AppMode mode) {
   case MODE_MDNS:
     mdnsManager.stop();
     break;
+  case MODE_GAME_FORZA:
+    forzaManager.stop();
+    break;
   case MODE_VAULT:
   case MODE_DAEMON:
     // Эти режимы не требуют специальной очистки
@@ -826,6 +836,13 @@ static void manageWiFiState(AppMode mode) {
     if (WiFi.getMode() != WIFI_STA) {
       WiFi.mode(WIFI_STA);
       Serial.println("[SYS] WiFi STA for WiFi mode");
+    }
+    netManager.setSuspend(true);
+    break;
+  case MODE_GAME_FORZA:
+    if (WiFi.getMode() != WIFI_STA) {
+      WiFi.mode(WIFI_STA);
+      Serial.println("[SYS] WiFi STA for Forza");
     }
     netManager.setSuspend(true);
     break;
@@ -964,6 +981,12 @@ static bool initializeMode(AppMode mode) {
     manageWiFiState(mode);
     vaultManager.trySyncNtp();
     Serial.println("[SYS] VAULT mode initialized");
+    return true;
+
+  case MODE_GAME_FORZA:
+    manageWiFiState(mode);
+    forzaManager.begin();
+    Serial.println("[SYS] FORZA mode initialized");
     return true;
 
   case MODE_DAEMON:
@@ -1250,6 +1273,9 @@ static bool switchToMode(AppMode newMode) {
 
   // 4. Установка нового режима
   currentMode = newMode;
+  if (newMode == MODE_GAME_FORZA) {
+    forzaSplashUntil = millis() + FORZA_SPLASH_MS;
+  }
   Serial.printf("[SYS] Successfully switched to MODE_%d\n", currentMode);
   return true;
 }
@@ -1267,13 +1293,15 @@ static void exitAppModeToNormal() {
 static int submenuCount(int category) {
   switch (category) {
   case 0:
-    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
+    return 5;  // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
     return 20; // WiFi: Full Marauder menu
   case 2:
     return 22; // Tools: BLE + Network + Other tools (no GPS)
   case 3:
-    return 3; // System: REBOOT, VERSION, EXIT
+    return 3;  // System: REBOOT, VERSION, EXIT
+  case 4:
+    return 1;  // Games: RACING (Forza)
   default:
     return 3;
   }
@@ -1647,6 +1675,18 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     }
     return true;
   }
+  if (cat == 4) {
+    quickMenuOpen = false;
+    rebootConfirmed = false;
+    if (item == 0) { // RACING -> Forza
+      if (!switchToMode(MODE_GAME_FORZA)) {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    return true;
+  }
   if (cat == 3) {
     if (item == 0) { // REBOOT
       if (!rebootConfirmed) {
@@ -1676,6 +1716,9 @@ void loop() {
 
   // 1. Critical background tasks
   netManager.tick(now);
+  if (currentMode == MODE_GAME_FORZA) {
+    forzaManager.tick();
+  }
 
   if (netManager.isTcpConnected()) {
     while (netManager.available()) {
@@ -2420,6 +2463,12 @@ void loop() {
       sceneManager.drawMdnsMode(mdnsManager.getServiceName(),
                                 mdnsManager.isActive());
       break;
+    case MODE_GAME_FORZA: {
+      bool showSplash = (now < forzaSplashUntil);
+      sceneManager.drawForzaDash(forzaManager, showSplash,
+                                (uint32_t)WiFi.localIP());
+      break;
+    }
     default:
       break;
     }
