@@ -2158,51 +2158,66 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (NFS Underground style) ---
-#define FORZA_TACH_CX 28
-#define FORZA_TACH_CY 52
-#define FORZA_TACH_R 22
-#define FORZA_TACH_START_DEG 210
-#define FORZA_TACH_SWEEP_DEG 120
+// --- FORZA DASHBOARD (tach + speed + gear only) ---
+#define FORZA_TACH_CX 46
+#define FORZA_TACH_CY 56
+#define FORZA_TACH_R 42
+#define FORZA_TACH_INNER_R 34
+#define FORZA_TACH_START_DEG 215
+#define FORZA_TACH_SWEEP_DEG 110
 
-// NFS Underground style semicircular tachometer
-static void drawNfsTach(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
-                        float rpmPct, int cx, int cy, int r) {
+// Beautiful semicircular tachometer (realistic dash style)
+static void drawTachometer(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
+                           float rpmPct, int rpm, int cx, int cy, int rOuter,
+                           int rInner) {
   if (rpmPct > 1.0f) rpmPct = 1.0f;
   if (rpmPct < 0.0f) rpmPct = 0.0f;
   const float degToRad = 3.14159265f / 180.0f;
   const int startDeg = FORZA_TACH_START_DEG;
   const int sweepDeg = FORZA_TACH_SWEEP_DEG;
-  // Arc outline (full semicircle)
-  for (int i = 0; i <= 24; i++) {
-    float a = (startDeg + (sweepDeg * i) / 24) * degToRad;
-    int px = cx + (int)(r * cosf(a));
-    int py = cy + (int)(r * sinf(a));
+  // Outer arc (bezel)
+  for (int i = 0; i <= 48; i++) {
+    float a = (startDeg + (sweepDeg * i) / 48) * degToRad;
+    int px = cx + (int)(rOuter * cosf(a));
+    int py = cy + (int)(rOuter * sinf(a));
     if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
       u8g2.drawPixel(px, py);
   }
-  // Fill arc (pie slice)
-  int fillSteps = (int)(rpmPct * 20.0f + 0.5f);
+  // Inner arc
+  for (int i = 0; i <= 48; i++) {
+    float a = (startDeg + (sweepDeg * i) / 48) * degToRad;
+    int px = cx + (int)(rInner * cosf(a));
+    int py = cy + (int)(rInner * sinf(a));
+    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
+      u8g2.drawPixel(px, py);
+  }
+  // Tick marks at 0, 25, 50, 75, 100%
+  for (int t = 0; t <= 4; t++) {
+    float a = (startDeg + (sweepDeg * t) / 4) * degToRad;
+    int x1 = cx + (int)(rInner * cosf(a));
+    int y1 = cy + (int)(rInner * sinf(a));
+    int x2 = cx + (int)(rOuter * cosf(a));
+    int y2 = cy + (int)(rOuter * sinf(a));
+    u8g2.drawLine(x1, y1, x2, y2);
+  }
+  // Filled arc (smooth pie slice)
+  int fillSteps = (int)(rpmPct * 36.0f + 0.5f);
   if (fillSteps > 0) {
     for (int i = 1; i <= fillSteps; i++) {
-      float a = (startDeg + (sweepDeg * i) / 20.0f) * degToRad;
-      int ex = cx + (int)(r * cosf(a));
-      int ey = cy + (int)(r * sinf(a));
+      float a = (startDeg + (sweepDeg * i) / 36.0f) * degToRad;
+      int ex = cx + (int)(rOuter * cosf(a));
+      int ey = cy + (int)(rOuter * sinf(a));
       u8g2.drawLine(cx, cy, ex, ey);
     }
   }
-}
-
-// Simple tire bar: 0–100°C mapped to bar fill (green zone ~60–90°C)
-static void drawTireBar(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
-                        int x, int y, int w, int h, float tempC) {
-  u8g2.drawFrame(x, y, w, h);
-  int fillPct = (int)((tempC / 120.0f) * 100.0f + 0.5f);
-  if (fillPct < 0) fillPct = 0;
-  if (fillPct > 100) fillPct = 100;
-  int fillW = (w - 2) * fillPct / 100;
-  if (fillW > 0)
-    u8g2.drawBox(x + 1, y + 1, fillW, h - 2);
+  // RPM value inside gauge
+  static char rpmBuf[8];
+  snprintf(rpmBuf, sizeof(rpmBuf), "%d", rpm);
+  u8g2.setFont(u8g2_font_6x10_tf);
+  int rw = u8g2.getUTF8Width(rpmBuf);
+  u8g2.drawUTF8(cx - rw / 2, cy - 2, rpmBuf);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(cx - 6, cy + 10, "RPM");
 }
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
@@ -2231,57 +2246,31 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   float rpmPct = (maxRpm > 0.0f) ? (s.currentRpm / maxRpm) : 0.0f;
   if (rpmPct > 1.0f) rpmPct = 1.0f;
   int speedKmh = forza.getSpeedKmh();
+  int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- Left: NFS tachometer ---
-  drawNfsTach(u8g2, rpmPct, FORZA_TACH_CX, FORZA_TACH_CY, FORZA_TACH_R);
-  u8g2.setFont(LABEL_FONT);
-  static char rpmBuf[10];
-  snprintf(rpmBuf, sizeof(rpmBuf), "%d", (int)(s.currentRpm + 0.5f));
-  u8g2.drawUTF8(2, 8, rpmBuf);
+  // --- Left: large tachometer ---
+  drawTachometer(u8g2, rpmPct, rpm, FORZA_TACH_CX, FORZA_TACH_CY,
+                 FORZA_TACH_R, FORZA_TACH_INNER_R);
 
-  // --- Right: Gear + Speed (large, centered) ---
+  // --- Right: Gear + Speed ---
   char gearStr[2] = {forza.getGearChar(), '\0'};
   u8g2.setFont(u8g2_font_logisoso34_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
-  u8g2.drawUTF8(56 + (64 - gearW) / 2, 32, gearStr);
+  int rightX = 94;
+  int rightW = NOCT_DISP_W - rightX;
+  u8g2.drawUTF8(rightX + (rightW - gearW) / 2, 18, gearStr);
+
   u8g2.setFont(u8g2_font_logisoso24_tn);
   static char spdBuf[12];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
   int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(56 + (64 - sw) / 2, 56, spdBuf);
+  u8g2.drawUTF8(rightX + (rightW - sw) / 2, 48, spdBuf);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(88, 62, "km/h");
-
-  // --- Fuel bar (bottom left, visible) ---
-  int fuelPct = (int)(forza.getFuelPct() * 100.0f + 0.5f);
-  u8g2.drawFrame(2, 56, 52, 6);
-  int fuelW = 50 * fuelPct / 100;
-  if (fuelW > 0)
-    u8g2.drawBox(3, 57, fuelW, 4);
-  u8g2.setFont(LABEL_FONT);
-  snprintf(spdBuf, sizeof(spdBuf), "%d%%", fuelPct);
-  u8g2.drawUTF8(26 - u8g2.getUTF8Width(spdBuf) / 2, 63, spdBuf);
-
-  // --- Right pane: P/L, tires, gear, speed ---
-  int pos = forza.getRacePosition();
-  uint16_t lap = forza.getLapNumber();
-  static char posBuf[16];
-  snprintf(posBuf, sizeof(posBuf), "P%d L%d", pos > 0 ? pos : 1, (int)lap);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(NOCT_DISP_W - u8g2.getUTF8Width(posBuf) - 2, 8, posBuf);
-
-  u8g2.drawUTF8(56, 12, "FL");
-  drawTireBar(u8g2, 68, 10, 26, 6, s.tireFL);
-  u8g2.drawUTF8(96, 12, "FR");
-  drawTireBar(u8g2, 108, 10, 18, 6, s.tireFR);
-  u8g2.drawUTF8(56, 22, "RL");
-  drawTireBar(u8g2, 68, 20, 26, 6, s.tireRL);
-  u8g2.drawUTF8(96, 22, "RR");
-  drawTireBar(u8g2, 108, 20, 18, 6, s.tireRR);
+  u8g2.drawUTF8(rightX + (rightW - 24) / 2, 60, "km/h");
 
   if (!s.connected) {
-    u8g2.drawUTF8(NOCT_DISP_W / 2 - u8g2.getUTF8Width("NO SIGNAL") / 2,
-                  NOCT_DISP_H / 2 - 4, "NO SIGNAL");
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(rightX, 32, "--");
   }
 
   if (rpmPct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
