@@ -2158,39 +2158,27 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (tach + speed + gear only) ---
-#define FORZA_TACH_CX 46
-#define FORZA_TACH_CY 56
-#define FORZA_TACH_R 42
-#define FORZA_TACH_INNER_R 34
-#define FORZA_TACH_START_DEG 215
-#define FORZA_TACH_SWEEP_DEG 110
+// --- FORZA DASHBOARD (circular tach + gear + speed) ---
+// Layout: circular tach left (Forza/NFS style), gear prominent, speed compact
+#define FORZA_TACH_CX 34
+#define FORZA_TACH_CY 34
+#define FORZA_TACH_R 28
+#define FORZA_TACH_INNER_R 20
+#define FORZA_RIGHT_X 68
 
-// Beautiful semicircular tachometer (realistic dash style)
+// Full circular tachometer (Forza / NFS Underground style radial gauge)
+// Arc: 225° (7 o'clock) -> 45° (1 o'clock), 180° sweep
 static void drawTachometer(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
                            float rpmPct, int rpm, int cx, int cy, int rOuter,
                            int rInner) {
   if (rpmPct > 1.0f) rpmPct = 1.0f;
   if (rpmPct < 0.0f) rpmPct = 0.0f;
   const float degToRad = 3.14159265f / 180.0f;
-  const int startDeg = FORZA_TACH_START_DEG;
-  const int sweepDeg = FORZA_TACH_SWEEP_DEG;
-  // Outer arc (bezel)
-  for (int i = 0; i <= 48; i++) {
-    float a = (startDeg + (sweepDeg * i) / 48) * degToRad;
-    int px = cx + (int)(rOuter * cosf(a));
-    int py = cy + (int)(rOuter * sinf(a));
-    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
-      u8g2.drawPixel(px, py);
-  }
-  // Inner arc
-  for (int i = 0; i <= 48; i++) {
-    float a = (startDeg + (sweepDeg * i) / 48) * degToRad;
-    int px = cx + (int)(rInner * cosf(a));
-    int py = cy + (int)(rInner * sinf(a));
-    if (px >= 0 && px < NOCT_DISP_W && py >= 0 && py < NOCT_DISP_H)
-      u8g2.drawPixel(px, py);
-  }
+  const int startDeg = 225;
+  const int sweepDeg = 180;
+  // Full circle outer ring
+  u8g2.drawCircle(cx, cy, rOuter);
+  u8g2.drawCircle(cx, cy, rInner);
   // Tick marks at 0, 25, 50, 75, 100%
   for (int t = 0; t <= 4; t++) {
     float a = (startDeg + (sweepDeg * t) / 4) * degToRad;
@@ -2200,11 +2188,11 @@ static void drawTachometer(U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2,
     int y2 = cy + (int)(rOuter * sinf(a));
     u8g2.drawLine(x1, y1, x2, y2);
   }
-  // Filled arc (smooth pie slice)
-  int fillSteps = (int)(rpmPct * 36.0f + 0.5f);
+  // Filled arc (stays within left half, max x = cx + r*cos(315°) ≈ cx + r*0.7)
+  int fillSteps = (int)(rpmPct * 32.0f + 0.5f);
   if (fillSteps > 0) {
     for (int i = 1; i <= fillSteps; i++) {
-      float a = (startDeg + (sweepDeg * i) / 36.0f) * degToRad;
+      float a = (startDeg + (sweepDeg * i) / 32.0f) * degToRad;
       int ex = cx + (int)(rOuter * cosf(a));
       int ey = cy + (int)(rOuter * sinf(a));
       u8g2.drawLine(cx, cy, ex, ey);
@@ -2248,29 +2236,48 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- Left: large tachometer ---
+  // --- Left: circular tachometer (no fill overlap with right panel) ---
   drawTachometer(u8g2, rpmPct, rpm, FORZA_TACH_CX, FORZA_TACH_CY,
                  FORZA_TACH_R, FORZA_TACH_INNER_R);
 
-  // --- Right: Gear + Speed ---
-  char gearStr[2] = {forza.getGearChar(), '\0'};
+  // --- Right: Gear (prominent) + Speed (compact, secondary) ---
+  int rightX = FORZA_RIGHT_X;
+  int rightW = NOCT_DISP_W - rightX;
+
+  static char gearStr[4];
+  int gear = (int)s.gear;
+  if (gear == 0) {
+    gearStr[0] = 'R';
+    gearStr[1] = '\0';
+  } else if (gear == 11) {
+    gearStr[0] = 'N';
+    gearStr[1] = '\0';
+  } else if (gear >= 1 && gear <= 9) {
+    gearStr[0] = (char)('0' + gear);
+    gearStr[1] = '\0';
+  } else if (gear == 10) {
+    gearStr[0] = '1';
+    gearStr[1] = '0';
+    gearStr[2] = '\0';
+  } else {
+    gearStr[0] = '-';
+    gearStr[1] = '\0';
+  }
   u8g2.setFont(u8g2_font_logisoso34_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
-  int rightX = 94;
-  int rightW = NOCT_DISP_W - rightX;
-  u8g2.drawUTF8(rightX + (rightW - gearW) / 2, 18, gearStr);
+  u8g2.drawUTF8(rightX + (rightW - gearW) / 2, 28, gearStr);
 
-  u8g2.setFont(u8g2_font_logisoso24_tn);
-  static char spdBuf[12];
+  u8g2.setFont(u8g2_font_6x10_tf);
+  static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
   int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(rightX + (rightW - sw) / 2, 48, spdBuf);
+  u8g2.drawUTF8(rightX + (rightW - sw) / 2, 52, spdBuf);
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(rightX + (rightW - 24) / 2, 60, "km/h");
+  u8g2.drawUTF8(rightX + (rightW - 24) / 2, 62, "km/h");
 
   if (!s.connected) {
     u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(rightX, 32, "--");
+    u8g2.drawUTF8(rightX + (rightW - 16) / 2, 42, "--");
   }
 
   if (rpmPct >= FORZA_SHIFT_THRESHOLD && (millis() / 80) % 2 == 0) {
