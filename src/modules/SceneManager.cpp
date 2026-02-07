@@ -2159,11 +2159,10 @@ void SceneManager::drawQrMode(const char *text) {
 }
 
 // --- FORZA DASHBOARD ---
-#define FORZA_HEADER_H 10
 #define FORZA_RPM_BAR_Y 0
-#define FORZA_RPM_BAR_H 10
-#define FORZA_GEAR_BOX_Y 12
-#define FORZA_GEAR_BOX_H 38
+#define FORZA_RPM_BAR_H 8
+#define FORZA_GEAR_BOX_Y 10
+#define FORZA_GEAR_BOX_H 40
 #define FORZA_SPEED_Y 56
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
@@ -2194,24 +2193,31 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (pct > 1.0f)
     pct = 1.0f;
 
-  /* Header bar: FM label + RPM bracketed bar */
-  u8g2.drawBox(0, 0, NOCT_DISP_W, FORZA_HEADER_H);
-  u8g2.setDrawColor(0);
+  /* Tachometer: RPM value left, bar right */
   u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(2, FORZA_HEADER_H - 2, "FM");
-  u8g2.setDrawColor(1);
-  disp_.drawBracketedBar(24, 2, NOCT_DISP_W - 28, 6,
-                        (int)(pct * 100.0f + 0.5f));
+  static char rpmBuf[12];
+  snprintf(rpmBuf, sizeof(rpmBuf), "%d", (int)(s.currentRpm + 0.5f));
+  u8g2.drawUTF8(2, FORZA_RPM_BAR_Y + FORZA_RPM_BAR_H - 2, rpmBuf);
+  const int barX = 40;
+  const int barW = NOCT_DISP_W - barX;
+  u8g2.drawFrame(barX, FORZA_RPM_BAR_Y, barW, FORZA_RPM_BAR_H);
+  int fillW = (int)(pct * (barW - 2) + 0.5f);
+  if (fillW > 0) {
+    u8g2.drawBox(barX + 1, FORZA_RPM_BAR_Y + 1, fillW, FORZA_RPM_BAR_H - 2);
+  }
 
-  /* Center: GEAR in tech bracket */
+  /* Center: GEAR (large) + label */
   disp_.drawTechBrackets(0, FORZA_GEAR_BOX_Y, NOCT_DISP_W, FORZA_GEAR_BOX_H, 4);
   char gearStr[2] = {forza.getGearChar(), '\0'};
   u8g2.setFont(u8g2_font_logisoso34_tn);
   int gearW = u8g2.getUTF8Width(gearStr);
   int gearX = (NOCT_DISP_W - gearW) / 2;
-  u8g2.drawUTF8(gearX, FORZA_GEAR_BOX_Y + 32, gearStr);
+  u8g2.drawUTF8(gearX, FORZA_GEAR_BOX_Y + 34, gearStr);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8((NOCT_DISP_W - 16) / 2, FORZA_GEAR_BOX_Y + FORZA_GEAR_BOX_H - 2,
+                "GEAR");
 
-  /* Bottom: Speed (larger font) + status */
+  /* Bottom: Speed + status */
   u8g2.setFont(VALUE_FONT);
   static char speedBuf[16];
   snprintf(speedBuf, sizeof(speedBuf), "%d km/h", forza.getSpeedKmh());
