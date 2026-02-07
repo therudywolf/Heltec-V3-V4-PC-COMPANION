@@ -2191,8 +2191,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- 2. RPM BAR (Top Strip) Y=0 to 12 ---
-  const int barH = 12;
+  // --- 2. RPM BAR (Top Strip) Y=0 to 14 — LARGER ---
+  const int barH = 14;
   u8g2.drawFrame(0, 0, 128, barH);
   int fillW =
       (maxRpm > 0.0f)
@@ -2202,12 +2202,11 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (fillW > 0)
     u8g2.drawBox(1, 1, fillW, barH - 2);
 
-  // RPM Value Text (XOR so visible against fill)
-  u8g2.setFont(u8g2_font_profont12_tf);
+  u8g2.setFont(u8g2_font_helvB12_tr);
   static char rpmTextBuf[16];
-  snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d rpm", rpm);
+  snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   u8g2.setDrawColor(2);
-  u8g2.drawStr(2, 10, rpmTextBuf);
+  u8g2.drawUTF8(2, 12, rpmTextBuf);
   u8g2.setDrawColor(1);
 
   // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE, always visible ---
@@ -2250,13 +2249,12 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawUTF8(126 - u8g2.getUTF8Width("--"), 38, "--");
   }
 
-  // --- 5. SHIFT LIGHT (XOR FLASH) ---
-  if (maxRpm > 0.0f && s.currentRpm > 0.96f * maxRpm) {
-    // Blink every 100ms
-    if ((millis() % 200) < 100) {
-      u8g2.setDrawColor(2);  // 0=Clear, 1=Set, 2=XOR (Invert)
+  // --- 5. SHIFT LIGHT — screen strobe SYNC with LED (80ms, like LED) ---
+  if (maxRpm > 0.0f && s.currentRpm >= FORZA_SHIFT_THRESHOLD * maxRpm) {
+    if ((millis() / 80) % 2 == 0) {
+      u8g2.setDrawColor(2);  // XOR = invert
       u8g2.drawBox(0, 0, 128, 64);
-      u8g2.setDrawColor(1);  // Restore default color
+      u8g2.setDrawColor(1);
     }
   }
 }

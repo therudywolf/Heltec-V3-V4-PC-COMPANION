@@ -30,7 +30,8 @@
 #define FORZA_OFF_FUEL 280
 #define FORZA_OFF_LAP 296
 #define FORZA_OFF_RACE_POS 298
-#define FORZA_OFF_GEAR 307
+#define FORZA_OFF_GEAR 307           // FM7/FM8 Dash (311 bytes)
+#define FORZA_OFF_GEAR_HORIZON 319   // FH4/FH5 Dash (323 bytes, +12 hzn)
 
 struct ForzaState {
   float currentRpm;
