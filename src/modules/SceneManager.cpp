@@ -2210,7 +2210,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.drawStr(2, 10, rpmTextBuf);
   u8g2.setDrawColor(1);
 
-  // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE ---
+  // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE, always visible ---
   static char gearStr[4];
   int gear = (int)s.gear;
   if (gear == 0) {
@@ -2230,24 +2230,24 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     gearStr[0] = '-';
     gearStr[1] = '\0';
   }
-  u8g2.setFont(u8g2_font_logisoso42_tn);
-  int gw = u8g2.getStrWidth(gearStr);
-  u8g2.drawStr(27 - (gw / 2), 60, gearStr);
+  u8g2.setFont(u8g2_font_helvB18_tr);
+  int gw = u8g2.getUTF8Width(gearStr);
+  u8g2.drawUTF8(27 - (gw / 2), 52, gearStr);
 
   // --- 4. SPEED (Right Zone X=58-128) — BIG ---
   u8g2.setFont(u8g2_font_logisoso32_tn);
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
-  int sw = u8g2.getStrWidth(spdBuf);
-  u8g2.drawStr(126 - sw, 48, spdBuf);
+  int sw = u8g2.getUTF8Width(spdBuf);
+  u8g2.drawUTF8(126 - sw, 48, spdBuf);
 
   u8g2.setFont(u8g2_font_profont12_tf);
-  int kmhW = u8g2.getStrWidth("km/h");
-  u8g2.drawStr(126 - kmhW, 62, "km/h");
+  int kmhW = u8g2.getUTF8Width("km/h");
+  u8g2.drawUTF8(126 - kmhW, 62, "km/h");
 
   if (!s.connected) {
     u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawStr(126 - u8g2.getStrWidth("--"), 38, "--");
+    u8g2.drawUTF8(126 - u8g2.getUTF8Width("--"), 38, "--");
   }
 
   // --- 5. SHIFT LIGHT (XOR FLASH) ---
