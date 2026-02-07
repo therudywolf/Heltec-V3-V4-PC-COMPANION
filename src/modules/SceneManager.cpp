@@ -2158,7 +2158,7 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (Cyber-Sport: horizontal RPM bar, gear, speed) ---
+// --- FORZA DASHBOARD (Cyber-F1: strict 3-zone layout) ---
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2183,35 +2183,35 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawUTF8((NOCT_DISP_W - w2) / 2, 32, ipLine);
     int fw = u8g2.getUTF8Width("SET FORZA TO 'DATA OUT'");
     u8g2.drawUTF8((NOCT_DISP_W - fw) / 2, NOCT_DISP_H - 4, "SET FORZA TO 'DATA OUT'");
+    disp_.u8g2().setDisplayInverted(false);
     return;
   }
 
   const ForzaState &s = forza.getState();
   float maxRpm = (s.maxRpm > 0.0f) ? s.maxRpm : 10000.0f;
-  float rpmPct = (maxRpm > 0.0f) ? (s.currentRpm / maxRpm) : 0.0f;
-  if (rpmPct > 1.0f) rpmPct = 1.0f;
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
-  const int rpmBarH = 10;
-  const bool warningRpm = (maxRpm > 0.0f && s.currentRpm > 0.9f * maxRpm);
 
-  // --- 2. MAIN DASHBOARD ---
+  // --- 2. RPM BAR (Top Strip) Y=0 to 12 ---
+  const int barH = 12;
+  u8g2.drawFrame(0, 0, 128, barH);
+  int fillW =
+      (maxRpm > 0.0f)
+          ? (int)((s.currentRpm / maxRpm) * 126)
+          : 0;
+  if (fillW > 126) fillW = 126;
+  if (fillW > 0)
+    u8g2.drawBox(1, 1, fillW, barH - 2);
 
-  // Top Bar (Y=0 to 10): RPM Gauge — frame then fill
-  u8g2.drawFrame(0, 0, NOCT_DISP_W, rpmBarH);
-  int fillW = (int)(rpmPct * (float)NOCT_DISP_W);
-  if (fillW > NOCT_DISP_W) fillW = NOCT_DISP_W;
-  if (fillW > 0) {
-    if (warningRpm) {
-      // Striped warning zone: every other column
-      for (int x = 0; x < fillW; x += 2)
-        u8g2.drawBox(x, 1, 1, rpmBarH - 2);
-    } else {
-      u8g2.drawBox(0, 1, fillW, rpmBarH - 2);
-    }
-  }
+  // RPM Value Text (XOR so visible against fill)
+  u8g2.setFont(u8g2_font_profont12_tf);
+  static char rpmTextBuf[16];
+  snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d rpm", rpm);
+  u8g2.setDrawColor(2);
+  u8g2.drawStr(2, 10, rpmTextBuf);
+  u8g2.setDrawColor(1);
 
-  // Left sector (Y=12 to 64, X=0 to 50): GEAR — huge, bottom-left aligned
+  // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE ---
   static char gearStr[4];
   int gear = (int)s.gear;
   if (gear == 0) {
@@ -2232,46 +2232,30 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     gearStr[1] = '\0';
   }
   u8g2.setFont(u8g2_font_logisoso42_tn);
-  u8g2.drawUTF8(2, NOCT_DISP_H - 2, gearStr);  // Bottom-left aligned
+  int gw = u8g2.getStrWidth(gearStr);
+  u8g2.drawStr(27 - (gw / 2), 60, gearStr);
 
-  // Right sector (X=55 to 128): Speed + "km/h" + RPM text
-  const int rightX = 55;
-  const int rightW = NOCT_DISP_W - rightX;
-
-  u8g2.setFont(u8g2_font_profont12_tf);
-  static char rpmTextBuf[16];
-  snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d rpm", rpm);
-  int rpmTextW = u8g2.getUTF8Width(rpmTextBuf);
-  u8g2.drawUTF8(rightX + (rightW - rpmTextW) / 2, 24, rpmTextBuf);
-
-  u8g2.setFont(u8g2_font_logisoso28_tn);
+  // --- 4. SPEED (Right Zone X=58-128) — BIG ---
+  u8g2.setFont(u8g2_font_logisoso32_tn);
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
-  int sw = u8g2.getUTF8Width(spdBuf);
-  int speedY = 48;
-  u8g2.drawUTF8(rightX + (rightW - sw) / 2, speedY, spdBuf);
+  int sw = u8g2.getStrWidth(spdBuf);
+  u8g2.drawStr(126 - sw, 48, spdBuf);
 
   u8g2.setFont(u8g2_font_profont12_tf);
-  int kmhW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(rightX + (rightW - kmhW) / 2, 60, "km/h");
+  int kmhW = u8g2.getStrWidth("km/h");
+  u8g2.drawStr(126 - kmhW, 62, "km/h");
 
   if (!s.connected) {
     u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawUTF8(rightX + (rightW - 8) / 2, 38, "--");
+    u8g2.drawStr(126 - u8g2.getStrWidth("--"), 38, "--");
   }
 
-  // --- 3. SHIFT LIGHT (critical) ---
-  if (maxRpm > 0.0f && s.currentRpm > 0.96f * maxRpm) {
-    if ((millis() / 100) % 2 == 0) {
-      u8g2.setDrawColor(2);  // XOR mode
-      u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-      u8g2.setDrawColor(1);
-    }
-    u8g2.setFont(u8g2_font_logisoso28_tn);
-    const char *shiftMsg = "SHIFT!";
-    int shiftW = u8g2.getUTF8Width(shiftMsg);
-    u8g2.drawUTF8((NOCT_DISP_W - shiftW) / 2, NOCT_DISP_H / 2 + 6, shiftMsg);
-  }
+  // --- 5. SHIFT LIGHT (Flash) ---
+  if (maxRpm > 0.0f && s.currentRpm > 0.96f * maxRpm)
+    disp_.u8g2().setDisplayInverted(millis() % 200 < 100);
+  else
+    disp_.u8g2().setDisplayInverted(false);
 }
 
 // --- mDNS ---
