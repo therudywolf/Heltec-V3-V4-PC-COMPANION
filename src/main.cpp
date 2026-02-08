@@ -208,6 +208,9 @@ static unsigned long toastUntil = 0;
 // Forza: splash "IP | PORT | WAITING" shown for 3s on enter
 static unsigned long forzaSplashUntil = 0;
 #define FORZA_SPLASH_MS 3000
+// Auto-switch to Forza when first UDP packet received; disabled after user exits
+static bool forzaAutoSwitchDone = false;
+static bool forzaListeningForAutoSwitch = false;
 
 // --- Cyberdeck Modes --- Full Marauder integration
 enum AppMode {
@@ -987,7 +990,9 @@ static bool initializeMode(AppMode mode) {
 
   case MODE_GAME_FORZA:
     manageWiFiState(mode);
-    forzaManager.begin();
+    if (!forzaListeningForAutoSwitch)
+      forzaManager.begin();
+    forzaListeningForAutoSwitch = false; // Reset; Forza mode owns the listener
     Serial.println("[SYS] FORZA mode initialized");
     return true;
 
@@ -1284,6 +1289,8 @@ static bool switchToMode(AppMode newMode) {
 
 /** Старая функция для обратной совместимости */
 static void exitAppModeToNormal() {
+  if (currentMode == MODE_GAME_FORZA)
+    forzaAutoSwitchDone = true; // Never auto-switch again after user exit
   switchToMode(MODE_NORMAL);
   Serial.println("[SYS] NETMANAGER RESUMED.");
 }
@@ -1720,6 +1727,19 @@ void loop() {
   netManager.tick(now);
   if (currentMode == MODE_GAME_FORZA) {
     forzaManager.tick();
+  } else if (currentMode == MODE_NORMAL && netManager.isWifiConnected() &&
+             !forzaAutoSwitchDone) {
+    // Listen for Forza UDP to auto-switch once when first packet arrives
+    if (!forzaListeningForAutoSwitch) {
+      forzaManager.begin();
+      forzaListeningForAutoSwitch = true;
+    }
+    forzaManager.tick();
+    if (forzaManager.isConnected()) {
+      forzaAutoSwitchDone = true;
+      if (switchToMode(MODE_GAME_FORZA))
+        needRedraw = true;
+    }
   }
 
   if (netManager.isTcpConnected()) {
