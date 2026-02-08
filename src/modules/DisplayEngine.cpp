@@ -926,6 +926,100 @@ void DisplayEngine::drawAlertBorder() {
 }
 
 // ===========================================================================
+// NFS Unbound Forza Dashboard utilities
+// ===========================================================================
+void DisplayEngine::drawDiagonalStriped(int x, int y, int w, int h,
+                                         int spacing) {
+  if (spacing < 1)
+    spacing = 1;
+  // 45° lines: for each diagonal, draw pixels along line. Simpler: draw VLines
+  // at 45° step. Actually "diagonal 45°" = lines from top-left to bottom-right.
+  // Fast approach: iterate col index, draw diagonal line segments.
+  const int extent = w + h;
+  for (int d = -h; d < extent; d += spacing) {
+    int x0 = x + d;
+    int y0 = y;
+    if (x0 < x) {
+      y0 = y + (x - x0);
+      x0 = x;
+    }
+    int x1 = x0 + (h + w);
+    int y1 = y0 + (h + w);
+    if (x1 > x + w) {
+      y1 -= (x1 - (x + w));
+      x1 = x + w;
+    }
+    if (y1 > y + h) {
+      x1 -= (y1 - (y + h));
+      y1 = y + h;
+    }
+    for (int k = 0; k <= (x1 - x0) && (x0 + k) < x + w && (y0 + k) < y + h;
+         k++)
+      u8g2_.drawPixel(x0 + k, y0 + k);
+  }
+}
+
+void DisplayEngine::drawCheckerboard(int x, int y, int w, int h,
+                                     int cellSize) {
+  if (cellSize < 1)
+    cellSize = 1;
+  for (int cy = 0; cy < h; cy += cellSize) {
+    for (int cx = 0; cx < w; cx += cellSize) {
+      bool fill = ((cx / cellSize) + (cy / cellSize)) % 2 == 0;
+      int cw = (cx + cellSize <= w) ? cellSize : (w - cx);
+      int ch = (cy + cellSize <= h) ? cellSize : (h - cy);
+      if (fill)
+        u8g2_.drawBox(x + cx, y + cy, cw, ch);
+    }
+  }
+}
+
+void DisplayEngine::drawGridPoints(int x, int y, int w, int h,
+                                  int gridSpacing) {
+  if (gridSpacing < 2)
+    gridSpacing = 2;
+  for (int gy = 0; gy <= h; gy += gridSpacing) {
+    for (int gx = 0; gx <= w; gx += gridSpacing) {
+      if (random(100) < 10)
+        continue; // 10% jitter skip
+      int px = x + gx;
+      int py = y + gy;
+      if (px >= x + w || py >= y + h)
+        continue;
+      u8g2_.drawPixel(px, py);
+      if (px + 1 < x + w)
+        u8g2_.drawPixel(px + 1, py);
+      if (py + 1 < y + h)
+        u8g2_.drawPixel(px, py + 1);
+      if (px + 1 < x + w && py + 1 < y + h)
+        u8g2_.drawPixel(px + 1, py + 1);
+    }
+  }
+}
+
+void DisplayEngine::drawGlitchRect(int x, int y, int w, int h, bool invert) {
+  if (invert) {
+    u8g2_.setDrawColor(2);
+    u8g2_.drawBox(x, y, w, h);
+    u8g2_.setDrawColor(1);
+  } else {
+    u8g2_.drawFrame(x, y, w, h);
+  }
+}
+
+int DisplayEngine::getRandomJitter(int range) {
+  if (range <= 0)
+    return 0;
+  return (int)random(-(range + 1), range + 1);
+}
+
+bool DisplayEngine::shouldFlicker(unsigned long intervalMs) {
+  if (intervalMs == 0)
+    return false;
+  return (millis() / intervalMs) % 2 == 0;
+}
+
+// ===========================================================================
 // BLADE RUNNER 2049–style: subtle film grain, multi-band horizontal tear
 // (V-sync loss), occasional rolling tear. No grid/scanlines.
 // ===========================================================================
