@@ -2236,16 +2236,6 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   lastSpeedKmh = speedKmh;
 
-  // ----- LAYER 1: Background scanlines (45°, faint — sparse spacing) -----
-  u8g2.setDrawColor(1);
-  disp_.drawDiagonalStriped(0, RPM_BAR_HEIGHT, NOCT_DISP_W,
-                            NOCT_DISP_H - RPM_BAR_HEIGHT,
-                            FORZA_SCANLINE_SPACING + 3);
-
-  // ----- LAYER 2: Grid points 8x8, corners only -----
-  disp_.drawGridPoints(0, RPM_BAR_HEIGHT, NOCT_DISP_W,
-                      NOCT_DISP_H - RPM_BAR_HEIGHT, FORZA_GRID_SPACING);
-
   // ----- RPM BAR (sharp corners, 18px, EMA 0.35, segment jitter, red zone) -----
   const int barPad = 2;
   const int innerW = NOCT_DISP_W - 2 * barPad;
@@ -2437,13 +2427,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // ----- BORDER NOISE (2–3% pixels on edges) -----
-  for (int i = 0; i < (NOCT_DISP_W + NOCT_DISP_H) * FORZA_BORDER_NOISE_PCT / 100; i++) {
-    int ex = random(NOCT_DISP_W);
-    int ey = random(NOCT_DISP_H);
-    if (ex < 4 || ex >= NOCT_DISP_W - 4 || ey < 4 || ey >= NOCT_DISP_H - 4)
-      u8g2.drawPixel(ex, ey);
-  }
+  // ----- EDGE ARTIFACTS (lines only in 4px perimeter) -----
+  disp_.drawEdgeArtifacts(4);
   u8g2.setDrawColor(1);
 }
 
