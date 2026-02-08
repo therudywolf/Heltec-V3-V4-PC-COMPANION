@@ -77,7 +77,7 @@ void ForzaManager::parsePacket(const uint8_t *buf, size_t len) {
   if (state_.maxRpm < 100.0f || state_.maxRpm > 25000.0f)
     state_.maxRpm = 10000.0f;
 
-  bool isHorizon = (len >= FORZA_PACKET_DASH_FH);
+  bool isHorizon = (len >= FORZA_PACKET_DASH_FH && len <= 324);
   int offSpeed = isHorizon ? FORZA_OFF_SPEED_FH : FORZA_OFF_SPEED;
   int offTire = isHorizon ? FORZA_OFF_TIRE_FL_FH : FORZA_OFF_TIRE_FL;
   int offFuel = isHorizon ? FORZA_OFF_FUEL_FH : FORZA_OFF_FUEL;
