@@ -2237,7 +2237,6 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   lastSpeedKmh = speedKmh;
 
-  // 3. RPM BAR (18px, tech brackets, EMA 0.35, red zone jitter ±1, outline)
   const int barPad = 2;
   const int innerW = NOCT_DISP_W - 2 * barPad;
   int targetFillW = (maxRpm > 0.0f) ? (int)((s.currentRpm / maxRpm) * innerW) : 0;
@@ -2245,13 +2244,16 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   animRpm += (targetFillW - animRpm) * FORZA_EMA_RPM;
   int fillW = (int)(animRpm + 0.5f);
   if (fillW > innerW) fillW = innerW;
-
   bool skipRpmFrame = inRedZone && disp_.shouldFlicker(FORZA_RED_ZONE_FLICKER_MS);
+  const int redZoneStart = (int)(FORZA_RED_ZONE_RPM_PCT * innerW);
 
-  disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 6);
+  // 1. RPM bar: light diagonal background (NFS style)
+  u8g2.setDrawColor(1);
+  disp_.drawDiagonalStriped(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
+
+  // 2. RPM bar: fill (segments + red zone stripes), then frame
   if (!skipRpmFrame) {
     const int segW = 4;
-    const int redZoneStart = (int)(FORZA_RED_ZONE_RPM_PCT * innerW);
     for (int x = barPad; x < barPad + fillW; x += segW) {
       int segEnd = (x + segW < barPad + fillW) ? x + segW : barPad + fillW;
       int w = segEnd - x;
@@ -2270,12 +2272,14 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
       }
     }
   }
+  disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
 
-  u8g2.setFont(u8g2_font_helvB12_tr);
+  // RPM digits: larger font (helvB18), outline
+  u8g2.setFont(u8g2_font_helvB18_tr);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   int rpmW = u8g2.getUTF8Width(rpmTextBuf);
-  int rpmTextY = RPM_BAR_HEIGHT / 2 + 5 + (inRedZone ? disp_.getRandomJitter(FORZA_RPM_JITTER_RANGE) : 0);
+  int rpmTextY = RPM_BAR_HEIGHT / 2 + 6 + (inRedZone ? disp_.getRandomJitter(FORZA_RPM_JITTER_RANGE) : 0);
   int rpmCx = NOCT_DISP_W / 2 - rpmW / 2;
   u8g2.setDrawColor(0);
   u8g2.drawUTF8(rpmCx - 1, rpmTextY, rpmTextBuf);
@@ -2286,29 +2290,33 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.drawUTF8(rpmCx, rpmTextY, rpmTextBuf);
   if (inRedZone && disp_.shouldFlicker(FORZA_RED_ZONE_FLICKER_MS)) {
     u8g2.setDrawColor(2);
-    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 6);
+    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
     u8g2.setDrawColor(1);
   }
 
-  // 4. GEAR BOX (24x24, left, chamfer, vibrate ±2 on change, outline)
+  // 3. Content area frame (NFS HUD block)
+  disp_.drawTechBrackets(0, FORZA_CONTENT_TOP, NOCT_DISP_W,
+                        FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP, 6);
+
+  // 4. Gear box (32x32, left, chamfer 4, helvB24)
   const int gearX = 2;
-  const int gearY = RPM_BAR_HEIGHT + 2;
+  const int gearY = FORZA_CONTENT_TOP;
   int gb = FORZA_GEAR_BOX_SIZE;
   int gJx = 0, gJy = 0;
   if (gearJustChanged) {
     gJx = disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
     gJy = disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
   }
-  disp_.drawChamferBox(gearX + gJx, gearY + gJy, gb, gb, 3);
+  disp_.drawChamferBox(gearX + gJx, gearY + gJy, gb, gb, 4);
   if (gearJustChanged && disp_.shouldFlicker(40)) {
     u8g2.setDrawColor(2);
     u8g2.drawBox(gearX + 1 + gJx, gearY + 1 + gJy, gb - 2, gb - 2);
     u8g2.setDrawColor(1);
   }
-  u8g2.setFont(u8g2_font_helvB18_tr);
+  u8g2.setFont(u8g2_font_helvB24_tr);
   int gw = u8g2.getUTF8Width(gearStr);
   int gearCx = gearX + gJx + gb / 2 - gw / 2;
-  int gearCy = gearY + gJy + gb / 2 + 6;
+  int gearCy = gearY + gJy + gb / 2 + 8;
   u8g2.setDrawColor(0);
   u8g2.drawUTF8(gearCx - 1, gearCy, gearStr);
   u8g2.drawUTF8(gearCx + 1, gearCy, gearStr);
@@ -2317,12 +2325,17 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.setDrawColor(1);
   u8g2.drawUTF8(gearCx, gearCy, gearStr);
 
-  // 5. SPEED (dominant, center-right, logisoso32, EMA 0.28, micro jitter, brake drop 2px, outline)
+  // 5. Divider between gear and speed (tech line)
+  const int dividerX = 38;
+  u8g2.drawVLine(dividerX, FORZA_CONTENT_TOP, FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP - 1);
+
+  // 6. Speed: centered, baseline below content top so no overlap with RPM
   animSpeed += ((float)speedKmh - animSpeed) * FORZA_EMA_SPEED;
   float noise = (random(100) / 100.0f - 0.5f);
   int dispSpeed = (int)(animSpeed + 0.5f + noise);
   if (dispSpeed < 0) dispSpeed = 0;
   int speedDropY = speedBraking ? FORZA_SPEED_BRAKE_DROP_PX : 0;
+  const int speedBaselineY = FORZA_CONTENT_TOP + FORZA_SPEED_BASELINE_OFFSET + speedDropY + jitterY;
   u8g2.setFont(u8g2_font_logisoso32_tn);
   static char spdBuf[8];
   if (s.connected) {
@@ -2331,22 +2344,19 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     snprintf(spdBuf, sizeof(spdBuf), "--");
   }
   int sw = u8g2.getUTF8Width(spdBuf);
-  const int speedRight = NOCT_DISP_W - 4;
-  int speedX = speedRight - sw + jitterX;
-  const int speedBaseline = 48 + speedDropY + jitterY;
-  int speedY = speedBaseline - 6;
+  int speedX = NOCT_DISP_W / 2 - sw / 2 + jitterX;
   u8g2.setDrawColor(0);
-  u8g2.drawUTF8(speedX - 1, speedY, spdBuf);
-  u8g2.drawUTF8(speedX + 1, speedY, spdBuf);
-  u8g2.drawUTF8(speedX, speedY - 1, spdBuf);
-  u8g2.drawUTF8(speedX, speedY + 1, spdBuf);
+  u8g2.drawUTF8(speedX - 1, speedBaselineY, spdBuf);
+  u8g2.drawUTF8(speedX + 1, speedBaselineY, spdBuf);
+  u8g2.drawUTF8(speedX, speedBaselineY - 1, spdBuf);
+  u8g2.drawUTF8(speedX, speedBaselineY + 1, spdBuf);
   u8g2.setDrawColor(1);
-  u8g2.drawUTF8(speedX, speedY, spdBuf);
+  u8g2.drawUTF8(speedX, speedBaselineY, spdBuf);
   u8g2.setFont(u8g2_font_profont10_mr);
   int kmhW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(speedRight - kmhW, speedBaseline + 4, "km/h");
+  u8g2.drawUTF8(NOCT_DISP_W / 2 - kmhW / 2, speedBaselineY + 10, "km/h");
 
-  // 6. SHIFT INDICATOR (bottom, center, flicker 80ms when RPM >= 90%)
+  // 7. Shift indicator (bottom)
   if (shiftActive) {
     if (disp_.shouldFlicker(80)) {
       u8g2.setFont(LABEL_FONT);
@@ -2369,7 +2379,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // 7. Optional: edge artifacts (cyberpunk)
+  // 8. Edge artifacts
   disp_.drawEdgeArtifacts(4);
   u8g2.setDrawColor(1);
 }
