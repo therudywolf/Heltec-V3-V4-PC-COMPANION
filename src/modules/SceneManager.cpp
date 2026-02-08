@@ -2159,7 +2159,7 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (NFS Unbound style: aggressive tach, cyber noise, shift strobe) ---
+// --- FORZA DASHBOARD (NFS Unbound Final: jitter, speed lines, no collisions) ---
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2169,99 +2169,114 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(0);
 
-  // --- SPLASH SCREEN (Tech style) ---
+  // --- SPLASH SCREEN ---
   if (showSplash) {
     u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawUTF8(5, 20, ">> CONNECTING TO FORZA >>");
-    char ipBuf[40];
-    snprintf(ipBuf, sizeof(ipBuf), "IP: %d.%d.%d.%d PORT:5300",
+    u8g2.drawUTF8(10, 20, ">> LINKING ECU >>");
+    char ipBuf[32];
+    snprintf(ipBuf, sizeof(ipBuf), "IP: %d.%d.%d.%d",
              (int)((localIp >> 24) & 0xFF), (int)((localIp >> 16) & 0xFF),
              (int)((localIp >> 8) & 0xFF), (int)(localIp & 0xFF));
-    u8g2.drawUTF8(5, 35, ipBuf);
-    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, NOCT_DISP_H, 10);
+    u8g2.drawUTF8(10, 35, ipBuf);
+    u8g2.drawUTF8(10, 50, "PORT: 5300 UDP");
+    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, NOCT_DISP_H, 5);
     return;
   }
 
-  // --- MAIN DASHBOARD ---
+  // --- TELEMETRY ---
   float currentRpm = forza.getCurrentRpm();
   float maxRpm = forza.getMaxRpm();
-  bool isRedline = (maxRpm > 0 && currentRpm > 0.95f * maxRpm);
-
-  // --- BACKGROUND NOISE (NFS Cyberpunk texture) ---
-  for (int i = 0; i < 20; i++) {
-    int rx = random(NOCT_DISP_W);
-    int ry = random(NOCT_DISP_H);
-    if (ry > 18 && ry < 50 && rx > 40 && rx < 90)
-      continue;
-    u8g2.drawPixel(rx, ry);
-  }
-
-  // --- 1. RPM BAR (Aggressive & Taller) ---
-  const int barH = 16;
-  const int barY = 2;
-
-  u8g2.drawFrame(0, barY, NOCT_DISP_W, barH);
-  u8g2.drawFrame(1, barY + 1, NOCT_DISP_W - 2, barH - 2);
-
+  int speed = forza.getSpeedKmh();
+  bool isRedline = (maxRpm > 0 && currentRpm > 0.92f * maxRpm);
   float rpmPct = (maxRpm > 0) ? (currentRpm / maxRpm) : 0;
   if (rpmPct > 1.0f)
     rpmPct = 1.0f;
-  int fillW = (int)(rpmPct * 124);
 
-  if (fillW > 0) {
-    if (isRedline) {
-      u8g2.drawBox(2, barY + 2, fillW, barH - 4);
-    } else {
-      disp_.drawDiagonalStriped(2, barY + 2, fillW, barH - 4, 4);
+  // --- JUICE (Jitter/Shake at high RPM) ---
+  int shakeX = 0;
+  int shakeY = 0;
+  if (rpmPct > 0.7f) {
+    int intensity = (int)((rpmPct - 0.7f) * 10);
+    if (intensity > 0) {
+      shakeX = random(-intensity, intensity + 1);
+      shakeY = random(-intensity, intensity + 1);
     }
   }
 
-  // RPM Text (Below bar, right aligned)
-  char rpmBuf[20];
-  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f RPM", currentRpm);
-  u8g2.setFont(u8g2_font_profont12_tf);
-  int rpmW = u8g2.getUTF8Width(rpmBuf);
-  u8g2.drawUTF8(NOCT_DISP_W - 2 - rpmW, barY + barH + 10, rpmBuf);
+  // --- 1. BACKGROUND (Speed Lines) ---
+  for (int i = 0; i < 5; i++) {
+    int y = ((int)(now / (10 + i * 5)) + i * 15) % NOCT_DISP_H;
+    int w = 10 + (i * 8);
+    int x = NOCT_DISP_W - ((int)(now / 2) % (NOCT_DISP_W + w));
+    if (y > 14 && y < 50)
+      continue;
+    u8g2.drawHLine(x, y, w);
+  }
 
-  // --- 2. GEAR (Left Zone — MASSIVE with Tech Bracket) ---
+  // --- 2. RPM BAR (Text inside bar) ---
+  const int barH = 14;
+  u8g2.drawFrame(0, 0, NOCT_DISP_W, barH);
+
+  int fillW = (int)(rpmPct * 126);
+  if (fillW > 0) {
+    if (isRedline) {
+      u8g2.drawBox(1, 1, fillW, barH - 2);
+    } else {
+      disp_.drawDiagonalStriped(1, 1, fillW, barH - 2, 3);
+    }
+  }
+
+  char rpmBuf[16];
+  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f RPM", currentRpm);
+  u8g2.setFont(u8g2_font_profont10_tf);
+  int rpmW = u8g2.getUTF8Width(rpmBuf);
+
+  u8g2.setDrawColor(2);
+  u8g2.drawUTF8(64 - (rpmW / 2) + shakeX, 9 + shakeY, rpmBuf);
+  u8g2.setDrawColor(1);
+
+  // --- 3. GEAR (Left zone, graffiti style) ---
   char gearBuf[4];
   forza.getGearString(gearBuf, sizeof(gearBuf));
 
+  int gearX = 2 + shakeX;
+  int gearY = 62 + shakeY;
+
+  if (rpmPct > 0.1f) {
+    u8g2.drawLine(gearX, gearY, gearX + 40, gearY - 40);
+    u8g2.drawLine(gearX + 5, gearY, gearX + 45, gearY - 40);
+  }
+
   u8g2.setFont(u8g2_font_logisoso42_tf);
-  int gearW = u8g2.getUTF8Width(gearBuf);
-  int gearX = 28 - (gearW / 2);
-  if (gearX < 0)
-    gearX = 0;
-  int gearY = 62;
-
-  disp_.drawTechBrackets(0, 22, 56, 42, 8);
-  u8g2.drawUTF8(gearX + 1, gearY + 1, gearBuf);
-  u8g2.setDrawColor(0);
   u8g2.drawUTF8(gearX, gearY, gearBuf);
-  u8g2.setDrawColor(1);
-  u8g2.drawUTF8(gearX - 1, gearY - 1, gearBuf);
 
-  // --- 3. SPEED (Right Zone — Cyber style) ---
-  char spdBuf[16];
-  snprintf(spdBuf, sizeof(spdBuf), "%d", forza.getSpeedKmh());
+  u8g2.drawVLine(52 + shakeX, 16, 48);
+
+  // --- 4. SPEED (Right zone, glitchy) ---
+  char spdBuf[8];
+  snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
 
   u8g2.setFont(u8g2_font_logisoso32_tn);
   int spdW = u8g2.getUTF8Width(spdBuf);
-  int spdX = NOCT_DISP_W - 2 - spdW;
-  int spdY = 52;
+  int spdX = NOCT_DISP_W - 2 - spdW + shakeX;
+  int spdY = 54 + shakeY;
 
+  u8g2.setDrawColor(0);
+  u8g2.drawUTF8(spdX - 2, spdY - 2, spdBuf);
+  u8g2.setDrawColor(1);
   u8g2.drawUTF8(spdX, spdY, spdBuf);
-  u8g2.drawHLine(spdX, spdY + 2, spdW);
-  if ((now % 200) < 100)
-    u8g2.drawHLine(spdX + 5, spdY + 4, (spdW > 10) ? spdW - 10 : 1);
+
+  if (rpmPct > 0.5f) {
+    u8g2.drawHLine(spdX, spdY + 2, spdW);
+  }
 
   u8g2.setFont(u8g2_font_profont12_tf);
   int unitW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW, 63, "km/h");
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, 62 + shakeY, "km/h");
 
-  // --- 4. SHIFT FLASH (Full Screen XOR Strobe at redline) ---
+  // --- 5. REDLINE STROBE ---
   if (isRedline) {
-    if ((now % 120) < 60) {
+    if ((now / 50) % 2 == 0) {
       u8g2.setDrawColor(2);
       u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
       u8g2.setDrawColor(1);
