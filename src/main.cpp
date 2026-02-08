@@ -46,6 +46,8 @@
 #define NOCT_BAT_CALIBRATION 1.1f
 // Flipper-style: level 0 = 5 categories, level 1 = submenu items
 #define MENU_CATEGORIES 5
+// Display order: Games first, then Config, WiFi, Tools, System (index -> real category)
+static const int menuDisplayOrder[] = {4, 0, 1, 2, 3};
 #define WOLF_MENU_ITEMS 12
 
 // ---------------------------------------------------------------------------
@@ -1913,7 +1915,13 @@ void loop() {
       lastMenuEventTime = now;
       if (menuLevel == 1) {
         menuLevel = 0;
-        quickMenuItem = menuCategory;
+        // Map menuCategory back to display index for highlighting
+        for (int i = 0; i < MENU_CATEGORIES; i++) {
+          if (menuDisplayOrder[i] == menuCategory) {
+            quickMenuItem = i;
+            break;
+          }
+        }
         rebootConfirmed = false;
       } else {
         quickMenuOpen = false;
@@ -1935,7 +1943,7 @@ void loop() {
       lastMenuEventTime = now;
       if (menuLevel == 0) {
         menuLevel = 1;
-        menuCategory = quickMenuItem;
+        menuCategory = menuDisplayOrder[quickMenuItem];
         quickMenuItem = 0;
       } else {
         bool ok = handleMenuActionByCategory(menuCategory, quickMenuItem, now);
