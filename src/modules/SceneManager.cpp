@@ -2321,18 +2321,14 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.setDrawColor(1);
   }
 
-  // Gear text (centered in box)
+  // Gear text (centered in box, offset down to fit inside frame)
   u8g2.setFont(FORZA_GEAR_FONT);
   int gw = u8g2.getUTF8Width(gearStr);
   int gearCx = gx + gb / 2 - gw / 2;
-  int gearCy = gy + gb / 2 + 5;
+  int gearCy = gy + gb - 5;  // lower baseline so digit stays inside box
   disp_.drawStyledDigitText(gearCx, gearCy, gearStr, false);
 
-  // === 4. DIVIDER (VERTICAL LINE) ===
-  u8g2.drawVLine(FORZA_DIVIDER_X, FORZA_CONTENT_TOP,
-                 FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP - 1);
-
-  // === 5. SPEED ZONE (RIGHT SIDE, 40..124, 18..50) ===
+  // === 4. SPEED ZONE (RIGHT SIDE, 40..124, 18..50) ===
   animSpeed += ((float)speedKmh - animSpeed) * FORZA_EMA_SPEED;
   float noise = (random(100) / 100.0f - 0.5f);
   int dispSpeed = (int)(animSpeed + 0.5f + noise);
@@ -2352,8 +2348,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedX = FORZA_SPEED_X_ANCHOR - sw + jitterX;
   int speedY = FORZA_CONTENT_TOP + 10 + speedDropY + jitterY;
 
-  // Clamp X to prevent overlap with divider
-  if (speedX < FORZA_DIVIDER_X + 4) speedX = FORZA_DIVIDER_X + 4;
+  // Clamp X to leave margin from gear box
+  if (speedX < FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8) speedX = FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8;
 
   disp_.drawStyledDigitText(speedX, speedY, spdBuf, false);
 
@@ -2363,8 +2359,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int kmhX = speedX - kmhW - 3;
   int kmhY = speedY - 8;
 
-  // Clamp X to prevent overlap
-  if (kmhX < FORZA_DIVIDER_X + 4) kmhX = FORZA_DIVIDER_X + 4;
+  if (kmhX < FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8) kmhX = FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8;
 
   // km/h flickers occasionally (50% duty cycle)
   if (disp_.shouldFlicker(500)) {
