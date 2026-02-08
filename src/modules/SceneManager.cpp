@@ -2159,7 +2159,7 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (Cyber-F1: strict 3-zone layout) ---
+// --- FORZA DASHBOARD (minimal Jony Ive style: data animations only) ---
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2192,59 +2192,44 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- 2. RPM BAR — F1 style: chamfer box + tech brackets (viewfinder) ---
-  const int barH = 22;
-  disp_.drawChamferBox(0, 0, 128, barH, 2);
-  disp_.drawTechBrackets(0, 0, 128, barH, 6);
+  // --- 2. RPM BAR — clean frame, smooth fill animation ---
+  const int barH = 20;
+  const int barPad = 2;
+  const int innerW = NOCT_DISP_W - 2 * barPad;
+  u8g2.drawFrame(0, 0, NOCT_DISP_W, barH);
   int targetFillW =
-      (maxRpm > 0.0f)
-          ? (int)((s.currentRpm / maxRpm) * 124)
-          : 0;
-  if (targetFillW > 124) targetFillW = 124;
+      (maxRpm > 0.0f) ? (int)((s.currentRpm / maxRpm) * innerW) : 0;
+  if (targetFillW > innerW) targetFillW = innerW;
   static float animFillW = 0;
-  animFillW += (targetFillW - animFillW) * 0.25f;
+  animFillW += (targetFillW - animFillW) * 0.22f;
   int fillW = (int)(animFillW + 0.5f);
-  if (fillW > 124) fillW = 124;
-  const int segW = 5;
-  const int redZoneStart = (int)(0.85f * 124);
-  for (int x = 2; x < 2 + fillW; x += segW) {
-    int segEnd = (x + segW < 2 + fillW) ? x + segW : 2 + fillW;
+  if (fillW > innerW) fillW = innerW;
+  const int segW = 4;
+  const int redZoneStart = (int)(0.85f * innerW);
+  for (int x = barPad; x < barPad + fillW; x += segW) {
+    int segEnd = (x + segW < barPad + fillW) ? x + segW : barPad + fillW;
     int w = segEnd - x;
     if (w < 1) continue;
-    bool inRedZone = (x >= 2 + redZoneStart) || (segEnd > 2 + redZoneStart);
+    bool inRedZone = (x >= barPad + redZoneStart) || (segEnd > barPad + redZoneStart);
     if (inRedZone && rpm > (int)(0.85f * maxRpm)) {
       for (int px = x; px < segEnd; px += 2)
-        u8g2.drawVLine(px, 2, barH - 4);
+        u8g2.drawVLine(px, barPad, barH - 2 * barPad);
     } else {
-      u8g2.drawBox(x, 2, w, barH - 4);
+      u8g2.drawBox(x, barPad, w, barH - 2 * barPad);
     }
-  }
-  for (int t = 0; t <= 5; t++) {
-    int tx = 2 + (124 * t) / 5;
-    u8g2.drawVLine(tx, barH - 5, 5);
   }
   u8g2.setFont(u8g2_font_helvB12_tr);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   u8g2.setDrawColor(2);
   int rpmW = u8g2.getUTF8Width(rpmTextBuf);
-  u8g2.drawUTF8(64 - rpmW / 2, barH / 2 + 5, rpmTextBuf);
+  u8g2.drawUTF8(NOCT_DISP_W / 2 - rpmW / 2, barH / 2 + 4, rpmTextBuf);
   u8g2.setDrawColor(1);
   bool inRedZone = maxRpm > 0 && s.currentRpm >= 0.85f * maxRpm;
-  if (inRedZone && (millis() / 60) % 2 == 0) {
-    u8g2.setDrawColor(2);
-    disp_.drawChamferBox(0, 0, 128, barH, 2);
-    disp_.drawTechBrackets(0, 0, 128, barH, 6);
-    u8g2.setDrawColor(1);
-  }
+  if (inRedZone && (millis() / 60) % 2 == 0)
+    u8g2.drawFrame(0, 0, NOCT_DISP_W, barH);
 
-  // --- 2b. Gear zone — tech brackets (viewfinder) ---
-  disp_.drawTechBrackets(16, 24, 48, 40, 4);
-  // Circuit traces: left edge to Gear, right edge to Speed
-  disp_.drawCircuitTrace(0, 32, 24, 44, true);
-  disp_.drawCircuitTrace(104, 44, 126, barH + 34, true);
-
-  // --- 3. GEAR — pulse animation on change ---
+  // --- 3. GEAR — centered square, gear-change flash only ---
   static char gearStr[4];
   static int lastGear = -1;
   static unsigned long gearChangeMs = 0;
@@ -2253,7 +2238,6 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     lastGear = gear;
     gearChangeMs = millis();
   }
-  bool gearJustChanged = (millis() - gearChangeMs) < 150;
   if (gear == 0) {
     gearStr[0] = 'R';
     gearStr[1] = '\0';
@@ -2271,44 +2255,49 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     gearStr[0] = '-';
     gearStr[1] = '\0';
   }
+  const int gearBoxSz = 32;
+  const int gearCx = 32;
+  const int gearCy = barH + 12 + gearBoxSz / 2;
+  const int gearX = gearCx - gearBoxSz / 2;
+  const int gearY = barH + 12;
+  u8g2.drawFrame(gearX, gearY, gearBoxSz, gearBoxSz);
   u8g2.setFont(u8g2_font_helvB18_tr);
   int gw = u8g2.getUTF8Width(gearStr);
-  if (gearJustChanged && ((millis() / 50) % 2 == 0))
-    u8g2.drawBox(24, 38, 32, 20);
-  u8g2.setDrawColor(gearJustChanged && ((millis() / 50) % 2 == 0) ? 0 : 1);
-  u8g2.drawUTF8(27 - (gw / 2), 52, gearStr);
+  bool gearJustChanged = (millis() - gearChangeMs) < 120;
+  if (gearJustChanged && ((millis() / 40) % 2 == 0)) {
+    u8g2.drawBox(gearX + 1, gearY + 1, gearBoxSz - 2, gearBoxSz - 2);
+    u8g2.setDrawColor(0);
+  }
+  u8g2.drawUTF8(gearCx - gw / 2, gearCy + 6, gearStr);
   u8g2.setDrawColor(1);
 
-  // --- 4. SPEED (below tach bar, no overlap) — BIG ---
+  // --- 4. SPEED — right-aligned, smooth animation ---
+  static float animSpeed = 0;
+  animSpeed += ((float)speedKmh - animSpeed) * 0.18f;
+  int dispSpeed = (int)(animSpeed + 0.5f);
+  if (dispSpeed < 0) dispSpeed = 0;
   u8g2.setFont(u8g2_font_logisoso32_tn);
   static char spdBuf[8];
-  snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
+  snprintf(spdBuf, sizeof(spdBuf), "%d", dispSpeed);
   int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(126 - sw, barH + 34, spdBuf);
-
-  u8g2.setFont(u8g2_font_profont12_tf);
+  int speedX = NOCT_DISP_W - sw - 2;
+  int speedY = barH + 38;
+  u8g2.drawUTF8(speedX, speedY, spdBuf);
+  u8g2.setFont(u8g2_font_profont10_mr);
   int kmhW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(126 - kmhW, NOCT_DISP_H - 2, "km/h");
+  u8g2.drawUTF8(NOCT_DISP_W - kmhW - 2, NOCT_DISP_H - 2, "km/h");
 
   if (!s.connected) {
-    u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawUTF8(126 - u8g2.getUTF8Width("--"), 38, "--");
+    u8g2.setFont(u8g2_font_profont10_mr);
+    int dashW = u8g2.getUTF8Width("--");
+    u8g2.drawUTF8(NOCT_DISP_W - dashW - 2, speedY - 4, "--");
   }
 
-  // --- 4b. Cyberpunk decor: hex streams + greebles ---
-  disp_.drawHexStream(2, NOCT_DISP_H - 18, 2);
-  disp_.drawHexStream(NOCT_DISP_W - 56, NOCT_DISP_H - 18, 2);
-  disp_.drawGreebles();
-
-  // --- 4c. Scanline animation (CRT / cyberpunk) ---
-  int scanY = ((int)(millis() / 80)) % NOCT_DISP_H;
-  u8g2.drawHLine(0, scanY, NOCT_DISP_W);
-
-  // --- 5. SHIFT LIGHT — screen strobe SYNC with LED (80ms, like LED) ---
+  // --- 5. SHIFT LIGHT — full-screen strobe (data-driven) ---
   if (maxRpm > 0.0f && s.currentRpm >= FORZA_SHIFT_THRESHOLD * maxRpm) {
     if ((millis() / 80) % 2 == 0) {
-      u8g2.setDrawColor(2);  // XOR = invert
-      u8g2.drawBox(0, 0, 128, 64);
+      u8g2.setDrawColor(2);
+      u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
       u8g2.setDrawColor(1);
     }
   }
