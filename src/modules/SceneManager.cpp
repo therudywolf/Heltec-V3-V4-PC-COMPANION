@@ -2252,9 +2252,9 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   disp_.drawDiagonalStriped(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
 
   // 2. RPM bar: styled fill (diagonal stripes per segment, red zone = vertical lines)
+  const int barInnerH = RPM_BAR_HEIGHT - 2 * barPad;
   if (!skipRpmFrame) {
-    const int segW = 4;
-    const int barInnerH = RPM_BAR_HEIGHT - 2 * barPad;
+    const int segW = 3;
     for (int x = barPad; x < barPad + fillW; x += segW) {
       int segEnd = (x + segW < barPad + fillW) ? x + segW : barPad + fillW;
       int w = segEnd - x;
@@ -2272,15 +2272,25 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
         disp_.drawDiagonalStriped(x, barPad, w, barInnerH, 2);
       }
     }
+    // Styled leading edge of fill (NFS tech cap)
+    if (fillW > 0) {
+      int edgeX = barPad + fillW - 1;
+      u8g2.setDrawColor(1);
+      u8g2.drawVLine(edgeX, barPad, barInnerH);
+      if (edgeX + 1 < NOCT_DISP_W - barPad) {
+        u8g2.drawPixel(edgeX + 1, barPad);
+        u8g2.drawPixel(edgeX + 1, barPad + barInnerH - 1);
+      }
+    }
   }
   disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
 
   // RPM digits: black on white when bar under text is filled (readable)
-  u8g2.setFont(u8g2_font_helvB18_tr);
+  u8g2.setFont(u8g2_font_logisoso18_tn);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   int rpmW = u8g2.getUTF8Width(rpmTextBuf);
-  int rpmTextY = RPM_BAR_HEIGHT / 2 + 6 + (inRedZone ? disp_.getRandomJitter(FORZA_RPM_JITTER_RANGE) : 0);
+  int rpmTextY = RPM_BAR_HEIGHT / 2 + 9 + (inRedZone ? disp_.getRandomJitter(FORZA_RPM_JITTER_RANGE) : 0);
   int rpmCx = NOCT_DISP_W / 2 - rpmW / 2;
   bool rpmTextOverFill = (rpmCx + rpmW > barPad && rpmCx < barPad + fillW);
   if (rpmTextOverFill) {
@@ -2327,10 +2337,10 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawBox(gearX + 1 + gJx, gearY + 1 + gJy, gb - 2, gb - 2);
     u8g2.setDrawColor(1);
   }
-  u8g2.setFont(u8g2_font_logisoso24_tr);
+  u8g2.setFont(u8g2_font_logisoso22_tr);
   int gw = u8g2.getUTF8Width(gearStr);
   int gearCx = gearX + gJx + gb / 2 - gw / 2;
-  int gearCy = gearY + gJy + gb / 2 + 8;
+  int gearCy = gearY + gJy + gb / 2 + 6;
   u8g2.setDrawColor(0);
   u8g2.drawUTF8(gearCx - 1, gearCy, gearStr);
   u8g2.drawUTF8(gearCx + 1, gearCy, gearStr);
@@ -2340,8 +2350,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.drawUTF8(gearCx, gearCy, gearStr);
 
   // 5. Divider between gear and speed
-  const int dividerX = 46;
-  u8g2.drawVLine(dividerX, FORZA_CONTENT_TOP, FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP - 1);
+  u8g2.drawVLine(FORZA_DIVIDER_X, FORZA_CONTENT_TOP, FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP - 1);
 
   // 6. Speed: right-aligned, 3-digit (XXX), nicer font; "km/h" left of number
   animSpeed += ((float)speedKmh - animSpeed) * FORZA_EMA_SPEED;
@@ -2351,7 +2360,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (dispSpeed > 999) dispSpeed = 999;
   int speedDropY = speedBraking ? FORZA_SPEED_BRAKE_DROP_PX : 0;
   const int speedBaselineY = FORZA_CONTENT_TOP + FORZA_SPEED_BASELINE_OFFSET + speedDropY + jitterY;
-  u8g2.setFont(u8g2_font_logisoso24_tr);
+  u8g2.setFont(u8g2_font_logisoso22_tr);
   static char spdBuf[8];
   if (s.connected) {
     snprintf(spdBuf, sizeof(spdBuf), "%d", dispSpeed);
@@ -2360,12 +2369,18 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   int sw = u8g2.getUTF8Width(spdBuf);
   const int speedRight = NOCT_DISP_W - 2;
+  const int speedLeftMin = FORZA_DIVIDER_X + 4;
   int speedX = speedRight - sw + jitterX;
-  u8g2.setFont(u8g2_font_profont10_mr);
+  u8g2.setFont(u8g2_font_t0_11_tr);
   int kmhW = u8g2.getUTF8Width("km/h");
   int kmhX = speedX - kmhW - 4;
+  if (kmhX < speedLeftMin) {
+    int shift = speedLeftMin - kmhX;
+    speedX -= shift;
+    kmhX = speedLeftMin;
+  }
   u8g2.drawUTF8(kmhX, speedBaselineY - 2, "km/h");
-  u8g2.setFont(u8g2_font_logisoso24_tr);
+  u8g2.setFont(u8g2_font_logisoso22_tr);
   u8g2.setDrawColor(0);
   u8g2.drawUTF8(speedX - 1, speedBaselineY, spdBuf);
   u8g2.drawUTF8(speedX + 1, speedBaselineY, spdBuf);
@@ -2377,7 +2392,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   // 7. Shift indicator (bottom) + full-screen bright blink in sync with LED
   if (shiftActive) {
     if (disp_.shouldFlicker(80)) {
-      u8g2.setFont(LABEL_FONT);
+      u8g2.setFont(u8g2_font_logisoso16_tr);
       const char *shiftText = "SHIFT!";
       int shiftW = u8g2.getUTF8Width(shiftText);
       int shiftX = (NOCT_DISP_W - shiftW) / 2;
