@@ -140,6 +140,28 @@ int ForzaManager::getSpeedKmh() const {
   return (int)(state_.speedMs * 3.6f + 0.5f);
 }
 
+void ForzaManager::getGearString(char *buf, size_t bufSize) const {
+  if (!buf || bufSize < 2)
+    return;
+  if (state_.gear == 0) {
+    buf[0] = 'R';
+    buf[1] = '\0';
+  } else if (state_.gear == 11) {
+    buf[0] = 'N';
+    buf[1] = '\0';
+  } else if (state_.gear >= 1 && state_.gear <= 9) {
+    buf[0] = (char)('0' + state_.gear);
+    buf[1] = '\0';
+  } else if (state_.gear == 10) {
+    buf[0] = '1';
+    buf[1] = '0';
+    buf[2] = '\0';
+  } else {
+    buf[0] = '-';
+    buf[1] = '\0';
+  }
+}
+
 char ForzaManager::getGearChar() const {
   if (state_.gear == 0)
     return 'R';
