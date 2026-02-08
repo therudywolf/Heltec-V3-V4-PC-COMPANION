@@ -2291,93 +2291,59 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.setDrawColor(1);
   }
 
-  // === 2. CONTENT FRAME (y: 18..49) ===
-  disp_.drawTechBrackets(0, FORZA_CONTENT_TOP, NOCT_DISP_W,
-                        FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP, 8);
-
-  // === 3. GEAR BOX (LEFT SIDE, 4..32, 20..48) ===
-  int gJx = 0, gJy = 0;
+  // === 2. GEAR BOX (left) ===
+  int gx = FORZA_GEAR_X;
+  int gy = FORZA_GEAR_Y;
+  int gw = FORZA_GEAR_BOX_W;
+  int gh = FORZA_GEAR_BOX_H;
   if (gearJustChanged) {
-    gJx = disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
-    gJy = disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
+    gx += disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
+    gy += disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
   }
-  int gx = FORZA_GEAR_X + gJx;
-  int gy = FORZA_CONTENT_TOP + FORZA_GEAR_Y_OFFSET + gJy;
-  int gb = FORZA_GEAR_BOX_SIZE;
   bool gearPulse = gearJustChanged && disp_.shouldFlicker(40);
-
-  // Outer animated frame (only during gear change)
   if (gearPulse) u8g2.setDrawColor(2);
-  disp_.drawTechBrackets(gx - 2, gy - 2, gb + 4, gb + 4, 4);
+  disp_.drawTechBrackets(gx - 1, gy - 1, gw + 2, gh + 2, 3);
   u8g2.setDrawColor(1);
-
-  // Chamfer box
-  disp_.drawChamferBox(gx, gy, gb, gb, 3);
-
-  // Gear change flash
+  disp_.drawChamferBox(gx, gy, gw, gh, 3);
   if (gearJustChanged && disp_.shouldFlicker(40)) {
     u8g2.setDrawColor(2);
-    u8g2.drawBox(gx + 1, gy + 1, gb - 2, gb - 2);
+    u8g2.drawBox(gx + 2, gy + 2, gw - 4, gh - 4);
     u8g2.setDrawColor(1);
   }
-
-  // Gear text (centered in box, offset down to fit inside frame)
+  // Gear digit: centered in box (baseline ~4px from bottom)
   u8g2.setFont(FORZA_GEAR_FONT);
-  int gw = u8g2.getUTF8Width(gearStr);
-  int gearCx = gx + gb / 2 - gw / 2;
-  int gearCy = gy + gb - 5;  // lower baseline so digit stays inside box
+  int gearStrW = u8g2.getUTF8Width(gearStr);
+  int gearCx = gx + (gw - gearStrW) / 2;
+  int gearCy = gy + gh - 4;
   disp_.drawStyledDigitText(gearCx, gearCy, gearStr, false);
 
-  // === 4. SPEED ZONE (RIGHT SIDE, 40..124, 18..50) ===
+  // === 3. SPEED (right) ===
   animSpeed += ((float)speedKmh - animSpeed) * FORZA_EMA_SPEED;
   float noise = (random(100) / 100.0f - 0.5f);
   int dispSpeed = (int)(animSpeed + 0.5f + noise);
   if (dispSpeed < 0) dispSpeed = 0;
-
   int speedDropY = speedBraking ? FORZA_SPEED_BRAKE_DROP_PX : 0;
   static char spdBuf[8];
-  if (s.connected) {
-    snprintf(spdBuf, sizeof(spdBuf), "%d", dispSpeed);
-  } else {
-    snprintf(spdBuf, sizeof(spdBuf), "--");
-  }
-
-  // Speed number (RIGHT-ALIGNED, y: 28..38)
+  if (s.connected) snprintf(spdBuf, sizeof(spdBuf), "%d", dispSpeed);
+  else snprintf(spdBuf, sizeof(spdBuf), "--");
   u8g2.setFont(FORZA_SPEED_FONT);
   int sw = u8g2.getUTF8Width(spdBuf);
-  int speedX = FORZA_SPEED_X_ANCHOR - sw + jitterX;
-  int speedY = FORZA_CONTENT_TOP + 10 + speedDropY + jitterY;
-
-  // Clamp X to leave margin from gear box
-  if (speedX < FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8) speedX = FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8;
-
+  int speedX = FORZA_SPEED_X_ANCHOR - sw;
+  int speedY = FORZA_GEAR_Y + (FORZA_GEAR_BOX_H / 2) + 6 + speedDropY;
+  if (speedX < gx + gw + 12) speedX = gx + gw + 12;
   disp_.drawStyledDigitText(speedX, speedY, spdBuf, false);
-
-  // "km/h" label (above speed, smaller font, LEFT of speed number)
   u8g2.setFont(FORZA_KMH_FONT);
   int kmhW = u8g2.getUTF8Width("km/h");
-  int kmhX = speedX - kmhW - 3;
-  int kmhY = speedY - 8;
+  u8g2.drawUTF8(speedX - kmhW - 2, speedY - 10, "km/h");
 
-  if (kmhX < FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8) kmhX = FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 8;
-
-  // km/h flickers occasionally (50% duty cycle)
-  if (disp_.shouldFlicker(500)) {
-    u8g2.drawUTF8(kmhX, kmhY, "km/h");
-  }
-
-  // === 6. SHIFT INDICATOR (BOTTOM, y: 60..63) ===
+  // === 4. SHIFT (bottom) ===
   if (shiftActive) {
-    // Top border line (y: 54)
-    u8g2.drawHLine(0, 54, NOCT_DISP_W);
-
-    // SHIFT! text (CENTERED, y: 61)
+    u8g2.drawHLine(0, 55, NOCT_DISP_W);
     if (disp_.shouldFlicker(80)) {
       u8g2.setFont(FORZA_SHIFT_FONT);
       const char *shiftText = ">> SHIFT! <<";
       int shiftW = u8g2.getUTF8Width(shiftText);
-      int shiftX = (NOCT_DISP_W - shiftW) / 2;
-      disp_.drawStyledDigitText(shiftX, FORZA_SHIFT_INDICATOR_Y, shiftText, true);
+      disp_.drawStyledDigitText((NOCT_DISP_W - shiftW) / 2, FORZA_SHIFT_Y, shiftText, true);
     }
   }
 

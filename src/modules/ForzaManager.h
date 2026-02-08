@@ -24,16 +24,14 @@
 #define FORZA_GEAR_CHANGE_MS 200
 #define FORZA_RED_ZONE_RPM_PCT 0.85f
 
-// Layout (128x64 screen)
-#define RPM_BAR_HEIGHT 16
-#define FORZA_CONTENT_TOP 18
-#define FORZA_CONTENT_BOTTOM 50
-#define FORZA_GEAR_BOX_SIZE 28
-#define FORZA_GEAR_X 4
-#define FORZA_GEAR_Y_OFFSET 2
-#define FORZA_DIVIDER_X 38
-#define FORZA_SPEED_X_ANCHOR 124
-#define FORZA_SHIFT_INDICATOR_Y 62
+// Layout (128x64) — simple: RPM top | Gear left, Speed right | Shift bottom
+#define RPM_BAR_HEIGHT 20
+#define FORZA_GEAR_X 6
+#define FORZA_GEAR_Y 24
+#define FORZA_GEAR_BOX_W 36
+#define FORZA_GEAR_BOX_H 28
+#define FORZA_SPEED_X_ANCHOR 120
+#define FORZA_SHIFT_Y 58
 
 // Fonts (use known-working U8g2 fonts)
 #define FORZA_RPM_FONT u8g2_font_logisoso18_tn
