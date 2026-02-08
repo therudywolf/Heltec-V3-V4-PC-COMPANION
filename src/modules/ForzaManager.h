@@ -35,12 +35,12 @@
 #define FORZA_SPEED_X_ANCHOR 124
 #define FORZA_SHIFT_INDICATOR_Y 62
 
-// Fonts
-#define FORZA_RPM_FONT u8g2_font_logisoso16_tn
-#define FORZA_GEAR_FONT u8g2_font_logisoso20_tr
-#define FORZA_SPEED_FONT u8g2_font_logisoso20_tr
-#define FORZA_KMH_FONT u8g2_font_profont10_mr
-#define FORZA_SHIFT_FONT u8g2_font_logisoso14_tr
+// Fonts (use known-working U8g2 fonts)
+#define FORZA_RPM_FONT u8g2_font_logisoso18_tn
+#define FORZA_GEAR_FONT u8g2_font_logisoso22_tr
+#define FORZA_SPEED_FONT u8g2_font_logisoso22_tr
+#define FORZA_KMH_FONT u8g2_font_t0_11_tr
+#define FORZA_SHIFT_FONT u8g2_font_logisoso16_tr
 
 // Offsets from Forza packet (little-endian)
 #define FORZA_OFF_IS_RACE_ON 0
