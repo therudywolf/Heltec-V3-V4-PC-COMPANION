@@ -14,25 +14,33 @@
 #define FORZA_TIMEOUT_MS 3000
 #define FORZA_SHIFT_THRESHOLD 0.90f  // RPM % for shift light
 
-// --- Forza Dashboard: minimal layout (RPM / Speed / Gear / Shift) ---
+// --- Forza Dashboard: FIXED layout with NO collisions ---
 #define FORZA_RPM_JITTER_RANGE 1
 #define FORZA_RED_ZONE_FLICKER_MS 80
-#define FORZA_GEAR_CHANGE_VIBRATE_RANGE 2
-#define FORZA_SPEED_BRAKE_DROP_PX 2
+#define FORZA_GEAR_CHANGE_VIBRATE_RANGE 1
+#define FORZA_SPEED_BRAKE_DROP_PX 1
 #define FORZA_EMA_RPM 0.35f
 #define FORZA_EMA_SPEED 0.28f
 #define FORZA_GEAR_CHANGE_MS 200
 #define FORZA_RED_ZONE_RPM_PCT 0.85f
-#define RPM_BAR_HEIGHT 22
-#define FORZA_GEAR_BOX_SIZE 30
-#define FORZA_GEAR_X 10
-#define FORZA_GEAR_Y_OFFSET 5
-#define FORZA_CONTENT_TOP (RPM_BAR_HEIGHT + 2)
-#define FORZA_SPEED_BASELINE_OFFSET 24
-#define FORZA_CONTENT_BOTTOM 60
-#define FORZA_SHIFT_INDICATOR_Y 61
-#define FORZA_DIVIDER_X (FORZA_GEAR_X + FORZA_GEAR_BOX_SIZE + 6)
-#define FORZA_SPEED_X_ANCHOR 112
+
+// Layout (128x64 screen)
+#define RPM_BAR_HEIGHT 16
+#define FORZA_CONTENT_TOP 18
+#define FORZA_CONTENT_BOTTOM 50
+#define FORZA_GEAR_BOX_SIZE 28
+#define FORZA_GEAR_X 4
+#define FORZA_GEAR_Y_OFFSET 2
+#define FORZA_DIVIDER_X 38
+#define FORZA_SPEED_X_ANCHOR 124
+#define FORZA_SHIFT_INDICATOR_Y 62
+
+// Fonts
+#define FORZA_RPM_FONT u8g2_font_logisoso16_tn
+#define FORZA_GEAR_FONT u8g2_font_logisoso20_tr
+#define FORZA_SPEED_FONT u8g2_font_logisoso20_tr
+#define FORZA_KMH_FONT u8g2_font_profont10_mr
+#define FORZA_SHIFT_FONT u8g2_font_logisoso14_tr
 
 // Offsets from Forza packet (little-endian)
 #define FORZA_OFF_IS_RACE_ON 0
