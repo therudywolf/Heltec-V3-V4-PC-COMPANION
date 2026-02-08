@@ -171,6 +171,20 @@ public:
   /** Cyberpunk glitch: XOR noise / screen tear. Call before sendBuffer(). */
   void applyGlitch();
 
+  // --- NFS Unbound Forza Dashboard utilities ---
+  /** Diagonal stripes (45°), 1px lines, spacing px. drawColor must be set. */
+  void drawDiagonalStriped(int x, int y, int w, int h, int spacing);
+  /** Checkerboard pattern; cellSize in px. */
+  void drawCheckerboard(int x, int y, int w, int h, int cellSize);
+  /** Grid: only 2x2 corners of each cell (gridSpacing). 10% jitter skip. */
+  void drawGridPoints(int x, int y, int w, int h, int gridSpacing);
+  /** Glitch rect: invert fill (XOR) when invert true. */
+  void drawGlitchRect(int x, int y, int w, int h, bool invert);
+  /** Random jitter in [-range, +range]. Cached for a few frames if desired. */
+  int getRandomJitter(int range);
+  /** True every intervalMs (e.g. 40 for red zone flicker). */
+  bool shouldFlicker(unsigned long intervalMs);
+
   RollingGraph cpuGraph;
   RollingGraph gpuGraph;
   RollingGraph netDownGraph;
