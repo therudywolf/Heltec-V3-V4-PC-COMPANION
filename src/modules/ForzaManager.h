@@ -85,6 +85,9 @@ public:
   bool isConnected() const { return state_.connected; }
   const ForzaState &getState() const { return state_; }
   int getSpeedKmh() const;
+  float getCurrentRpm() const { return state_.currentRpm; }
+  float getMaxRpm() const { return state_.maxRpm; }
+  void getGearString(char *buf, size_t bufSize) const;
   char getGearChar() const;
   float getFuelPct() const;
   int getRacePosition() const;
