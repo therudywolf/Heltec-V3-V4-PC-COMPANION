@@ -2159,7 +2159,8 @@ void SceneManager::drawQrMode(const char *text) {
   disp_.drawGreebles();
 }
 
-// --- FORZA DASHBOARD (minimal Jony Ive style: data animations only) ---
+// --- FORZA DASHBOARD (NFS Unbound vibes: angular, bold, animated) ---
+// Layout: RPM bar top | Gear left | Speed right (km/h below, no overlap)
 
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp) {
@@ -2192,19 +2193,19 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- 2. RPM BAR — clean frame, smooth fill animation ---
-  const int barH = 20;
+  // --- 2. RPM BAR — NFS angular L-brackets, smooth fill animation ---
+  const int barH = 22;
   const int barPad = 2;
   const int innerW = NOCT_DISP_W - 2 * barPad;
-  u8g2.drawFrame(0, 0, NOCT_DISP_W, barH);
+  disp_.drawTechBrackets(0, 0, NOCT_DISP_W, barH, 8);
   int targetFillW =
       (maxRpm > 0.0f) ? (int)((s.currentRpm / maxRpm) * innerW) : 0;
   if (targetFillW > innerW) targetFillW = innerW;
   static float animFillW = 0;
-  animFillW += (targetFillW - animFillW) * 0.22f;
+  animFillW += (targetFillW - animFillW) * 0.35f;
   int fillW = (int)(animFillW + 0.5f);
   if (fillW > innerW) fillW = innerW;
-  const int segW = 4;
+  const int segW = 3;
   const int redZoneStart = (int)(0.85f * innerW);
   for (int x = barPad; x < barPad + fillW; x += segW) {
     int segEnd = (x + segW < barPad + fillW) ? x + segW : barPad + fillW;
@@ -2223,13 +2224,16 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   u8g2.setDrawColor(2);
   int rpmW = u8g2.getUTF8Width(rpmTextBuf);
-  u8g2.drawUTF8(NOCT_DISP_W / 2 - rpmW / 2, barH / 2 + 4, rpmTextBuf);
+  u8g2.drawUTF8(NOCT_DISP_W / 2 - rpmW / 2, barH / 2 + 5, rpmTextBuf);
   u8g2.setDrawColor(1);
   bool inRedZone = maxRpm > 0 && s.currentRpm >= 0.85f * maxRpm;
-  if (inRedZone && (millis() / 60) % 2 == 0)
-    u8g2.drawFrame(0, 0, NOCT_DISP_W, barH);
+  if (inRedZone && (millis() / 50) % 2 == 0) {
+    u8g2.setDrawColor(2);
+    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, barH, 8);
+    u8g2.setDrawColor(1);
+  }
 
-  // --- 3. GEAR — centered square, gear-change flash only ---
+  // --- 3. GEAR — left, compact box, gear-change flash ---
   static char gearStr[4];
   static int lastGear = -1;
   static unsigned long gearChangeMs = 0;
@@ -2255,45 +2259,47 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     gearStr[0] = '-';
     gearStr[1] = '\0';
   }
-  const int gearBoxSz = 32;
-  const int gearCx = 32;
-  const int gearCy = barH + 12 + gearBoxSz / 2;
-  const int gearX = gearCx - gearBoxSz / 2;
-  const int gearY = barH + 12;
+  const int gearBoxSz = 30;
+  const int gearX = 4;
+  const int gearY = barH + 4;
+  const int gearCx = gearX + gearBoxSz / 2;
+  const int gearCy = gearY + gearBoxSz / 2;
   u8g2.drawFrame(gearX, gearY, gearBoxSz, gearBoxSz);
   u8g2.setFont(u8g2_font_helvB18_tr);
   int gw = u8g2.getUTF8Width(gearStr);
-  bool gearJustChanged = (millis() - gearChangeMs) < 120;
-  if (gearJustChanged && ((millis() / 40) % 2 == 0)) {
+  bool gearJustChanged = (millis() - gearChangeMs) < 180;
+  if (gearJustChanged && ((millis() / 35) % 2 == 0)) {
     u8g2.drawBox(gearX + 1, gearY + 1, gearBoxSz - 2, gearBoxSz - 2);
     u8g2.setDrawColor(0);
   }
-  u8g2.drawUTF8(gearCx - gw / 2, gearCy + 6, gearStr);
+  u8g2.drawUTF8(gearCx - gw / 2, gearCy + 7, gearStr);
   u8g2.setDrawColor(1);
 
-  // --- 4. SPEED — right-aligned, smooth animation ---
+  // --- 4. SPEED — right zone, animated, km/h on separate line ---
   static float animSpeed = 0;
-  animSpeed += ((float)speedKmh - animSpeed) * 0.18f;
+  animSpeed += ((float)speedKmh - animSpeed) * 0.28f;
   int dispSpeed = (int)(animSpeed + 0.5f);
   if (dispSpeed < 0) dispSpeed = 0;
   u8g2.setFont(u8g2_font_logisoso32_tn);
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", dispSpeed);
   int sw = u8g2.getUTF8Width(spdBuf);
-  int speedX = NOCT_DISP_W - sw - 2;
-  int speedY = barH + 38;
-  u8g2.drawUTF8(speedX, speedY, spdBuf);
+  const int speedRight = NOCT_DISP_W - 4;
+  const int speedX = speedRight - sw;
+  const int speedBaseline = 48;
+  u8g2.drawUTF8(speedX, speedBaseline, spdBuf);
   u8g2.setFont(u8g2_font_profont10_mr);
   int kmhW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - kmhW - 2, NOCT_DISP_H - 2, "km/h");
+  const int kmhY = 60;
+  u8g2.drawUTF8(speedRight - kmhW, kmhY, "km/h");
 
   if (!s.connected) {
     u8g2.setFont(u8g2_font_profont10_mr);
     int dashW = u8g2.getUTF8Width("--");
-    u8g2.drawUTF8(NOCT_DISP_W - dashW - 2, speedY - 4, "--");
+    u8g2.drawUTF8(speedRight - dashW, speedBaseline - 18, "--");
   }
 
-  // --- 5. SHIFT LIGHT — full-screen strobe (data-driven) ---
+  // --- 5. SHIFT LIGHT — full-screen strobe ---
   if (maxRpm > 0.0f && s.currentRpm >= FORZA_SHIFT_THRESHOLD * maxRpm) {
     if ((millis() / 80) % 2 == 0) {
       u8g2.setDrawColor(2);
