@@ -172,6 +172,9 @@ public:
   void applyGlitch();
 
   // --- NFS Unbound Forza Dashboard utilities ---
+  /** Draw text with NFS-style effect: shadow + 8-direction outline. Font must be
+   * set before call. inverted: true = white outline + black fill (on bright). */
+  void drawStyledDigitText(int x, int y, const char *text, bool inverted);
   /** Diagonal stripes (45°), 1px lines, spacing px. drawColor must be set. */
   void drawDiagonalStriped(int x, int y, int w, int h, int spacing);
   /** Checkerboard pattern; cellSize in px. */
