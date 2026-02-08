@@ -184,6 +184,8 @@ public:
   int getRandomJitter(int range);
   /** True every intervalMs (e.g. 40 for red zone flicker). */
   bool shouldFlicker(unsigned long intervalMs);
+  /** Edge artifacts: lines/noise only in borderPx perimeter (e.g. 4px). */
+  void drawEdgeArtifacts(int borderPx);
 
   RollingGraph cpuGraph;
   RollingGraph gpuGraph;

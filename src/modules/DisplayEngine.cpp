@@ -1019,6 +1019,54 @@ bool DisplayEngine::shouldFlicker(unsigned long intervalMs) {
   return (millis() / intervalMs) % 2 == 0;
 }
 
+void DisplayEngine::drawEdgeArtifacts(int borderPx) {
+  if (borderPx < 1 || borderPx > 8)
+    borderPx = 4;
+  const int W = NOCT_DISP_W;
+  const int H = NOCT_DISP_H;
+  u8g2_.setDrawColor(1);
+  // Top edge: sparse horizontal segments in y ∈ [0, borderPx)
+  for (int y = 0; y < borderPx; y++) {
+    for (int n = 0; n < 8; n++) {
+      int x = random(W - 6);
+      int len = 2 + random(5);
+      if (x + len > W) len = W - x;
+      if (len > 0)
+        u8g2_.drawHLine(x, y, len);
+    }
+  }
+  // Bottom edge
+  for (int y = H - borderPx; y < H; y++) {
+    for (int n = 0; n < 8; n++) {
+      int x = random(W - 6);
+      int len = 2 + random(5);
+      if (x + len > W) len = W - x;
+      if (len > 0)
+        u8g2_.drawHLine(x, y, len);
+    }
+  }
+  // Left edge: sparse vertical segments in x ∈ [0, borderPx)
+  for (int x = 0; x < borderPx; x++) {
+    for (int n = 0; n < 6; n++) {
+      int y = random(H - 6);
+      int len = 2 + random(5);
+      if (y + len > H) len = H - y;
+      if (len > 0)
+        u8g2_.drawVLine(x, y, len);
+    }
+  }
+  // Right edge
+  for (int x = W - borderPx; x < W; x++) {
+    for (int n = 0; n < 6; n++) {
+      int y = random(H - 6);
+      int len = 2 + random(5);
+      if (y + len > H) len = H - y;
+      if (len > 0)
+        u8g2_.drawVLine(x, y, len);
+    }
+  }
+}
+
 // ===========================================================================
 // BLADE RUNNER 2049–style: subtle film grain, multi-band horizontal tear
 // (V-sync loss), occasional rolling tear. No grid/scanlines.
