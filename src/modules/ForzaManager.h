@@ -24,20 +24,22 @@
 #define FORZA_GEAR_CHANGE_MS 200
 #define FORZA_RED_ZONE_RPM_PCT 0.85f
 
-// Layout (128x64) — simple: RPM top | Gear left, Speed right | Shift bottom
-#define RPM_BAR_HEIGHT 20
-#define FORZA_GEAR_X 6
-#define FORZA_GEAR_Y 24
-#define FORZA_GEAR_BOX_W 36
-#define FORZA_GEAR_BOX_H 28
-#define FORZA_SPEED_X_ANCHOR 120
+// Layout (128x64) — F1 style: thin RPM bar | Gear left (huge), Speed right | Shift bottom
+#define RPM_BAR_HEIGHT 10
+#define FORZA_CONTENT_TOP (RPM_BAR_HEIGHT + 4)
+#define FORZA_CONTENT_BOTTOM 64
+// Zones: Gear (0-55), Speed (60-128). No boxes to avoid collisions.
+#define FORZA_GEAR_ZONE_W 55
+#define FORZA_SPEED_ZONE_X 60
+#define FORZA_SPEED_ANCHOR_X 126
+#define FORZA_SEPARATOR_X 57
 #define FORZA_SHIFT_Y 58
 
-// Fonts (use known-working U8g2 fonts)
-#define FORZA_RPM_FONT u8g2_font_logisoso18_tn
-#define FORZA_GEAR_FONT u8g2_font_logisoso22_tr
-#define FORZA_SPEED_FONT u8g2_font_logisoso22_tr
-#define FORZA_KMH_FONT u8g2_font_t0_11_tr
+// Fonts (F1-style: massive gear, big speed)
+#define FORZA_RPM_FONT u8g2_font_profont10_tf
+#define FORZA_GEAR_FONT u8g2_font_logisoso32_tr
+#define FORZA_SPEED_FONT u8g2_font_logisoso28_tn
+#define FORZA_KMH_FONT u8g2_font_profont12_tf
 #define FORZA_SHIFT_FONT u8g2_font_logisoso16_tr
 
 // Offsets from Forza packet (little-endian)
