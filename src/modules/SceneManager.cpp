@@ -2237,7 +2237,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   lastSpeedKmh = speedKmh;
 
-  // === 1. RPM BAR (y: 0..15) ===
+  // === 1. RPM BAR (top 10px) ===
   const int barPad = 2;
   const int innerW = NOCT_DISP_W - 2 * barPad;
   int targetFillW = (maxRpm > 0.0f) ? (int)((s.currentRpm / maxRpm) * innerW) : 0;
@@ -2247,11 +2247,9 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (fillW > innerW) fillW = innerW;
   bool skipRpmFrame = inRedZone && disp_.shouldFlicker(FORZA_RED_ZONE_FLICKER_MS);
 
-  // RPM background stripes
   u8g2.setDrawColor(1);
-  disp_.drawDiagonalStriped(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
+  disp_.drawDiagonalStriped(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 4);
 
-  // RPM fill segments
   if (!skipRpmFrame) {
     const int segW = 3;
     const int redZoneStart = (int)(FORZA_RED_ZONE_RPM_PCT * innerW);
@@ -2269,58 +2267,49 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // RPM border brackets
-  disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 6);
+  disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 4);
 
-  // RPM text (CENTERED, within bar, no overflow)
   u8g2.setFont(FORZA_RPM_FONT);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   int rpmW = u8g2.getUTF8Width(rpmTextBuf);
   int rpmCx = NOCT_DISP_W / 2 - rpmW / 2;
-  int rpmTextY = RPM_BAR_HEIGHT / 2 + 4;
-  if (inRedZone) {
-    rpmTextY += disp_.getRandomJitter(1);
-  }
-  disp_.drawStyledDigitText(rpmCx, rpmTextY, rpmTextBuf, false);
+  int rpmTextY = RPM_BAR_HEIGHT - 2;
+  if (inRedZone) rpmTextY += disp_.getRandomJitter(1);
+  u8g2.drawUTF8(rpmCx, rpmTextY, rpmTextBuf);
 
-  // RPM red zone flicker
   if (inRedZone && disp_.shouldFlicker(FORZA_RED_ZONE_FLICKER_MS)) {
     u8g2.setDrawColor(2);
-    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 6);
+    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 4);
     u8g2.setDrawColor(1);
   }
 
-  // === 2. GEAR BOX (left) ===
-  int gx = FORZA_GEAR_X;
-  int gy = FORZA_GEAR_Y;
-  int gw = FORZA_GEAR_BOX_W;
-  int gh = FORZA_GEAR_BOX_H;
-  if (gearJustChanged) {
-    gx += disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
-    gy += disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
-  }
-  bool gearPulse = gearJustChanged && disp_.shouldFlicker(40);
-  if (gearPulse) u8g2.setDrawColor(2);
-  disp_.drawTechBrackets(gx - 1, gy - 1, gw + 2, gh + 2, 3);
-  u8g2.setDrawColor(1);
-  disp_.drawChamferBox(gx, gy, gw, gh, 3);
-  if (gearJustChanged && disp_.shouldFlicker(40)) {
+  // Shift flash (full screen XOR when RPM > 95%)
+  if (inRedZone && s.currentRpm >= 0.95f * maxRpm && disp_.shouldFlicker(FORZA_RED_ZONE_FLICKER_MS)) {
     u8g2.setDrawColor(2);
-    u8g2.drawBox(gx + 2, gy + 2, gw - 4, gh - 4);
+    u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
     u8g2.setDrawColor(1);
   }
-  // Gear digit: centered in box (baseline ~4px from bottom)
+
+  // === 2. GEAR (left zone 0..55) — no box, huge number ===
+  int gearCx = 2;
+  int gearCy = FORZA_CONTENT_BOTTOM - 4;
+  if (gearJustChanged) {
+    gearCx += disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
+    gearCy += disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
+  }
   u8g2.setFont(FORZA_GEAR_FONT);
   int gearStrW = u8g2.getUTF8Width(gearStr);
-  int gearCx = gx + (gw - gearStrW) / 2;
-  int gearCy = gy + gh - 4;
+  gearCx = (FORZA_GEAR_ZONE_W - gearStrW) / 2;
+  if (gearCx < 2) gearCx = 2;
   disp_.drawStyledDigitText(gearCx, gearCy, gearStr, false);
 
-  // === 3. SPEED (right) ===
+  // === 3. VERTICAL SEPARATOR ===
+  u8g2.drawVLine(FORZA_SEPARATOR_X, FORZA_CONTENT_TOP, FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP);
+
+  // === 4. SPEED (right zone 60..128) — right-aligned ===
   animSpeed += ((float)speedKmh - animSpeed) * FORZA_EMA_SPEED;
-  float noise = (random(100) / 100.0f - 0.5f);
-  int dispSpeed = (int)(animSpeed + 0.5f + noise);
+  int dispSpeed = (int)(animSpeed + 0.5f + (random(100) / 100.0f - 0.5f));
   if (dispSpeed < 0) dispSpeed = 0;
   int speedDropY = speedBraking ? FORZA_SPEED_BRAKE_DROP_PX : 0;
   static char spdBuf[8];
@@ -2328,15 +2317,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   else snprintf(spdBuf, sizeof(spdBuf), "--");
   u8g2.setFont(FORZA_SPEED_FONT);
   int sw = u8g2.getUTF8Width(spdBuf);
-  int speedX = FORZA_SPEED_X_ANCHOR - sw;
-  int speedY = FORZA_GEAR_Y + (FORZA_GEAR_BOX_H / 2) + 6 + speedDropY;
-  if (speedX < gx + gw + 12) speedX = gx + gw + 12;
+  int speedX = FORZA_SPEED_ANCHOR_X - sw;
+  int speedY = FORZA_CONTENT_TOP + 28 + speedDropY;
+  if (speedX < FORZA_SPEED_ZONE_X) speedX = FORZA_SPEED_ZONE_X;
   disp_.drawStyledDigitText(speedX, speedY, spdBuf, false);
   u8g2.setFont(FORZA_KMH_FONT);
   int kmhW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(speedX - kmhW - 2, speedY - 10, "km/h");
+  u8g2.drawUTF8(FORZA_SPEED_ANCHOR_X - kmhW, FORZA_CONTENT_BOTTOM - 2, "km/h");
 
-  // === 4. SHIFT (bottom) ===
+  // === 5. SHIFT (bottom) ===
   if (shiftActive) {
     u8g2.drawHLine(0, 55, NOCT_DISP_W);
     if (disp_.shouldFlicker(80)) {
