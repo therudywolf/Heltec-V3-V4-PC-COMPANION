@@ -966,6 +966,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 
   static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System",
                                         "Games"};
+  static const int displayOrder[] = {4, 0, 1, 2, 3}; // Games first
   static char items[25][20]; // Increased for expanded menus
   int count;
   const char *headerStr;
@@ -974,7 +975,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     count = 5;
     headerStr = "// MENU";
     for (int i = 0; i < 5; i++) {
-      strncpy(items[i], categoryNames[i], sizeof(items[i]) - 1);
+      strncpy(items[i], categoryNames[displayOrder[i]], sizeof(items[i]) - 1);
       items[i][sizeof(items[i]) - 1] = '\0';
     }
   } else {
@@ -2191,10 +2192,10 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- 2. RPM BAR — wider, taller, digits centered ---
+  // --- 2. RPM BAR — F1 style: chamfer box + tech brackets (viewfinder) ---
   const int barH = 22;
-  u8g2.drawFrame(0, 0, 128, barH);
-  u8g2.drawFrame(1, 1, 126, barH - 2);
+  disp_.drawChamferBox(0, 0, 128, barH, 2);
+  disp_.drawTechBrackets(0, 0, 128, barH, 6);
   int targetFillW =
       (maxRpm > 0.0f)
           ? (int)((s.currentRpm / maxRpm) * 124)
@@ -2232,9 +2233,16 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   bool inRedZone = maxRpm > 0 && s.currentRpm >= 0.85f * maxRpm;
   if (inRedZone && (millis() / 60) % 2 == 0) {
     u8g2.setDrawColor(2);
-    u8g2.drawFrame(0, 0, 128, barH);
+    disp_.drawChamferBox(0, 0, 128, barH, 2);
+    disp_.drawTechBrackets(0, 0, 128, barH, 6);
     u8g2.setDrawColor(1);
   }
+
+  // --- 2b. Gear zone — tech brackets (viewfinder) ---
+  disp_.drawTechBrackets(16, 24, 48, 40, 4);
+  // Circuit traces: left edge to Gear, right edge to Speed
+  disp_.drawCircuitTrace(0, 32, 24, 44, true);
+  disp_.drawCircuitTrace(104, 44, 126, barH + 34, true);
 
   // --- 3. GEAR — pulse animation on change ---
   static char gearStr[4];
@@ -2286,6 +2294,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.setFont(u8g2_font_profont12_tf);
     u8g2.drawUTF8(126 - u8g2.getUTF8Width("--"), 38, "--");
   }
+
+  // --- 4b. Cyberpunk decor: hex streams + greebles ---
+  disp_.drawHexStream(2, NOCT_DISP_H - 18, 2);
+  disp_.drawHexStream(NOCT_DISP_W - 56, NOCT_DISP_H - 18, 2);
+  disp_.drawGreebles();
+
+  // --- 4c. Scanline animation (CRT / cyberpunk) ---
+  int scanY = ((int)(millis() / 80)) % NOCT_DISP_H;
+  u8g2.drawHLine(0, scanY, NOCT_DISP_W);
 
   // --- 5. SHIFT LIGHT — screen strobe SYNC with LED (80ms, like LED) ---
   if (maxRpm > 0.0f && s.currentRpm >= FORZA_SHIFT_THRESHOLD * maxRpm) {
