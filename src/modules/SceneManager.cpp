@@ -2191,14 +2191,18 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int speedKmh = forza.getSpeedKmh();
   int rpm = (int)(s.currentRpm + 0.5f);
 
-  // --- 2. RPM BAR (Top Strip) — F1 dashboard style: bigger, segmented, red zone ---
-  const int barH = 18;
+  // --- 2. RPM BAR — wider, taller, digits centered ---
+  const int barH = 22;
   u8g2.drawFrame(0, 0, 128, barH);
   u8g2.drawFrame(1, 1, 126, barH - 2);
-  int fillW =
+  int targetFillW =
       (maxRpm > 0.0f)
           ? (int)((s.currentRpm / maxRpm) * 124)
           : 0;
+  if (targetFillW > 124) targetFillW = 124;
+  static float animFillW = 0;
+  animFillW += (targetFillW - animFillW) * 0.25f;
+  int fillW = (int)(animFillW + 0.5f);
   if (fillW > 124) fillW = 124;
   const int segW = 5;
   const int redZoneStart = (int)(0.85f * 124);
@@ -2216,19 +2220,32 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   for (int t = 0; t <= 5; t++) {
     int tx = 2 + (124 * t) / 5;
-    u8g2.drawVLine(tx, barH - 4, 4);
+    u8g2.drawVLine(tx, barH - 5, 5);
   }
-  u8g2.setFont(u8g2_font_helvB14_tr);
+  u8g2.setFont(u8g2_font_helvB12_tr);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   u8g2.setDrawColor(2);
-  int rpmY = barH / 2 + 7;
-  u8g2.drawUTF8(2, rpmY, rpmTextBuf);
+  int rpmW = u8g2.getUTF8Width(rpmTextBuf);
+  u8g2.drawUTF8(64 - rpmW / 2, barH / 2 + 5, rpmTextBuf);
   u8g2.setDrawColor(1);
+  bool inRedZone = maxRpm > 0 && s.currentRpm >= 0.85f * maxRpm;
+  if (inRedZone && (millis() / 60) % 2 == 0) {
+    u8g2.setDrawColor(2);
+    u8g2.drawFrame(0, 0, 128, barH);
+    u8g2.setDrawColor(1);
+  }
 
-  // --- 3. GEAR (Left Zone X=0-54, Y=14-64) — MASSIVE, always visible ---
+  // --- 3. GEAR — pulse animation on change ---
   static char gearStr[4];
+  static int lastGear = -1;
+  static unsigned long gearChangeMs = 0;
   int gear = (int)s.gear;
+  if (gear != lastGear) {
+    lastGear = gear;
+    gearChangeMs = millis();
+  }
+  bool gearJustChanged = (millis() - gearChangeMs) < 150;
   if (gear == 0) {
     gearStr[0] = 'R';
     gearStr[1] = '\0';
@@ -2248,18 +2265,22 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   u8g2.setFont(u8g2_font_helvB18_tr);
   int gw = u8g2.getUTF8Width(gearStr);
+  if (gearJustChanged && ((millis() / 50) % 2 == 0))
+    u8g2.drawBox(24, 38, 32, 20);
+  u8g2.setDrawColor(gearJustChanged && ((millis() / 50) % 2 == 0) ? 0 : 1);
   u8g2.drawUTF8(27 - (gw / 2), 52, gearStr);
+  u8g2.setDrawColor(1);
 
-  // --- 4. SPEED (Right Zone X=58-128) — BIG ---
+  // --- 4. SPEED (below tach bar, no overlap) — BIG ---
   u8g2.setFont(u8g2_font_logisoso32_tn);
   static char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speedKmh);
   int sw = u8g2.getUTF8Width(spdBuf);
-  u8g2.drawUTF8(126 - sw, 52, spdBuf);
+  u8g2.drawUTF8(126 - sw, barH + 34, spdBuf);
 
   u8g2.setFont(u8g2_font_profont12_tf);
   int kmhW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(126 - kmhW, 62, "km/h");
+  u8g2.drawUTF8(126 - kmhW, NOCT_DISP_H - 2, "km/h");
 
   if (!s.connected) {
     u8g2.setFont(u8g2_font_profont12_tf);
