@@ -928,6 +928,40 @@ void DisplayEngine::drawAlertBorder() {
 // ===========================================================================
 // NFS Unbound Forza Dashboard utilities
 // ===========================================================================
+void DisplayEngine::drawStyledDigitText(int x, int y, const char *text,
+                                        bool inverted) {
+  if (!text)
+    return;
+  if (inverted) {
+    u8g2_.setDrawColor(1);
+    u8g2_.drawUTF8(x - 1, y, text);
+    u8g2_.drawUTF8(x + 1, y, text);
+    u8g2_.drawUTF8(x, y - 1, text);
+    u8g2_.drawUTF8(x, y + 1, text);
+    u8g2_.drawUTF8(x - 1, y - 1, text);
+    u8g2_.drawUTF8(x + 1, y - 1, text);
+    u8g2_.drawUTF8(x - 1, y + 1, text);
+    u8g2_.drawUTF8(x + 1, y + 1, text);
+    u8g2_.setDrawColor(0);
+    u8g2_.drawUTF8(x, y, text);
+    u8g2_.setDrawColor(1);
+  } else {
+    u8g2_.setDrawColor(0);
+    u8g2_.drawUTF8(x + 1, y + 1, text);
+    u8g2_.drawUTF8(x - 1, y, text);
+    u8g2_.drawUTF8(x + 1, y, text);
+    u8g2_.drawUTF8(x, y - 1, text);
+    u8g2_.drawUTF8(x, y + 1, text);
+    u8g2_.drawUTF8(x - 1, y - 1, text);
+    u8g2_.drawUTF8(x + 1, y - 1, text);
+    u8g2_.drawUTF8(x - 1, y + 1, text);
+    u8g2_.drawUTF8(x + 1, y + 1, text);
+    u8g2_.setDrawColor(1);
+    u8g2_.drawUTF8(x, y, text);
+    u8g2_.setDrawColor(1);
+  }
+}
+
 void DisplayEngine::drawDiagonalStriped(int x, int y, int w, int h,
                                          int spacing) {
   if (spacing < 1)

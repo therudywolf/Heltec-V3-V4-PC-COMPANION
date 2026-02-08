@@ -2285,31 +2285,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   }
   disp_.drawTechBrackets(0, 0, NOCT_DISP_W, RPM_BAR_HEIGHT, 8);
 
-  // RPM digits: black on white when bar under text is filled (readable)
+  // RPM digits: 2px lower, NFS-style shadow + outline effect
   u8g2.setFont(u8g2_font_logisoso18_tn);
   static char rpmTextBuf[16];
   snprintf(rpmTextBuf, sizeof(rpmTextBuf), "%d", rpm);
   int rpmW = u8g2.getUTF8Width(rpmTextBuf);
-  int rpmTextY = RPM_BAR_HEIGHT / 2 + 9 + (inRedZone ? disp_.getRandomJitter(FORZA_RPM_JITTER_RANGE) : 0);
+  int rpmTextY = RPM_BAR_HEIGHT / 2 + 10 + (inRedZone ? disp_.getRandomJitter(FORZA_RPM_JITTER_RANGE) : 0);
   int rpmCx = NOCT_DISP_W / 2 - rpmW / 2;
   bool rpmTextOverFill = (rpmCx + rpmW > barPad && rpmCx < barPad + fillW);
-  if (rpmTextOverFill) {
-    u8g2.setDrawColor(1);
-    u8g2.drawUTF8(rpmCx - 1, rpmTextY, rpmTextBuf);
-    u8g2.drawUTF8(rpmCx + 1, rpmTextY, rpmTextBuf);
-    u8g2.drawUTF8(rpmCx, rpmTextY - 1, rpmTextBuf);
-    u8g2.drawUTF8(rpmCx, rpmTextY + 1, rpmTextBuf);
-    u8g2.setDrawColor(0);
-    u8g2.drawUTF8(rpmCx, rpmTextY, rpmTextBuf);
-  } else {
-    u8g2.setDrawColor(0);
-    u8g2.drawUTF8(rpmCx - 1, rpmTextY, rpmTextBuf);
-    u8g2.drawUTF8(rpmCx + 1, rpmTextY, rpmTextBuf);
-    u8g2.drawUTF8(rpmCx, rpmTextY - 1, rpmTextBuf);
-    u8g2.drawUTF8(rpmCx, rpmTextY + 1, rpmTextBuf);
-    u8g2.setDrawColor(1);
-    u8g2.drawUTF8(rpmCx, rpmTextY, rpmTextBuf);
-  }
+  disp_.drawStyledDigitText(rpmCx, rpmTextY, rpmTextBuf, rpmTextOverFill);
   u8g2.setDrawColor(1);
   if (inRedZone && disp_.shouldFlicker(FORZA_RED_ZONE_FLICKER_MS)) {
     u8g2.setDrawColor(2);
@@ -2317,42 +2301,42 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.setDrawColor(1);
   }
 
-  // 3. Content area frame (NFS HUD block)
+  // 3. Content area frame (full height, NFS HUD)
   disp_.drawTechBrackets(0, FORZA_CONTENT_TOP, NOCT_DISP_W,
-                        FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP, 6);
+                        FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP, 8);
 
-  // 4. Gear box (40x40, left, chamfer 5, stylized font)
-  const int gearX = 2;
-  const int gearY = FORZA_CONTENT_TOP;
+  // 4. Gear box: lower+right, chamfer + animated outer frame
   int gb = FORZA_GEAR_BOX_SIZE;
   int gJx = 0, gJy = 0;
   if (gearJustChanged) {
     gJx = disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
     gJy = disp_.getRandomJitter(FORZA_GEAR_CHANGE_VIBRATE_RANGE);
   }
-  int gearPulse = gearJustChanged && disp_.shouldFlicker(40) ? 1 : 0;
-  disp_.drawChamferBox(gearX + gJx + gearPulse, gearY + gJy, gb, gb, 5);
+  const int gx = FORZA_GEAR_X + gJx;
+  const int gy = FORZA_CONTENT_TOP + FORZA_GEAR_Y_OFFSET + gJy;
+  bool gearPulse = gearJustChanged && disp_.shouldFlicker(40);
+  if (gearPulse)
+    u8g2.setDrawColor(2);
+  disp_.drawTechBrackets(gx - 2, gy - 2, gb + 4, gb + 4, 5);
+  u8g2.setDrawColor(1);
+  if ((now / 100) % 3 == 0)
+    disp_.drawTechBrackets(gx - 1, gy - 1, gb + 2, gb + 2, 4);
+  disp_.drawChamferBox(gx, gy, gb, gb, 4);
   if (gearJustChanged && disp_.shouldFlicker(40)) {
     u8g2.setDrawColor(2);
-    u8g2.drawBox(gearX + 1 + gJx, gearY + 1 + gJy, gb - 2, gb - 2);
+    u8g2.drawBox(gx + 1, gy + 1, gb - 2, gb - 2);
     u8g2.setDrawColor(1);
   }
   u8g2.setFont(u8g2_font_logisoso22_tr);
   int gw = u8g2.getUTF8Width(gearStr);
-  int gearCx = gearX + gJx + gb / 2 - gw / 2;
-  int gearCy = gearY + gJy + gb / 2 + 6;
-  u8g2.setDrawColor(0);
-  u8g2.drawUTF8(gearCx - 1, gearCy, gearStr);
-  u8g2.drawUTF8(gearCx + 1, gearCy, gearStr);
-  u8g2.drawUTF8(gearCx, gearCy - 1, gearStr);
-  u8g2.drawUTF8(gearCx, gearCy + 1, gearStr);
-  u8g2.setDrawColor(1);
-  u8g2.drawUTF8(gearCx, gearCy, gearStr);
+  int gearCx = gx + gb / 2 - gw / 2;
+  int gearCy = gy + gb / 2 + 6;
+  disp_.drawStyledDigitText(gearCx, gearCy, gearStr, false);
 
   // 5. Divider between gear and speed
   u8g2.drawVLine(FORZA_DIVIDER_X, FORZA_CONTENT_TOP, FORZA_CONTENT_BOTTOM - FORZA_CONTENT_TOP - 1);
 
-  // 6. Speed: right-aligned, 3-digit (XXX), nicer font; "km/h" left of number
+  // 6. Speed: lower and left (anchor 112), NFS-style digit effect; "km/h" left of number
   animSpeed += ((float)speedKmh - animSpeed) * FORZA_EMA_SPEED;
   float noise = (random(100) / 100.0f - 0.5f);
   int dispSpeed = (int)(animSpeed + 0.5f + noise);
@@ -2368,26 +2352,21 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     snprintf(spdBuf, sizeof(spdBuf), "--");
   }
   int sw = u8g2.getUTF8Width(spdBuf);
-  const int speedRight = NOCT_DISP_W - 2;
   const int speedLeftMin = FORZA_DIVIDER_X + 4;
-  int speedX = speedRight - sw + jitterX;
+  int speedX = FORZA_SPEED_X_ANCHOR - sw + jitterX;
+  if (speedX < speedLeftMin + 30)
+    speedX = speedLeftMin + 30;
   u8g2.setFont(u8g2_font_t0_11_tr);
   int kmhW = u8g2.getUTF8Width("km/h");
   int kmhX = speedX - kmhW - 4;
   if (kmhX < speedLeftMin) {
-    int shift = speedLeftMin - kmhX;
-    speedX -= shift;
     kmhX = speedLeftMin;
+    speedX = kmhX + kmhW + 4;
   }
+  u8g2.setDrawColor(1);
   u8g2.drawUTF8(kmhX, speedBaselineY - 2, "km/h");
   u8g2.setFont(u8g2_font_logisoso22_tr);
-  u8g2.setDrawColor(0);
-  u8g2.drawUTF8(speedX - 1, speedBaselineY, spdBuf);
-  u8g2.drawUTF8(speedX + 1, speedBaselineY, spdBuf);
-  u8g2.drawUTF8(speedX, speedBaselineY - 1, spdBuf);
-  u8g2.drawUTF8(speedX, speedBaselineY + 1, spdBuf);
-  u8g2.setDrawColor(1);
-  u8g2.drawUTF8(speedX, speedBaselineY, spdBuf);
+  disp_.drawStyledDigitText(speedX, speedBaselineY, spdBuf, false);
 
   // 7. Shift indicator (bottom) + full-screen bright blink in sync with LED
   if (shiftActive) {
@@ -2410,11 +2389,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // 8. Edge artifacts
+  // 8. Full-screen tech frame (use whole screen)
+  u8g2.setDrawColor(1);
+  disp_.drawTechBrackets(0, 0, NOCT_DISP_W, NOCT_DISP_H, 10);
+
+  // 9. Edge artifacts
   disp_.drawEdgeArtifacts(4);
   u8g2.setDrawColor(1);
 
-  // 9. Full-screen max bright blink when shift (same phase as LED in main: now/80 %2 == 0)
+  // 10. Full-screen max bright blink when shift (same phase as LED in main: now/80 %2 == 0)
   if (shiftActive && (now / 80) % 2 == 0) {
     u8g2.setDrawColor(1);
     u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
