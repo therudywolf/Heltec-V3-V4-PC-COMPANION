@@ -8,7 +8,7 @@
 #include <WiFiUdp.h>
 
 #define FORZA_UDP_PORT 5300
-#define FORZA_PACKET_MIN_SIZE 311   /* Dash only: FM7/FM8 311 bytes */
+#define FORZA_PACKET_MIN_SIZE 311   /* Dash: FM7 311, FM8 331, FH4 323 */
 #define FORZA_PACKET_DASH_FM 311
 #define FORZA_PACKET_DASH_FH 323
 #define FORZA_TIMEOUT_MS 3000
@@ -70,7 +70,7 @@ private:
 
   WiFiUDP udp_;
   ForzaState state_;
-  uint8_t rxBuf_[FORZA_PACKET_DASH_FH];
+  uint8_t rxBuf_[400];
 };
 
 #endif
