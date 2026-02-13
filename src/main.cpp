@@ -46,7 +46,7 @@
 #define NOCT_BAT_CALIBRATION 1.1f
 // Flipper-style: level 0 = 5 categories, level 1 = submenu items
 #define MENU_CATEGORIES 5
-// Display order: Games first, then Config, WiFi, Tools, System (index -> real category)
+// Display order: Config, Games, WiFi, Tools, System (index -> real category)
 static const int menuDisplayOrder[] = {0, 4, 1, 2, 3};
 #define WOLF_MENU_ITEMS 12
 
