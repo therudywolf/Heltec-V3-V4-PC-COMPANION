@@ -1017,7 +1017,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 
   static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System",
                                         "Games"};
-  static const int displayOrder[] = {4, 0, 1, 2, 3}; // Games first
+  static const int displayOrder[] = {0, 4, 1, 2, 3}; // Config, Games, WiFi, Tools, System
   static char items[25][20];                         // Increased for expanded menus
   int count;
   const char *headerStr;
