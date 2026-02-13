@@ -428,7 +428,8 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
     # Storage: collect all /hdd/N, /nvme/N, /ssd/N, /storage/N, /drive/N
-    # data/31=Free, data/32=Total; temperature/0=Temp. Support case-insensitive paths.
+    # Old LHM: data/31=Free GB, data/32=Total GB. New LHM: these moved/dropped; use load/0 (Used %), temperature/0.
+    # Include devices with temp even when capacity missing (merge with psutil in build_payload).
     STORAGE_PREFIXES = ("hdd", "nvme", "ssd", "storage", "drive")
     path_lower_to_val: Dict[str, float] = {k.strip("/").lower(): v for k, v in path_to_val.items()}
 
@@ -455,11 +456,14 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                 free_gb = _storage_val(pre, num, "data/31")
                 total_gb = _storage_val(pre, num, "data/32")
                 temp = _storage_val(pre, num, "temperature/0")
+                load_0 = _storage_val(pre, num, "load/0")
                 if total_gb > 0 or free_gb > 0:
                     used_gb = total_gb - free_gb if total_gb > 0 else 0.0
                     if used_gb < 0:
                         used_gb = 0.0
                     storage_devices.append((prefix, num, used_gb, total_gb, temp))
+                elif temp > 0 or load_0 > 0:
+                    storage_devices.append((prefix, num, 0.0, 0.0, temp))
             except (ValueError, IndexError):
                 pass
     storage_devices.sort(key=lambda x: (x[0], x[1]))
@@ -735,14 +739,28 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
     gl = int(hw.get("gl", 0))
     gv = int(hw.get("gv", 0))
 
-    raw_hdd = hw.get("hdd", [])
+    raw_hdd = [dict(e) for e in (hw.get("hdd", [])[:4])]
+    while len(raw_hdd) < 4:
+        raw_hdd.append({"n": ("C", "D", "E", "F")[len(raw_hdd)], "u": 0.0, "tot": 0.0, "t": 0})
     drive_letters = ("C", "D", "E", "F")
-    hdd_has_data = any(
+    hdd_has_capacity = any(
         (e.get("tot") or 0) > 0 or (e.get("u") or 0) > 0
         for e in raw_hdd[:4]
     )
-    if not hdd_has_data and _config.get("lhm_storage_fallback") == "psutil":
-        raw_hdd = get_disks_psutil_fallback()
+    hdd_has_temp = any((e.get("t") or 0) > 0 for e in raw_hdd[:4])
+    if not hdd_has_capacity and _config.get("lhm_storage_fallback") == "psutil":
+        if hdd_has_temp:
+            psutil_disks = get_disks_psutil_fallback()
+            for i in range(min(4, len(raw_hdd), len(psutil_disks))):
+                if (raw_hdd[i].get("tot") or 0) == 0 and (raw_hdd[i].get("u") or 0) == 0:
+                    raw_hdd[i] = {
+                        "n": raw_hdd[i].get("n") or psutil_disks[i]["n"],
+                        "u": psutil_disks[i]["u"],
+                        "tot": psutil_disks[i]["tot"],
+                        "t": raw_hdd[i].get("t", 0),
+                    }
+        else:
+            raw_hdd = get_disks_psutil_fallback()
     hdd_list = []
     for i in range(4):
         if i < len(raw_hdd):
