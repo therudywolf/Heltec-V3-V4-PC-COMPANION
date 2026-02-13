@@ -101,6 +101,7 @@ def load_config() -> Dict:
         "lhm_url": "http://localhost:8085/data.json",
         "limits": {"gpu": 80, "cpu": 75},
         "weather_city": "Moscow",
+        "lhm_storage_fallback": "psutil",
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -115,6 +116,8 @@ def load_config() -> Dict:
             out["limits"] = {**out["limits"], **data["limits"]}
         if "weather_city" in data:
             out["weather_city"] = data["weather_city"]
+        if "lhm_storage_fallback" in data:
+            out["lhm_storage_fallback"] = data["lhm_storage_fallback"]
     except Exception:
         pass
     return out
@@ -315,6 +318,15 @@ def clean_val(v: Any) -> float:
         return 0.0
 
 
+def _get_any_key(node: Dict, keys: Tuple[str, ...]) -> Any:
+    """Get first non-None value for any of the given keys (case variations)."""
+    for k in keys:
+        v = node.get(k)
+        if v is not None and (not isinstance(v, str) or str(v).strip()):
+            return v
+    return None
+
+
 def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     """Parse LHM JSON; returns dict with float values and 'hdd' / 'fans' arrays."""
     results: Dict[str, Any] = {}
@@ -325,13 +337,18 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     gpu_memory_sensors: List[Tuple[str, float, str]] = []  # (sid, val, name_lower)
     fan_controls: List[int] = [0, 0, 0, 0]  # CPU, Pump/Sys#1, GPU, Case/Sys#2
 
+    SENSOR_ID_KEYS = ("SensorId", "SensorID", "sensor_id", "sensorId")
+    VALUE_KEYS = ("Value", "RawValue", "value", "raw_value", "rawValue")
+    TYPE_KEYS = ("Type", "type")
+    NAME_KEYS = ("Name", "Text", "name", "text")
+
     def walk(node: Any) -> None:
         if isinstance(node, list):
             for item in node:
                 walk(item)
         elif isinstance(node, dict):
-            sid = node.get("SensorId") or node.get("SensorID")
-            raw = node.get("Value") or node.get("RawValue") or ""
+            sid = _get_any_key(node, SENSOR_ID_KEYS)
+            raw = _get_any_key(node, VALUE_KEYS) or ""
             val = clean_val(raw)
             if sid:
                 path_to_val[sid] = val
@@ -343,7 +360,7 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                 elif sid in TARGETS_ALIAS:
                     results[TARGETS_ALIAS[sid]] = val
                 elif sid.startswith(IT8688E_PREFIX):
-                    stype = (node.get("Type") or "").lower()
+                    stype = str(_get_any_key(node, TYPE_KEYS) or "").lower()
                     if "fan" in stype:
                         it8688e_fans.append((sid, val))
                     elif "temperature" in stype or "temp" in stype:
@@ -358,18 +375,20 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
                             fan_controls[3] = int(val)
                 # GPU fan control: /gpu-nvidia/0/control/1
                 if sid and "/gpu-nvidia/0/control/1" in sid:
-                    stype = (node.get("Type") or "").lower()
+                    stype = str(_get_any_key(node, TYPE_KEYS) or "").lower()
                     if "control" in stype:
                         fan_controls[2] = int(val)
                 # Collect GPU memory sensors for name-based fallback (vu/vt)
                 if ("/nvidiagpu/" in sid or "/gpu-nvidia/" in sid) and val > 0:
-                    stype = (node.get("Type") or "").lower()
+                    stype = str(_get_any_key(node, TYPE_KEYS) or "").lower()
                     if "data" in stype or "smalldata" in stype:
-                        name = (node.get("Name") or node.get("Text") or "").lower()
+                        name = str(_get_any_key(node, NAME_KEYS) or "").lower()
                         if "memory" in name or "used" in name or "total" in name or "limit" in name:
                             gpu_memory_sensors.append((sid, val, name))
             if "Children" in node:
                 walk(node["Children"])
+            if "children" in node:
+                walk(node["children"])
     walk(data)
     # VRAM fallback: if vu/vt not set by path, try to match by sensor name (values in MB; /1024 applied below)
     if "vu" not in results or "vt" not in results:
@@ -408,22 +427,34 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
         results["vu"] = round(results["vu"] / 1024.0, 1)
     if "vt" in results:
         results["vt"] = round(results["vt"] / 1024.0, 1)
-    # Storage: collect all /hdd/N, /nvme/N, /ssd/N with data/31 (free), data/32 (total), temperature/0
+    # Storage: collect all /hdd/N, /nvme/N, /ssd/N, /storage/N, /drive/N
+    # data/31=Free, data/32=Total; temperature/0=Temp. Support case-insensitive paths.
+    STORAGE_PREFIXES = ("hdd", "nvme", "ssd", "storage", "drive")
+    path_lower_to_val: Dict[str, float] = {k.strip("/").lower(): v for k, v in path_to_val.items()}
+
+    def _storage_val(prefix: str, num: int, subpath: str) -> float:
+        base = f"{prefix}/{num}/{subpath}".lower()
+        v = path_lower_to_val.get(base)
+        if v is not None:
+            return float(v)
+        return 0.0
+
     devices_seen: set = set()
     storage_devices: List[Tuple[str, int, float, float, float]] = []  # (prefix, num, used_gb, total_gb, temp)
-    for sid in path_to_val:
+    for sid, val in path_to_val.items():
         parts = sid.strip("/").split("/")
-        if len(parts) >= 2 and parts[0] in ("hdd", "nvme", "ssd"):
+        if len(parts) >= 2 and parts[0].lower() in STORAGE_PREFIXES:
             try:
                 num = int(parts[1])
-                prefix = parts[0]
+                prefix = parts[0].lower()
                 key = (prefix, num)
                 if key in devices_seen:
                     continue
                 devices_seen.add(key)
-                free_gb = float(path_to_val.get(f"/{prefix}/{num}/data/31", 0) or 0)
-                total_gb = float(path_to_val.get(f"/{prefix}/{num}/data/32", 0) or 0)
-                temp = float(path_to_val.get(f"/{prefix}/{num}/temperature/0", 0) or 0)
+                pre = parts[0].lower()
+                free_gb = _storage_val(pre, num, "data/31")
+                total_gb = _storage_val(pre, num, "data/32")
+                temp = _storage_val(pre, num, "temperature/0")
                 if total_gb > 0 or free_gb > 0:
                     used_gb = total_gb - free_gb if total_gb > 0 else 0.0
                     if used_gb < 0:
@@ -432,6 +463,8 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
             except (ValueError, IndexError):
                 pass
     storage_devices.sort(key=lambda x: (x[0], x[1]))
+    if os.getenv("DEBUG", "0") == "1":
+        log_debug(f"LHM storage: {len(storage_devices)} devices: {storage_devices}")
     drive_letters = ("C", "D", "E", "F")
     hdd: List[Dict[str, Any]] = []
     for idx in range(4):
@@ -516,6 +549,39 @@ def get_network_speed_sync() -> tuple:
         return max(0, up), max(0, down)
     except Exception:
         return 0, 0
+
+
+def get_disks_psutil_fallback() -> List[Dict[str, Any]]:
+    """Fallback when LHM returns no disk data. Uses psutil for used/total GB (temp=0)."""
+    drive_letters = ("C", "D", "E", "F")
+    out: List[Dict[str, Any]] = []
+    try:
+        for part in psutil.disk_partitions(all=False):
+            fstype = (part.fstype or "").lower()
+            if "cdrom" in fstype:
+                continue
+            if sys.platform == "win32":
+                opts = (part.opts or "").lower()
+                if "fixed" not in opts:
+                    continue
+            mp = part.mountpoint
+            letter = drive_letters[len(out)] if len(out) < len(drive_letters) else "?"
+            if sys.platform == "win32" and len(mp) >= 2 and mp[1] == ":":
+                letter = mp[0].upper()
+            try:
+                usage = psutil.disk_usage(mp)
+                used_gb = round(usage.used / (1024 ** 3), 1)
+                total_gb = round(usage.total / (1024 ** 3), 1)
+                out.append({"n": letter, "u": used_gb, "tot": total_gb, "t": 0})
+            except (PermissionError, OSError):
+                pass
+            if len(out) >= 4:
+                break
+    except Exception:
+        pass
+    while len(out) < 4:
+        out.append({"n": drive_letters[len(out)], "u": 0.0, "tot": 0.0, "t": 0})
+    return out[:4]
 
 
 def get_disk_speed_sync() -> tuple:
@@ -671,6 +737,12 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
 
     raw_hdd = hw.get("hdd", [])
     drive_letters = ("C", "D", "E", "F")
+    hdd_has_data = any(
+        (e.get("tot") or 0) > 0 or (e.get("u") or 0) > 0
+        for e in raw_hdd[:4]
+    )
+    if not hdd_has_data and _config.get("lhm_storage_fallback") == "psutil":
+        raw_hdd = get_disks_psutil_fallback()
     hdd_list = []
     for i in range(4):
         if i < len(raw_hdd):

@@ -12,7 +12,8 @@
 class KickManager;
 class VaultManager;
 
-class SceneManager {
+class SceneManager
+{
 public:
   SceneManager(DisplayEngine &disp, AppState &state);
   void draw(int sceneIndex, unsigned long bootTime, bool blinkState,

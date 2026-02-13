@@ -47,15 +47,22 @@
 // Flipper-style: level 0 = 5 categories, level 1 = submenu items
 #define MENU_CATEGORIES 5
 // Display order: Games first, then Config, WiFi, Tools, System (index -> real category)
-static const int menuDisplayOrder[] = {4, 0, 1, 2, 3};
+static const int menuDisplayOrder[] = {0, 4, 1, 2, 3};
 #define WOLF_MENU_ITEMS 12
 
 // ---------------------------------------------------------------------------
 // Input: Event-based (SHORT = navigate, LONG = select, DOUBLE = back/menu)
 // ---------------------------------------------------------------------------
-enum ButtonEvent { EV_NONE, EV_SHORT, EV_LONG, EV_DOUBLE };
+enum ButtonEvent
+{
+  EV_NONE,
+  EV_SHORT,
+  EV_LONG,
+  EV_DOUBLE
+};
 
-struct InputSystem {
+struct InputSystem
+{
   const int pin;
   unsigned long pressTime = 0;
   unsigned long releaseTime = 0;
@@ -64,33 +71,42 @@ struct InputSystem {
 
   InputSystem(int p) : pin(p) { pinMode(pin, INPUT_PULLUP); }
 
-  ButtonEvent update() {
+  ButtonEvent update()
+  {
     bool down = (digitalRead(pin) == LOW);
     unsigned long now = millis();
     ButtonEvent event = EV_NONE;
 
-    if (down && !btnState) {
+    if (down && !btnState)
+    {
       btnState = true;
       pressTime = now;
-    } else if (!down && btnState) {
+    }
+    else if (!down && btnState)
+    {
       btnState = false;
       unsigned long duration = now - pressTime;
-      if (duration > 50 && duration < 500) {
+      if (duration > 50 && duration < 500)
+      {
         clickCount++;
         releaseTime = now;
         // Do NOT return here for 2 clicks — wait for multi-tap window to expire
-        if (clickCount >= 4) {
+        if (clickCount >= 4)
+        {
           clickCount = 0;
           return EV_DOUBLE;
         }
-      } else if (duration >= 500) {
+      }
+      else if (duration >= 500)
+      {
         clickCount = 0;
         return EV_LONG;
       }
     }
 
     const unsigned long multiTapWindowMs = 300;
-    if (clickCount > 0 && !btnState && (now - releaseTime > multiTapWindowMs)) {
+    if (clickCount > 0 && !btnState && (now - releaseTime > multiTapWindowMs))
+    {
       if (clickCount == 1)
         event = EV_SHORT;
       else if (clickCount >= 2)
@@ -101,12 +117,15 @@ struct InputSystem {
   }
 };
 
-struct IntervalTimer {
+struct IntervalTimer
+{
   unsigned long intervalMs;
   unsigned long lastMs = 0;
   IntervalTimer(unsigned long interval) : intervalMs(interval) {}
-  bool check(unsigned long now) {
-    if (now - lastMs >= intervalMs) {
+  bool check(unsigned long now)
+  {
+    if (now - lastMs >= intervalMs)
+    {
       lastMs = now;
       return true;
     }
@@ -116,23 +135,27 @@ struct IntervalTimer {
 };
 
 // Non-blocking timer for replacing delay() calls
-class NonBlockingTimer {
+class NonBlockingTimer
+{
   unsigned long targetTime_;
   bool active_;
 
 public:
   NonBlockingTimer() : targetTime_(0), active_(false) {}
-  void start(unsigned long durationMs) {
+  void start(unsigned long durationMs)
+  {
     targetTime_ = millis() + durationMs;
     active_ = true;
   }
   bool isReady() const { return active_ && (millis() >= targetTime_); }
-  void reset() {
+  void reset()
+  {
     active_ = false;
     targetTime_ = 0;
   }
   bool isActive() const { return active_; }
-  unsigned long remaining() const {
+  unsigned long remaining() const
+  {
     if (!active_)
       return 0;
     unsigned long now = millis();
@@ -190,7 +213,10 @@ int quickMenuItem = 0;
 int menuLevel = 0;    // 0 = categories (Config/WiFi/Tools/System), 1 = submenu
 int menuCategory = 0; // which category when in submenu (0..3)
 
-enum MenuState { MENU_MAIN };
+enum MenuState
+{
+  MENU_MAIN
+};
 MenuState menuState = MENU_MAIN;
 int submenuIndex =
     0; // Оставлено для совместимости с drawMenu, но не используется
@@ -213,7 +239,8 @@ static bool forzaAutoSwitchDone = false;
 static bool forzaListeningForAutoSwitch = false;
 
 // --- Cyberdeck Modes --- Full Marauder integration
-enum AppMode {
+enum AppMode
+{
   MODE_NORMAL,
   MODE_DAEMON,
   // WiFi Scans
@@ -302,14 +329,16 @@ static int bleScanSelected = 0;
 static int badWolfScriptIndex = 0;
 
 // Функция сортировки и фильтрации WiFi сетей
-static void sortAndFilterWiFiNetworks() {
+static void sortAndFilterWiFiNetworks()
+{
   // Статические переменные для кэширования
   static int lastScanCount = -1;
   static int lastSortMode = -1;
   static int lastRssiFilter = -101;
 
   int n = WiFi.scanComplete();
-  if (n <= 0 || n > 32) {
+  if (n <= 0 || n > 32)
+  {
     wifiFilteredCount = 0;
     lastScanCount = -1;
     return;
@@ -324,7 +353,8 @@ static void sortAndFilterWiFiNetworks() {
 
   if (n == lastScanCount && wifiSortMode == lastSortMode &&
       wifiRssiFilter == lastRssiFilter && wifiFilteredCount > 0 &&
-      (now - lastScanTime < SCAN_CACHE_TIMEOUT_MS)) {
+      (now - lastScanTime < SCAN_CACHE_TIMEOUT_MS))
+  {
     return; // Данные не изменились и cache is still valid, используем кэш
   }
 
@@ -335,14 +365,17 @@ static void sortAndFilterWiFiNetworks() {
   lastRssiFilter = wifiRssiFilter;
 
   // Инициализация индексов
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n; i++)
+  {
     wifiSortedIndices[i] = i;
   }
 
   // Фильтрация по RSSI
   int filtered = 0;
-  for (int i = 0; i < n; i++) {
-    if (WiFi.RSSI(i) >= wifiRssiFilter) {
+  for (int i = 0; i < n; i++)
+  {
+    if (WiFi.RSSI(i) >= wifiRssiFilter)
+    {
       wifiSortedIndices[filtered++] = i;
     }
   }
@@ -350,48 +383,62 @@ static void sortAndFilterWiFiNetworks() {
 
   // Optimized sorting: Insertion sort for small arrays (<32 items), more
   // efficient than bubble sort
-  if (wifiSortMode == 0) {
+  if (wifiSortMode == 0)
+  {
     // По RSSI (убывание) - Insertion sort
-    for (int i = 1; i < filtered; i++) {
+    for (int i = 1; i < filtered; i++)
+    {
       int key = wifiSortedIndices[i];
       int keyRssi = WiFi.RSSI(key);
       int j = i - 1;
-      while (j >= 0 && WiFi.RSSI(wifiSortedIndices[j]) < keyRssi) {
+      while (j >= 0 && WiFi.RSSI(wifiSortedIndices[j]) < keyRssi)
+      {
         wifiSortedIndices[j + 1] = wifiSortedIndices[j];
         j--;
       }
       wifiSortedIndices[j + 1] = key;
     }
-  } else if (wifiSortMode == 1) {
+  }
+  else if (wifiSortMode == 1)
+  {
     // По алфавиту - Insertion sort with cached SSID comparisons (optimized: use
     // c_str())
     static char ssidBuf1[33],
         ssidBuf2[33]; // Max SSID length is 32 + null terminator
-    for (int i = 1; i < filtered; i++) {
+    for (int i = 1; i < filtered; i++)
+    {
       int key = wifiSortedIndices[i];
       strncpy(ssidBuf1, WiFi.SSID(key).c_str(), sizeof(ssidBuf1) - 1);
       ssidBuf1[sizeof(ssidBuf1) - 1] = '\0';
       int j = i - 1;
-      while (j >= 0) {
+      while (j >= 0)
+      {
         strncpy(ssidBuf2, WiFi.SSID(wifiSortedIndices[j]).c_str(),
                 sizeof(ssidBuf2) - 1);
         ssidBuf2[sizeof(ssidBuf2) - 1] = '\0';
-        if (strcmp(ssidBuf2, ssidBuf1) > 0) {
+        if (strcmp(ssidBuf2, ssidBuf1) > 0)
+        {
           wifiSortedIndices[j + 1] = wifiSortedIndices[j];
           j--;
-        } else {
+        }
+        else
+        {
           break;
         }
       }
       wifiSortedIndices[j + 1] = key;
     }
-  } else if (wifiSortMode == 2) {
+  }
+  else if (wifiSortMode == 2)
+  {
     // По RSSI (возрастание) - Insertion sort
-    for (int i = 1; i < filtered; i++) {
+    for (int i = 1; i < filtered; i++)
+    {
       int key = wifiSortedIndices[i];
       int keyRssi = WiFi.RSSI(key);
       int j = i - 1;
-      while (j >= 0 && WiFi.RSSI(wifiSortedIndices[j]) > keyRssi) {
+      while (j >= 0 && WiFi.RSSI(wifiSortedIndices[j]) > keyRssi)
+      {
         wifiSortedIndices[j + 1] = wifiSortedIndices[j];
         j--;
       }
@@ -407,7 +454,7 @@ static float batteryVoltageHistory[NOCT_BAT_SMOOTHING_SAMPLES] = {0};
 static int batteryHistoryIndex = 0;
 static bool batteryHistoryFilled = false;
 static bool batCtrlPinState =
-    false; // Track GPIO 37 state to avoid unnecessary writes
+    false;                        // Track GPIO 37 state to avoid unnecessary writes
 static bool vextPinState = false; // Track Vext pin (never drive HIGH)
 
 /** Get battery voltage from ADC (GPIO 1). Heltec V4: divider factor 4.9
@@ -415,10 +462,12 @@ static bool vextPinState = false; // Track Vext pin (never drive HIGH)
  * divider. Optimized: only enables divider when needed, uses multiple readings
  * for accuracy.
  */
-static float getBatteryVoltage() {
+static float getBatteryVoltage()
+{
   // Step 1: Enable voltage divider by setting GPIO 37 to HIGH (open transistor)
   // Only change state if needed (optimization: avoid unnecessary GPIO writes)
-  if (!batCtrlPinState) {
+  if (!batCtrlPinState)
+  {
     pinMode(NOCT_BAT_CTRL_PIN, OUTPUT);
     digitalWrite(NOCT_BAT_CTRL_PIN, HIGH);
     batCtrlPinState = true;
@@ -429,9 +478,11 @@ static float getBatteryVoltage() {
   // Step 2: Read voltage multiple times and average for accuracy
   uint32_t mvSum = 0;
   const int readCount = 3; // Read 3 times for better accuracy
-  for (int i = 0; i < readCount; i++) {
+  for (int i = 0; i < readCount; i++)
+  {
     mvSum += analogReadMilliVolts(NOCT_BAT_PIN);
-    if (i < readCount - 1) {
+    if (i < readCount - 1)
+    {
       delay(2); // Small delay between readings (acceptable: very short)
     }
   }
@@ -439,7 +490,8 @@ static float getBatteryVoltage() {
 
   // Step 3: Disable divider by setting GPIO 37 to LOW (close transistor)
   // This prevents battery drain through the divider circuit
-  if (batCtrlPinState) {
+  if (batCtrlPinState)
+  {
     digitalWrite(NOCT_BAT_CTRL_PIN, LOW);
     batCtrlPinState = false;
   }
@@ -450,7 +502,8 @@ static float getBatteryVoltage() {
   // Step 5: Add to moving average buffer
   batteryVoltageHistory[batteryHistoryIndex] = voltage;
   batteryHistoryIndex = (batteryHistoryIndex + 1) % NOCT_BAT_SMOOTHING_SAMPLES;
-  if (batteryHistoryIndex == 0) {
+  if (batteryHistoryIndex == 0)
+  {
     batteryHistoryFilled = true;
   }
 
@@ -458,14 +511,16 @@ static float getBatteryVoltage() {
   float sum = 0.0f;
   int count =
       batteryHistoryFilled ? NOCT_BAT_SMOOTHING_SAMPLES : batteryHistoryIndex;
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < count; i++)
+  {
     sum += batteryVoltageHistory[i];
   }
   float smoothedVoltage = sum / count;
 
   // Debug output
   static unsigned long lastDebug = 0;
-  if (millis() - lastDebug > 5000) {
+  if (millis() - lastDebug > 5000)
+  {
     Serial.printf("[BAT] Raw_mV: %d | Calculated_V: %.2f | Smoothed_V: %.2f\n",
                   mv, voltage, smoothedVoltage);
     lastDebug = millis();
@@ -478,7 +533,8 @@ static float getBatteryVoltage() {
  * Uses adaptive reading intervals based on battery state.
  * Returns the next reading interval in milliseconds.
  */
-static unsigned long updateBatteryState() {
+static unsigned long updateBatteryState()
+{
   state.batteryVoltage = getBatteryVoltage();
   float v = state.batteryVoltage;
 
@@ -491,47 +547,61 @@ static unsigned long updateBatteryState() {
   // При работе от USB без аккумулятора напряжение может быть в
   // диапазоне 3.3-4.2V Но если напряжение стабильно в диапазоне 3.3-3.5V, это
   // может быть USB питание
-  if (v < 1.0f || v > 5.5f) {
+  if (v < 1.0f || v > 5.5f)
+  {
     // Батарея не подключена или некорректное значение ADC
     state.batteryPct = 0;
     state.isCharging = false;
     nextInterval =
         NOCT_BAT_READ_INTERVAL_STABLE_MS; // Check less frequently if invalid
-  } else {
+  }
+  else
+  {
     // Проверка на USB питание без аккумулятора
     // При работе от USB без аккумулятора напряжение может быть стабильным в
     // диапазоне 3.3-4.2V Но если напряжение близко к 3.3V или ниже 3.5V, это
     // может быть USB питание Для простоты считаем, что если напряжение в
     // диапазоне 3.3-3.5V, это USB питание без аккумулятора
-    if (v < 3.5f) {
+    if (v < 3.5f)
+    {
       // Напряжение ниже 3.5V - возможно USB питание без аккумулятора
       // Показываем 0% и не показываем зарядку
       state.batteryPct = 0;
       state.isCharging = false;
       nextInterval = NOCT_BAT_READ_INTERVAL_STABLE_MS; // USB power is stable
-    } else {
+    }
+    else
+    {
       // Батарея подключена
       // Если напряжение > 4.4V, батарея заряжается
       state.isCharging = (v > NOCT_VOLT_CHARGING);
 
       // Расчет процента заряда: 3.3V = 0%, 4.2V = 100%
       // Если напряжение ниже 3.3V, считаем что батарея разряжена
-      if (v < NOCT_VOLT_MIN) {
+      if (v < NOCT_VOLT_MIN)
+      {
         state.batteryPct = 0;
-      } else {
+      }
+      else
+      {
         int pct = (int)((v - NOCT_VOLT_MIN) / (NOCT_VOLT_MAX - NOCT_VOLT_MIN) *
                         100.0f);
         state.batteryPct = constrain(pct, 0, 100);
       }
 
       // Adaptive reading interval based on battery state
-      if (state.isCharging) {
+      if (state.isCharging)
+      {
         // Charging: read more frequently to track charge progress
         nextInterval = NOCT_BAT_READ_INTERVAL_CHARGING_MS;
-      } else if (state.batteryPct < 20) {
+      }
+      else if (state.batteryPct < 20)
+      {
         // Low battery: read more frequently to monitor discharge
         nextInterval = NOCT_BAT_READ_INTERVAL_LOW_MS;
-      } else {
+      }
+      else
+      {
         // Stable: read less frequently to save power
         nextInterval = NOCT_BAT_READ_INTERVAL_STABLE_MS;
       }
@@ -539,7 +609,8 @@ static unsigned long updateBatteryState() {
 
     // Debug output: Raw_mV | Calculated_V | Pct | NextInterval
     static unsigned long lastDebug = 0;
-    if (millis() - lastDebug > 5000) {
+    if (millis() - lastDebug > 5000)
+    {
       // Calculate raw mV from voltage (reverse calculation)
       uint32_t raw_mv = (uint32_t)(v * 1000.0f / NOCT_BAT_DIVIDER_FACTOR);
       Serial.printf(
@@ -552,7 +623,8 @@ static unsigned long updateBatteryState() {
   return nextInterval;
 }
 
-static void VextON() {
+static void VextON()
+{
   // Vext (NOCT_VEXT_PIN): LOW = OLED powered, HIGH = off. Never drive HIGH.
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
@@ -562,7 +634,8 @@ static void VextON() {
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
-void setup() {
+void setup()
+{
   bootTime = millis();
   Serial.begin(115200);
   Serial.println("[NOCT] Nocturne OS " NOCTURNE_VERSION);
@@ -656,8 +729,10 @@ void setup() {
 // ---------------------------------------------------------------------------
 
 /** Очистка ресурсов режима перед переключением */
-static void cleanupMode(AppMode mode) {
-  switch (mode) {
+static void cleanupMode(AppMode mode)
+{
+  switch (mode)
+  {
   // WiFi Scans
   case MODE_RADAR:
   case MODE_WIFI_PROBE_SCAN:
@@ -768,8 +843,10 @@ static void cleanupMode(AppMode mode) {
 }
 
 /** Управление состоянием WiFi в зависимости от режима */
-static void manageWiFiState(AppMode mode) {
-  switch (mode) {
+static void manageWiFiState(AppMode mode)
+{
+  switch (mode)
+  {
   // BLE modes - WiFi OFF
   case MODE_BLE_SPAM:
   case MODE_BLE_SCAN:
@@ -788,7 +865,8 @@ static void manageWiFiState(AppMode mode) {
   case MODE_BLE_SPAM_ALL:
   case MODE_BLE_FLIPPER_SPAM:
   case MODE_BLE_AIRTAG_SPOOF:
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -838,14 +916,16 @@ static void manageWiFiState(AppMode mode) {
   case MODE_NETWORK_RDP_SCAN:
   case MODE_NETWORK_TELNET_SCAN:
   case MODE_NETWORK_SSH_SCAN:
-    if (WiFi.getMode() != WIFI_STA) {
+    if (WiFi.getMode() != WIFI_STA)
+    {
       WiFi.mode(WIFI_STA);
       Serial.println("[SYS] WiFi STA for WiFi mode");
     }
     netManager.setSuspend(true);
     break;
   case MODE_GAME_FORZA:
-    if (WiFi.getMode() != WIFI_STA) {
+    if (WiFi.getMode() != WIFI_STA)
+    {
       WiFi.mode(WIFI_STA);
       Serial.println("[SYS] WiFi STA for Forza");
     }
@@ -864,7 +944,8 @@ static void manageWiFiState(AppMode mode) {
   case MODE_NORMAL:
   default:
     // Нормальный режим - WiFi включен, NetManager активен
-    if (WiFi.getMode() != WIFI_STA) {
+    if (WiFi.getMode() != WIFI_STA)
+    {
       WiFi.mode(WIFI_STA);
     }
     netManager.setSuspend(false);
@@ -873,18 +954,22 @@ static void manageWiFiState(AppMode mode) {
 }
 
 /** Инициализация режима с проверкой ошибок */
-static bool initializeMode(AppMode mode) {
-  switch (mode) {
+static bool initializeMode(AppMode mode)
+{
+  switch (mode)
+  {
   case MODE_BLE_SPAM:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       Serial.println("[SYS] ERROR: WiFi not off before BLE start");
       WiFi.disconnect(true);
       yield(); // Allow WiFi stack to process disconnect
       WiFi.mode(WIFI_OFF);
     }
     bleManager.begin();
-    if (!bleManager.isActive()) {
+    if (!bleManager.isActive())
+    {
       Serial.println("[SYS] BLE init failed");
       return false;
     }
@@ -900,7 +985,8 @@ static bool initializeMode(AppMode mode) {
     Serial.println("[SYS] RADAR mode initialized");
     return true;
 
-  case MODE_WIFI_DEAUTH: {
+  case MODE_WIFI_DEAUTH:
+  {
     manageWiFiState(mode);
     WiFi.disconnect(true);
     delay(80);
@@ -948,17 +1034,20 @@ static bool initializeMode(AppMode mode) {
     Serial.println("[SYS] MDNS mode initialized");
     return true;
 
-  case MODE_WIFI_TRAP: {
+  case MODE_WIFI_TRAP:
+  {
     manageWiFiState(mode);
     // Перед запуском AP можно клонировать SSID из сканирования
     // Если сканирование еще не завершено, запустим его
     int n = WiFi.scanComplete();
-    if (n == -1) {
+    if (n == -1)
+    {
       WiFi.scanNetworks(true, true);
       Serial.println("[TRAP] Starting scan for SSID cloning...");
     }
     // Если есть завершенное сканирование и выбран индекс, клонируем SSID
-    if (n > 0 && wifiScanSelected >= 0 && wifiScanSelected < n) {
+    if (n > 0 && wifiScanSelected >= 0 && wifiScanSelected < n)
+    {
       sortAndFilterWiFiNetworks();
       int actualIndex =
           (wifiFilteredCount > 0 && wifiScanSelected < wifiFilteredCount)
@@ -968,7 +1057,8 @@ static bool initializeMode(AppMode mode) {
     }
     trapManager.start();
     yield(); // Allow AP to start (non-blocking)
-    if (!trapManager.isActive()) {
+    if (!trapManager.isActive())
+    {
       Serial.println("[SYS] TRAP init failed - AP not started");
       return false;
     }
@@ -1094,7 +1184,8 @@ static bool initializeMode(AppMode mode) {
   // BLE Scans
   case MODE_BLE_SCAN_SKIMMERS:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1104,7 +1195,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_AIRTAG:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1114,7 +1206,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_AIRTAG_MON:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1125,7 +1218,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_FLIPPER:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1135,7 +1229,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_FLOCK:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1145,7 +1240,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_ANALYZER:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1155,7 +1251,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_SIMPLE:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1165,7 +1262,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SCAN_SIMPLE_TWO:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1176,7 +1274,8 @@ static bool initializeMode(AppMode mode) {
   // BLE Attacks
   case MODE_BLE_SOUR_APPLE:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1186,7 +1285,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SWIFTPAIR_MICROSOFT:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1196,7 +1296,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SWIFTPAIR_GOOGLE:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1206,7 +1307,8 @@ static bool initializeMode(AppMode mode) {
     return true;
   case MODE_BLE_SWIFTPAIR_SAMSUNG:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1218,7 +1320,8 @@ static bool initializeMode(AppMode mode) {
   case MODE_BLE_FLIPPER_SPAM:
   case MODE_BLE_AIRTAG_SPOOF:
     manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) {
+    if (WiFi.getMode() != WIFI_OFF)
+    {
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
@@ -1254,8 +1357,10 @@ static bool initializeMode(AppMode mode) {
 }
 
 /** Безопасное переключение режима с очисткой и инициализацией */
-static bool switchToMode(AppMode newMode) {
-  if (newMode == currentMode) {
+static bool switchToMode(AppMode newMode)
+{
+  if (newMode == currentMode)
+  {
     return true; // Уже в этом режиме
   }
 
@@ -1269,7 +1374,8 @@ static bool switchToMode(AppMode newMode) {
   // WiFi и NetManager управляются в manageWiFiState
 
   // 3. Инициализация нового режима
-  if (!initializeMode(newMode)) {
+  if (!initializeMode(newMode))
+  {
     Serial.println("[SYS] Mode initialization failed, falling back to NORMAL");
     // Fallback: вернуться в NORMAL при ошибке
     cleanupMode(currentMode);
@@ -1280,7 +1386,8 @@ static bool switchToMode(AppMode newMode) {
 
   // 4. Установка нового режима
   currentMode = newMode;
-  if (newMode == MODE_GAME_FORZA) {
+  if (newMode == MODE_GAME_FORZA)
+  {
     forzaSplashUntil = millis() + FORZA_SPLASH_MS;
   }
   Serial.printf("[SYS] Successfully switched to MODE_%d\n", currentMode);
@@ -1288,7 +1395,8 @@ static bool switchToMode(AppMode newMode) {
 }
 
 /** Старая функция для обратной совместимости */
-static void exitAppModeToNormal() {
+static void exitAppModeToNormal()
+{
   if (currentMode == MODE_GAME_FORZA)
     forzaAutoSwitchDone = true; // Never auto-switch again after user exit
   switchToMode(MODE_NORMAL);
@@ -1299,18 +1407,20 @@ static void exitAppModeToNormal() {
 // Flipper-style menu: categories (0=Config, 1=WiFi, 2=Tools, 3=System) ->
 // submenus
 // ---------------------------------------------------------------------------
-static int submenuCount(int category) {
-  switch (category) {
+static int submenuCount(int category)
+{
+  switch (category)
+  {
   case 0:
-    return 5;  // Config: AUTO, FLIP, GLITCH, LED, DIM
+    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 1:
     return 20; // WiFi: Full Marauder menu
   case 2:
     return 22; // Tools: BLE + Network + Other tools (no GPS)
   case 3:
-    return 3;  // System: REBOOT, VERSION, EXIT
+    return 3; // System: REBOOT, VERSION, EXIT
   case 4:
-    return 1;  // Games: RACING (Forza)
+    return 1; // Games: RACING (Forza)
   default:
     return 3;
   }
@@ -1318,18 +1428,28 @@ static int submenuCount(int category) {
 
 /** Execute action for (category, item). Called when menuLevel==1 and user
  * Long-press. */
-static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
-  if (cat == 0) {
+static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
+{
+  if (cat == 0)
+  {
     // Config: AUTO = cycle OFF -> 5s -> 10s -> 15s -> OFF
-    if (item == 0) {
-      if (!settings.carouselEnabled) {
+    if (item == 0)
+    {
+      if (!settings.carouselEnabled)
+      {
         settings.carouselEnabled = true;
         settings.carouselIntervalSec = 5;
-      } else if (settings.carouselIntervalSec == 5) {
+      }
+      else if (settings.carouselIntervalSec == 5)
+      {
         settings.carouselIntervalSec = 10;
-      } else if (settings.carouselIntervalSec == 10) {
+      }
+      else if (settings.carouselIntervalSec == 10)
+      {
         settings.carouselIntervalSec = 15;
-      } else {
+      }
+      else
+      {
         settings.carouselEnabled = false;
       }
       Preferences prefs;
@@ -1339,7 +1459,9 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       prefs.end();
       snprintf(toastMsg, sizeof(toastMsg), "Saved");
       toastUntil = now + 800;
-    } else if (item == 1) {
+    }
+    else if (item == 1)
+    {
       settings.displayInverted = !settings.displayInverted;
       display.setScreenFlipped(settings.displayInverted);
       Preferences prefs;
@@ -1348,7 +1470,9 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       prefs.end();
       snprintf(toastMsg, sizeof(toastMsg), "Saved");
       toastUntil = now + 800;
-    } else if (item == 2) {
+    }
+    else if (item == 2)
+    {
       settings.glitchEnabled = !settings.glitchEnabled;
       Preferences prefs;
       prefs.begin("nocturne", false);
@@ -1356,7 +1480,9 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       prefs.end();
       snprintf(toastMsg, sizeof(toastMsg), "Saved");
       toastUntil = now + 800;
-    } else if (item == 3) {
+    }
+    else if (item == 3)
+    {
       settings.ledEnabled = !settings.ledEnabled;
       Preferences prefs;
       prefs.begin("nocturne", false);
@@ -1364,7 +1490,9 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
       prefs.end();
       snprintf(toastMsg, sizeof(toastMsg), "Saved");
       toastUntil = now + 800;
-    } else if (item == 4) {
+    }
+    else if (item == 4)
+    {
       settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
       display.u8g2().setContrast(settings.lowBrightnessDefault
                                      ? NOCT_CONTRAST_MIN
@@ -1378,145 +1506,204 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     }
     return true;
   }
-  if (cat == 1) {
+  if (cat == 1)
+  {
     quickMenuOpen = false;
     rebootConfirmed = false;
     // WiFi Scans
-    if (item == 0) {
-      if (!switchToMode(MODE_RADAR)) {
+    if (item == 0)
+    {
+      if (!switchToMode(MODE_RADAR))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 1) {
-      if (!switchToMode(MODE_WIFI_PROBE_SCAN)) {
+    }
+    else if (item == 1)
+    {
+      if (!switchToMode(MODE_WIFI_PROBE_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 2) {
-      if (!switchToMode(MODE_WIFI_EAPOL_SCAN)) {
+    }
+    else if (item == 2)
+    {
+      if (!switchToMode(MODE_WIFI_EAPOL_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 3) {
-      if (!switchToMode(MODE_WIFI_STATION_SCAN)) {
+    }
+    else if (item == 3)
+    {
+      if (!switchToMode(MODE_WIFI_STATION_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 4) {
-      if (!switchToMode(MODE_WIFI_PACKET_MONITOR)) {
+    }
+    else if (item == 4)
+    {
+      if (!switchToMode(MODE_WIFI_PACKET_MONITOR))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 5) {
-      if (!switchToMode(MODE_WIFI_CHANNEL_ANALYZER)) {
+    }
+    else if (item == 5)
+    {
+      if (!switchToMode(MODE_WIFI_CHANNEL_ANALYZER))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 6) {
-      if (!switchToMode(MODE_WIFI_CHANNEL_ACTIVITY)) {
+    }
+    else if (item == 6)
+    {
+      if (!switchToMode(MODE_WIFI_CHANNEL_ACTIVITY))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 7) {
-      if (!switchToMode(MODE_WIFI_PACKET_RATE)) {
+    }
+    else if (item == 7)
+    {
+      if (!switchToMode(MODE_WIFI_PACKET_RATE))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 8) {
-      if (!switchToMode(MODE_WIFI_PINESCAN)) {
+    }
+    else if (item == 8)
+    {
+      if (!switchToMode(MODE_WIFI_PINESCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 9) {
-      if (!switchToMode(MODE_WIFI_MULTISSID)) {
+    }
+    else if (item == 9)
+    {
+      if (!switchToMode(MODE_WIFI_MULTISSID))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 10) {
-      if (!switchToMode(MODE_WIFI_SIGNAL_STRENGTH)) {
+    }
+    else if (item == 10)
+    {
+      if (!switchToMode(MODE_WIFI_SIGNAL_STRENGTH))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 11) {
-      if (!switchToMode(MODE_WIFI_RAW_CAPTURE)) {
+    }
+    else if (item == 11)
+    {
+      if (!switchToMode(MODE_WIFI_RAW_CAPTURE))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 12) {
-      if (!switchToMode(MODE_WIFI_AP_STA)) {
+    }
+    else if (item == 12)
+    {
+      if (!switchToMode(MODE_WIFI_AP_STA))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     }
     // WiFi Attacks
-    else if (item == 13) {
+    else if (item == 13)
+    {
       wifiScanSelected = 0;
       wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_DEAUTH)) {
+      if (!switchToMode(MODE_WIFI_DEAUTH))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
       kickManager.setTargetFromScan(0);
-    } else if (item == 14) {
+    }
+    else if (item == 14)
+    {
       wifiScanSelected = 0;
       wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_DEAUTH_TARGETED)) {
+      if (!switchToMode(MODE_WIFI_DEAUTH_TARGETED))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 15) {
+    }
+    else if (item == 15)
+    {
       wifiScanSelected = 0;
       wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_DEAUTH_MANUAL)) {
+      if (!switchToMode(MODE_WIFI_DEAUTH_MANUAL))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 16) {
-      if (!switchToMode(MODE_WIFI_BEACON)) {
+    }
+    else if (item == 16)
+    {
+      if (!switchToMode(MODE_WIFI_BEACON))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 17) {
-      if (!switchToMode(MODE_WIFI_BEACON_RICKROLL)) {
+    }
+    else if (item == 17)
+    {
+      if (!switchToMode(MODE_WIFI_BEACON_RICKROLL))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 18) {
+    }
+    else if (item == 18)
+    {
       wifiScanSelected = 0;
       wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_AUTH_ATTACK)) {
+      if (!switchToMode(MODE_WIFI_AUTH_ATTACK))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
       // Set target from scan if available
       int n = WiFi.scanComplete();
-      if (n > 0) {
+      if (n > 0)
+      {
         sortAndFilterWiFiNetworks();
-        if (wifiFilteredCount > 0) {
+        if (wifiFilteredCount > 0)
+        {
           int idx = wifiSortedIndices[0];
           String ssid = WiFi.SSID(idx);
           uint8_t bssid[6];
           uint8_t *bssidPtr = WiFi.BSSID(idx);
-          if (bssidPtr) {
+          if (bssidPtr)
+          {
             memcpy(bssid, bssidPtr, 6);
             wifiAttackManager.setTargetBSSID(bssid);
             wifiAttackManager.setTargetSSID(ssid.c_str());
@@ -1524,8 +1711,11 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
           }
         }
       }
-    } else if (item == 19) {
-      if (!switchToMode(MODE_WIFI_TRAP)) {
+    }
+    else if (item == 19)
+    {
+      if (!switchToMode(MODE_WIFI_TRAP))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
@@ -1533,150 +1723,216 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     }
     return true;
   }
-  if (cat == 2) {
+  if (cat == 2)
+  {
     quickMenuOpen = false;
     rebootConfirmed = false;
     // BLE Scans
-    if (item == 0) {
-      if (!switchToMode(MODE_BLE_SCAN)) {
+    if (item == 0)
+    {
+      if (!switchToMode(MODE_BLE_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 1) {
-      if (!switchToMode(MODE_BLE_SCAN_SKIMMERS)) {
+    }
+    else if (item == 1)
+    {
+      if (!switchToMode(MODE_BLE_SCAN_SKIMMERS))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 2) {
-      if (!switchToMode(MODE_BLE_SCAN_AIRTAG)) {
+    }
+    else if (item == 2)
+    {
+      if (!switchToMode(MODE_BLE_SCAN_AIRTAG))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 3) {
-      if (!switchToMode(MODE_BLE_SCAN_AIRTAG_MON)) {
+    }
+    else if (item == 3)
+    {
+      if (!switchToMode(MODE_BLE_SCAN_AIRTAG_MON))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 4) {
-      if (!switchToMode(MODE_BLE_SCAN_FLIPPER)) {
+    }
+    else if (item == 4)
+    {
+      if (!switchToMode(MODE_BLE_SCAN_FLIPPER))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 5) {
-      if (!switchToMode(MODE_BLE_SCAN_ANALYZER)) {
+    }
+    else if (item == 5)
+    {
+      if (!switchToMode(MODE_BLE_SCAN_ANALYZER))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     }
     // BLE Attacks
-    else if (item == 6) {
-      if (!switchToMode(MODE_BLE_SPAM)) {
+    else if (item == 6)
+    {
+      if (!switchToMode(MODE_BLE_SPAM))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 7) {
-      if (!switchToMode(MODE_BLE_SOUR_APPLE)) {
+    }
+    else if (item == 7)
+    {
+      if (!switchToMode(MODE_BLE_SOUR_APPLE))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 8) {
-      if (!switchToMode(MODE_BLE_SWIFTPAIR_MICROSOFT)) {
+    }
+    else if (item == 8)
+    {
+      if (!switchToMode(MODE_BLE_SWIFTPAIR_MICROSOFT))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 9) {
-      if (!switchToMode(MODE_BLE_SWIFTPAIR_GOOGLE)) {
+    }
+    else if (item == 9)
+    {
+      if (!switchToMode(MODE_BLE_SWIFTPAIR_GOOGLE))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 10) {
-      if (!switchToMode(MODE_BLE_SWIFTPAIR_SAMSUNG)) {
+    }
+    else if (item == 10)
+    {
+      if (!switchToMode(MODE_BLE_SWIFTPAIR_SAMSUNG))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 11) {
-      if (!switchToMode(MODE_BLE_FLIPPER_SPAM)) {
+    }
+    else if (item == 11)
+    {
+      if (!switchToMode(MODE_BLE_FLIPPER_SPAM))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     }
     // Network Scans
-    else if (item == 12) {
-      if (!switchToMode(MODE_NETWORK_ARP_SCAN)) {
+    else if (item == 12)
+    {
+      if (!switchToMode(MODE_NETWORK_ARP_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 13) {
-      if (!switchToMode(MODE_NETWORK_PORT_SCAN)) {
+    }
+    else if (item == 13)
+    {
+      if (!switchToMode(MODE_NETWORK_PORT_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 14) {
-      if (!switchToMode(MODE_NETWORK_PING_SCAN)) {
+    }
+    else if (item == 14)
+    {
+      if (!switchToMode(MODE_NETWORK_PING_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 15) {
-      if (!switchToMode(MODE_NETWORK_DNS_SCAN)) {
+    }
+    else if (item == 15)
+    {
+      if (!switchToMode(MODE_NETWORK_DNS_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 16) {
-      if (!switchToMode(MODE_NETWORK_HTTP_SCAN)) {
+    }
+    else if (item == 16)
+    {
+      if (!switchToMode(MODE_NETWORK_HTTP_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 17) {
-      if (!switchToMode(MODE_NETWORK_HTTPS_SCAN)) {
+    }
+    else if (item == 17)
+    {
+      if (!switchToMode(MODE_NETWORK_HTTPS_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 18) {
-      if (!switchToMode(MODE_NETWORK_SMTP_SCAN)) {
+    }
+    else if (item == 18)
+    {
+      if (!switchToMode(MODE_NETWORK_SMTP_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 19) {
-      if (!switchToMode(MODE_NETWORK_RDP_SCAN)) {
+    }
+    else if (item == 19)
+    {
+      if (!switchToMode(MODE_NETWORK_RDP_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 20) {
-      if (!switchToMode(MODE_NETWORK_TELNET_SCAN)) {
+    }
+    else if (item == 20)
+    {
+      if (!switchToMode(MODE_NETWORK_TELNET_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    } else if (item == 21) {
-      if (!switchToMode(MODE_NETWORK_SSH_SCAN)) {
+    }
+    else if (item == 21)
+    {
+      if (!switchToMode(MODE_NETWORK_SSH_SCAN))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
     }
     // Tools
-    else if (item == 22) {
-      if (!switchToMode(MODE_BADWOLF)) {
+    else if (item == 22)
+    {
+      if (!switchToMode(MODE_BADWOLF))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
@@ -1684,11 +1940,14 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     }
     return true;
   }
-  if (cat == 4) {
+  if (cat == 4)
+  {
     quickMenuOpen = false;
     rebootConfirmed = false;
-    if (item == 0) { // RACING -> Forza
-      if (!switchToMode(MODE_GAME_FORZA)) {
+    if (item == 0)
+    { // RACING -> Forza
+      if (!switchToMode(MODE_GAME_FORZA))
+      {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
@@ -1696,23 +1955,30 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
     }
     return true;
   }
-  if (cat == 3) {
-    if (item == 0) { // REBOOT
-      if (!rebootConfirmed) {
+  if (cat == 3)
+  {
+    if (item == 0)
+    { // REBOOT
+      if (!rebootConfirmed)
+      {
         rebootConfirmed = true;
         rebootConfirmTime = now;
-      } else {
+      }
+      else
+      {
         rebootConfirmed = false;
         esp_restart();
       }
       return true;
     }
-    if (item == 1) { // VERSION
+    if (item == 1)
+    { // VERSION
       snprintf(toastMsg, sizeof(toastMsg), "v" NOCTURNE_VERSION);
       toastUntil = now + 2000;
       return true;
     }
-    if (item == 2) { // EXIT
+    if (item == 2)
+    { // EXIT
       quickMenuOpen = false;
       return true;
     }
@@ -1720,40 +1986,52 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now) {
   return false;
 }
 
-void loop() {
+void loop()
+{
   unsigned long now = millis();
 
   // 1. Critical background tasks
   netManager.tick(now);
-  if (currentMode == MODE_GAME_FORZA) {
+  if (currentMode == MODE_GAME_FORZA)
+  {
     forzaManager.tick();
-  } else if (currentMode == MODE_NORMAL && netManager.isWifiConnected() &&
-             !forzaAutoSwitchDone) {
+  }
+  else if (currentMode == MODE_NORMAL && netManager.isWifiConnected() &&
+           !forzaAutoSwitchDone)
+  {
     // Listen for Forza UDP to auto-switch once when first packet arrives
-    if (!forzaListeningForAutoSwitch) {
+    if (!forzaListeningForAutoSwitch)
+    {
       forzaManager.begin();
       forzaListeningForAutoSwitch = true;
     }
     forzaManager.tick();
-    if (forzaManager.isConnected()) {
+    if (forzaManager.isConnected())
+    {
       forzaAutoSwitchDone = true;
       if (switchToMode(MODE_GAME_FORZA))
         needRedraw = true;
     }
   }
 
-  if (netManager.isTcpConnected()) {
-    while (netManager.available()) {
+  if (netManager.isTcpConnected())
+  {
+    while (netManager.available())
+    {
       char c = (char)netManager.read();
-      if (c == '\n') {
+      if (c == '\n')
+      {
         char *buf = netManager.getLineBuffer();
         size_t bufLen = netManager.getLineBufferLen();
-        if (bufLen > 0 && bufLen <= NOCT_TCP_LINE_MAX) {
+        if (bufLen > 0 && bufLen <= NOCT_TCP_LINE_MAX)
+        {
           JsonDocument doc;
           DeserializationError err = deserializeJson(doc, buf, bufLen);
-          if (!err) {
+          if (!err)
+          {
             netManager.markDataReceived(now);
-            if (netManager.parsePayload(buf, bufLen, &state)) {
+            if (netManager.parsePayload(buf, bufLen, &state))
+            {
               needRedraw = true;
               HardwareData &hw = state.hw;
               display.cpuGraph.push((float)hw.cl);
@@ -1766,7 +2044,9 @@ void loop() {
           }
         }
         netManager.clearLineBuffer();
-      } else {
+      }
+      else
+      {
         netManager.appendLineBuffer(c);
       }
     }
@@ -1778,7 +2058,8 @@ void loop() {
   // 3. Global: DOUBLE = open menu when closed; when menu already open, leave
   // EV_DOUBLE for menu block (back / close). Menu is available regardless of
   // WiFi or TCP connection state.
-  if (event == EV_DOUBLE && !quickMenuOpen) {
+  if (event == EV_DOUBLE && !quickMenuOpen)
+  {
     if (currentMode != MODE_NORMAL)
       exitAppModeToNormal();
     quickMenuOpen = true;
@@ -1789,7 +2070,9 @@ void loop() {
     lastMenuEventTime = now;
     needRedraw = true;
     event = EV_NONE;
-  } else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen) {
+  }
+  else if (event == EV_LONG && currentMode == MODE_NORMAL && !quickMenuOpen)
+  {
     settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
     uint8_t contrast =
         settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX;
@@ -1803,18 +2086,22 @@ void loop() {
   }
 
   // Alert / carousel / screen sync / fan animation
-  if (state.alertActive) {
+  if (state.alertActive)
+  {
     currentScene = state.alertTargetScene;
     needRedraw = true;
   }
-  if (settings.carouselEnabled && !predatorMode && !state.alertActive) {
+  if (settings.carouselEnabled && !predatorMode && !state.alertActive)
+  {
     unsigned long intervalMs =
         (unsigned long)settings.carouselIntervalSec * 1000;
-    if (now - lastCarousel > intervalMs) {
+    if (now - lastCarousel > intervalMs)
+    {
       needRedraw = true;
       previousScene = currentScene;
       currentScene = (currentScene + 1) % sceneManager.totalScenes();
-      if (previousScene != currentScene) {
+      if (previousScene != currentScene)
+      {
         inTransition = true;
         transitionStart = now;
       }
@@ -1822,19 +2109,22 @@ void loop() {
     }
   }
   if (netManager.isTcpConnected() &&
-      netManager.getLastSentScreen() != currentScene) {
+      netManager.getLastSentScreen() != currentScene)
+  {
     char screenMsg[16];
     snprintf(screenMsg, sizeof(screenMsg), "screen:%d\n", currentScene);
     netManager.print(screenMsg);
     netManager.setLastSentScreen(currentScene);
   }
-  if (now - lastFanAnim >= 50) {
+  if (now - lastFanAnim >= 50)
+  {
     fanAnimFrame = (fanAnimFrame + 1) % 12;
     lastFanAnim = now;
   }
 
   // Battery: periodic update with adaptive interval
-  if (batTimer.check(now)) {
+  if (batTimer.check(now))
+  {
     unsigned long nextInterval = updateBatteryState();
     // Update timer interval for next reading
     batTimer.intervalMs = nextInterval;
@@ -1843,7 +2133,8 @@ void loop() {
 
   // LED: predator breath / alert blink / Forza shift light / cursor blink
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
-  if (predatorMode) {
+  if (predatorMode)
+  {
     unsigned long t = (now - predatorEnterTime) / 20;
     int breath = (int)(128 + 127 * sin(t * 0.1f));
     if (breath < 0)
@@ -1852,24 +2143,35 @@ void loop() {
       analogWrite(NOCT_LED_ALERT_PIN, breath);
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-  } else if (currentMode == MODE_GAME_FORZA) {
+  }
+  else if (currentMode == MODE_GAME_FORZA)
+  {
     const ForzaState &fs = forzaManager.getState();
-    if (fs.connected && fs.maxRpm > 0) {
+    if (fs.connected && fs.maxRpm > 0)
+    {
       float pct = fs.currentRpm / fs.maxRpm;
-      if (pct >= FORZA_SHIFT_THRESHOLD) {
+      if (pct >= FORZA_SHIFT_THRESHOLD)
+      {
         bool flash = (now / 80) % 2 == 0;
         if (settings.ledEnabled)
           digitalWrite(NOCT_LED_ALERT_PIN, flash ? HIGH : LOW);
-      } else {
+      }
+      else
+      {
         if (settings.ledEnabled)
           digitalWrite(NOCT_LED_ALERT_PIN, LOW);
       }
-    } else {
+    }
+    else
+    {
       if (settings.ledEnabled)
         digitalWrite(NOCT_LED_ALERT_PIN, LOW);
     }
-  } else {
-    if (state.alertActive && !lastAlertActive) {
+  }
+  else
+  {
+    if (state.alertActive && !lastAlertActive)
+    {
       alertBlinkCounter = 0;
       blinkState = true;
       if (settings.ledEnabled)
@@ -1877,24 +2179,32 @@ void loop() {
       lastBlink = now;
     }
     lastAlertActive = state.alertActive;
-    if (state.alertActive) {
-      if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS) {
+    if (state.alertActive)
+    {
+      if (now - lastBlink >= NOCT_ALERT_LED_BLINK_MS)
+      {
         lastBlink = now;
-        if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2) {
+        if (alertBlinkCounter < NOCT_ALERT_MAX_BLINKS * 2)
+        {
           blinkState = !blinkState;
           if (settings.ledEnabled)
             digitalWrite(NOCT_LED_ALERT_PIN, blinkState ? HIGH : LOW);
           alertBlinkCounter++;
-        } else {
+        }
+        else
+        {
           blinkState = false;
           if (settings.ledEnabled)
             digitalWrite(NOCT_LED_ALERT_PIN, LOW);
         }
       }
-    } else {
+    }
+    else
+    {
       if (settings.ledEnabled)
         digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-      if (now - lastBlink > 500) {
+      if (now - lastBlink > 500)
+      {
         blinkState = !blinkState;
         lastBlink = now;
       }
@@ -1903,10 +2213,12 @@ void loop() {
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   }
 
-  if (!splashDone) {
+  if (!splashDone)
+  {
     if (splashStart == 0)
       splashStart = now;
-    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS) {
+    if (now - splashStart >= (unsigned long)NOCT_SPLASH_MS)
+    {
       splashDone = true;
       needRedraw = true;
     }
@@ -1916,69 +2228,93 @@ void loop() {
     splashDone = true;
 
   // 4. Mode handling: menu vs app
-  if (quickMenuOpen) {
+  if (quickMenuOpen)
+  {
     // Сброс подтверждения перезагрузки при таймауте (5 секунд)
-    if (rebootConfirmed && (now - rebootConfirmTime > 5000)) {
+    if (rebootConfirmed && (now - rebootConfirmTime > 5000))
+    {
       rebootConfirmed = false;
       needRedraw = true;
     }
 
     // Защита от множественных срабатываний событий
     if (event != EV_NONE &&
-        (now - lastMenuEventTime < MENU_EVENT_DEBOUNCE_MS)) {
+        (now - lastMenuEventTime < MENU_EVENT_DEBOUNCE_MS))
+    {
       event = EV_NONE; // Игнорируем событие, если прошло слишком мало времени
     }
 
     // --- MENU LOGIC (Flipper-style: level 0 = categories, level 1 = submenu)
     // ---
-    if (event == EV_DOUBLE) {
+    if (event == EV_DOUBLE)
+    {
       lastMenuEventTime = now;
-      if (menuLevel == 1) {
+      if (menuLevel == 1)
+      {
         menuLevel = 0;
         // Map menuCategory back to display index for highlighting
-        for (int i = 0; i < MENU_CATEGORIES; i++) {
-          if (menuDisplayOrder[i] == menuCategory) {
+        for (int i = 0; i < MENU_CATEGORIES; i++)
+        {
+          if (menuDisplayOrder[i] == menuCategory)
+          {
             quickMenuItem = i;
             break;
           }
         }
         rebootConfirmed = false;
-      } else {
+      }
+      else
+      {
         quickMenuOpen = false;
         rebootConfirmed = false;
       }
       needRedraw = true;
-    } else if (event == EV_SHORT) {
+    }
+    else if (event == EV_SHORT)
+    {
       lastMenuEventTime = now;
-      if (menuLevel == 0) {
+      if (menuLevel == 0)
+      {
         quickMenuItem = (quickMenuItem + 1) % MENU_CATEGORIES;
-      } else {
+      }
+      else
+      {
         int count = submenuCount(menuCategory);
         quickMenuItem = (quickMenuItem + 1) % count;
         if (menuCategory == 3 && quickMenuItem != 0)
           rebootConfirmed = false;
       }
       needRedraw = true; // Ensure redraw when quickMenuItem changes
-    } else if (event == EV_LONG) {
+    }
+    else if (event == EV_LONG)
+    {
       lastMenuEventTime = now;
-      if (menuLevel == 0) {
+      if (menuLevel == 0)
+      {
         menuLevel = 1;
         menuCategory = menuDisplayOrder[quickMenuItem];
         quickMenuItem = 0;
-      } else {
+      }
+      else
+      {
         bool ok = handleMenuActionByCategory(menuCategory, quickMenuItem, now);
         if (ok)
           needRedraw = true;
       }
     }
-  } else {
+  }
+  else
+  {
     // App mode: SHORT = navigate, LONG = action (or predator in normal)
-    switch (currentMode) {
+    switch (currentMode)
+    {
     case MODE_NORMAL:
-      if (event == EV_SHORT && !state.alertActive) {
+      if (event == EV_SHORT && !state.alertActive)
+      {
         previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
-        if (previousScene != currentScene) {
+        if (previousScene != currentScene)
+        {
           inTransition = true;
           transitionStart = now;
         }
@@ -1986,13 +2322,17 @@ void loop() {
         needRedraw = true;
       }
       break;
-    case MODE_WIFI_DEAUTH: {
-      if (event == EV_SHORT) {
+    case MODE_WIFI_DEAUTH:
+    {
+      if (event == EV_SHORT)
+      {
         int n = WiFi.scanComplete();
-        if (n > 0) {
+        if (n > 0)
+        {
           sortAndFilterWiFiNetworks();
           int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
-          if (count > 0) {
+          if (count > 0)
+          {
             wifiScanSelected = (wifiScanSelected + 1) % count;
             if (wifiScanSelected >= wifiListPage + 5)
               wifiListPage = wifiScanSelected - 4;
@@ -2001,15 +2341,22 @@ void loop() {
           }
         }
         needRedraw = true;
-      } else if (event == EV_LONG) {
-        if (kickManager.isAttacking()) {
+      }
+      else if (event == EV_LONG)
+      {
+        if (kickManager.isAttacking())
+        {
           kickManager.stopAttack();
-        } else {
+        }
+        else
+        {
           int n = WiFi.scanComplete();
-          if (n > 0) {
+          if (n > 0)
+          {
             sortAndFilterWiFiNetworks();
             int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
-            if (count > 0) {
+            if (count > 0)
+            {
               int actualIndex =
                   (wifiFilteredCount > 0 &&
                    wifiScanSelected < wifiFilteredCount)
@@ -2017,10 +2364,13 @@ void loop() {
                       : (wifiScanSelected >= 0 && wifiScanSelected < n
                              ? wifiScanSelected
                              : 0);
-              if (lastDeauthTargetScanIndex != actualIndex) {
+              if (lastDeauthTargetScanIndex != actualIndex)
+              {
                 kickManager.setTargetFromScan(actualIndex);
                 lastDeauthTargetScanIndex = actualIndex;
-              } else {
+              }
+              else
+              {
                 kickManager.startAttack();
               }
             }
@@ -2031,12 +2381,15 @@ void loop() {
       break;
     }
     case MODE_RADAR:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         int n = WiFi.scanComplete();
-        if (n > 0) {
+        if (n > 0)
+        {
           sortAndFilterWiFiNetworks();
           int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
-          if (count > 0) {
+          if (count > 0)
+          {
             wifiScanSelected = (wifiScanSelected + 1) % count;
             if (wifiScanSelected >= wifiListPage + 5)
               wifiListPage = wifiScanSelected - 4;
@@ -2045,16 +2398,21 @@ void loop() {
           }
         }
         needRedraw = true;
-      } else if (event == EV_LONG) {
+      }
+      else if (event == EV_LONG)
+      {
         int n = WiFi.scanComplete();
-        if (n > 0) {
+        if (n > 0)
+        {
           // Переключение режима сортировки/фильтрации
           wifiSortMode = (wifiSortMode + 1) % 3;
           sortAndFilterWiFiNetworks();
           wifiScanSelected = 0;
           wifiListPage = 0;
           Serial.printf("[RADAR] Sort mode: %d\n", wifiSortMode);
-        } else {
+        }
+        else
+        {
           // Если нет сканирования, запустить новое
           Serial.println("[RADAR] INITIATING DISCONNECT...");
           WiFi.disconnect(true);
@@ -2069,7 +2427,8 @@ void loop() {
       }
       break;
     case MODE_VAULT:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         int n = vaultManager.getAccountCount();
         if (n > 0)
           vaultManager.setCurrentIndex((vaultManager.getCurrentIndex() + 1) %
@@ -2078,11 +2437,14 @@ void loop() {
       }
       break;
     case MODE_BADWOLF:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         badWolfScriptIndex =
             (badWolfScriptIndex + 1) % UsbManager::DUCKY_SCRIPT_COUNT;
         needRedraw = true;
-      } else if (event == EV_LONG) {
+      }
+      else if (event == EV_LONG)
+      {
         if (badWolfScriptIndex == 4)
           usbManager.runBackdoor();
         else
@@ -2091,30 +2453,38 @@ void loop() {
       }
       break;
     case MODE_WIFI_BEACON:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         beaconManager.nextSSID();
         needRedraw = true;
       }
       break;
     case MODE_WIFI_SNIFF:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         int n = wifiSniffManager.getApCount();
-        if (n > 0) {
+        if (n > 0)
+        {
           wifiSniffSelected = (wifiSniffSelected + 1) % n;
           needRedraw = true;
         }
       }
       break;
     case MODE_BLE_SCAN:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         int n = bleManager.getScanCount();
-        if (n > 0) {
+        if (n > 0)
+        {
           bleScanSelected = (bleScanSelected + 1) % n;
           needRedraw = true;
         }
-      } else if (event == EV_LONG) {
+      }
+      else if (event == EV_LONG)
+      {
         int n = bleManager.getScanCount();
-        if (n > 0) {
+        if (n > 0)
+        {
           bleManager.cloneDevice(bleScanSelected);
           needRedraw = true;
         }
@@ -2126,7 +2496,8 @@ void loop() {
         needRedraw = true;
       break;
     case MODE_MDNS:
-      if (event == EV_SHORT) {
+      if (event == EV_SHORT)
+      {
         static int mdnsNameIdx = 0;
         const char *names[] = {"NOCTURNE", "HP-Print", "Chromecast", "AirPlay"};
         mdnsNameIdx = (mdnsNameIdx + 1) % 4;
@@ -2145,11 +2516,13 @@ void loop() {
   // 5. Render (throttle: needRedraw or guiTimer)
   static unsigned long lastYield = 0;
 
-  if (predatorMode) {
+  if (predatorMode)
+  {
     display.clearBuffer();
     display.sendBuffer();
     // Минимальная задержка только при необходимости
-    if (now - lastYield > 10) {
+    if (now - lastYield > 10)
+    {
       yield();
       lastYield = now;
     }
@@ -2158,9 +2531,11 @@ void loop() {
 
   // Always render when menu is open so it is never overwritten by a skipped
   // frame
-  if (!needRedraw && !guiTimer.check(now) && !quickMenuOpen) {
+  if (!needRedraw && !guiTimer.check(now) && !quickMenuOpen)
+  {
     // Минимальная задержка только при необходимости
-    if (now - lastYield > 10) {
+    if (now - lastYield > 10)
+    {
       yield();
       lastYield = now;
     }
@@ -2173,17 +2548,24 @@ void loop() {
   if (signalLost && netManager.isTcpConnected() && netManager.hasReceivedData())
     netManager.disconnectTcp();
 
-  if (!splashDone) {
+  if (!splashDone)
+  {
     display.drawSplash();
-  } else if (quickMenuOpen) {
+  }
+  else if (quickMenuOpen)
+  {
     sceneManager.drawMenu(
         menuLevel, menuCategory, quickMenuItem, settings.carouselEnabled,
         settings.carouselIntervalSec, settings.displayInverted,
         settings.glitchEnabled, settings.ledEnabled,
         settings.lowBrightnessDefault, rebootConfirmed);
-  } else {
-    switch (currentMode) {
-    case MODE_NORMAL: {
+  }
+  else
+  {
+    switch (currentMode)
+    {
+    case MODE_NORMAL:
+    {
       /* Idle = no WiFi or no server (linking). After 10s show wolf screensaver.
        * Do NOT use isSearchMode() here: searchMode_ is true when WiFi is down
        * or when linking, which are exactly the states we want screensaver for.
@@ -2193,40 +2575,56 @@ void loop() {
       if (signalLost && netManager.isTcpConnected())
         idleState =
             false; /* TCP up but no data → show SEARCH, not screensaver */
-      if (!idleState) {
+      if (!idleState)
+      {
         idleStateEnteredMs = 0;
       }
-      if (idleState && idleStateEnteredMs == 0) {
+      if (idleState && idleStateEnteredMs == 0)
+      {
         idleStateEnteredMs = now;
       }
       bool showScreensaver =
           idleState && idleStateEnteredMs != 0 &&
           (now - idleStateEnteredMs >= (unsigned long)NOCT_IDLE_SCREENSAVER_MS);
 
-      if (!netManager.isWifiConnected()) {
-        if (showScreensaver) {
+      if (!netManager.isWifiConnected())
+      {
+        if (showScreensaver)
+        {
           sceneManager.drawIdleScreensaver(now);
           display.applyGlitch(); /* Always light glitch on screensaver */
-        } else {
+        }
+        else
+        {
           sceneManager.drawNoSignal(false, false, 0, blinkState);
         }
-      } else if (!netManager.isTcpConnected()) {
-        if (showScreensaver) {
+      }
+      else if (!netManager.isTcpConnected())
+      {
+        if (showScreensaver)
+        {
           sceneManager.drawIdleScreensaver(now);
           display.applyGlitch(); /* Always light glitch on screensaver */
-        } else {
+        }
+        else
+        {
           sceneManager.drawConnecting(netManager.rssi(), blinkState);
         }
-      } else if (netManager.isSearchMode() || signalLost) {
+      }
+      else if (netManager.isSearchMode() || signalLost)
+      {
         int scanPhase = (int)(now / 100) % 12;
         sceneManager.drawSearchMode(scanPhase);
-      } else {
+      }
+      else
+      {
         display.drawGlobalHeader(sceneManager.getSceneName(currentScene),
                                  nullptr, netManager.rssi(),
                                  netManager.isWifiConnected());
         sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
                                      state.batteryVoltage);
-        if (inTransition) {
+        if (inTransition)
+        {
           unsigned long elapsed = now - transitionStart;
           int progress =
               (int)((elapsed * NOCT_TRANSITION_STEP) / NOCT_TRANSITION_MS);
@@ -2240,7 +2638,9 @@ void loop() {
                                       blinkState, fanAnimFrame);
           if (progress >= NOCT_DISP_W)
             inTransition = false;
-        } else {
+        }
+        else
+        {
           sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
         }
       }
@@ -2251,9 +2651,11 @@ void loop() {
       sceneManager.drawDaemon(bootTime, netManager.isWifiConnected(),
                               netManager.isTcpConnected(), netManager.rssi());
       break;
-    case MODE_RADAR: {
+    case MODE_RADAR:
+    {
       int n = WiFi.scanComplete();
-      if (n > 0 && wifiFilteredCount == 0) {
+      if (n > 0 && wifiFilteredCount == 0)
+      {
         sortAndFilterWiFiNetworks();
       }
       sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage,
@@ -2277,9 +2679,11 @@ void loop() {
       wifiSniffManager.tick();
       sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
       break;
-    case MODE_WIFI_DEAUTH: {
+    case MODE_WIFI_DEAUTH:
+    {
       int n = WiFi.scanComplete();
-      if (n > 0 && wifiFilteredCount == 0) {
+      if (n > 0 && wifiFilteredCount == 0)
+      {
         sortAndFilterWiFiNetworks();
       }
       kickManager.tick();
@@ -2309,13 +2713,15 @@ void loop() {
     case MODE_WIFI_BAD_MESSAGE_TARGETED:
     case MODE_WIFI_SLEEP_ATTACK:
     case MODE_WIFI_SLEEP_TARGETED:
-    case MODE_WIFI_SAE_COMMIT: {
+    case MODE_WIFI_SAE_COMMIT:
+    {
       wifiAttackManager.tick();
       static char attackFooter[48];
-      const char *attackNames[] = {"AUTH",      "MIMIC", "AP SPAM", "BAD MSG",
+      const char *attackNames[] = {"AUTH", "MIMIC", "AP SPAM", "BAD MSG",
                                    "BAD MSG T", "SLEEP", "SLEEP T", "SAE"};
       int attackIdx = 0;
-      switch (currentMode) {
+      switch (currentMode)
+      {
       case MODE_WIFI_AUTH_ATTACK:
         attackIdx = 0;
         break;
@@ -2357,13 +2763,15 @@ void loop() {
     case MODE_NETWORK_SMTP_SCAN:
     case MODE_NETWORK_RDP_SCAN:
     case MODE_NETWORK_TELNET_SCAN:
-    case MODE_NETWORK_SSH_SCAN: {
+    case MODE_NETWORK_SSH_SCAN:
+    {
       networkScanManager.tick();
       static char scanFooter[48];
-      const char *scanNames[] = {"ARP",   "PORT", "PING", "DNS",    "HTTP",
-                                 "HTTPS", "SMTP", "RDP",  "TELNET", "SSH"};
+      const char *scanNames[] = {"ARP", "PORT", "PING", "DNS", "HTTP",
+                                 "HTTPS", "SMTP", "RDP", "TELNET", "SSH"};
       int scanIdx = 0;
-      switch (currentMode) {
+      switch (currentMode)
+      {
       case MODE_NETWORK_ARP_SCAN:
         scanIdx = 0;
         break;
@@ -2409,13 +2817,15 @@ void loop() {
     case MODE_BLE_SCAN_FLOCK:
     case MODE_BLE_SCAN_ANALYZER:
     case MODE_BLE_SCAN_SIMPLE:
-    case MODE_BLE_SCAN_SIMPLE_TWO: {
+    case MODE_BLE_SCAN_SIMPLE_TWO:
+    {
       static char bleFooter[48];
       const char *scanNames[] = {"SKIMMERS", "AIRTAG", "FLIPPER", "FLOCK",
                                  "ANALYZER", "SIMPLE", "SIMPLE2"};
       int scanIdx = 0;
       int count = 0;
-      switch (currentMode) {
+      switch (currentMode)
+      {
       case MODE_BLE_SCAN_SKIMMERS:
         scanIdx = 0;
         count = bleManager.getSkimmerCount();
@@ -2449,7 +2859,8 @@ void loop() {
       sceneManager.drawBleScanMode(bleScanSelected, bleManager);
       break;
     }
-    case MODE_BLE_SCAN_AIRTAG_MON: {
+    case MODE_BLE_SCAN_AIRTAG_MON:
+    {
       int count = bleManager.getAirTagCount();
       static char airtagFooter[48];
       snprintf(airtagFooter, sizeof(airtagFooter), "AIRTAG MON CNT:%d", count);
@@ -2463,9 +2874,11 @@ void loop() {
     case MODE_BLE_SCAN:
       sceneManager.drawBleScanMode(bleScanSelected, bleManager);
       break;
-    case MODE_BLE_SPAM: {
+    case MODE_BLE_SPAM:
+    {
       static int lastPhantomPayloadIndex = -1;
-      if (bleManager.isActive()) {
+      if (bleManager.isActive())
+      {
         bleManager.tick();
       }
       sceneManager.drawBleSpammer(bleManager.getPacketCount());
@@ -2479,7 +2892,8 @@ void loop() {
       sceneManager.drawBadWolf(badWolfScriptIndex);
       break;
     case MODE_WIFI_TRAP:
-      if (trapManager.isActive()) {
+      if (trapManager.isActive())
+      {
         trapManager.tick();
       }
       sceneManager.drawTrapMode(
@@ -2487,7 +2901,8 @@ void loop() {
           trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
           trapManager.getClonedSSID());
       break;
-    case MODE_VAULT: {
+    case MODE_VAULT:
+    {
       vaultManager.tick();
       static char codeBuf[8];
       vaultManager.getCurrentCode(codeBuf, sizeof(codeBuf));
@@ -2507,10 +2922,11 @@ void loop() {
       sceneManager.drawMdnsMode(mdnsManager.getServiceName(),
                                 mdnsManager.isActive());
       break;
-    case MODE_GAME_FORZA: {
+    case MODE_GAME_FORZA:
+    {
       bool showSplash = (now < forzaSplashUntil);
       sceneManager.drawForzaDash(forzaManager, showSplash,
-                                (uint32_t)WiFi.localIP());
+                                 (uint32_t)WiFi.localIP());
       break;
     }
     default:
@@ -2520,7 +2936,8 @@ void loop() {
 
   if (settings.glitchEnabled)
     display.applyGlitch();
-  if (toastUntil && now >= toastUntil) {
+  if (toastUntil && now >= toastUntil)
+  {
     toastUntil = 0;
     toastMsg[0] = '\0';
   }
@@ -2530,7 +2947,8 @@ void loop() {
 
   // Оптимизированная задержка - yield только при необходимости
   static unsigned long lastMainYield = 0;
-  if (now - lastMainYield > 10) {
+  if (now - lastMainYield > 10)
+  {
     yield();
     lastMainYield = now;
   }

@@ -209,7 +209,7 @@ python monitor.py
 | ------------------------------- | ----------------------------------------------------------------------------------------- |
 | **`include/secrets.h`**         | Wi‑Fi SSID/пароль, IP ПК, TCP-порт. Не коммитить.                                         |
 | **`include/nocturne/config.h`** | Пины, размеры экрана, таймауты, пороги алертов (для справки), параметры меню и батареи.   |
-| **`server/config.json`**        | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city`. Рядом с exe или в `server/`. |
+| **`server/config.json`**        | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city`, `lhm_storage_fallback`. Рядом с exe или в `server/`. |
 
 Пример `config.json`:
 
@@ -219,13 +219,25 @@ python monitor.py
   "port": 8090,
   "lhm_url": "http://localhost:8085/data.json",
   "limits": { "gpu": 72, "cpu": 85 },
-  "weather_city": "London"
+  "weather_city": "London",
+  "lhm_storage_fallback": "psutil"
 }
 ```
 
-**Формат и значения по умолчанию:** при отсутствии файла или полей используются: `host` = `"0.0.0.0"`, `port` = `8090`, `lhm_url` = `"http://localhost:8085/data.json"`, `limits` = `{"gpu": 80, "cpu": 75}`, `weather_city` = `"Moscow"`. Поле `limits` задаёт пороги алертов (в °C для gpu/cpu при использовании в логике монитора; точные пороги см. в `monitor.py` и `config.h`).
+**Формат и значения по умолчанию:** при отсутствии файла или полей используются: `host` = `"0.0.0.0"`, `port` = `8090`, `lhm_url` = `"http://localhost:8085/data.json"`, `limits` = `{"gpu": 80, "cpu": 75}`, `weather_city` = `"Moscow"`, `lhm_storage_fallback` = `"psutil"`. Поле `limits` задаёт пороги алертов (в °C для gpu/cpu при использовании в логике монитора; точные пороги см. в `monitor.py` и `config.h`). При `lhm_storage_fallback` = `"psutil"` и пустых данных о дисках от LHM используется psutil (used/total GB; температура = 0).
 
 Порт в `config.json` должен совпадать с `TCP_PORT` в `secrets.h` (или с тем портом, на котором реально слушает монитор).
+
+### Отладка дисков (сцена DISKS)
+
+Если LibreHardwareMonitor изменил формат JSON и данные о дисках не отображаются, используйте утилиту **`server/tools/dump_lhm_disks.py`**:
+
+```bash
+cd server
+python tools/dump_lhm_disks.py [--url http://localhost:8085/data.json] [--save lhm_raw.json]
+```
+
+Скрипт запрашивает `data.json` у LHM, выводит дерево storage-узлов и карту путей (`/hdd/N/data/31`, `/nvme/N/temperature/0` и т.д.). Флаг `--save` сохраняет сырой JSON для анализа.
 
 ---
 
@@ -239,6 +251,8 @@ python monitor.py
 │   └── secrets.h.example # Шаблон → копировать в secrets.h
 ├── server/              # Сервер телеметрии (ПК)
 │   ├── monitor.py       # TCP-сервер: LHM, погода, медиа, алерты, трей
+│   ├── tools/
+│   │   └── dump_lhm_disks.py  # Отладка: дамп структуры дисков из LHM data.json
 │   ├── build_server.bat # Сборка → server/dist/NocturneServer.exe
 │   ├── NocturneServer.spec
 │   ├── requirements.txt
