@@ -124,7 +124,7 @@ static const unsigned char wolf_funny[] = {
     0xc0, 0x25, 0x84, 0x03, 0x00, 0x1c, 0xf0, 0x00, 0x00, 0x10, 0x0c, 0x00,
     0x00, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-#define SPLIT_X 64
+#define SPLIT_X (NOCT_DISP_W / 2)
 #define X(x, off) ((x) + (off))
 
 // Unified V4 2x2 grid (CPU, GPU, MB): from config.h
@@ -544,9 +544,9 @@ void SceneManager::drawRam(bool blinkState, int xOff)
 // SCENE 5: DISKS (Tech-Wolf 2x2 Grid) — Lines at X=64, Y=40. Cell: Drive
 // letter (Tiny top-left), Temp (Big center). No progress bars.
 // ---------------------------------------------------------------------------
-#define DISK_GRID_X_SPLIT 64
+#define DISK_GRID_X_SPLIT (NOCT_DISP_W / 2)
 #define DISK_GRID_Y_SPLIT 40
-#define DISK_CELL_W 64
+#define DISK_CELL_W (NOCT_DISP_W / 2)
 #define DISK_CELL_H 40
 #define DISK_LBL_X 4
 #define DISK_LBL_Y 4
@@ -960,13 +960,13 @@ void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
     u8g2.drawUTF8((NOCT_DISP_W - pw) / 2, 42, pctBuf);
     u8g2.setFont(u8g2_font_profont12_tf);
     if (isCharging)
-      u8g2.drawUTF8((NOCT_DISP_W - 36) / 2, 56, "CHARGING");
+      u8g2.drawUTF8((NOCT_DISP_W - 36) / 2, 52, "CHARGING");
     else
-      u8g2.drawUTF8((NOCT_DISP_W - 24) / 2, 56, "READY");
+      u8g2.drawUTF8((NOCT_DISP_W - 24) / 2, 52, "READY");
     char vBuf[24];
     snprintf(vBuf, sizeof(vBuf), "%.2f V", batteryVoltage);
     int vw = u8g2.getUTF8Width(vBuf);
-    u8g2.drawUTF8((NOCT_DISP_W - vw) / 2, 62, vBuf);
+    u8g2.drawUTF8((NOCT_DISP_W - vw) / 2, 54, vBuf);
   }
   else
   {
@@ -1026,14 +1026,12 @@ static int submenuCountForCategory(int cat)
   case 0:
     return 2; // Monitoring: PC, Forza
   case 1:
-    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
+    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 2:
-    return 4; // Hacker: WiFi, BLE, Network, USB HID (groups)
+    return 2; // Hacker: WiFi, BLE
   case 3:
     return 1; // BMW: BMW Assistant
   case 4:
-    return 1; // Meshtastic: Switch to Meshtastic
-  case 5:
     return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
     return 2;
@@ -1044,10 +1042,8 @@ static int submenuCountForHackerGroup(int group)
 {
   switch (group)
   {
-  case 0: return 20; // WiFi
-  case 1: return 12; // BLE
-  case 2: return 10; // Network
-  case 3: return 1;  // USB HID
+  case 0: return 14; // WiFi: 13 scan + 1 duplicator
+  case 1: return 6;  // BLE: mimic only
   default: return 1;
   }
 }
@@ -1056,7 +1052,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                             int menuHackerGroup, bool carouselOn,
                             int carouselSec, bool screenRotated,
                             bool glitchEnabled, bool ledEnabled,
-                            bool lowBrightnessDefault, bool rebootConfirmed)
+                            bool lowBrightnessDefault, bool rebootConfirmed,
+                            int displayContrast, int displayTimeoutSec)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = NOCT_MENU_BOX_X;
@@ -1069,18 +1066,18 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
-  // 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System
+  // 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
   static const char *categoryNames[] = {"Monitoring", "Config", "Hacker",
-                                        "BMW", "Meshtastic", "System"};
+                                        "BMW", "System"};
   static char items[25][20];
   int count;
   const char *headerStr;
 
   if (menuLevel == 0)
   {
-    count = 6;
+    count = 5;
     headerStr = "// MENU";
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 5; i++)
     {
       strncpy(items[i], categoryNames[i], sizeof(items[i]) - 1);
       items[i][sizeof(items[i]) - 1] = '\0';
@@ -1089,51 +1086,28 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   else if (menuLevel == 2)
   {
     count = submenuCountForHackerGroup(menuHackerGroup);
-    headerStr = (menuHackerGroup == 0) ? "WiFi" : (menuHackerGroup == 1)
-                                                    ? "BLE"
-                                                    : (menuHackerGroup == 2)
-                                                          ? "Network"
-                                                          : "USB HID";
+    headerStr = (menuHackerGroup == 0) ? "WiFi" : "BLE";
     if (menuHackerGroup == 0)
     {
       const char *wifiItems[] = {"AP SCAN", "PROBE SCAN", "EAPOL CAPTURE",
         "STATION SCAN", "PACKET MONITOR", "CHAN ANALYZER", "CHAN ACTIVITY",
         "PACKET RATE", "PINESCAN", "MULTISSID", "SIG STRENGTH", "RAW CAPTURE",
-        "AP+STA SCAN", "DEAUTH", "DEAUTH TARGET", "DEAUTH MANUAL", "BEACON SPAM",
-        "BEACON RICKROLL", "AUTH ATTACK", "EVIL PORTAL"};
-      for (int i = 0; i < count && i < 20; i++)
+        "AP+STA SCAN", "WIFI DUP"};
+      for (int i = 0; i < count && i < 14; i++)
       {
         strncpy(items[i], wifiItems[i], sizeof(items[i]) - 1);
         items[i][sizeof(items[i]) - 1] = '\0';
       }
     }
-    else if (menuHackerGroup == 1)
+    else
     {
-      const char *bleItems[] = {"BLE SCAN", "BLE SKIMMERS", "BLE AIRTAG",
-        "BLE AIRTAG MON", "BLE FLIPPER", "BLE ANALYZER", "BLE SPAM",
-        "SOUR APPLE", "SWIFTPAIR MS", "SWIFTPAIR GOOGLE", "SWIFTPAIR SAMSUNG",
-        "FLIPPER SPAM"};
-      for (int i = 0; i < count && i < 12; i++)
+      const char *bleItems[] = {"BLE SPAM", "SOUR APPLE", "SWIFTPAIR MS",
+        "SWIFTPAIR GOOGLE", "SWIFTPAIR SAMSUNG", "FLIPPER SPAM"};
+      for (int i = 0; i < count && i < 6; i++)
       {
         strncpy(items[i], bleItems[i], sizeof(items[i]) - 1);
         items[i][sizeof(items[i]) - 1] = '\0';
       }
-    }
-    else if (menuHackerGroup == 2)
-    {
-      const char *netItems[] = {"ARP SCAN", "PORT SCAN", "PING SCAN",
-        "DNS SCAN", "HTTP SCAN", "HTTPS SCAN", "SMTP SCAN", "RDP SCAN",
-        "TELNET SCAN", "SSH SCAN"};
-      for (int i = 0; i < count && i < 10; i++)
-      {
-        strncpy(items[i], netItems[i], sizeof(items[i]) - 1);
-        items[i][sizeof(items[i]) - 1] = '\0';
-      }
-    }
-    else
-    {
-      strncpy(items[0], "USB HID", sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
     }
   }
   else
@@ -1161,15 +1135,19 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                ledEnabled ? "ON" : "OFF");
       snprintf(items[4], sizeof(items[4]), "DIM: %s",
                lowBrightnessDefault ? "ON" : "OFF");
+      snprintf(items[5], sizeof(items[5]), "CONTRAST:%d", displayContrast);
+      if (displayTimeoutSec == 0)
+        strncpy(items[6], "TIMEOUT:OFF", sizeof(items[6]) - 1);
+      else
+        snprintf(items[6], sizeof(items[6]), "TIMEOUT:%ds", displayTimeoutSec);
+      items[6][sizeof(items[6]) - 1] = '\0';
     }
     else if (menuCategory == 2)
     {
       strncpy(items[0], "WiFi", sizeof(items[0]) - 1);
       strncpy(items[1], "BLE", sizeof(items[1]) - 1);
-      strncpy(items[2], "Network", sizeof(items[2]) - 1);
-      strncpy(items[3], "USB HID", sizeof(items[3]) - 1);
-      for (int i = 0; i < 4; i++)
-        items[i][sizeof(items[i]) - 1] = '\0';
+      items[0][sizeof(items[0]) - 1] = '\0';
+      items[1][sizeof(items[1]) - 1] = '\0';
     }
     else if (menuCategory == 3)
     {
@@ -1177,11 +1155,6 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       items[0][sizeof(items[0]) - 1] = '\0';
     }
     else if (menuCategory == 4)
-    {
-      strncpy(items[0], "Switch to Meshtastic", sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
-    }
-    else if (menuCategory == 5)
     {
       if (rebootConfirmed)
         snprintf(items[0], sizeof(items[0]), "REBOOT [OK]");
@@ -1242,6 +1215,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     int textX = boxX + (boxW - textWidth) / 2;
     if (textX < NOCT_MENU_LIST_LEFT + 10)
       textX = NOCT_MENU_LIST_LEFT + 10;
+    if (textX + textWidth > NOCT_MENU_LIST_LEFT + NOCT_MENU_LIST_W - 2)
+      textX = NOCT_MENU_LIST_LEFT + NOCT_MENU_LIST_W - 2 - textWidth;
 
     if (i == selected)
     {
@@ -1289,9 +1264,15 @@ void SceneManager::drawToast(const char *msg)
   u8g2.setFont(LABEL_FONT);
   int w = u8g2.getUTF8Width(msg);
   int x = (NOCT_DISP_W - w) / 2;
-  if (x < 2)
-    x = 2;
-  u8g2.drawUTF8(x, barY + barH - 3, msg);
+  if (x < NOCT_MARGIN)
+    x = NOCT_MARGIN;
+  if (x + w > NOCT_DISP_W - NOCT_MARGIN)
+    x = NOCT_DISP_W - NOCT_MARGIN - w;
+  /* Text top at least 54 so bottom <= 64 */
+  int textY = barY + 2;
+  if (textY < NOCT_FOOTER_TEXT_Y)
+    textY = NOCT_FOOTER_TEXT_Y;
+  u8g2.drawUTF8(x, textY, msg);
   u8g2.setDrawColor(1);
 }
 
@@ -1625,12 +1606,12 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   if (footerOverride && filteredCount == 0 && sortedIndices == nullptr)
   {
     u8g2.setDrawColor(1);
-    u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+    u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
     u8g2.setDrawColor(0);
-    u8g2.setCursor(2, 7);
+    u8g2.setCursor(NOCT_MARGIN, 7);
     u8g2.print("ACTIVE");
     u8g2.setDrawColor(1);
-    u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+    u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
     u8g2.setCursor(2, 20);
     char footer[48];
     strncpy(footer, footerOverride, sizeof(footer) - 1);
@@ -1691,14 +1672,16 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   {
     u8g2.printf("TARGETS: %d", displayCount);
   }
-  u8g2.drawLine(0, 10, 128, 10);
+  u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
 
   int yStart = 12;
   int h = 10;
+  const int maxVisibleRows = 4;  // keep list above NOCT_FOOTER_Y (50)
+  int endIdx = pageOffset + maxVisibleRows < displayCount
+                   ? pageOffset + maxVisibleRows
+                   : displayCount;
 
-  for (int i = pageOffset;
-       i < (pageOffset + 5 < displayCount ? pageOffset + 5 : displayCount);
-       i++)
+  for (int i = pageOffset; i < endIdx; i++)
   {
     int actualIndex = useFiltered ? sortedIndices[i] : i;
     int y = yStart + ((i - pageOffset) * h);
@@ -1706,7 +1689,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     if (i == selectedIndex)
     {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(0, y - 8, 128, h);
+      u8g2.drawBox(0, y - 8, NOCT_DISP_W, h);
       u8g2.setDrawColor(0);
     }
     else
@@ -1764,8 +1747,8 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   }
 
   u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 56, 128, 56);
-  u8g2.setCursor(2, 62);
+  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   if (footerOverride && footerOverride[0] != '\0')
   {
     u8g2.print(footerOverride);
@@ -1781,11 +1764,9 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
 }
 
 // ---------------------------------------------------------------------------
-// BLE PHANTOM SPAMMER: status bar, pulsing BT icon, packet count, glitch in
-// main
+// BLE PHANTOM SPAMMER: status bar, pulsing BT icon, packet count
 // ---------------------------------------------------------------------------
-#define PHANTOM_HEADER_H 10
-#define PHANTOM_BT_CX 64
+#define PHANTOM_BT_CX (NOCT_DISP_W / 2)
 #define PHANTOM_BT_CY 32
 #define PHANTOM_BT_R 12
 
@@ -1809,10 +1790,9 @@ void SceneManager::drawBleSpammer(int packetCount)
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  // Top bar: STATUS: PHANTOM ACTIVE
-  u8g2.drawBox(0, 0, NOCT_DISP_W, PHANTOM_HEADER_H);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("BLE SPAM");
   u8g2.setDrawColor(1);
 
@@ -1823,11 +1803,10 @@ void SceneManager::drawBleSpammer(int packetCount)
     pulse = -pulse;
   drawBtIcon(u8g2, PHANTOM_BT_CX, PHANTOM_BT_CY, PHANTOM_BT_R, pulse);
 
-  // Packet counter
-  u8g2.setCursor(20, 54);
-  u8g2.print("PACKETS SENT: [");
-  u8g2.print(packetCount);
-  u8g2.print("]");
+  static char pktBuf[20];
+  snprintf(pktBuf, sizeof(pktBuf), "PKT: %lu", (unsigned long)packetCount);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+  u8g2.print(pktBuf);
 
   disp_.drawGreebles();
 }
@@ -1835,11 +1814,8 @@ void SceneManager::drawBleSpammer(int packetCount)
 // ---------------------------------------------------------------------------
 // BADWOLF USB HID: skull with wolf ears, ARMED, Short=Matrix / Long=Sniffer
 // ---------------------------------------------------------------------------
-#define BADWOLF_HEADER_H 10
-#define BADWOLF_ICON_CX 64
 #define BADWOLF_ICON_CY 28
 #define BADWOLF_SKULL_R 10
-#define BADWOLF_FOOTER_Y 52
 
 static const char *const badWolfScriptNames[] = {"Matrix", "Sniffer", "CMD",
                                                  "Process", "Backdoor"};
@@ -1851,13 +1827,13 @@ void SceneManager::drawBadWolf(int scriptIndex)
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, BADWOLF_HEADER_H);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("USB HID");
   u8g2.setDrawColor(1);
 
-  int cx = BADWOLF_ICON_CX;
+  int cx = NOCT_DISP_W / 2;
   int cy = BADWOLF_ICON_CY;
   u8g2.drawCircle(cx, cy, BADWOLF_SKULL_R);
   u8g2.drawCircle(cx - 4, cy - 2, 2);
@@ -1867,22 +1843,19 @@ void SceneManager::drawBadWolf(int scriptIndex)
 
   if (scriptIndex >= 0 && scriptIndex <= 4)
   {
-    u8g2.setCursor(2, 42);
+    u8g2.setCursor(NOCT_MARGIN, 42);
     u8g2.print("Script: ");
     u8g2.print(badWolfScriptNames[scriptIndex]);
   }
 
-  u8g2.drawLine(0, BADWOLF_FOOTER_Y - 1, NOCT_DISP_W, BADWOLF_FOOTER_Y - 1);
-  u8g2.setCursor(2, BADWOLF_FOOTER_Y + 6);
+  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print("1x next | 2s run | 3x Out");
 
   disp_.drawGreebles();
 }
 
 // --- SILENCE (868 MHz Jammer) ---
-#define SILENCE_HEADER_H 10
-#define SILENCE_FOOTER_Y 56
-
 void SceneManager::drawSilenceMode(int8_t power)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
@@ -1890,20 +1863,20 @@ void SceneManager::drawSilenceMode(int8_t power)
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, SILENCE_HEADER_H);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("JAM 868");
   u8g2.setDrawColor(1);
 
   // Static noise: intensity increases with time (jammer run duration)
   unsigned long t = millis() / 500;
   int noisePixels = 80 + (int)(t % 120);
+  int noiseH = NOCT_FOOTER_Y - NOCT_MODE_HEADER_H - 6;
   for (int i = 0; i < noisePixels; i++)
     u8g2.drawPixel(
-        2 + (esp_random() % (NOCT_DISP_W - 4)),
-        SILENCE_HEADER_H + 2 +
-            (esp_random() % (SILENCE_FOOTER_Y - SILENCE_HEADER_H - 6)));
+        NOCT_MARGIN + (esp_random() % (NOCT_DISP_W - NOCT_MARGIN * 2)),
+        NOCT_MODE_HEADER_H + 2 + (noiseH > 0 ? (esp_random() % noiseH) : 0));
 
   // Muted speaker (cone + X) + wolf silhouette
   int sx = 28;
@@ -1921,8 +1894,8 @@ void SceneManager::drawSilenceMode(int8_t power)
   u8g2.drawTriangle(wx - 6, wy - 6, wx - 2, wy - 10, wx + 2, wy - 6);
   u8g2.drawTriangle(wx + 2, wy - 6, wx + 6, wy - 10, wx + 6, wy - 4);
 
-  u8g2.drawLine(0, SILENCE_FOOTER_Y - 1, NOCT_DISP_W, SILENCE_FOOTER_Y - 1);
-  u8g2.setCursor(2, SILENCE_FOOTER_Y + 5);
+  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   static char powerBuf[16];
   snprintf(powerBuf, sizeof(powerBuf), "+%ddBm | 3x Out", power);
   u8g2.print(powerBuf);
@@ -1931,10 +1904,8 @@ void SceneManager::drawSilenceMode(int8_t power)
 }
 
 // --- TRAP (Evil Twin / Captive Portal) ---
-#define TRAP_HEADER_H 10
-#define TRAP_WEB_CX 64
+#define TRAP_WEB_CX (NOCT_DISP_W / 2)
 #define TRAP_WEB_CY 28
-#define TRAP_FOOTER_Y 56
 
 void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
                                 const char *lastPassword,
@@ -1946,9 +1917,9 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, TRAP_HEADER_H);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("PORTAL");
   if (clonedSSID && clonedSSID[0] != '\0')
   {
@@ -1964,13 +1935,33 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
   if (showBite)
   {
     u8g2.setDrawColor(0);
-    u8g2.drawBox(0, TRAP_HEADER_H, NOCT_DISP_W, NOCT_DISP_H - TRAP_HEADER_H);
+    u8g2.drawBox(0, NOCT_MODE_HEADER_H, NOCT_DISP_W,
+                 NOCT_DISP_H - NOCT_MODE_HEADER_H);
     u8g2.setDrawColor(1);
     u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
-    u8g2.setCursor(2, 50);
+    u8g2.setCursor(NOCT_MARGIN, 44);
     u8g2.print("BITE:");
-    u8g2.setCursor(2, 58);
-    u8g2.print(lastPassword);
+    static char pwdBuf[22];
+    size_t len = strlen(lastPassword);
+    if (len >= sizeof(pwdBuf))
+      len = sizeof(pwdBuf) - 1;
+    strncpy(pwdBuf, lastPassword, len);
+    pwdBuf[len] = '\0';
+    int maxW = NOCT_DISP_W - NOCT_MARGIN * 2;
+    while (len > 0 && (int)u8g2.getUTF8Width(pwdBuf) > maxW)
+    {
+      pwdBuf[--len] = '\0';
+      if (len >= 3)
+      {
+        pwdBuf[len - 3] = '.';
+        pwdBuf[len - 2] = '.';
+        pwdBuf[len - 1] = '.';
+      }
+      else
+        break;
+    }
+    u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+    u8g2.print(pwdBuf);
   }
   else
   {
@@ -1989,15 +1980,15 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
 
     static char buf[24];
     snprintf(buf, sizeof(buf), "CLIENTS: %d", clientCount);
-    u8g2.setCursor(2, 22);
+    u8g2.setCursor(NOCT_MARGIN, 22);
     u8g2.print(buf);
     snprintf(buf, sizeof(buf), "LOGS: %d", logsCaptured);
-    u8g2.setCursor(2, 32);
+    u8g2.setCursor(NOCT_MARGIN, 32);
     u8g2.print(buf);
   }
 
-  u8g2.drawLine(0, TRAP_FOOTER_Y - 1, NOCT_DISP_W, TRAP_FOOTER_Y - 1);
-  u8g2.setCursor(2, TRAP_FOOTER_Y + 5);
+  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print("3x Out");
 
   disp_.drawGreebles();
@@ -2021,9 +2012,9 @@ void SceneManager::drawKickMode(KickManager &kick)
 
   bool attacking = kick.isAttacking();
 
-  u8g2.setCursor(2, KICK_Y_TITLE);
+  u8g2.setCursor(NOCT_MARGIN, KICK_Y_TITLE);
   u8g2.print("DEAUTH");
-  u8g2.drawLine(0, 9, NOCT_DISP_W, 9);
+  u8g2.drawLine(0, NOCT_MODE_HEADER_H - 1, NOCT_DISP_W, NOCT_MODE_HEADER_H - 1);
 
   static char targetBuf[44];
   static char bssidBuf[20];
@@ -2060,10 +2051,8 @@ void SceneManager::drawKickMode(KickManager &kick)
 }
 
 // --- VAULT (TOTP 2FA) ---
-#define VAULT_HEADER_H 10
 #define VAULT_CHEST_X 24
 #define VAULT_CHEST_Y 22
-#define VAULT_FOOTER_Y 56
 
 void SceneManager::drawVaultMode(const char *accountName, const char *code6,
                                  int countdownSec)
@@ -2073,9 +2062,9 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, VAULT_HEADER_H);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("VAULT");
   u8g2.setDrawColor(1);
 
@@ -2088,7 +2077,7 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
   u8g2.drawTriangle(cx + 28, cy - 2, cx + 36, cy + 2, cx + 28, cy + 6);
   u8g2.drawTriangle(cx + 32, cy, cx + 38, cy + 2, cx + 32, cy + 4);
 
-  u8g2.setCursor(2, 14);
+  u8g2.setCursor(NOCT_MARGIN, 14);
   u8g2.print(accountName && accountName[0] ? accountName : "(no account)");
   u8g2.setFont(u8g2_font_logisoso24_tr);
   int codeW = code6 ? u8g2.getUTF8Width(code6) : 0;
@@ -2098,8 +2087,9 @@ void SceneManager::drawVaultMode(const char *accountName, const char *code6,
   int pct = (countdownSec >= 0 && countdownSec <= 30)
                 ? (int)((countdownSec * 100) / 30)
                 : 100;
-  disp_.drawProgressBar(4, 48, NOCT_DISP_W - 8, 4, 100 - pct);
-  u8g2.setCursor(2, VAULT_FOOTER_Y + 5);
+  disp_.drawProgressBar(NOCT_MARGIN, 48, NOCT_DISP_W - NOCT_MARGIN * 2, 4,
+                       100 - pct);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print("Short: next account | 3x Out");
 
   disp_.drawGreebles();
@@ -2113,23 +2103,23 @@ void SceneManager::drawBeaconMode(const char *ssid, int beaconCount, int index,
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("BEACON");
   u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
-  u8g2.setCursor(2, 18);
+  u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setCursor(NOCT_MARGIN, 18);
   u8g2.print(ssid && ssid[0] ? ssid : "(none)");
-  u8g2.setCursor(2, 28);
+  u8g2.setCursor(NOCT_MARGIN, 28);
   u8g2.print("PKTS: ");
   u8g2.print(beaconCount);
-  u8g2.setCursor(2, 38);
+  u8g2.setCursor(NOCT_MARGIN, 38);
   u8g2.print("SSID ");
   u8g2.print(index + 1);
   u8g2.print("/");
   u8g2.print(total);
-  u8g2.setCursor(2, 54);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print("1x next SSID | 2x back");
   disp_.drawGreebles();
 }
@@ -2500,7 +2490,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   snprintf(rpmBuf, sizeof(rpmBuf), "%.0f", currentRpm);
   int rpmW = u8g2.getUTF8Width(rpmBuf);
   u8g2.setDrawColor(2);
-  u8g2.drawUTF8(64 - (rpmW / 2) + shakeX, 9 + shakeY, rpmBuf);
+  u8g2.drawUTF8((NOCT_DISP_W / 2) - (rpmW / 2) + shakeX, 9 + shakeY, rpmBuf);
   u8g2.setDrawColor(1);
   u8g2.drawUTF8(2, 9 + shakeY, "RPM");
 
@@ -2516,22 +2506,22 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                       NOCT_DISP_W - speedZoneX + 1, contentH + 1);
   u8g2.drawVLine(sepX + shakeX, contentTop, contentH - 1);
 
-  // --- 4. GEAR (left zone) ---
+  // --- 4. GEAR (left zone): top of digit so bottom <= 64 (logisoso42 ~42px) ---
   u8g2.setFont(u8g2_font_profont10_tf);
   u8g2.drawUTF8(2 + shakeX, contentTop + 4 + shakeY, "GEAR");
   char gearBuf[4];
   forza.getGearString(gearBuf, sizeof(gearBuf));
   int gearX = 2 + shakeX;
-  int gearY = 62 + shakeY;
+  const int gearY = 20 + shakeY;  /* top of digit: 20+42 <= 64 */
   if (rpmPct > 0.1f)
   {
-    u8g2.drawLine(gearX, gearY, gearX + 36, gearY - 36);
-    u8g2.drawLine(gearX + 4, gearY, gearX + 40, gearY - 36);
+    u8g2.drawLine(gearX, gearY + 42, gearX + 36, gearY + 6);
+    u8g2.drawLine(gearX + 4, gearY + 42, gearX + 40, gearY + 6);
   }
   u8g2.setFont(u8g2_font_logisoso42_tf);
   u8g2.drawUTF8(gearX, gearY, gearBuf);
 
-  // --- 5. SPEED (right zone) ---
+  // --- 5. SPEED (right zone): keep speed and km/h within 64 ---
   u8g2.setFont(u8g2_font_profont10_tf);
   int speedLabelW = u8g2.getUTF8Width("SPEED");
   u8g2.drawUTF8(NOCT_DISP_W - 2 - speedLabelW + shakeX,
@@ -2550,7 +2540,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawHLine(spdX, spdY + 2, spdW);
   u8g2.setFont(u8g2_font_profont12_tf);
   int unitW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, 62 + shakeY, "km/h");
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, NOCT_FOOTER_TEXT_Y + shakeY,
+                "km/h");
 
   // --- 5. REDLINE STROBE ---
   if (isRedline)
@@ -2571,19 +2562,19 @@ void SceneManager::drawMdnsMode(const char *serviceName, bool active)
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
+  u8g2.setCursor(NOCT_MARGIN, 7);
   u8g2.print("mDNS");
   u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
-  u8g2.setCursor(2, 22);
+  u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setCursor(NOCT_MARGIN, 22);
   u8g2.print(serviceName && serviceName[0] ? serviceName : "NOCTURNE");
-  u8g2.setCursor(2, 34);
+  u8g2.setCursor(NOCT_MARGIN, 34);
   u8g2.print(active ? "ACTIVE" : "IDLE");
-  u8g2.setCursor(2, 48);
+  u8g2.setCursor(NOCT_MARGIN, 48);
   u8g2.print("1x change name");
-  u8g2.setCursor(2, 58);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print("2x back");
   disp_.drawGreebles();
 }
@@ -2597,12 +2588,12 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 {
   U8G2 &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(2, NOCT_HEADER_BASELINE_Y, "BMW E39");
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "BMW E39");
   u8g2.setFont(FONT_LABEL);
   char line[32];
   bmw.getStatusLine(line, sizeof(line));
   int y = NOCT_CONTENT_TOP + NOCT_ROW_DY;
-  u8g2.setCursor(2, y);
+  u8g2.setCursor(NOCT_MARGIN, y);
   u8g2.print(line);
   y += NOCT_ROW_DY;
   int actIdx = selectedActionIndex;
@@ -2610,30 +2601,28 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
     actIdx = 0;
   if (actIdx >= 10)
     actIdx = 9;
-  u8g2.setCursor(2, y);
+  u8g2.setCursor(NOCT_MARGIN, y);
   u8g2.print("> ");
   u8g2.print(bmwActionNames[actIdx]);
   y += NOCT_ROW_DY;
-  if (bmw.getNowPlayingTrack()[0]) {
-    u8g2.setCursor(2, y);
+  /* Content zone 14..50: at most one extra line (track, artist, or PDC) */
+  if (y <= NOCT_FOOTER_Y - NOCT_ROW_DY && bmw.getNowPlayingTrack()[0])
+  {
+    u8g2.setCursor(NOCT_MARGIN, y);
     u8g2.print(bmw.getNowPlayingTrack());
     y += NOCT_ROW_DY;
-    if (bmw.getNowPlayingArtist()[0]) {
-      u8g2.setCursor(2, y);
-      u8g2.print(bmw.getNowPlayingArtist());
-      y += NOCT_ROW_DY;
-    }
   }
-  if (bmw.hasPdcData()) {
+  if (y <= NOCT_FOOTER_Y - NOCT_ROW_DY && bmw.hasPdcData())
+  {
     int dists[4];
     bmw.getPdcDistances(dists, 4);
     char pdcBuf[24];
-    snprintf(pdcBuf, sizeof(pdcBuf), "PDC:%d %d %d %d", dists[0], dists[1], dists[2], dists[3]);
-    u8g2.setCursor(2, y);
+    snprintf(pdcBuf, sizeof(pdcBuf), "PDC:%d %d %d %d",
+             dists[0], dists[1], dists[2], dists[3]);
+    u8g2.setCursor(NOCT_MARGIN, y);
     u8g2.print(pdcBuf);
-    y += NOCT_ROW_DY;
   }
-  u8g2.setCursor(2, NOCT_FOOTER_Y + 2);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print("1x next  2s run  2x back");
   disp_.drawGreebles();
 }
