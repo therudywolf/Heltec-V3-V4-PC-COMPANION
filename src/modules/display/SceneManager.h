@@ -76,10 +76,14 @@ public:
   /** BLE Phantom Spammer UI: status bar, pulsing BT icon, packet count. */
   void drawBleSpammer(int packetCount);
 
-  /** TRAP: Evil twin / captive portal — clients, logs, last bite. */
+  /** BLE Clone: scan list, selected device, long-press to clone. */
+  void drawBleClone(class BleManager &ble, int selectedIndex);
+
+  /** TRAP: Evil twin / captive portal — clients, logs, last bite. cloneApPassword: AP password when cloning encrypted (for display). */
   void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
                     unsigned long passwordShowUntil,
-                    const char *clonedSSID = nullptr);
+                    const char *clonedSSID = nullptr,
+                    const char *cloneApPassword = nullptr);
 
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
 

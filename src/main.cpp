@@ -126,7 +126,7 @@ int wifiRssiFilter = -100; // Минимальный RSSI для отображ�
 int wifiSortedIndices[32]; // Индексы отсортированных сетей
 int wifiFilteredCount = 0; // Количество отфильтрованных сетей
 static int wifiSniffSelected = 0;
-static int bleScanSelected = 0;
+static int bleCloneSelected = 0;
 
 // Функция сортировки и фильтрации WiFi сетей
 static void sortAndFilterWiFiNetworks()
@@ -372,6 +372,8 @@ static bool handleHackerItem(int group, int item, unsigned long now)
     wifiListPage = 0;
     wifiFilteredCount = 0;
   }
+  if (mode == MODE_BLE_CLONE)
+    bleCloneSelected = 0;
   bool ok = (mode == MODE_WIFI_TRAP)
                 ? (sortAndFilterWiFiNetworks(),
                    appModeManager.switchToMode(currentMode, mode,
@@ -914,18 +916,15 @@ void loop()
       }
       else if (menuLevel == 1 && menuCategory == 2)
       {
-        // Hacker: enter group submenu (level 2)
-        menuLevel = 2;
-        menuHackerGroup = quickMenuItem;
-        quickMenuItem = 0;
-      }
-      else if (menuLevel == 2)
-      {
-        bool ok = handleHackerItem(menuHackerGroup, quickMenuItem, now);
+        // Hacker: flat list — execute selected tool (no level 2)
+        bool ok = handleHackerItem(0, quickMenuItem, now);
         if (ok)
+        {
+          quickMenuOpen = false;
           needRedraw = true;
+        }
       }
-      else
+      else if (menuLevel == 1)
       {
         bool ok = handleMenuActionByCategory(menuCategory, quickMenuItem, now);
         if (ok)
@@ -976,7 +975,17 @@ void loop()
         int n = WiFi.scanComplete();
         if (n > 0)
         {
-          // Переключение режима сортировки/фильтрации
+          sortAndFilterWiFiNetworks();
+          if (wifiFilteredCount > 0)
+          {
+            // Start WiFi clone (Trap) with selected network
+            appModeManager.switchToMode(currentMode, MODE_WIFI_TRAP,
+                                        wifiScanSelected, wifiFilteredCount,
+                                        wifiSortedIndices);
+            needRedraw = true;
+            break;
+          }
+          // No selection: cycle sort mode
           wifiSortMode = (wifiSortMode + 1) % 3;
           sortAndFilterWiFiNetworks();
           wifiScanSelected = 0;
@@ -985,7 +994,6 @@ void loop()
         }
         else
         {
-          // Если нет сканирования, запустить новое
           Serial.println("[RADAR] INITIATING DISCONNECT...");
           WiFi.disconnect(true);
           WiFi.mode(WIFI_OFF);
@@ -998,13 +1006,33 @@ void loop()
         needRedraw = true;
       }
       break;
-    case MODE_WIFI_SNIFF:
+    case MODE_WIFI_EAPOL:
       if (event == EV_SHORT)
       {
         int n = wifiSniffManager.getApCount();
         if (n > 0)
         {
           wifiSniffSelected = (wifiSniffSelected + 1) % n;
+          needRedraw = true;
+        }
+      }
+      break;
+    case MODE_BLE_CLONE:
+      if (event == EV_SHORT)
+      {
+        int n = bleManager.getScanCount();
+        if (n > 0)
+        {
+          bleCloneSelected = (bleCloneSelected + 1) % n;
+          needRedraw = true;
+        }
+      }
+      else if (event == EV_LONG)
+      {
+        int n = bleManager.getScanCount();
+        if (n > 0 && bleCloneSelected >= 0 && bleCloneSelected < n)
+        {
+          bleManager.cloneDevice(bleCloneSelected);
           needRedraw = true;
         }
       }
@@ -1209,37 +1237,15 @@ void loop()
                                    wifiFilteredCount);
       break;
     }
-    case MODE_WIFI_PROBE_SCAN:
-    case MODE_WIFI_EAPOL_SCAN:
-    case MODE_WIFI_STATION_SCAN:
-    case MODE_WIFI_PACKET_MONITOR:
-    case MODE_WIFI_CHANNEL_ANALYZER:
-    case MODE_WIFI_CHANNEL_ACTIVITY:
-    case MODE_WIFI_PACKET_RATE:
-    case MODE_WIFI_PINESCAN:
-    case MODE_WIFI_MULTISSID:
-    case MODE_WIFI_SIGNAL_STRENGTH:
-    case MODE_WIFI_RAW_CAPTURE:
-    case MODE_WIFI_AP_STA:
-      wifiSniffManager.tick();
-      sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
-      break;
-    case MODE_WIFI_SNIFF:
+    case MODE_WIFI_EAPOL:
       wifiSniffManager.tick();
       sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
       break;
     case MODE_BLE_SPAM:
-    case MODE_BLE_SOUR_APPLE:
-    case MODE_BLE_SWIFTPAIR_MICROSOFT:
-    case MODE_BLE_SWIFTPAIR_GOOGLE:
-    case MODE_BLE_SWIFTPAIR_SAMSUNG:
-    case MODE_BLE_FLIPPER_SPAM:
     {
       static int lastPhantomPayloadIndex = -1;
       if (bleManager.isActive())
-      {
         bleManager.tick();
-      }
       sceneManager.drawBleSpammer(bleManager.getPacketCount());
       if (lastPhantomPayloadIndex >= 0 &&
           bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
@@ -1247,6 +1253,11 @@ void loop()
       lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
       break;
     }
+    case MODE_BLE_CLONE:
+      if (bleManager.isScanning())
+        bleManager.tick();
+      sceneManager.drawBleClone(bleManager, bleCloneSelected);
+      break;
     case MODE_WIFI_TRAP:
       if (trapManager.isActive())
       {
@@ -1255,7 +1266,7 @@ void loop()
       sceneManager.drawTrapMode(
           trapManager.getClientCount(), trapManager.getLogsCaptured(),
           trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
-          trapManager.getClonedSSID());
+          trapManager.getClonedSSID(), trapManager.getCloneApPassword());
       break;
     case MODE_GAME_FORZA:
     {

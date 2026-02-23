@@ -18,6 +18,7 @@ WebServer server(80);
 TrapManager::TrapManager() {
   lastPassword_[0] = '\0';
   clonedSSID_[0] = '\0';
+  cloneApPasswordDisplay_[0] = '\0';
   useClonedSSID_ = false;
 }
 
@@ -30,6 +31,11 @@ void TrapManager::start() {
                               ? clonedSSID_
                               : TRAP_SSID_DEFAULT;
   const char *pass = (useClonedSSID_ && useApPassword_) ? TRAP_AP_PASSWORD : nullptr;
+  if (pass) {
+    strncpy(cloneApPasswordDisplay_, TRAP_AP_PASSWORD, sizeof(cloneApPasswordDisplay_) - 1);
+    cloneApPasswordDisplay_[sizeof(cloneApPasswordDisplay_) - 1] = '\0';
+  } else
+    cloneApPasswordDisplay_[0] = '\0';
   WiFi.softAP(ssidToUse, pass, 1, 0, 4);
   dnsServer.start(DNS_PORT, "*", AP_IP);
   setupHandlers();

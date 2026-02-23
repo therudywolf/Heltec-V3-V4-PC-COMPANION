@@ -1028,23 +1028,13 @@ static int submenuCountForCategory(int cat)
   case 1:
     return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 2:
-    return 2; // Hacker: WiFi, BLE
+    return 4; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
   case 3:
     return 1; // BMW: BMW Assistant
   case 4:
     return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
     return 2;
-  }
-}
-
-static int submenuCountForHackerGroup(int group)
-{
-  switch (group)
-  {
-  case 0: return 14; // WiFi: 13 scan + 1 duplicator
-  case 1: return 6;  // BLE: mimic only
-  default: return 1;
   }
 }
 
@@ -1083,33 +1073,6 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       items[i][sizeof(items[i]) - 1] = '\0';
     }
   }
-  else if (menuLevel == 2)
-  {
-    count = submenuCountForHackerGroup(menuHackerGroup);
-    headerStr = (menuHackerGroup == 0) ? "WiFi" : "BLE";
-    if (menuHackerGroup == 0)
-    {
-      const char *wifiItems[] = {"AP SCAN", "PROBE SCAN", "EAPOL CAPTURE",
-        "STATION SCAN", "PACKET MONITOR", "CHAN ANALYZER", "CHAN ACTIVITY",
-        "PACKET RATE", "PINESCAN", "MULTISSID", "SIG STRENGTH", "RAW CAPTURE",
-        "AP+STA SCAN", "WIFI DUP"};
-      for (int i = 0; i < count && i < 14; i++)
-      {
-        strncpy(items[i], wifiItems[i], sizeof(items[i]) - 1);
-        items[i][sizeof(items[i]) - 1] = '\0';
-      }
-    }
-    else
-    {
-      const char *bleItems[] = {"BLE SPAM", "SOUR APPLE", "SWIFTPAIR MS",
-        "SWIFTPAIR GOOGLE", "SWIFTPAIR SAMSUNG", "FLIPPER SPAM"};
-      for (int i = 0; i < count && i < 6; i++)
-      {
-        strncpy(items[i], bleItems[i], sizeof(items[i]) - 1);
-        items[i][sizeof(items[i]) - 1] = '\0';
-      }
-    }
-  }
   else
   {
     count = submenuCountForCategory(menuCategory);
@@ -1120,6 +1083,16 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       strncpy(items[1], "Forza", sizeof(items[1]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
+    }
+    else if (menuCategory == 2)
+    {
+      static const char *hackerItems[] = {"WiFi Clone", "BLE Clone",
+        "BLE Spam", "Infosec"};
+      for (int i = 0; i < count && i < 4; i++)
+      {
+        strncpy(items[i], hackerItems[i], sizeof(items[i]) - 1);
+        items[i][sizeof(items[i]) - 1] = '\0';
+      }
     }
     else if (menuCategory == 1)
     {
@@ -1809,6 +1782,68 @@ void SceneManager::drawBleSpammer(int packetCount)
   disp_.drawGreebles();
 }
 
+// --- BLE Clone: scan list, select device, long-press to clone ---
+void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(2, 7);
+  u8g2.print("BLE CLONE");
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+
+  if (ble.isCloning())
+  {
+    u8g2.setCursor(2, 20);
+    u8g2.print("Cloning...");
+    drawBottomHint("2s: back");
+    disp_.drawGreebles();
+    return;
+  }
+
+  int n = ble.getScanCount();
+  if (n <= 0)
+  {
+    u8g2.setCursor(2, 20);
+    u8g2.print("Scanning...");
+    drawBottomHint("1x next  2s: clone");
+    disp_.drawGreebles();
+    return;
+  }
+
+  if (selectedIndex < 0)
+    selectedIndex = 0;
+  if (selectedIndex >= n)
+    selectedIndex = n - 1;
+
+  const BleScanDevice *dev = ble.getScanDevice(selectedIndex);
+  if (dev)
+  {
+    u8g2.setCursor(2, 20);
+    char line[22];
+    strncpy(line, dev->name[0] ? dev->name : "(unknown)", sizeof(line) - 1);
+    line[sizeof(line) - 1] = '\0';
+    if (strlen(dev->name) > 18)
+      line[16] = '.';
+    u8g2.print(line);
+    u8g2.setCursor(2, 30);
+    u8g2.print(dev->addr);
+    u8g2.setCursor(2, 40);
+    u8g2.print("RSSI:");
+    u8g2.print(dev->rssi);
+    u8g2.setCursor(2, 50);
+    u8g2.print(selectedIndex + 1);
+    u8g2.print("/");
+    u8g2.print(n);
+  }
+  drawBottomHint("1x next  2s: clone");
+  disp_.drawGreebles();
+}
+
 // --- TRAP (Evil Twin / Captive Portal) ---
 #define TRAP_WEB_CX (NOCT_DISP_W / 2)
 #define TRAP_WEB_CY 28
@@ -1816,7 +1851,8 @@ void SceneManager::drawBleSpammer(int packetCount)
 void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
                                 const char *lastPassword,
                                 unsigned long passwordShowUntil,
-                                const char *clonedSSID)
+                                const char *clonedSSID,
+                                const char *cloneApPassword)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
@@ -1891,6 +1927,12 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
     snprintf(buf, sizeof(buf), "LOGS: %d", logsCaptured);
     u8g2.setCursor(NOCT_MARGIN, 32);
     u8g2.print(buf);
+    if (cloneApPassword && cloneApPassword[0] != '\0')
+    {
+      u8g2.setCursor(NOCT_MARGIN, 42);
+      u8g2.print("AP Pass: ");
+      u8g2.print(cloneApPassword);
+    }
   }
 
   drawBottomHint();

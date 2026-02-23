@@ -35,7 +35,7 @@
 | **Дизайн**  | Сетка 2×2, Tech Brackets, ProFont10/HelvB10, ~60 FPS, опциональный glitch.                         |
 | **Связь**   | WiFi без power-saving (`WIFI_PS_NONE`), автореконнект, таймауты в `config.h`.                     |
 | **Меню**    | 5 категорий → подменю; сохранение настроек в NVS.                                                 |
-| **Режимы**  | RADAR (WiFi-сканер), Trap (AP + portal), BLE Spam (и варианты), Forza, BMW Assistant, Charge only. |
+| **Режимы**  | WiFi Clone (RADAR + Trap), BLE Clone, BLE Spam, Infosec (EAPOL), Forza, BMW Assistant, Charge only. |
 | **Алерты**  | Пороги CPU/GPU temp и load, ОЗУ; двойной blink LED, подсветка метрики на экране.                  |
 | **Яркость** | Долгое нажатие вне меню — переключение нормальной/пониженной яркости. Таймаут дисплея — затемнение до минимума. |
 
@@ -104,7 +104,7 @@
 | ------------ | ------ | -------- |
 | **Monitoring** | PC, Forza | Переход в режим мониторинга с ПК или в дашборд Forza. |
 | **Config**   | AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT | AUTO: карусель OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. CONTRAST: цикл уровней. TIMEOUT: таймаут затемнения дисплея (0 / 30 / 60 с). Всё сохраняется в NVS. |
-| **Hacker**   | WiFi, BLE | **WiFi:** RADAR, Probe Scan, EAPOL, Station Scan, Packet Monitor, Channel Analyzer/Activity, Packet Rate, Pinescan, MultiSSID, Signal Strength, Raw Capture, AP+STA, **Trap** (portal). **BLE:** Spam, Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
+| **Hacker**   | WiFi Clone, BLE Clone, BLE Spam, Infosec | WiFi Clone: сканирование → выбор сети → долгое нажатие = клон (Trap). BLE Clone: сканирование BLE → выбор устройства → долгое = клонировать. BLE Spam: спам BLE-рекламы. Infosec: захват EAPOL handshake. |
 | **BMW**      | BMW Assistant | Режим ассистента BMW E39: BLE-ключ, I-Bus (замки, свет, MFL, PDC, приборка). Подробно: [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md). |
 | **System**   | REBOOT, CHARGE ONLY, POWER OFF, VERSION | Перезагрузка (с подтверждением), режим зарядки, глубокий сон, показ версии. |
 
@@ -116,10 +116,10 @@
 
 | Режим            | Описание                                                                 |
 | ---------------- | ------------------------------------------------------------------------ |
-| **RADAR**        | WiFi-сканер: список сетей, RSSI, канал; короткое — выбор, долгое — смена сортировки/фильтра. |
-| **Trap (Portal)**| Точка доступа + captive portal; клонирование SSID из скана; логи и пароли. |
-| **WiFi Sniff**   | Режимы сканирования/анализа (Probe, EAPOL, Station, Packet Monitor, Channel Analyzer/Activity, Packet Rate и др.). |
-| **BLE Spam**     | NimBLE spam; счётчик пакетов. Варианты: Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
+| **WiFi Clone**   | Сначала RADAR (список сетей); короткое — выбор, долгое при выбранной сети — запуск клона (Trap). Клон: свой пароль на экране, captive portal (MITM для открытых). |
+| **BLE Clone**    | Сканирование BLE; короткое — выбор устройства, долгое — клонировать (реклама под выбранным именем). |
+| **BLE Spam**     | Спам BLE-рекламы; счётчик пакетов. |
+| **Infosec**      | Захват EAPOL handshake; список AP с флагом [EAPOL]. |
 | **Forza**        | Дашборд телеметрии Forza (UDP): RPM, скорость, передача, shift lamp. См. [FORZA_SETUP](docs/forza/FORZA_SETUP.md). |
 | **BMW Assistant** | BLE-ключ, I-Bus (свет, замки, PDC, текст на приборку). См. таблицу ниже и [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md). |
 | **Charge only** | Экран зарядки; WiFi выключен для экономии. |
