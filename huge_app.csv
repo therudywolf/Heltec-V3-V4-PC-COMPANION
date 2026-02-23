@@ -1,5 +1,7 @@
 # Name,   Type, SubType, Offset,  Size, Flags
+# Dual boot: ota_0 = Nocturne, ota_1 = Meshtastic (flash from firmware-2.7.15.567b8ea)
 nvs,      data, nvs,     0x9000,  0x5000,
 otadata,  data, ota,     0xe000,  0x2000,
 app0,     app,  ota_0,   0x10000, 0x300000,
-spiffs,   data, spiffs,  0x310000,0xF0000,
+app1,     app,  ota_1,   0x310000,0x200000,
+spiffs,   data, spiffs,  0x510000,0x2F0000,

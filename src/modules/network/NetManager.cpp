@@ -3,8 +3,8 @@
  * connect.
  */
 #include "NetManager.h"
-#include "../../include/nocturne/Types.h"
-#include "../../include/nocturne/config.h"
+#include "nocturne/Types.h"
+#include "nocturne/config.h"
 #include <ArduinoJson.h>
 #include <esp_wifi.h>
 #include <string.h>

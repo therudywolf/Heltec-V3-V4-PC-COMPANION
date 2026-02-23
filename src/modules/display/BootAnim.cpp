@@ -3,7 +3,7 @@
  * bar.
  */
 #include "BootAnim.h"
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 #include "DisplayEngine.h"
 #include <Arduino.h>
 

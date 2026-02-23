@@ -4,7 +4,7 @@
 #ifndef NOCTURNE_ROLLING_GRAPH_H
 #define NOCTURNE_ROLLING_GRAPH_H
 
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 
 class RollingGraph {
 public:

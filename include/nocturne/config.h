@@ -183,4 +183,8 @@
 #define NOCT_ALERT_GV 4
 #define NOCT_ALERT_RAM 5
 
+/* BMW E39 Assistant: I-Bus UART (9600 8E1). Use transceiver to bus. */
+#define NOCT_IBUS_TX_PIN 39
+#define NOCT_IBUS_RX_PIN 38
+
 #endif

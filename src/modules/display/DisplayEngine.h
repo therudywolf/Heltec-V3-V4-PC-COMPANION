@@ -5,7 +5,7 @@
 #ifndef NOCTURNE_DISPLAY_ENGINE_H
 #define NOCTURNE_DISPLAY_ENGINE_H
 
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 #include "RollingGraph.h"
 #include <U8g2lib.h>
 

@@ -8,6 +8,9 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include <esp_sleep.h>
 #include <Wire.h>
 
 // --- FORCE DEPENDENCY VISIBILITY ---
@@ -18,21 +21,22 @@
 
 // -----------------------------------
 
-#include "modules/BeaconManager.h"
-#include "modules/BleManager.h"
-#include "modules/BootAnim.h"
-#include "modules/DisplayEngine.h"
-#include "modules/KickManager.h"
-#include "modules/MdnsManager.h"
-#include "modules/NetManager.h"
-#include "modules/NetworkScanManager.h"
-#include "modules/SceneManager.h"
-#include "modules/TrapManager.h"
-#include "modules/UsbManager.h"
-#include "modules/VaultManager.h"
-#include "modules/ForzaManager.h"
-#include "modules/WifiAttackManager.h"
-#include "modules/WifiSniffManager.h"
+#include "modules/network/BeaconManager.h"
+#include "modules/ble/BleManager.h"
+#include "modules/display/BootAnim.h"
+#include "modules/display/DisplayEngine.h"
+#include "modules/network/KickManager.h"
+#include "modules/network/MdnsManager.h"
+#include "modules/network/NetManager.h"
+#include "modules/network/NetworkScanManager.h"
+#include "modules/display/SceneManager.h"
+#include "modules/network/TrapManager.h"
+#include "modules/usb/UsbManager.h"
+#include "modules/system/VaultManager.h"
+#include "modules/car/BmwManager.h"
+#include "modules/car/ForzaManager.h"
+#include "modules/network/WifiAttackManager.h"
+#include "modules/network/WifiSniffManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 #include "secrets.h"
@@ -44,10 +48,15 @@
 #define NOCT_BAT_READ_INTERVAL_MS 5000
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
-// Flipper-style: level 0 = 5 categories, level 1 = submenu items
-#define MENU_CATEGORIES 5
-// Display order: Config, Games, WiFi, Tools, System (index -> real category)
-static const int menuDisplayOrder[] = {0, 4, 1, 2, 3};
+// Flipper-style: level 0 = 6 categories, level 1 = submenu, level 2 = hacker group items
+#define MENU_CATEGORIES 6
+// Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System (direct 0..5)
+#define HACKER_GROUP_WIFI 0
+#define HACKER_GROUP_BLE 1
+#define HACKER_GROUP_NETWORK 2
+#define HACKER_GROUP_USB 3
+#define HACKER_GROUP_COUNT 4
+static int menuHackerGroup = 0; // when menuLevel==2 and menuCategory==2
 #define WOLF_MENU_ITEMS 12
 
 // ---------------------------------------------------------------------------
@@ -178,6 +187,7 @@ WifiAttackManager wifiAttackManager;
 NetworkScanManager networkScanManager;
 MdnsManager mdnsManager;
 ForzaManager forzaManager;
+BmwManager bmwManager;
 VaultManager vaultManager;
 AppState state;
 SceneManager sceneManager(display, state);
@@ -311,7 +321,9 @@ enum AppMode
   MODE_FAKE_LOGIN, // Fake Login (existing)
   MODE_QR,         // QR code (existing)
   MODE_MDNS,       // mDNS spoof (existing)
-  MODE_GAME_FORZA  // Forza Horizon/Motorsport telemetry dashboard
+  MODE_GAME_FORZA,    // Forza Horizon/Motorsport telemetry dashboard
+  MODE_BMW_ASSISTANT, // BMW E39 Assistant (I-Bus: lock/unlock, diagnostics, media, light, PDC, cluster)
+  MODE_CHARGE_ONLY    // Charge-only screen (no OS, battery + charging indicator)
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -666,6 +678,10 @@ void setup()
   delay(50);
   drawBootSequence(display);
   splashDone = true;
+  quickMenuOpen = true;
+  menuLevel = 0;
+  menuCategory = 0;
+  quickMenuItem = 0;
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
   delay(200);
@@ -834,6 +850,11 @@ static void cleanupMode(AppMode mode)
   case MODE_GAME_FORZA:
     forzaManager.stop();
     break;
+  case MODE_BMW_ASSISTANT:
+    bmwManager.end();
+    break;
+  case MODE_CHARGE_ONLY:
+    break;
   case MODE_VAULT:
   case MODE_DAEMON:
     // Эти режимы не требуют специальной очистки
@@ -930,6 +951,26 @@ static void manageWiFiState(AppMode mode)
     {
       WiFi.mode(WIFI_STA);
       Serial.println("[SYS] WiFi STA for Forza");
+    }
+    netManager.setSuspend(true);
+    break;
+  case MODE_BMW_ASSISTANT:
+    if (WiFi.getMode() != WIFI_OFF)
+    {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+      Serial.println("[SYS] WiFi OFF for BMW Assistant (BLE key)");
+    }
+    netManager.setSuspend(true);
+    break;
+  case MODE_CHARGE_ONLY:
+    if (WiFi.getMode() != WIFI_OFF)
+    {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+      Serial.println("[SYS] WiFi OFF for Charge only");
     }
     netManager.setSuspend(true);
     break;
@@ -1086,6 +1127,12 @@ static bool initializeMode(AppMode mode)
       forzaManager.begin();
     forzaListeningForAutoSwitch = false; // Reset; Forza mode owns the listener
     Serial.println("[SYS] FORZA mode initialized");
+    return true;
+
+  case MODE_BMW_ASSISTANT:
+    manageWiFiState(mode);
+    bmwManager.begin();
+    Serial.println("[SYS] BMW Assistant mode initialized");
     return true;
 
   case MODE_DAEMON:
@@ -1351,6 +1398,11 @@ static bool initializeMode(AppMode mode)
     WiFi.scanDelete();
     Serial.println("[SYS] NORMAL mode initialized");
     return true;
+  case MODE_CHARGE_ONLY:
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    Serial.println("[SYS] CHARGE_ONLY mode initialized");
+    return true;
 
   default:
     Serial.println("[SYS] Unknown mode");
@@ -1406,35 +1458,164 @@ static void exitAppModeToNormal()
 }
 
 // ---------------------------------------------------------------------------
-// Flipper-style menu: categories (0=Config, 1=WiFi, 2=Tools, 3=System) ->
-// submenus
+// Menu: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System
+// Level 2: Hacker group items (WiFi 20, BLE 12, Network 10, USB 1)
 // ---------------------------------------------------------------------------
 static int submenuCount(int category)
 {
   switch (category)
   {
   case 0:
-    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
+    return 2; // Monitoring: PC, Forza
   case 1:
-    return 20; // WiFi: Full Marauder menu
+    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 2:
-    return 22; // Tools: BLE + Network + Other tools (no GPS)
+    return HACKER_GROUP_COUNT; // Hacker: WiFi, BLE, Network, USB HID (groups)
   case 3:
-    return 3; // System: REBOOT, VERSION, EXIT
+    return 1; // BMW: BMW Assistant
   case 4:
-    return 1; // Games: RACING (Forza)
+    return 1; // Meshtastic: Switch to Meshtastic
+  case 5:
+    return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
-    return 3;
+    return 2;
   }
 }
 
+static int submenuCountForHackerGroup(int group)
+{
+  switch (group)
+  {
+  case HACKER_GROUP_WIFI:
+    return 20;
+  case HACKER_GROUP_BLE:
+    return 12;
+  case HACKER_GROUP_NETWORK:
+    return 10;
+  case HACKER_GROUP_USB:
+    return 1;
+  default:
+    return 1;
+  }
+}
+
+/** Map (hacker group, item index) to AppMode. Used when menuLevel==2. */
+static AppMode getModeForHackerItem(int group, int item)
+{
+  if (group == HACKER_GROUP_WIFI)
+  {
+    switch (item)
+    {
+    case 0: return MODE_RADAR;
+    case 1: return MODE_WIFI_PROBE_SCAN;
+    case 2: return MODE_WIFI_EAPOL_SCAN;
+    case 3: return MODE_WIFI_STATION_SCAN;
+    case 4: return MODE_WIFI_PACKET_MONITOR;
+    case 5: return MODE_WIFI_CHANNEL_ANALYZER;
+    case 6: return MODE_WIFI_CHANNEL_ACTIVITY;
+    case 7: return MODE_WIFI_PACKET_RATE;
+    case 8: return MODE_WIFI_PINESCAN;
+    case 9: return MODE_WIFI_MULTISSID;
+    case 10: return MODE_WIFI_SIGNAL_STRENGTH;
+    case 11: return MODE_WIFI_RAW_CAPTURE;
+    case 12: return MODE_WIFI_AP_STA;
+    case 13: return MODE_WIFI_DEAUTH;
+    case 14: return MODE_WIFI_DEAUTH_TARGETED;
+    case 15: return MODE_WIFI_DEAUTH_MANUAL;
+    case 16: return MODE_WIFI_BEACON;
+    case 17: return MODE_WIFI_BEACON_RICKROLL;
+    case 18: return MODE_WIFI_AUTH_ATTACK;
+    case 19: return MODE_WIFI_TRAP;
+    default: return MODE_NORMAL;
+    }
+  }
+  if (group == HACKER_GROUP_BLE)
+  {
+    switch (item)
+    {
+    case 0: return MODE_BLE_SCAN;
+    case 1: return MODE_BLE_SCAN_SKIMMERS;
+    case 2: return MODE_BLE_SCAN_AIRTAG;
+    case 3: return MODE_BLE_SCAN_AIRTAG_MON;
+    case 4: return MODE_BLE_SCAN_FLIPPER;
+    case 5: return MODE_BLE_SCAN_ANALYZER;
+    case 6: return MODE_BLE_SPAM;
+    case 7: return MODE_BLE_SOUR_APPLE;
+    case 8: return MODE_BLE_SWIFTPAIR_MICROSOFT;
+    case 9: return MODE_BLE_SWIFTPAIR_GOOGLE;
+    case 10: return MODE_BLE_SWIFTPAIR_SAMSUNG;
+    case 11: return MODE_BLE_FLIPPER_SPAM;
+    default: return MODE_NORMAL;
+    }
+  }
+  if (group == HACKER_GROUP_NETWORK)
+  {
+    switch (item)
+    {
+    case 0: return MODE_NETWORK_ARP_SCAN;
+    case 1: return MODE_NETWORK_PORT_SCAN;
+    case 2: return MODE_NETWORK_PING_SCAN;
+    case 3: return MODE_NETWORK_DNS_SCAN;
+    case 4: return MODE_NETWORK_HTTP_SCAN;
+    case 5: return MODE_NETWORK_HTTPS_SCAN;
+    case 6: return MODE_NETWORK_SMTP_SCAN;
+    case 7: return MODE_NETWORK_RDP_SCAN;
+    case 8: return MODE_NETWORK_TELNET_SCAN;
+    case 9: return MODE_NETWORK_SSH_SCAN;
+    default: return MODE_NORMAL;
+    }
+  }
+  if (group == HACKER_GROUP_USB && item == 0)
+    return MODE_BADWOLF;
+  return MODE_NORMAL;
+}
+
+static bool handleHackerItem(int group, int item, unsigned long now)
+{
+  quickMenuOpen = false;
+  rebootConfirmed = false;
+  AppMode mode = getModeForHackerItem(group, item);
+  if (!switchToMode(mode))
+  {
+    snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+    toastUntil = now + 1500;
+    return false;
+  }
+  return true;
+}
+
 /** Execute action for (category, item). Called when menuLevel==1 and user
- * Long-press. */
+ * Long-press. Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System. */
 static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
 {
   if (cat == 0)
   {
-    // Config: AUTO = cycle OFF -> 5s -> 10s -> 15s -> OFF
+    // Monitoring: PC (NORMAL), Forza
+    quickMenuOpen = false;
+    rebootConfirmed = false;
+    if (item == 0)
+    {
+      if (!switchToMode(MODE_NORMAL))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    else if (item == 1)
+    {
+      if (!switchToMode(MODE_GAME_FORZA))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    return true;
+  }
+  if (cat == 1)
+  {
+    // Config: AUTO, FLIP, GLITCH, LED, DIM
     if (item == 0)
     {
       if (!settings.carouselEnabled)
@@ -1508,432 +1689,15 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     }
     return true;
   }
-  if (cat == 1)
+  // cat==2 (Hacker): level 1 shows groups; action is at level 2 via handleHackerItem
+  if (cat == 3)
   {
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    // WiFi Scans
+    // BMW: enter BMW Assistant mode
     if (item == 0)
     {
-      if (!switchToMode(MODE_RADAR))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 1)
-    {
-      if (!switchToMode(MODE_WIFI_PROBE_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 2)
-    {
-      if (!switchToMode(MODE_WIFI_EAPOL_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 3)
-    {
-      if (!switchToMode(MODE_WIFI_STATION_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 4)
-    {
-      if (!switchToMode(MODE_WIFI_PACKET_MONITOR))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 5)
-    {
-      if (!switchToMode(MODE_WIFI_CHANNEL_ANALYZER))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 6)
-    {
-      if (!switchToMode(MODE_WIFI_CHANNEL_ACTIVITY))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 7)
-    {
-      if (!switchToMode(MODE_WIFI_PACKET_RATE))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 8)
-    {
-      if (!switchToMode(MODE_WIFI_PINESCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 9)
-    {
-      if (!switchToMode(MODE_WIFI_MULTISSID))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 10)
-    {
-      if (!switchToMode(MODE_WIFI_SIGNAL_STRENGTH))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 11)
-    {
-      if (!switchToMode(MODE_WIFI_RAW_CAPTURE))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 12)
-    {
-      if (!switchToMode(MODE_WIFI_AP_STA))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    // WiFi Attacks
-    else if (item == 13)
-    {
-      wifiScanSelected = 0;
-      wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_DEAUTH))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-      kickManager.setTargetFromScan(0);
-    }
-    else if (item == 14)
-    {
-      wifiScanSelected = 0;
-      wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_DEAUTH_TARGETED))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 15)
-    {
-      wifiScanSelected = 0;
-      wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_DEAUTH_MANUAL))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 16)
-    {
-      if (!switchToMode(MODE_WIFI_BEACON))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 17)
-    {
-      if (!switchToMode(MODE_WIFI_BEACON_RICKROLL))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 18)
-    {
-      wifiScanSelected = 0;
-      wifiListPage = 0;
-      if (!switchToMode(MODE_WIFI_AUTH_ATTACK))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-      // Set target from scan if available
-      int n = WiFi.scanComplete();
-      if (n > 0)
-      {
-        sortAndFilterWiFiNetworks();
-        if (wifiFilteredCount > 0)
-        {
-          int idx = wifiSortedIndices[0];
-          String ssid = WiFi.SSID(idx);
-          uint8_t bssid[6];
-          uint8_t *bssidPtr = WiFi.BSSID(idx);
-          if (bssidPtr)
-          {
-            memcpy(bssid, bssidPtr, 6);
-            wifiAttackManager.setTargetBSSID(bssid);
-            wifiAttackManager.setTargetSSID(ssid.c_str());
-            wifiAttackManager.setTargetChannel(WiFi.channel(idx));
-          }
-        }
-      }
-    }
-    else if (item == 19)
-    {
-      if (!switchToMode(MODE_WIFI_TRAP))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    return true;
-  }
-  if (cat == 2)
-  {
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    // BLE Scans
-    if (item == 0)
-    {
-      if (!switchToMode(MODE_BLE_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 1)
-    {
-      if (!switchToMode(MODE_BLE_SCAN_SKIMMERS))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 2)
-    {
-      if (!switchToMode(MODE_BLE_SCAN_AIRTAG))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 3)
-    {
-      if (!switchToMode(MODE_BLE_SCAN_AIRTAG_MON))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 4)
-    {
-      if (!switchToMode(MODE_BLE_SCAN_FLIPPER))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 5)
-    {
-      if (!switchToMode(MODE_BLE_SCAN_ANALYZER))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    // BLE Attacks
-    else if (item == 6)
-    {
-      if (!switchToMode(MODE_BLE_SPAM))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 7)
-    {
-      if (!switchToMode(MODE_BLE_SOUR_APPLE))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 8)
-    {
-      if (!switchToMode(MODE_BLE_SWIFTPAIR_MICROSOFT))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 9)
-    {
-      if (!switchToMode(MODE_BLE_SWIFTPAIR_GOOGLE))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 10)
-    {
-      if (!switchToMode(MODE_BLE_SWIFTPAIR_SAMSUNG))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 11)
-    {
-      if (!switchToMode(MODE_BLE_FLIPPER_SPAM))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    // Network Scans
-    else if (item == 12)
-    {
-      if (!switchToMode(MODE_NETWORK_ARP_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 13)
-    {
-      if (!switchToMode(MODE_NETWORK_PORT_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 14)
-    {
-      if (!switchToMode(MODE_NETWORK_PING_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 15)
-    {
-      if (!switchToMode(MODE_NETWORK_DNS_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 16)
-    {
-      if (!switchToMode(MODE_NETWORK_HTTP_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 17)
-    {
-      if (!switchToMode(MODE_NETWORK_HTTPS_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 18)
-    {
-      if (!switchToMode(MODE_NETWORK_SMTP_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 19)
-    {
-      if (!switchToMode(MODE_NETWORK_RDP_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 20)
-    {
-      if (!switchToMode(MODE_NETWORK_TELNET_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 21)
-    {
-      if (!switchToMode(MODE_NETWORK_SSH_SCAN))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    // Tools
-    else if (item == 22)
-    {
-      if (!switchToMode(MODE_BADWOLF))
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      if (!switchToMode(MODE_BMW_ASSISTANT))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -1944,21 +1708,36 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
   }
   if (cat == 4)
   {
-    quickMenuOpen = false;
-    rebootConfirmed = false;
+    // Meshtastic: switch boot partition to ota_1 and reboot
     if (item == 0)
-    { // RACING -> Forza
-      if (!switchToMode(MODE_GAME_FORZA))
+    {
+      const esp_partition_t *ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
+                                                             ESP_PARTITION_SUBTYPE_APP_OTA_1,
+                                                             NULL);
+      if (!ota1)
       {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
+        snprintf(toastMsg, sizeof(toastMsg), "No ota_1 partition");
+        toastUntil = now + 2000;
+        return true;
       }
+      if (esp_ota_set_boot_partition(ota1) != ESP_OK)
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "Switch FAIL");
+        toastUntil = now + 2000;
+        return true;
+      }
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      snprintf(toastMsg, sizeof(toastMsg), "Meshtastic...");
+      toastUntil = now + 500;
+      delay(400);
+      esp_restart();
     }
     return true;
   }
-  if (cat == 3)
+  if (cat == 5)
   {
+    // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
     if (item == 0)
     { // REBOOT
       if (!rebootConfirmed)
@@ -1974,14 +1753,30 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       return true;
     }
     if (item == 1)
-    { // VERSION
-      snprintf(toastMsg, sizeof(toastMsg), "v" NOCTURNE_VERSION);
-      toastUntil = now + 2000;
+    { // CHARGE ONLY
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      if (!switchToMode(MODE_CHARGE_ONLY))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
       return true;
     }
     if (item == 2)
-    { // EXIT
+    { // POWER OFF (deep sleep; GPIO0 wake)
       quickMenuOpen = false;
+      rebootConfirmed = false;
+      // Show "Off" briefly then deep sleep. Wake on GPIO0 (button).
+      esp_sleep_enable_ext0_wakeup((gpio_num_t)NOCT_BUTTON_PIN, 0); // LOW = pressed
+      esp_deep_sleep_start();
+      return true;
+    }
+    if (item == 3)
+    { // VERSION
+      snprintf(toastMsg, sizeof(toastMsg), "v" NOCTURNE_VERSION);
+      toastUntil = now + 2000;
       return true;
     }
   }
@@ -2170,6 +1965,20 @@ void loop()
         digitalWrite(NOCT_LED_ALERT_PIN, LOW);
     }
   }
+  else if (currentMode == MODE_BMW_ASSISTANT)
+  {
+    if (bmwManager.isObdConnected() && bmwManager.getObdRpm() >= 5500)
+    {
+      bool flash = (now / 80) % 2 == 0;
+      if (settings.ledEnabled)
+        digitalWrite(NOCT_LED_ALERT_PIN, flash ? HIGH : LOW);
+    }
+    else
+    {
+      if (settings.ledEnabled)
+        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+    }
+  }
   else
   {
     if (state.alertActive && !lastAlertActive)
@@ -2246,23 +2055,20 @@ void loop()
       event = EV_NONE; // Игнорируем событие, если прошло слишком мало времени
     }
 
-    // --- MENU LOGIC (Flipper-style: level 0 = categories, level 1 = submenu)
-    // ---
+    // --- MENU LOGIC: level 0 = 5 categories, level 1 = submenu, level 2 = Hacker group items
     if (event == EV_DOUBLE)
     {
       lastMenuEventTime = now;
-      if (menuLevel == 1)
+      if (menuLevel == 2)
+      {
+        menuLevel = 1;
+        quickMenuItem = 0;
+        rebootConfirmed = false;
+      }
+      else if (menuLevel == 1)
       {
         menuLevel = 0;
-        // Map menuCategory back to display index for highlighting
-        for (int i = 0; i < MENU_CATEGORIES; i++)
-        {
-          if (menuDisplayOrder[i] == menuCategory)
-          {
-            quickMenuItem = i;
-            break;
-          }
-        }
+        quickMenuItem = menuCategory; // Categories 0..4 in order
         rebootConfirmed = false;
       }
       else
@@ -2276,17 +2082,20 @@ void loop()
     {
       lastMenuEventTime = now;
       if (menuLevel == 0)
-      {
         quickMenuItem = (quickMenuItem + 1) % MENU_CATEGORIES;
-      }
-      else
+      else if (menuLevel == 1)
       {
         int count = submenuCount(menuCategory);
         quickMenuItem = (quickMenuItem + 1) % count;
-        if (menuCategory == 3 && quickMenuItem != 0)
+        if (menuCategory == 5 && quickMenuItem != 0)
           rebootConfirmed = false;
       }
-      needRedraw = true; // Ensure redraw when quickMenuItem changes
+      else
+      {
+        int count = submenuCountForHackerGroup(menuHackerGroup);
+        quickMenuItem = (quickMenuItem + 1) % count;
+      }
+      needRedraw = true;
     }
     else if (event == EV_LONG)
     {
@@ -2294,8 +2103,21 @@ void loop()
       if (menuLevel == 0)
       {
         menuLevel = 1;
-        menuCategory = menuDisplayOrder[quickMenuItem];
+        menuCategory = quickMenuItem;
         quickMenuItem = 0;
+      }
+      else if (menuLevel == 1 && menuCategory == 2)
+      {
+        // Hacker: enter group submenu (level 2)
+        menuLevel = 2;
+        menuHackerGroup = quickMenuItem;
+        quickMenuItem = 0;
+      }
+      else if (menuLevel == 2)
+      {
+        bool ok = handleHackerItem(menuHackerGroup, quickMenuItem, now);
+        if (ok)
+          needRedraw = true;
       }
       else
       {
@@ -2557,9 +2379,9 @@ void loop()
   else if (quickMenuOpen)
   {
     sceneManager.drawMenu(
-        menuLevel, menuCategory, quickMenuItem, settings.carouselEnabled,
-        settings.carouselIntervalSec, settings.displayInverted,
-        settings.glitchEnabled, settings.ledEnabled,
+        menuLevel, menuCategory, quickMenuItem, menuHackerGroup,
+        settings.carouselEnabled, settings.carouselIntervalSec,
+        settings.displayInverted, settings.glitchEnabled, settings.ledEnabled,
         settings.lowBrightnessDefault, rebootConfirmed);
   }
   else
@@ -2652,6 +2474,10 @@ void loop()
       // Полноэкранный режим без хедера; батарея не рисуем
       sceneManager.drawDaemon(bootTime, netManager.isWifiConnected(),
                               netManager.isTcpConnected(), netManager.rssi());
+      break;
+    case MODE_CHARGE_ONLY:
+      sceneManager.drawChargeOnlyScreen(state.batteryPct, state.isCharging,
+                                        state.batteryVoltage);
       break;
     case MODE_RADAR:
     {
@@ -2931,6 +2757,10 @@ void loop()
                                  (uint32_t)WiFi.localIP());
       break;
     }
+    case MODE_BMW_ASSISTANT:
+      bmwManager.tick();
+      sceneManager.drawBmwAssistant(bmwManager);
+      break;
     default:
       break;
     }

@@ -4,8 +4,9 @@
  * content; Y from NOCT_CONTENT_TOP, NOCT_ROW_DY.
  */
 #include "SceneManager.h"
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 #include "BleManager.h"
+#include "BmwManager.h"
 #include "ForzaManager.h"
 #include "KickManager.h"
 #include "WifiSniffManager.h"
@@ -936,6 +937,45 @@ void SceneManager::drawPowerStatus(int pct, bool isCharging,
   u8g2.setDrawColor(1);
 }
 
+void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
+                                        float batteryVoltage)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  disp_.drawTechFrame(2, 2, NOCT_DISP_W - 4, NOCT_DISP_H - 4);
+
+  u8g2.setFont(u8g2_font_profont12_tf);
+  u8g2.drawUTF8(8, 14, "CHARGE ONLY");
+  u8g2.drawHLine(8, 18, NOCT_DISP_W - 16);
+
+  char pctBuf[16];
+  if (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f)
+  {
+    snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
+    u8g2.setFont(u8g2_font_logisoso32_tn);
+    int pw = u8g2.getUTF8Width(pctBuf);
+    u8g2.drawUTF8((NOCT_DISP_W - pw) / 2, 42, pctBuf);
+    u8g2.setFont(u8g2_font_profont12_tf);
+    if (isCharging)
+      u8g2.drawUTF8((NOCT_DISP_W - 36) / 2, 56, "CHARGING");
+    else
+      u8g2.drawUTF8((NOCT_DISP_W - 24) / 2, 56, "READY");
+    char vBuf[24];
+    snprintf(vBuf, sizeof(vBuf), "%.2f V", batteryVoltage);
+    int vw = u8g2.getUTF8Width(vBuf);
+    u8g2.drawUTF8((NOCT_DISP_W - vw) / 2, 62, vBuf);
+  }
+  else
+  {
+    u8g2.drawUTF8(24, 38, "NO BATTERY");
+    u8g2.drawUTF8(20, 52, "Connect USB");
+  }
+  u8g2.setDrawColor(1);
+}
+
 void SceneManager::drawNoDataCross(int x, int y, int w, int h)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
@@ -984,25 +1024,39 @@ static int submenuCountForCategory(int cat)
   switch (cat)
   {
   case 0:
-    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
+    return 2; // Monitoring: PC, Forza
   case 1:
-    return 20; // WiFi: Full Marauder menu
+    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
   case 2:
-    return 22; // Tools: BLE + Network + Other tools
+    return 4; // Hacker: WiFi, BLE, Network, USB HID (groups)
   case 3:
-    return 3; // REBOOT, VERSION, EXIT
+    return 1; // BMW: BMW Assistant
   case 4:
-    return 1; // Games: RACING (Forza)
+    return 1; // Meshtastic: Switch to Meshtastic
+  case 5:
+    return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
-    return 3;
+    return 2;
+  }
+}
+
+static int submenuCountForHackerGroup(int group)
+{
+  switch (group)
+  {
+  case 0: return 20; // WiFi
+  case 1: return 12; // BLE
+  case 2: return 10; // Network
+  case 3: return 1;  // USB HID
+  default: return 1;
   }
 }
 
 void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
-                            bool carouselOn, int carouselSec,
-                            bool screenRotated, bool glitchEnabled,
-                            bool ledEnabled, bool lowBrightnessDefault,
-                            bool rebootConfirmed)
+                            int menuHackerGroup, bool carouselOn,
+                            int carouselSec, bool screenRotated,
+                            bool glitchEnabled, bool ledEnabled,
+                            bool lowBrightnessDefault, bool rebootConfirmed)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = NOCT_MENU_BOX_X;
@@ -1015,21 +1069,71 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
-  static const char *categoryNames[] = {"Config", "WiFi", "Tools", "System",
-                                        "Games"};
-  static const int displayOrder[] = {0, 4, 1, 2, 3}; // Config, Games, WiFi, Tools, System
-  static char items[25][20];                         // Increased for expanded menus
+  // 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System
+  static const char *categoryNames[] = {"Monitoring", "Config", "Hacker",
+                                        "BMW", "Meshtastic", "System"};
+  static char items[25][20];
   int count;
   const char *headerStr;
 
   if (menuLevel == 0)
   {
-    count = 5;
+    count = 6;
     headerStr = "// MENU";
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 6; i++)
     {
-      strncpy(items[i], categoryNames[displayOrder[i]], sizeof(items[i]) - 1);
+      strncpy(items[i], categoryNames[i], sizeof(items[i]) - 1);
       items[i][sizeof(items[i]) - 1] = '\0';
+    }
+  }
+  else if (menuLevel == 2)
+  {
+    count = submenuCountForHackerGroup(menuHackerGroup);
+    headerStr = (menuHackerGroup == 0) ? "WiFi" : (menuHackerGroup == 1)
+                                                    ? "BLE"
+                                                    : (menuHackerGroup == 2)
+                                                          ? "Network"
+                                                          : "USB HID";
+    if (menuHackerGroup == 0)
+    {
+      const char *wifiItems[] = {"AP SCAN", "PROBE SCAN", "EAPOL CAPTURE",
+        "STATION SCAN", "PACKET MONITOR", "CHAN ANALYZER", "CHAN ACTIVITY",
+        "PACKET RATE", "PINESCAN", "MULTISSID", "SIG STRENGTH", "RAW CAPTURE",
+        "AP+STA SCAN", "DEAUTH", "DEAUTH TARGET", "DEAUTH MANUAL", "BEACON SPAM",
+        "BEACON RICKROLL", "AUTH ATTACK", "EVIL PORTAL"};
+      for (int i = 0; i < count && i < 20; i++)
+      {
+        strncpy(items[i], wifiItems[i], sizeof(items[i]) - 1);
+        items[i][sizeof(items[i]) - 1] = '\0';
+      }
+    }
+    else if (menuHackerGroup == 1)
+    {
+      const char *bleItems[] = {"BLE SCAN", "BLE SKIMMERS", "BLE AIRTAG",
+        "BLE AIRTAG MON", "BLE FLIPPER", "BLE ANALYZER", "BLE SPAM",
+        "SOUR APPLE", "SWIFTPAIR MS", "SWIFTPAIR GOOGLE", "SWIFTPAIR SAMSUNG",
+        "FLIPPER SPAM"};
+      for (int i = 0; i < count && i < 12; i++)
+      {
+        strncpy(items[i], bleItems[i], sizeof(items[i]) - 1);
+        items[i][sizeof(items[i]) - 1] = '\0';
+      }
+    }
+    else if (menuHackerGroup == 2)
+    {
+      const char *netItems[] = {"ARP SCAN", "PORT SCAN", "PING SCAN",
+        "DNS SCAN", "HTTP SCAN", "HTTPS SCAN", "SMTP SCAN", "RDP SCAN",
+        "TELNET SCAN", "SSH SCAN"};
+      for (int i = 0; i < count && i < 10; i++)
+      {
+        strncpy(items[i], netItems[i], sizeof(items[i]) - 1);
+        items[i][sizeof(items[i]) - 1] = '\0';
+      }
+    }
+    else
+    {
+      strncpy(items[0], "USB HID", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
     }
   }
   else
@@ -1037,6 +1141,13 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     count = submenuCountForCategory(menuCategory);
     headerStr = categoryNames[menuCategory];
     if (menuCategory == 0)
+    {
+      strncpy(items[0], "PC", sizeof(items[0]) - 1);
+      strncpy(items[1], "Forza", sizeof(items[1]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+      items[1][sizeof(items[1]) - 1] = '\0';
+    }
+    else if (menuCategory == 1)
     {
       if (!carouselOn)
         snprintf(items[0], sizeof(items[0]), "AUTO: OFF");
@@ -1051,82 +1162,38 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       snprintf(items[4], sizeof(items[4]), "DIM: %s",
                lowBrightnessDefault ? "ON" : "OFF");
     }
-    else if (menuCategory == 1)
-    {
-      // WiFi Scans
-      strncpy(items[0], "AP SCAN", sizeof(items[0]) - 1);
-      strncpy(items[1], "PROBE SCAN", sizeof(items[1]) - 1);
-      strncpy(items[2], "EAPOL CAPTURE", sizeof(items[2]) - 1);
-      strncpy(items[3], "STATION SCAN", sizeof(items[3]) - 1);
-      strncpy(items[4], "PACKET MONITOR", sizeof(items[4]) - 1);
-      strncpy(items[5], "CHAN ANALYZER", sizeof(items[5]) - 1);
-      strncpy(items[6], "CHAN ACTIVITY", sizeof(items[6]) - 1);
-      strncpy(items[7], "PACKET RATE", sizeof(items[7]) - 1);
-      strncpy(items[8], "PINESCAN", sizeof(items[8]) - 1);
-      strncpy(items[9], "MULTISSID", sizeof(items[9]) - 1);
-      strncpy(items[10], "SIG STRENGTH", sizeof(items[10]) - 1);
-      strncpy(items[11], "RAW CAPTURE", sizeof(items[11]) - 1);
-      strncpy(items[12], "AP+STA SCAN", sizeof(items[12]) - 1);
-      // WiFi Attacks
-      strncpy(items[13], "DEAUTH", sizeof(items[13]) - 1);
-      strncpy(items[14], "DEAUTH TARGET", sizeof(items[14]) - 1);
-      strncpy(items[15], "DEAUTH MANUAL", sizeof(items[15]) - 1);
-      strncpy(items[16], "BEACON SPAM", sizeof(items[16]) - 1);
-      strncpy(items[17], "BEACON RICKROLL", sizeof(items[17]) - 1);
-      strncpy(items[18], "AUTH ATTACK", sizeof(items[18]) - 1);
-      strncpy(items[19], "EVIL PORTAL", sizeof(items[19]) - 1);
-      for (int i = 0; i < 20; i++)
-        items[i][sizeof(items[0]) - 1] = '\0';
-    }
     else if (menuCategory == 2)
     {
-      // BLE Scans
-      strncpy(items[0], "BLE SCAN", sizeof(items[0]) - 1);
-      strncpy(items[1], "BLE SKIMMERS", sizeof(items[1]) - 1);
-      strncpy(items[2], "BLE AIRTAG", sizeof(items[2]) - 1);
-      strncpy(items[3], "BLE AIRTAG MON", sizeof(items[3]) - 1);
-      strncpy(items[4], "BLE FLIPPER", sizeof(items[4]) - 1);
-      strncpy(items[5], "BLE ANALYZER", sizeof(items[5]) - 1);
-      // BLE Attacks
-      strncpy(items[6], "BLE SPAM", sizeof(items[6]) - 1);
-      strncpy(items[7], "SOUR APPLE", sizeof(items[7]) - 1);
-      strncpy(items[8], "SWIFTPAIR MS", sizeof(items[8]) - 1);
-      strncpy(items[9], "SWIFTPAIR GOOGLE", sizeof(items[9]) - 1);
-      strncpy(items[10], "SWIFTPAIR SAMSUNG", sizeof(items[10]) - 1);
-      strncpy(items[11], "FLIPPER SPAM", sizeof(items[11]) - 1);
-      // Network Scans
-      strncpy(items[12], "ARP SCAN", sizeof(items[12]) - 1);
-      strncpy(items[13], "PORT SCAN", sizeof(items[13]) - 1);
-      strncpy(items[14], "PING SCAN", sizeof(items[14]) - 1);
-      strncpy(items[15], "DNS SCAN", sizeof(items[15]) - 1);
-      strncpy(items[16], "HTTP SCAN", sizeof(items[16]) - 1);
-      strncpy(items[17], "HTTPS SCAN", sizeof(items[17]) - 1);
-      strncpy(items[18], "SMTP SCAN", sizeof(items[18]) - 1);
-      strncpy(items[19], "RDP SCAN", sizeof(items[19]) - 1);
-      strncpy(items[20], "TELNET SCAN", sizeof(items[20]) - 1);
-      strncpy(items[21], "SSH SCAN", sizeof(items[21]) - 1);
-      // Tools
-      strncpy(items[22], "USB HID", sizeof(items[22]) - 1);
-      // Removed: VAULT, FAKE LOGIN, QR, DAEMON (moved to submenu or removed)
-      for (int i = 0; i < 23; i++)
-        items[i][sizeof(items[0]) - 1] = '\0';
+      strncpy(items[0], "WiFi", sizeof(items[0]) - 1);
+      strncpy(items[1], "BLE", sizeof(items[1]) - 1);
+      strncpy(items[2], "Network", sizeof(items[2]) - 1);
+      strncpy(items[3], "USB HID", sizeof(items[3]) - 1);
+      for (int i = 0; i < 4; i++)
+        items[i][sizeof(items[i]) - 1] = '\0';
+    }
+    else if (menuCategory == 3)
+    {
+      strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
     }
     else if (menuCategory == 4)
     {
-      strncpy(items[0], "RACING", sizeof(items[0]) - 1);
+      strncpy(items[0], "Switch to Meshtastic", sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
     }
-    else
+    else if (menuCategory == 5)
     {
       if (rebootConfirmed)
-        strncpy(items[0], "REBOOT [OK]", sizeof(items[0]) - 1);
+        snprintf(items[0], sizeof(items[0]), "REBOOT [OK]");
       else
         strncpy(items[0], "REBOOT", sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
-      strncpy(items[1], "VERSION", sizeof(items[1]) - 1);
+      strncpy(items[1], "Charge only", sizeof(items[1]) - 1);
+      strncpy(items[2], "Power off", sizeof(items[2]) - 1);
+      strncpy(items[3], "Version", sizeof(items[3]) - 1);
       items[1][sizeof(items[1]) - 1] = '\0';
-      strncpy(items[2], "EXIT", sizeof(items[2]) - 1);
       items[2][sizeof(items[2]) - 1] = '\0';
+      items[3][sizeof(items[3]) - 1] = '\0';
     }
   }
   if (count <= 0)
@@ -2417,69 +2484,70 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     u8g2.drawHLine(x, y, w);
   }
 
-  // --- 2. RPM BAR (Text inside bar) ---
+  // --- 2. RPM BAR (with "RPM" label) ---
   const int barH = 14;
-  u8g2.drawFrame(0, 0, NOCT_DISP_W, barH);
-
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, barH);
   int fillW = (int)(rpmPct * 126);
   if (fillW > 0)
   {
     if (isRedline)
-    {
       u8g2.drawBox(1, 1, fillW, barH - 2);
-    }
     else
-    {
       disp_.drawDiagonalStriped(1, 1, fillW, barH - 2, 3);
-    }
   }
-
-  char rpmBuf[16];
-  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f RPM", currentRpm);
   u8g2.setFont(u8g2_font_profont10_tf);
+  char rpmBuf[16];
+  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f", currentRpm);
   int rpmW = u8g2.getUTF8Width(rpmBuf);
-
   u8g2.setDrawColor(2);
   u8g2.drawUTF8(64 - (rpmW / 2) + shakeX, 9 + shakeY, rpmBuf);
   u8g2.setDrawColor(1);
+  u8g2.drawUTF8(2, 9 + shakeY, "RPM");
 
-  // --- 3. GEAR (Left zone, graffiti style) ---
+  // --- 3. CONTENT ZONES (Gear left, Speed right) with frames ---
+  const int contentTop = 16;
+  const int contentH = NOCT_DISP_H - contentTop;
+  const int gearZoneW = 52;
+  const int sepX = 54;
+  const int speedZoneX = 56;
+
+  disp_.drawTechFrame(0, contentTop - 1, gearZoneW + 1, contentH + 1);
+  disp_.drawTechFrame(speedZoneX - 1, contentTop - 1,
+                      NOCT_DISP_W - speedZoneX + 1, contentH + 1);
+  u8g2.drawVLine(sepX + shakeX, contentTop, contentH - 1);
+
+  // --- 4. GEAR (left zone) ---
+  u8g2.setFont(u8g2_font_profont10_tf);
+  u8g2.drawUTF8(2 + shakeX, contentTop + 4 + shakeY, "GEAR");
   char gearBuf[4];
   forza.getGearString(gearBuf, sizeof(gearBuf));
-
   int gearX = 2 + shakeX;
   int gearY = 62 + shakeY;
-
   if (rpmPct > 0.1f)
   {
-    u8g2.drawLine(gearX, gearY, gearX + 40, gearY - 40);
-    u8g2.drawLine(gearX + 5, gearY, gearX + 45, gearY - 40);
+    u8g2.drawLine(gearX, gearY, gearX + 36, gearY - 36);
+    u8g2.drawLine(gearX + 4, gearY, gearX + 40, gearY - 36);
   }
-
   u8g2.setFont(u8g2_font_logisoso42_tf);
   u8g2.drawUTF8(gearX, gearY, gearBuf);
 
-  u8g2.drawVLine(52 + shakeX, 16, 48);
-
-  // --- 4. SPEED (Right zone, glitchy) ---
+  // --- 5. SPEED (right zone) ---
+  u8g2.setFont(u8g2_font_profont10_tf);
+  int speedLabelW = u8g2.getUTF8Width("SPEED");
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - speedLabelW + shakeX,
+                contentTop + 4 + shakeY, "SPEED");
   char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
-
   u8g2.setFont(u8g2_font_logisoso32_tn);
   int spdW = u8g2.getUTF8Width(spdBuf);
   int spdX = NOCT_DISP_W - 2 - spdW + shakeX;
   int spdY = 54 + shakeY;
-
   u8g2.setDrawColor(0);
   u8g2.drawUTF8(spdX - 2, spdY - 2, spdBuf);
   u8g2.setDrawColor(1);
   u8g2.drawUTF8(spdX, spdY, spdBuf);
-
   if (rpmPct > 0.5f)
-  {
     u8g2.drawHLine(spdX, spdY + 2, spdW);
-  }
-
   u8g2.setFont(u8g2_font_profont12_tf);
   int unitW = u8g2.getUTF8Width("km/h");
   u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, 62 + shakeY, "km/h");
@@ -2516,6 +2584,42 @@ void SceneManager::drawMdnsMode(const char *serviceName, bool active)
   u8g2.setCursor(2, 48);
   u8g2.print("1x change name");
   u8g2.setCursor(2, 58);
+  u8g2.print("2x back");
+  disp_.drawGreebles();
+}
+
+void SceneManager::drawBmwAssistant(BmwManager &bmw)
+{
+  U8G2 &u8g2 = disp_.u8g2();
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(2, NOCT_HEADER_BASELINE_Y, "BMW E39");
+  u8g2.setFont(FONT_LABEL);
+  char line[32];
+  bmw.getStatusLine(line, sizeof(line));
+  int y = NOCT_CONTENT_TOP + NOCT_ROW_DY;
+  u8g2.setCursor(2, y);
+  u8g2.print(line);
+  y += NOCT_ROW_DY;
+  if (bmw.getNowPlayingTrack()[0]) {
+    u8g2.setCursor(2, y);
+    u8g2.print(bmw.getNowPlayingTrack());
+    y += NOCT_ROW_DY;
+    if (bmw.getNowPlayingArtist()[0]) {
+      u8g2.setCursor(2, y);
+      u8g2.print(bmw.getNowPlayingArtist());
+      y += NOCT_ROW_DY;
+    }
+  }
+  if (bmw.hasPdcData()) {
+    int dists[4];
+    bmw.getPdcDistances(dists, 4);
+    char pdcBuf[24];
+    snprintf(pdcBuf, sizeof(pdcBuf), "PDC:%d %d %d %d", dists[0], dists[1], dists[2], dists[3]);
+    u8g2.setCursor(2, y);
+    u8g2.print(pdcBuf);
+    y += NOCT_ROW_DY;
+  }
+  u8g2.setCursor(2, NOCT_FOOTER_Y + 2);
   u8g2.print("2x back");
   disp_.drawGreebles();
 }
