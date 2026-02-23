@@ -9,9 +9,6 @@
 #include "nocturne/config.h"
 #include "DisplayEngine.h"
 
-class KickManager;
-class VaultManager;
-
 class SceneManager
 {
 public:
@@ -39,8 +36,8 @@ public:
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
-  /** Menu: level 0 = 6 categories (Monitoring/Config/Hacker/BMW/Meshtastic/System),
-   * level 1 = submenu, level 2 = Hacker group items. menuHackerGroup used when
+  /** Menu: level 0 = 5 categories (Monitoring/Config/Hacker/BMW/System),
+   * level 1 = submenu, level 2 = Hacker group items. menuHackerGroup when
    * menuLevel==2. */
   void drawMenu(int menuLevel, int menuCategory, int mainIndex,
                 int menuHackerGroup, bool carouselOn, int carouselSec,
@@ -79,30 +76,12 @@ public:
   /** BLE Phantom Spammer UI: status bar, pulsing BT icon, packet count. */
   void drawBleSpammer(int packetCount);
 
-  /** BADWOLF USB HID: skull/wolf icon, ARMED status, Short/Long labels. */
-  void drawBadWolf(int scriptIndex = 0);
-
-  /** SILENCE: 868 MHz jammer UI — muted icon, static noise, status. */
-  void drawSilenceMode(int8_t power = 22);
-
   /** TRAP: Evil twin / captive portal — clients, logs, last bite. */
   void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
                     unsigned long passwordShowUntil,
                     const char *clonedSSID = nullptr);
 
-  /** KICK: WiFi deauth — wolf baring teeth, shake when attacking,
-   * TARGET/STATUS/PKTS. */
-  void drawKickMode(KickManager &kick);
-
-  void drawVaultMode(const char *accountName, const char *code6,
-                     int countdownSec);
-
-  void drawBeaconMode(const char *ssid, int beaconCount, int index, int total);
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
-  void drawBleScanMode(int selected, class BleManager &mgr);
-  void drawFakeLoginMode();
-  void drawQrMode(const char *text);
-  void drawMdnsMode(const char *serviceName, bool active);
 
   /** Forza Horizon/Motorsport telemetry dashboard. showSplash: IP|PORT|WAITING
    * for 3s on enter. localIp: WiFi.localIP() as uint32_t. */
