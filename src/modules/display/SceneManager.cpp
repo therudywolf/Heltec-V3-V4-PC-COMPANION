@@ -2588,7 +2588,12 @@ void SceneManager::drawMdnsMode(const char *serviceName, bool active)
   disp_.drawGreebles();
 }
 
-void SceneManager::drawBmwAssistant(BmwManager &bmw)
+static const char *bmwActionNames[] = {
+  "Goodbye", "FollowMe", "Park", "Hazard", "LowBeam",
+  "LightsOff", "Unlock", "Lock", "Trunk", "Cluster"
+};
+
+void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 {
   U8G2 &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_HEADER);
@@ -2599,6 +2604,15 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw)
   int y = NOCT_CONTENT_TOP + NOCT_ROW_DY;
   u8g2.setCursor(2, y);
   u8g2.print(line);
+  y += NOCT_ROW_DY;
+  int actIdx = selectedActionIndex;
+  if (actIdx < 0)
+    actIdx = 0;
+  if (actIdx >= 10)
+    actIdx = 9;
+  u8g2.setCursor(2, y);
+  u8g2.print("> ");
+  u8g2.print(bmwActionNames[actIdx]);
   y += NOCT_ROW_DY;
   if (bmw.getNowPlayingTrack()[0]) {
     u8g2.setCursor(2, y);
@@ -2620,6 +2634,6 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw)
     y += NOCT_ROW_DY;
   }
   u8g2.setCursor(2, NOCT_FOOTER_Y + 2);
-  u8g2.print("2x back");
+  u8g2.print("1x next  2s run  2x back");
   disp_.drawGreebles();
 }

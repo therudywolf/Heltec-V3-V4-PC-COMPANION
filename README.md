@@ -113,11 +113,15 @@
 
 ## Dual boot (Meshtastic)
 
+**Восстановление Nocturne:** если после прошивки экран чёрный (например, случайно залили boot_selector поверх Nocturne), снова прошейте только основную прошивку: `pio run -e heltec_wifi_lora_32_V4 --target upload`. По умолчанию кнопка «Upload» в IDE прошивает только её.
+
 В меню после **BMW** добавлена категория **Meshtastic**. Долгое нажатие по пункту **Switch to Meshtastic** переключает загрузку на раздел **ota_1** и перезагружает устройство в прошивку Meshtastic (если она прошита в ota_1).
 
 ### Таблица разделов
 
 Используется таблица **huge_app.csv**: ota_0 = Nocturne (0x10000, 3 MiB), ota_1 = Meshtastic (0x310000, 2 MiB), spiffs (0x510000).
+
+**Сообщение «No ota_1 - reflash FW»:** значит во флеше старая таблица разделов (без ota_1). Нужно один раз заново прошить прошивку Nocturne, чтобы в устройство попала таблица из `huge_app.csv` (с разделами app0 и app1): `pio run -e heltec_wifi_lora_32_V4 --target upload`. После этого пункт Meshtastic будет находить ota_1.
 
 ### Прошивка Meshtastic в ota_1 (один раз)
 

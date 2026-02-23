@@ -29,6 +29,11 @@ class BmwManager {
   void sendFollowMeHome();
   void sendParkLights();
   void sendHazardLights();
+  void sendLowBeams();
+  void sendLightsOff();
+  void sendLock();
+  void sendUnlock();
+  void sendTrunkOpen();
 
   /** MFL: last button from steering wheel (for AVRCP/media). */
   enum MflAction { MFL_NONE = 0, MFL_NEXT, MFL_PREV, MFL_PLAY_PAUSE, MFL_VOL_UP, MFL_VOL_DOWN };
@@ -74,6 +79,7 @@ class BmwManager {
   int obdRpm_ = 0;
   int obdCoolantTempC_ = -1;
   int obdOilTempC_ = -1;
+  unsigned long lastPollMs_ = 0;
   IbusDriver ibus_;
   BleKeyService bleKey_;
 };
