@@ -946,9 +946,14 @@ void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
   u8g2.setFontMode(1);
   disp_.drawTechFrame(2, 2, NOCT_DISP_W - 4, NOCT_DISP_H - 4);
 
+  const int titleY = 11;
+  const int lineY = 15;
+  const int contentTop = 17;
+  const int footerTop = NOCT_FOOTER_Y;
+
   u8g2.setFont(u8g2_font_profont12_tf);
-  u8g2.drawUTF8(8, 14, "CHARGE ONLY");
-  u8g2.drawHLine(8, 18, NOCT_DISP_W - 16);
+  u8g2.drawUTF8(8, titleY, "CHARGE ONLY");
+  u8g2.drawHLine(8, lineY, NOCT_DISP_W - 16);
 
   char pctBuf[16];
   if (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f)
@@ -956,23 +961,28 @@ void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
     snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
     u8g2.setFont(u8g2_font_logisoso32_tn);
     int pw = u8g2.getUTF8Width(pctBuf);
-    u8g2.drawUTF8((NOCT_DISP_W - pw) / 2, 42, pctBuf);
+    int pctBaselineY = contentTop + 24;
+    u8g2.drawUTF8((NOCT_DISP_W - pw) / 2, pctBaselineY, pctBuf);
+
     u8g2.setFont(u8g2_font_profont12_tf);
+    char line2[32];
     if (isCharging)
-      u8g2.drawUTF8((NOCT_DISP_W - 36) / 2, 52, "CHARGING");
+      snprintf(line2, sizeof(line2), "CHARGING  %.2f V", batteryVoltage);
     else
-      u8g2.drawUTF8((NOCT_DISP_W - 24) / 2, 52, "READY");
-    char vBuf[24];
-    snprintf(vBuf, sizeof(vBuf), "%.2f V", batteryVoltage);
-    int vw = u8g2.getUTF8Width(vBuf);
-    u8g2.drawUTF8((NOCT_DISP_W - vw) / 2, 54, vBuf);
+      snprintf(line2, sizeof(line2), "READY  %.2f V", batteryVoltage);
+    int l2w = u8g2.getUTF8Width(line2);
+    int statusY = footerTop - 10;
+    u8g2.drawUTF8((NOCT_DISP_W - l2w) / 2, statusY, line2);
   }
   else
   {
-    u8g2.drawUTF8(24, 38, "NO BATTERY");
-    u8g2.drawUTF8(20, 52, "Connect USB");
+    u8g2.setFont(u8g2_font_profont12_tf);
+    u8g2.drawUTF8((NOCT_DISP_W - u8g2.getUTF8Width("NO BATTERY")) / 2,
+                  contentTop + 14, "NO BATTERY");
+    u8g2.drawUTF8((NOCT_DISP_W - u8g2.getUTF8Width("Connect USB")) / 2,
+                  contentTop + 26, "Connect USB");
   }
-  drawBottomHint();
+  drawBottomHint("2x menu");
   u8g2.setDrawColor(1);
 }
 
@@ -1821,26 +1831,38 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
   if (selectedIndex >= n)
     selectedIndex = n - 1;
 
-  const BleScanDevice *dev = ble.getScanDevice(selectedIndex);
-  if (dev)
+  int prev = (selectedIndex - 1 + n) % n;
+  int next = (selectedIndex + 1) % n;
+  int indices[3] = {prev, selectedIndex, next};
+  int y = 18;
+  for (int row = 0; row < 3; row++)
   {
-    u8g2.setCursor(2, 20);
+    const BleScanDevice *dev = ble.getScanDevice(indices[row]);
+    if (!dev)
+      continue;
+    u8g2.setCursor(2, y);
+    if (indices[row] == selectedIndex)
+      u8g2.print(">");
+    else
+      u8g2.print(" ");
     char line[22];
-    strncpy(line, dev->name[0] ? dev->name : "(unknown)", sizeof(line) - 1);
+    strncpy(line, dev->name[0] ? dev->name : dev->addr, sizeof(line) - 1);
     line[sizeof(line) - 1] = '\0';
-    if (strlen(dev->name) > 18)
-      line[16] = '.';
+    size_t maxName = 14;
+    if (strlen(line) > maxName)
+    {
+      line[maxName - 1] = '.';
+      line[maxName] = '\0';
+    }
     u8g2.print(line);
-    u8g2.setCursor(2, 30);
-    u8g2.print(dev->addr);
-    u8g2.setCursor(2, 40);
-    u8g2.print("RSSI:");
+    u8g2.print(" ");
     u8g2.print(dev->rssi);
-    u8g2.setCursor(2, 50);
-    u8g2.print(selectedIndex + 1);
-    u8g2.print("/");
-    u8g2.print(n);
+    y += 10;
   }
+  u8g2.setCursor(2, 52);
+  u8g2.print(selectedIndex + 1);
+  u8g2.print("/");
+  u8g2.print(n);
   drawBottomHint("1x next  2s clone  2x menu");
   disp_.drawGreebles();
 }
@@ -2027,6 +2049,16 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
     u8g2.setCursor(2, 18);
     u8g2.print("Ch Activity");
   }
+  else if (mode == SNIFF_MODE_EAPOL_CAPTURE)
+  {
+    u8g2.setCursor(2, 18);
+    u8g2.print("EAPOL: capture WPA handshakes");
+    u8g2.setCursor(2, 26);
+    u8g2.print("PKTS:");
+    u8g2.print(pkts);
+    u8g2.print(" EAPOL:");
+    u8g2.print(eapol);
+  }
   else
   {
     u8g2.setCursor(2, 18);
@@ -2041,16 +2073,17 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
     const WifiSniffAp *ap = mgr.getAp(selected);
     if (ap)
     {
-      u8g2.setCursor(2, 28);
+      int apY = (mode == SNIFF_MODE_EAPOL_CAPTURE) ? 36 : 28;
+      u8g2.setCursor(2, apY);
       char line[22];
       strncpy(line, ap->ssid, 18);
       line[18] = '\0';
       if (strlen(ap->ssid) > 18)
         line[16] = '.';
       u8g2.print(line);
-      u8g2.setCursor(2, 38);
+      u8g2.setCursor(2, apY + 10);
       u8g2.print(ap->bssidStr);
-      u8g2.setCursor(2, 48);
+      u8g2.setCursor(2, apY + 20);
       u8g2.print("CH:");
       u8g2.print((int)ap->channel);
       u8g2.print(" RSSI:");

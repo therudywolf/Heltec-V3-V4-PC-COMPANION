@@ -130,14 +130,24 @@ void TrapManager::setClonedSSID(int scanIndex) {
     clonedSSID_[0] = '\0';
     return;
   }
+  wifi_auth_mode_t auth = WiFi.encryptionType(scanIndex);
+  setClonedSSIDFromStrings(ssid, auth != WIFI_AUTH_OPEN);
+}
+
+void TrapManager::setClonedSSIDFromStrings(const char *ssid, bool usePassword) {
+  if (!ssid || strlen(ssid) == 0) {
+    useClonedSSID_ = false;
+    useApPassword_ = false;
+    clonedSSID_[0] = '\0';
+    return;
+  }
   size_t len = strlen(ssid);
   if (len >= 33)
     len = 32;
   strncpy(clonedSSID_, ssid, len);
   clonedSSID_[len] = '\0';
   useClonedSSID_ = true;
-  wifi_auth_mode_t auth = WiFi.encryptionType(scanIndex);
-  useApPassword_ = (auth != WIFI_AUTH_OPEN);
+  useApPassword_ = usePassword;
   Serial.println("[TRAP] Cloned SSID: " + String(clonedSSID_) +
                  (useApPassword_ ? " (AP with password)" : " (open AP)"));
 }

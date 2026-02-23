@@ -187,8 +187,8 @@
 #define NOCT_ALERT_GV 4
 #define NOCT_ALERT_RAM 5
 
-/* BMW E39 Assistant: I-Bus UART (9600 8E1). Use transceiver to bus. Set to 0 to run without I-Bus (BLE key + list only). */
-#define NOCT_IBUS_ENABLED 1
+/* BMW E39 Assistant: I-Bus UART (9600 8E1). 0 = off (no UART, BLE key + list only). Set to 1 when I-Bus transceiver is connected. */
+#define NOCT_IBUS_ENABLED 0
 #define NOCT_IBUS_TX_PIN 39
 #define NOCT_IBUS_RX_PIN 38
 

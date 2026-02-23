@@ -449,21 +449,31 @@ void BleManager::onScanResult(void *device) {
   std::string addr = dev->getAddress().toString();
   std::string name = dev->getName();
   int rssi = dev->getRSSI();
+  const char *addrStr = addr.c_str();
+  // Short identifier from last 4 bytes of MAC (e.g. "cc:dd:ee:ff") for empty names
+  char shortAddr[16];
+  if (addr.length() >= 11)
+    snprintf(shortAddr, sizeof(shortAddr), "[%s]", addrStr + addr.length() - 11);
+  else
+    snprintf(shortAddr, sizeof(shortAddr), "[%s]", addrStr);
   for (int i = 0; i < scanCount_; i++) {
-    if (strcmp(scanDevices_[i].addr, addr.c_str()) == 0) {
+    if (strcmp(scanDevices_[i].addr, addrStr) == 0) {
       scanDevices_[i].rssi = rssi;
       if (name.length() > 0)
         strncpy(scanDevices_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
+      else
+        strncpy(scanDevices_[i].name, shortAddr, BLE_DEVICE_NAME_LEN - 1);
+      scanDevices_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
       return;
     }
   }
   int i = scanCount_++;
-  strncpy(scanDevices_[i].addr, addr.c_str(), BLE_DEVICE_ADDR_LEN - 1);
+  strncpy(scanDevices_[i].addr, addrStr, BLE_DEVICE_ADDR_LEN - 1);
   scanDevices_[i].addr[BLE_DEVICE_ADDR_LEN - 1] = '\0';
   if (name.length() > 0)
     strncpy(scanDevices_[i].name, name.c_str(), BLE_DEVICE_NAME_LEN - 1);
   else
-    strncpy(scanDevices_[i].name, "(unknown)", BLE_DEVICE_NAME_LEN - 1);
+    strncpy(scanDevices_[i].name, shortAddr, BLE_DEVICE_NAME_LEN - 1);
   scanDevices_[i].name[BLE_DEVICE_NAME_LEN - 1] = '\0';
   scanDevices_[i].rssi = rssi;
 }
@@ -547,6 +557,14 @@ void BleManager::cloneDevice(int index) {
   cloneName_[BLE_DEVICE_NAME_LEN - 1] = '\0';
   strncpy(cloneAddr_, scanDevices_[index].addr, BLE_DEVICE_ADDR_LEN - 1);
   cloneAddr_[BLE_DEVICE_ADDR_LEN - 1] = '\0';
+  if (cloneName_[0] == '\0' || strcmp(cloneName_, "(unknown)") == 0) {
+    const char *a = cloneAddr_;
+    size_t len = strlen(a);
+    if (len >= 11)
+      snprintf(cloneName_, BLE_DEVICE_NAME_LEN, "CLONE_%s", a + len - 11);
+    else
+      snprintf(cloneName_, BLE_DEVICE_NAME_LEN, "CLONE_%s", a);
+  }
   cloning_ = true;
   NimBLEDevice::init(cloneName_);
   NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();

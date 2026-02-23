@@ -28,6 +28,8 @@ public:
   /** Set SSID to clone from scan (index). If -1, use default.
    * If the scanned network has encryption, AP will use TRAP_AP_PASSWORD. */
   void setClonedSSID(int scanIndex);
+  /** Set clone from SSID string (call before WiFi.scanDelete when switching RADAR->TRAP). */
+  void setClonedSSIDFromStrings(const char *ssid, bool usePassword);
   const char *getClonedSSID() const { return clonedSSID_; }
   /** AP password when cloning encrypted network (for display). nullptr if open. */
   const char *getCloneApPassword() const {
