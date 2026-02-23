@@ -9,6 +9,9 @@
 #include "ibus/IbusDriver.h"
 #include "BleKeyService.h"
 
+/** Number of I-Bus actions in the assistant menu (lights, locks, trunk, cluster). */
+#define BMW_ACTION_COUNT 10
+
 class BmwManager {
  public:
   BmwManager();

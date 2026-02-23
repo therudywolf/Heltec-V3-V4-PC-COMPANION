@@ -109,7 +109,6 @@ static char toastMsg[20] = "";
 static unsigned long toastUntil = 0;
 
 // BMW Assistant: selected action index (short = next, long = execute)
-#define BMW_ACTION_COUNT 10
 static int bmwActionIndex = 0;
 
 // Forza: splash "IP | PORT | WAITING" shown for 3s on enter

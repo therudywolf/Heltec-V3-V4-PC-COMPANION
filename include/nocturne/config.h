@@ -11,7 +11,7 @@
 #define NOCT_CONTRAST_MIN 12
 #define NOCT_CONTRAST_MAX 255
 
-/* V4 Pinout (standard Heltec): SDA=17, SCL=18, RST=21, Vext=36. LED=25;
+/* V4 Pinout (standard Heltec): SDA=17, SCL=18, RST=21, Vext=36. LED=35;
  * BUTTON=0 Vext=36: LOW = OLED powered. RST=21: reset pulse LOW then HIGH. */
 #define NOCT_SDA_PIN 17
 #define NOCT_SCL_PIN 18

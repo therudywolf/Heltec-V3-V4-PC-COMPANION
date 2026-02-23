@@ -24,10 +24,11 @@ BmwManager::BmwManager() {
 }
 
 void BmwManager::parseMflButton(uint8_t *packet) {
-  /* packet: [0]=src, [1]=len, [2]=dest, [3]=cmd, [4..]=data, last=checksum */
-  if (packet[0] != IBUS_MFL || packet[1] < 5)
+  /* packet: [0]=src, [1]=len (bytes after len), [2]=dest, [3]=cmd, [4..]=data */
+  if (!packet || packet[0] != IBUS_MFL || packet[1] < 3)
     return;
-  if (packet[3] != IBUS_MFL_BUTTON)
+  size_t totalLen = 2u + (size_t)packet[1];
+  if (totalLen < 5 || packet[3] != IBUS_MFL_BUTTON)
     return;
   uint8_t b = packet[4];
   if (b == 0x3B || b == 0x02)   /* next / R/T */
@@ -64,10 +65,10 @@ void BmwManager::getPdcDistances(int *dists, int maxCount) const {
 }
 
 void BmwManager::parsePdcPacket(uint8_t *packet) {
-  if (packet[0] != IBUS_PDC || packet[1] < 5)
+  if (!packet || packet[0] != IBUS_PDC || packet[1] < 7)
     return;
-  /* PDC distance bytes layout varies by car; typical: 4 bytes for 4 sensors. */
-  for (int i = 0; i < kPdcSensors && (int)(2 + 2 + i) < packet[1]; i++)
+  /* PDC: need at least dest, cmd, 4 distance bytes, checksum. Indices 4..7 = data. */
+  for (int i = 0; i < kPdcSensors && (4 + i) <= (int)(packet[1]); i++)
     pdcDists_[i] = packet[4 + i] <= 0xFE ? (int)packet[4 + i] : -1;
   pdcValid_ = true;
 }
