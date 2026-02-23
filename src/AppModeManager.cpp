@@ -335,6 +335,7 @@ bool AppModeManager::switchToMode(AppMode &current, AppMode next,
   Serial.printf("[SYS] Switching from MODE_%d to MODE_%d\n", (int)current,
                 (int)next);
 
+  /* Always cleanup current mode first, then init next — avoids double init and leftover peripherals. */
   cleanupMode(current);
 
   if (!initializeMode(next, trapWifiSelected, trapFilteredCount,

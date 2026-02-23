@@ -21,6 +21,7 @@
 - [Алерты (RED ALERT)](#-алерты-red-alert)
 - [Установка](#-установка)
 - [Конфигурация](#-конфигурация)
+- [Документация (гайды)](#-документация-гайды)
 - [Структура проекта](#-структура-проекта)
 - [Опционально: LoRa](#-опционально-lora)
 - [Авторы и лицензия](#-авторы-и-лицензия)
@@ -84,6 +85,8 @@
 
 **Predator:** в нормальном режиме очень долгое нажатие (~2.5 s) — экран гаснет, LED «дышит». Повтор — выход.
 
+Во всех полноэкранных режимах внизу экрана отображается подсказка: **1x** — следующий пункт/сцена, **2s** — OK/выполнить, **2x** — назад/меню.
+
 ---
 
 ## Меню
@@ -93,7 +96,7 @@
 - **Выбор:** долгое нажатие — войти в категорию или выполнить действие.
 - **Назад/закрытие:** двойной тап (из подменю — назад, с уровня категорий — выход).
 
-Подсказка внизу: `1x next  2s ok  2x back`.
+Подсказка внизу: `1x next  2s ok  2x menu`.
 
 ### Структура меню (5 категорий)
 
@@ -118,8 +121,14 @@
 | **WiFi Sniff**   | Режимы сканирования/анализа (Probe, EAPOL, Station, Packet Monitor, Channel Analyzer/Activity, Packet Rate и др.). |
 | **BLE Spam**     | NimBLE spam; счётчик пакетов. Варианты: Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
 | **Forza**        | Дашборд телеметрии Forza (UDP): RPM, скорость, передача, shift lamp. См. [FORZA_SETUP](docs/forza/FORZA_SETUP.md). |
-| **BMW Assistant** | BLE-ключ, I-Bus (свет, замки, PDC, текст на приборку). См. [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md). |
+| **BMW Assistant** | BLE-ключ, I-Bus (свет, замки, PDC, текст на приборку). См. таблицу ниже и [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md). |
 | **Charge only** | Экран зарядки; WiFi выключен для экономии. |
+
+**BMW E39 Assistant — кратко:**
+
+| Что делает | BLE-ключ (подход = открыть, отход = закрыть), команды по I-Bus (свет, замки, PDC, текст на приборку). |
+| Железо | I-Bus: трансивер (MCP2004A/TH3122), пины TX 39 / RX 38. Без I-Bus показывается «No IBus», BLE и список действий работают. |
+| Подробности | [docs/bmw/BMW_E39_Assistant.md](docs/bmw/BMW_E39_Assistant.md) |
 
 Выход из любого режима: **двойной тап** → меню → с уровня категорий снова двойной тап — закрытие меню и возврат в Normal.
 
@@ -205,6 +214,17 @@ python monitor.py
 
 ---
 
+## Документация (гайды)
+
+| Раздел | Описание |
+|--------|----------|
+| [Плата и настройки](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md) | Распиновка Heltec V4, config.h, сборка, загрузка |
+| [Мониторинг ПК](docs/monitoring/PC_MONITORING.md) | Телеметрия с ПК, сцены, сервер, алерты |
+| [Forza Data Out](docs/forza/FORZA_SETUP.md) | Дашборд Forza, UDP 5300, настройка в игре |
+| [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE-ключ, I-Bus, подключение, использование |
+
+---
+
 ## Структура проекта
 
 ```
@@ -231,12 +251,14 @@ python monitor.py
 │   ├── requirements.txt
 │   └── config.json
 ├── data/                    # LittleFS: файлы для загрузки на устройство (см. data/README.txt)
-├── docs/
-│   ├── bmw/                 # BMW E39 Assistant: подключение, I-Bus, BLE-ключ (см. docs/bmw/BMW_E39_Assistant.md)
-│   └── forza/               # Forza Data Out: настройка UDP, порт 5300 (см. docs/forza/FORZA_SETUP.md)
+├── docs/                    # Документация и гайды
+│   ├── bmw/                 # BMW E39 Assistant — [BMW_E39_Assistant.md](docs/bmw/BMW_E39_Assistant.md)
+│   ├── forza/               # Forza Data Out — [FORZA_SETUP.md](docs/forza/FORZA_SETUP.md)
+│   ├── monitoring/          # Мониторинг ПК — [PC_MONITORING.md](docs/monitoring/PC_MONITORING.md)
+│   └── board/               # Плата и настройки — [HELTEC_V4_BOARD_AND_CONFIG.md](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md)
 ├── tests/                   # Unit-тесты (monitor)
-├── tools/                   # Утилиты (напр. Forza UDP) — см. tools/README.md
-├── optional/radio/          # LoRa (SX1262) — опционально, см. optional/radio/README.md
+├── tools/                   # Утилиты (Forza UDP и др.) — см. tools/README.md
+├── optional/radio/          # LoRa (SX1262) — вне основной сборки, см. optional/radio/README.md
 ├── DataSheets/              # PDF платы
 ├── platformio.ini           # Сборка: env heltec_wifi_lora_32_V4
 └── huge_app.csv             # Таблица разделов (Nocturne + LittleFS)

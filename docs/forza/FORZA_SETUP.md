@@ -74,3 +74,24 @@ Parsed offsets (little-endian):
 ## Exit
 
 **Double-click** the button to return to the main menu.
+
+---
+
+## Extended guide
+
+### What appears on screen
+
+- **RPM bar** (top) — fill level from idle to max RPM; redline strobe when RPM ≥ 90% of max.
+- **Gear** (left area) — R, N, or 1–10 in a dedicated zone.
+- **Speed** (right) — large digits in km/h; unit label «km/h» at bottom right.
+- **Shift lamp** — full-screen flash and LED blink at redline; same logic as tachometer.
+- Bottom line shows the standard hint: `1x next  2s ok  2x menu` (navigation is minimal in this mode; double-tap exits).
+
+### Network debugging
+
+- **No telemetry:** Ensure the device and the PC/Xbox are on the same Wi‑Fi; Forza Data Out IP = device IP (from splash), port 5300. Windows Firewall may block UDP 5300 — allow the game or add a rule for port 5300.
+- **Wrong gear/speed:** Packet format differs between FM7/FM8 (311 bytes) and FH4/FH5 (323 bytes). The firmware detects size and parses the correct offsets. If values are wrong, capture packets with the tool below and check offsets in `ForzaManager.cpp` / `IbusCodes`-style tables.
+
+### Capture tool
+
+Use [tools/forza_udp_capture.py](../../tools/forza_udp_capture.py) on the PC to capture UDP telemetry and print packet length, gear byte, and other fields. See [tools/README.md](../../tools/README.md). Set Forza Data Out to the **PC IP** (not the device) and port 5300, then run the script to verify packet size (311 vs 323) and byte layout.

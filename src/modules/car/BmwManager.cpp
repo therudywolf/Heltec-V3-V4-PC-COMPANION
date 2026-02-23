@@ -25,7 +25,7 @@ BmwManager::BmwManager() {
 
 void BmwManager::parseMflButton(uint8_t *packet) {
   /* packet: [0]=src, [1]=len, [2]=dest, [3]=cmd, [4..]=data, last=checksum */
-  if (packet[0] != IBUS_MFL || packet[1] < 4)
+  if (packet[0] != IBUS_MFL || packet[1] < 5)
     return;
   if (packet[3] != IBUS_MFL_BUTTON)
     return;
@@ -98,6 +98,8 @@ void BmwManager::setObdData(bool connected, int rpm, int coolantC, int oilC) {
 }
 
 void BmwManager::onIbusPacket(uint8_t *packet) {
+  if (!packet || packet[1] < 3 || packet[1] > 0x24)
+    return;
   if (packet[0] == IBUS_MFL)
     parseMflButton(packet);
   else if (packet[0] == IBUS_PDC)
@@ -154,8 +156,10 @@ void BmwManager::begin() {
   active_ = true;
   ibusSynced_ = false;
   s_bmwForIbus = this;
+#if NOCT_IBUS_ENABLED
   ibus_.setPacketHandler(ibusPacketForward);
   ibus_.begin(NOCT_IBUS_TX_PIN, NOCT_IBUS_RX_PIN);
+#endif
   bleKey_.setConnectionCallback([](bool connected) {
     if (s_bmwForIbus)
       s_bmwForIbus->onPhoneConnectionChanged(connected);
