@@ -391,7 +391,7 @@ static bool handleHackerItem(int group, int item, unsigned long now)
 }
 
 /** Execute action for (category, item). Called when menuLevel==1 and user
- * Long-press. Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System. */
+ * Long-press. Categories: 0=Monitoring, 1=Hacker, 2=BMW, 3=Config, 4=System. */
 static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
 {
   if (cat == 0)
@@ -420,9 +420,26 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     }
     return true;
   }
-  if (cat == 1)
+  // cat==1 (Hacker): handled in long-press branch via handleHackerItem
+  if (cat == 2)
   {
-    // Config: AUTO, FLIP, GLITCH, LED, DIM
+    // BMW: enter BMW Assistant mode
+    if (item == 0)
+    {
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    return true;
+  }
+  if (cat == 3)
+  {
+    // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
     if (item == 0)
     {
       if (!settings.carouselEnabled)
@@ -529,23 +546,6 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
               settings.displayTimeoutSec ? "T:%ds" : "T:OFF",
               settings.displayTimeoutSec);
       toastUntil = now + 800;
-    }
-    return true;
-  }
-  // cat==2 (Hacker): level 1 shows groups; action is at level 2 via handleHackerItem
-  if (cat == 3)
-  {
-    // BMW: enter BMW Assistant mode
-    if (item == 0)
-    {
-      quickMenuOpen = false;
-      rebootConfirmed = false;
-      if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
     }
     return true;
   }
@@ -913,7 +913,7 @@ void loop()
         menuCategory = quickMenuItem;
         quickMenuItem = 0;
       }
-      else if (menuLevel == 1 && menuCategory == 2)
+      else if (menuLevel == 1 && menuCategory == 1)
       {
         // Hacker: flat list — execute selected tool (no level 2)
         bool ok = handleHackerItem(0, quickMenuItem, now);
@@ -961,8 +961,8 @@ void loop()
           if (count > 0)
           {
             wifiScanSelected = (wifiScanSelected + 1) % count;
-            if (wifiScanSelected >= wifiListPage + 5)
-              wifiListPage = wifiScanSelected - 4;
+            if (wifiScanSelected >= wifiListPage + 4)
+              wifiListPage = wifiScanSelected - 3;
             else if (wifiScanSelected < wifiListPage)
               wifiListPage = wifiScanSelected;
           }

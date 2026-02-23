@@ -1036,11 +1036,11 @@ static int submenuCountForCategory(int cat)
   case 0:
     return 2; // Monitoring: PC, Forza
   case 1:
-    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
-  case 2:
     return 4; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
-  case 3:
+  case 2:
     return 1; // BMW: BMW Assistant
+  case 3:
+    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 4:
     return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
@@ -1066,9 +1066,9 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
-  // 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
-  static const char *categoryNames[] = {"Monitoring", "Config", "Hacker",
-                                        "BMW", "System"};
+  // 0=Monitoring, 1=Hacker, 2=BMW, 3=Config, 4=System
+  static const char *categoryNames[] = {"Monitoring", "Hacker", "BMW",
+                                        "Config", "System"};
   static char items[25][20];
   int count;
   const char *headerStr;
@@ -1094,7 +1094,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
     }
-    else if (menuCategory == 2)
+    else if (menuCategory == 1)
     {
       static const char *hackerItems[] = {"WiFi Clone", "BLE Clone",
         "BLE Spam", "Infosec"};
@@ -1104,7 +1104,12 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
         items[i][sizeof(items[i]) - 1] = '\0';
       }
     }
-    else if (menuCategory == 1)
+    else if (menuCategory == 2)
+    {
+      strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+    }
+    else if (menuCategory == 3)
     {
       if (!carouselOn)
         snprintf(items[0], sizeof(items[0]), "AUTO: OFF");
@@ -1124,18 +1129,6 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       else
         snprintf(items[6], sizeof(items[6]), "TIMEOUT:%ds", displayTimeoutSec);
       items[6][sizeof(items[6]) - 1] = '\0';
-    }
-    else if (menuCategory == 2)
-    {
-      strncpy(items[0], "WiFi", sizeof(items[0]) - 1);
-      strncpy(items[1], "BLE", sizeof(items[1]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
-      items[1][sizeof(items[1]) - 1] = '\0';
-    }
-    else if (menuCategory == 3)
-    {
-      strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
     }
     else if (menuCategory == 4)
     {
@@ -1846,7 +1839,7 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
     else
       u8g2.print(" ");
     char line[22];
-    strncpy(line, dev->name[0] ? dev->name : dev->addr, sizeof(line) - 1);
+    strncpy(line, dev->name[0] ? dev->name : "-", sizeof(line) - 1);
     line[sizeof(line) - 1] = '\0';
     size_t maxName = 14;
     if (strlen(line) > maxName)
@@ -1859,7 +1852,7 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
     u8g2.print(dev->rssi);
     y += 10;
   }
-  u8g2.setCursor(2, 52);
+  u8g2.setCursor(2, 48);
   u8g2.print(selectedIndex + 1);
   u8g2.print("/");
   u8g2.print(n);
@@ -1904,7 +1897,7 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
                  NOCT_DISP_H - NOCT_MODE_HEADER_H);
     u8g2.setDrawColor(1);
     u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
-    u8g2.setCursor(NOCT_MARGIN, 44);
+    u8g2.setCursor(NOCT_MARGIN, 42);
     u8g2.print("BITE:");
     static char pwdBuf[22];
     size_t len = strlen(lastPassword);
@@ -1925,7 +1918,7 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
       else
         break;
     }
-    u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+    u8g2.setCursor(NOCT_MARGIN, 46);
     u8g2.print(pwdBuf);
   }
   else
@@ -1954,7 +1947,12 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
     {
       u8g2.setCursor(NOCT_MARGIN, 42);
       u8g2.print("AP Pass: ");
-      u8g2.print(cloneApPassword);
+      char passBuf[14];
+      strncpy(passBuf, cloneApPassword, sizeof(passBuf) - 1);
+      passBuf[sizeof(passBuf) - 1] = '\0';
+      if (strlen(cloneApPassword) > sizeof(passBuf) - 1)
+        passBuf[sizeof(passBuf) - 2] = '.';
+      u8g2.print(passBuf);
     }
   }
 
@@ -2073,7 +2071,7 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
     const WifiSniffAp *ap = mgr.getAp(selected);
     if (ap)
     {
-      int apY = (mode == SNIFF_MODE_EAPOL_CAPTURE) ? 36 : 28;
+      int apY = (mode == SNIFF_MODE_EAPOL_CAPTURE) ? 28 : 28;
       u8g2.setCursor(2, apY);
       char line[22];
       strncpy(line, ap->ssid, 18);

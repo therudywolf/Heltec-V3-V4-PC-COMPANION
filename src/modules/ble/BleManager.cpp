@@ -450,10 +450,10 @@ void BleManager::onScanResult(void *device) {
   std::string name = dev->getName();
   int rssi = dev->getRSSI();
   const char *addrStr = addr.c_str();
-  // Short identifier from last 4 bytes of MAC (e.g. "cc:dd:ee:ff") for empty names
+  // Short identifier from last 4 octets of MAC (e.g. "cc:dd:ee:ff") for empty names
   char shortAddr[16];
-  if (addr.length() >= 11)
-    snprintf(shortAddr, sizeof(shortAddr), "[%s]", addrStr + addr.length() - 11);
+  if (addr.length() >= 12)
+    snprintf(shortAddr, sizeof(shortAddr), "[%s]", addrStr + addr.length() - 12);
   else
     snprintf(shortAddr, sizeof(shortAddr), "[%s]", addrStr);
   for (int i = 0; i < scanCount_; i++) {
@@ -560,8 +560,8 @@ void BleManager::cloneDevice(int index) {
   if (cloneName_[0] == '\0' || strcmp(cloneName_, "(unknown)") == 0) {
     const char *a = cloneAddr_;
     size_t len = strlen(a);
-    if (len >= 11)
-      snprintf(cloneName_, BLE_DEVICE_NAME_LEN, "CLONE_%s", a + len - 11);
+    if (len >= 12)
+      snprintf(cloneName_, BLE_DEVICE_NAME_LEN, "CLONE_%s", a + len - 12);
     else
       snprintf(cloneName_, BLE_DEVICE_NAME_LEN, "CLONE_%s", a);
   }
