@@ -8,21 +8,21 @@
 #include <WiFiUdp.h>
 
 #define FORZA_UDP_PORT 5300
-#define FORZA_PACKET_MIN_SIZE 311   /* Dash: FM7 311, FM8 331, FH4 323 */
+#define FORZA_PACKET_MIN_SIZE 311 /* Dash: FM7 311, FM8 331, FH4 323 */
 #define FORZA_PACKET_DASH_FM 311
 #define FORZA_PACKET_DASH_FH 323
 #define FORZA_TIMEOUT_MS 3000
-#define FORZA_SHIFT_THRESHOLD 0.90f  // RPM % for shift light
+#define FORZA_SHIFT_THRESHOLD 0.87f // RPM % for shift light
 
 // --- Forza Dashboard: FIXED layout with NO collisions ---
 #define FORZA_RPM_JITTER_RANGE 1
-#define FORZA_RED_ZONE_FLICKER_MS 80
+#define FORZA_RED_ZONE_FLICKER_MS 50
 #define FORZA_GEAR_CHANGE_VIBRATE_RANGE 1
 #define FORZA_SPEED_BRAKE_DROP_PX 1
 #define FORZA_EMA_RPM 0.35f
 #define FORZA_EMA_SPEED 0.28f
 #define FORZA_GEAR_CHANGE_MS 200
-#define FORZA_RED_ZONE_RPM_PCT 0.85f
+#define FORZA_RED_ZONE_RPM_PCT 0.84f
 
 // Layout (128x64) — F1 style: thin RPM bar | Gear left (huge), Speed right | Shift bottom
 #define RPM_BAR_HEIGHT 10
@@ -62,7 +62,8 @@
 #define FORZA_OFF_RACE_POS_FH 310
 #define FORZA_OFF_GEAR_FH 319
 
-struct ForzaState {
+struct ForzaState
+{
   float currentRpm;
   float maxRpm;
   float idleRpm;
@@ -76,7 +77,8 @@ struct ForzaState {
   unsigned long lastPacketMs;
 };
 
-class ForzaManager {
+class ForzaManager
+{
 public:
   ForzaManager();
   void begin();

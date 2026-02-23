@@ -497,7 +497,9 @@ static float getBatteryVoltage()
   }
 
   // Step 4: Calculate actual battery voltage: multiply by divider factor 4.9
-  float voltage = (mv * NOCT_BAT_DIVIDER_FACTOR) / 1000.0f;
+  // Apply calibration offset (e.g. for 103450-LP when full charge showed ~88%)
+  float voltage =
+      (mv * NOCT_BAT_DIVIDER_FACTOR) / 1000.0f + NOCT_BAT_CALIBRATION_OFFSET;
 
   // Step 5: Add to moving average buffer
   batteryVoltageHistory[batteryHistoryIndex] = voltage;
@@ -609,7 +611,7 @@ static unsigned long updateBatteryState()
 
     // Debug output: Raw_mV | Calculated_V | Pct | NextInterval
     static unsigned long lastDebug = 0;
-    if (millis() - lastDebug > 5000)
+    if (millis() - lastDebug > 2000)
     {
       // Calculate raw mV from voltage (reverse calculation)
       uint32_t raw_mv = (uint32_t)(v * 1000.0f / NOCT_BAT_DIVIDER_FACTOR);
