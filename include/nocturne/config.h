@@ -31,9 +31,12 @@
 #define NOCT_BAT_DIVIDER_FACTOR                                                \
   4.9f                          /* Voltage divider: (100+390)/100 = 4.9        \
                                  */
-#define NOCT_VOLT_MIN 3.3f      /* 0% charge */
-#define NOCT_VOLT_MAX 4.2f      /* 100% charge */
+#define NOCT_VOLT_MIN 3.3f      /* 0% charge (LiPo empty) */
+#define NOCT_VOLT_MAX 4.2f      /* 100% charge (LiPo full, 103450-LP 3.7V) */
 #define NOCT_VOLT_CHARGING 4.4f /* Above this voltage = charging */
+/* Calibration: if full charge shows ~88%, ADC/divider reads low. Add offset
+ * so that displayed voltage matches real (e.g. +0.11f for 103450-LP 2000mAh). */
+#define NOCT_BAT_CALIBRATION_OFFSET 0.11f
 /* Adaptive battery reading intervals */
 #define NOCT_BAT_READ_INTERVAL_STABLE_MS                                       \
   10000 /* Stable voltage: read every 10s */
