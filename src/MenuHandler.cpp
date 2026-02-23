@@ -13,11 +13,11 @@ int submenuCount(int category)
   case 0:
     return 2; // Monitoring: PC, Forza
   case 1:
-    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
-  case 2:
     return HACKER_ITEM_COUNT; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
-  case 3:
+  case 2:
     return 1; // BMW: BMW Assistant
+  case 3:
+    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 4:
     return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:

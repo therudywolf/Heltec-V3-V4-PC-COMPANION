@@ -7,7 +7,7 @@
 
 #include "AppModeManager.h"
 
-// Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
+// Categories: 0=Monitoring, 1=Hacker, 2=BMW, 3=Config, 4=System
 #define MENU_CATEGORIES 5
 // Hacker: flat list of 5 items (no WiFi/BLE subgroups)
 
