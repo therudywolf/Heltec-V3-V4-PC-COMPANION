@@ -1,12 +1,12 @@
 # NOCTURNE OS — WolfPet
 
-**Ветка:** `WolfPet` · **Платформа:** Heltec WiFi LoRa 32 V4 (ESP32-S3) · **Лицензия:** [MIT](LICENSE)
+**Платформа:** Heltec WiFi LoRa 32 V4 (ESP32-S3) · **Лицензия:** [MIT](LICENSE)
 
-![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue) ![Branch](https://img.shields.io/badge/branch-WolfPet-orange)
+![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
 
 > _"In the silence of the net, the wolf hunts alone."_
 
-Прошивка **Nocturne OS** превращает **Heltec V4** в кибердек-монитор: OLED 128×64, телеметрия по TCP с ПК, тактическое меню, утилиты (Wi‑Fi сканер, Deauth, BLE Spam, USB HID, портал, Vault, Daemon) и система алертов по температуре/нагрузке/ОЗУ.
+Кибердек-монитор для **Heltec V4**: OLED 128×64, телеметрия по TCP с ПК, меню входа в режимы, WiFi-сканер (RADAR), Trap (captive portal), BLE Spam, Forza-дашборд, BMW E39 Assistant, алерты по температуре и нагрузке.
 
 ---
 
@@ -17,12 +17,12 @@
 - [Экраны (сцены)](#-экраны-сцены)
 - [Управление](#-управление)
 - [Меню](#-меню)
-- [Dual boot (Meshtastic)](#-dual-boot-meshtastic)
-- [Утилиты (Tools)](#-утилиты-tools)
+- [Режимы (утилиты)](#-режимы-утилиты)
 - [Алерты (RED ALERT)](#-алерты-red-alert)
 - [Установка](#-установка)
 - [Конфигурация](#-конфигурация)
 - [Структура проекта](#-структура-проекта)
+- [Dual boot (Meshtastic)](#-dual-boot-meshtastic)
 - [Опционально: LoRa](#-опционально-lora)
 - [Авторы и лицензия](#-авторы-и-лицензия)
 
@@ -32,12 +32,12 @@
 
 | Область     | Описание                                                                                          |
 | ----------- | ------------------------------------------------------------------------------------------------- |
-| **Дизайн**  | Единая сетка 2×2, Tech Brackets, chamfered boxes, ProFont10 / HelvB10, ~60 FPS, glitch-эффекты.   |
-| **Связь**   | WiFi без power-saving (`WIFI_PS_NONE`), автореконнект, таймауты и grace period в `config.h`.      |
-| **Меню**    | Двухуровневое (категории → подменю), под хедером, подсказка внизу, сохранение в NVS.              |
-| **Утилиты** | Полноэкранные режимы без глобального хедера: RADAR, DEAUTH, BLE, USB HID, PORTAL, VAULT, DAEMON.  |
-| **Алерты**  | Пороги по CPU/GPU temp и load, ОЗУ по гигабайтам; двойной blink LED, подсветка метрики на экране. |
-| **Яркость** | Долгое нажатие вне меню переключает нормальную/пониженную яркость (контраст 12).                  |
+| **Дизайн**  | Сетка 2×2, Tech Brackets, ProFont10/HelvB10, ~60 FPS, опциональный glitch.                         |
+| **Связь**   | WiFi без power-saving (`WIFI_PS_NONE`), автореконнект, таймауты в `config.h`.                     |
+| **Меню**    | 5 категорий → подменю; сохранение настроек в NVS.                                                 |
+| **Режимы**  | RADAR (WiFi-сканер), Trap (AP + portal), BLE Spam (и варианты), Forza, BMW Assistant, Charge only. |
+| **Алерты**  | Пороги CPU/GPU temp и load, ОЗУ; двойной blink LED, подсветка метрики на экране.                  |
+| **Яркость** | Долгое нажатие вне меню — переключение нормальной/пониженной яркости. Таймаут дисплея — затемнение до минимума. |
 
 ---
 
@@ -48,8 +48,8 @@
 | **Плата**        | Heltec WiFi LoRa 32 V4       | ESP32-S3R2                            |
 | **Дисплей**      | 0.96" OLED SSD1306           | I2C: SDA 17, SCL 18, RST 21           |
 | **Питание OLED** | Vext GPIO 36                 | LOW = включено                        |
-| **Кнопка**       | GPIO 0 (PRG)                 | Pull-up, короткое/долгое/двойной тап  |
-| **LED**          | GPIO 35 (белый)              | Алерты, predator breath               |
+| **Кнопка**       | GPIO 0 (PRG)                 | Короткое / долгое / двойной тап       |
+| **LED**          | GPIO 35 (белый)               | Алерты, predator breath               |
 | **Батарея**      | ADC GPIO 1, контроль GPIO 37 | Делитель 4.9, калибровка в `config.h` |
 | **I2C**          | 800 kHz                      | Для стабильного 60 FPS                |
 
@@ -57,7 +57,7 @@
 
 ## Экраны (сцены)
 
-В режиме **Normal** (мониторинг с ПК) доступны 9 сцен; переключение — короткое нажатие (карусель сбрасывается).
+В режиме **Normal** (мониторинг с ПК) доступны 9 сцен; переключение — короткое нажатие.
 
 | №   | Сцена       | Содержимое                                           |
 | --- | ----------- | ---------------------------------------------------- |
@@ -66,9 +66,9 @@
 | 2   | **GPU**     | Температура, частота, нагрузка, VRAM                 |
 | 3   | **RAM**     | Топ процессов по памяти, общее использование         |
 | 4   | **DISKS**   | Сетка 2×2: буква диска, температура                  |
-| 5   | **MEDIA**   | Трек/исполнитель (прокрутка), статус воспроизведения |
+| 5   | **MEDIA**   | Трек/исполнитель, статус воспроизведения             |
 | 6   | **FANS**    | RPM и % для CPU, Pump, GPU, Case                     |
-| 7   | **MB**      | Материнская плата: VRM, Chipset и др.                |
+| 7   | **MB**      | Материнская плата: VRM, Chipset и др.               |
 | 8   | **WEATHER** | Иконка погоды (XBM), температура                     |
 
 ---
@@ -80,90 +80,49 @@
 | Действие            | В обычном режиме            | В меню                            |
 | ------------------- | --------------------------- | --------------------------------- |
 | **Короткое** (<1 s) | Следующая сцена             | Следующий пункт меню              |
-| **Долгое** (>1 s)   | Вкл/выкл пониженной яркости | Выбор / вход / выполнение         |
+| **Долгое** (>1 s)   | Вкл/выкл пониженной яркости | Вход в подменю / выполнение       |
 | **Двойной тап**     | Открыть меню                | Назад из подменю или закрыть меню |
 
-**Predator:** в нормальном режиме очень долгое нажатие (~2.5 s) включает режим «хищник»: экран гаснет, LED «дышит». Повтор — выход.
+**Predator:** в нормальном режиме очень долгое нажатие (~2.5 s) — экран гаснет, LED «дышит». Повтор — выход.
 
 ---
 
 ## Меню
 
-- **Открытие:** двойной тап по кнопке.
+- **Открытие:** двойной тап.
 - **Навигация:** короткое нажатие — следующий пункт.
 - **Выбор:** долгое нажатие — войти в категорию или выполнить действие.
-- **Назад/закрытие:** двойной тап (из подменю — назад, с уровня категорий — выход из меню).
+- **Назад/закрытие:** двойной тап (из подменю — назад, с уровня категорий — выход).
 
-Внизу окна меню подсказка: `1x next  2s ok  2x back`.
+Подсказка внизу: `1x next  2s ok  2x back`.
 
-### Структура меню
+### Структура меню (5 категорий)
 
-| Категория   | Пункты                           | Действия                                                                                                                                                 |
-| ----------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config**  | AUTO, FLIP, GLITCH, LED, DIM     | AUTO: цикл OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. Все сохраняются в NVS. |
-| **WiFi**    | SCAN, DEAUTH, PORTAL             | Переход в RADAR, Deauth, Captive Portal (AP **MT_FREE**).                                                                                                |
-| **BMW**     | BMW Assistant                    | Режим ассистента BMW E39: BLE-ключ, I-Bus (замки, свет, MFL, PDC, приборка). Подробно: [BMW E39 Assistant](docs/BMW_E39_Assistant.md).                   |
-| **Meshtastic** | Switch to Meshtastic           | Переключение на прошивку Meshtastic (ota_1). Требуется один раз прошить Meshtastic в раздел ota_1. См. [Dual boot (Meshtastic)](#-dual-boot-meshtastic). |
-| **Tools**   | BLE SPAM, USB HID, VAULT, DAEMON | BLE Spam, BadWolf USB HID, TOTP Vault, экран Daemon (Wolf + телеметрия).                                                                                 |
-| **System**  | REBOOT, Charge only, Power off, VERSION | Перезагрузка (с подтверждением), режим зарядки, глубокий сон, показ версии (v1.0).                                                                  |
-
-Настройки Config и яркость сохраняются в NVS.
+| Категория    | Пункты | Действия |
+| ------------ | ------ | -------- |
+| **Monitoring** | PC, Forza | Переход в режим мониторинга с ПК или в дашборд Forza. |
+| **Config**   | AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT | AUTO: карусель OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. CONTRAST: цикл уровней. TIMEOUT: таймаут затемнения дисплея (0 / 30 / 60 с). Всё сохраняется в NVS. |
+| **Hacker**   | WiFi, BLE | **WiFi:** RADAR, Probe Scan, EAPOL, Station Scan, Packet Monitor, Channel Analyzer/Activity, Packet Rate, Pinescan, MultiSSID, Signal Strength, Raw Capture, AP+STA, **Trap** (portal). **BLE:** Spam, Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
+| **BMW**      | BMW Assistant | Режим ассистента BMW E39: BLE-ключ, I-Bus (замки, свет, MFL, PDC, приборка). Подробно: [BMW E39 Assistant](docs/BMW_E39_Assistant.md). |
+| **System**   | REBOOT, CHARGE ONLY, POWER OFF, VERSION | Перезагрузка (с подтверждением), режим зарядки, глубокий сон, показ версии. |
 
 ---
 
-## Dual boot (Meshtastic)
+## Режимы (утилиты)
 
-**Восстановление Nocturne:** если после прошивки экран чёрный (например, случайно залили boot_selector поверх Nocturne), снова прошейте только основную прошивку: `pio run -e heltec_wifi_lora_32_V4 --target upload`. По умолчанию кнопка «Upload» в IDE прошивает только её.
+Режимы из меню **Hacker** и **Monitoring** рисуются на весь экран без глобального хедера.
 
-В меню после **BMW** добавлена категория **Meshtastic**. Долгое нажатие по пункту **Switch to Meshtastic** читает файл **meshtastic.bin** из раздела с файлами (LittleFS), прошивает его в раздел **ota_1**, переключает загрузку на ota_1 и перезагружает устройство в Meshtastic. Если файла нет — переключает загрузку на уже прошитый ota_1 (если вы раньше прошивали Meshtastic вручную).
+| Режим            | Описание                                                                 |
+| ---------------- | ------------------------------------------------------------------------ |
+| **RADAR**        | WiFi-сканер: список сетей, RSSI, канал; короткое — выбор, долгое — смена сортировки/фильтра. |
+| **Trap (Portal)**| Точка доступа + captive portal; клонирование SSID из скана; логи и пароли. |
+| **WiFi Sniff**   | Режимы сканирования/анализа (Probe, EAPOL, Station, Packet Monitor, Channel Analyzer/Activity, Packet Rate и др.). |
+| **BLE Spam**     | NimBLE spam; счётчик пакетов. Варианты: Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
+| **Forza**        | Дашборд телеметрии Forza (UDP): RPM, скорость, передача, shift lamp. См. [FORZA_SETUP](docs/FORZA_SETUP.md). |
+| **BMW Assistant** | BLE-ключ, I-Bus (свет, замки, PDC, текст на приборку). См. [BMW E39 Assistant](docs/BMW_E39_Assistant.md). |
+| **Charge only** | Экран зарядки; WiFi выключен для экономии. |
 
-### Таблица разделов
-
-Используется таблица **huge_app.csv**: ota_0 = Nocturne (0x10000, 3 MiB), ota_1 = Meshtastic (0x310000, 2 MiB), раздел с файлами (0x510000, LittleFS).
-
-**Сообщение «No ota_1 - reflash FW»:** во флеше старая таблица разделов (без ota_1). Один раз прошейте Nocturne заново: `pio run -e heltec_wifi_lora_32_V4 --target upload`.
-
-### Включение Meshtastic файлом (рекомендуется)
-
-**Автоматически:** если в корне проекта есть папка **firmware-2.7.15.567b8ea** (исходники Meshtastic), при загрузке FS скрипт сам соберёт Meshtastic и положит `data/meshtastic.bin`. Ручной шаг не нужен.
-
-Вручную (если папки нет):
-1. Возьмите бинарник Meshtastic для **Heltec V4** (соберите из `firmware-2.7.15.567b8ea` или скачайте готовый .bin).
-2. Положите его в **data/** под именем **meshtastic.bin** (см. `data/README.txt`).
-3. Залейте прошивку Nocturne и образ файловой системы:
-   - `pio run -e heltec_wifi_lora_32_V4 --target upload`
-   - `pio run -e heltec_wifi_lora_32_V4 --target uploadfs`
-4. В меню Nocturne: **Meshtastic → Switch to Meshtastic** (долгое нажатие). Устройство прошьёт meshtastic.bin из LittleFS в ota_1 и перезагрузится в Meshtastic.
-
-### Возврат в Nocturne
-
-- **Способ 1:** из Meshtastic (если в прошивке есть переключение раздела) — выберите загрузку с другого раздела и перезагрузка в Nocturne.
-- **Способ 2:** перепрошейте Nocturne по USB в раздел ota_0 (обычная прошивка через PlatformIO: `pio run -t upload`).
-- **Способ 3 (опционально):** Boot selector в разделе factory. Если устройство разбито таблицей **dual_boot.csv** и в factory прошит boot selector (`pio run -e boot_selector -t upload`), то при **пустом otadata** загружается selector: без кнопки — Nocturne (ota_0), с удержанием кнопки при включении — Meshtastic (ota_1). Чтобы снова попасть в selector, нужно стереть otadata (например, `esptool.py erase_region 0xe000 0x2000`) и включить устройство.
-
----
-
-## Утилиты (Tools)
-
-Режимы из меню **WiFi** и **Tools** рисуются **на весь экран без глобального хедера** (больше места под контент).
-
-| Режим                 | Описание                                                                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **RADAR**             | Wi‑Fi сканер: список сетей, RSSI, канал, тип шифрования; короткое нажатие — рескан/выбор.                                                 |
-| **DEAUTH**            | Цель из скана, deauth-пакеты; статус INJECTING/IDLE, счётчик пакетов. Если устройства не отключаются — см. подраздел ниже про патч ESP32. |
-| **BLE SPAM**          | NimBLE spam; счётчик пакетов, glitch при смене payload.                                                                                   |
-| **USB HID** (BadWolf) | Режим USB HID (клавиатура).                                                                                                               |
-| **PORTAL**            | Точка доступа + captive portal; имя сети по умолчанию **MT_FREE**; логи и пароли.                                                         |
-| **VAULT**             | TOTP 2FA: аккаунт, 6-значный код, таймер.                                                                                                 |
-| **DAEMON**            | Экран «Wolf Soul»: анимация волка + CPU/GPU/RAM, без хедера.                                                                              |
-
-Выход из любого режима утилит: **двойной тап** → открывается меню, затем с уровня категорий снова двойной тап — закрытие меню и возврат в нормальный режим (или пункт EXIT в System).
-
-### DEAUTH: почему атака может не отключать устройства
-
-- **Драйвер ESP32 блокирует deauth.** В стандартной прошивке Espressif функция `esp_wifi_80211_tx()` фильтрует кадры деаутентификации (тип 0xC0), поэтому пакеты не уходят в эфир. Счётчик PKTS может расти, но клиенты не дисконектятся.
-- **Решение:** применить патч к библиотеке Wi‑Fi (замена объектного файла в `libnet80211.a`). Пример: [esp32_deauth_patch](https://github.com/Hex2424/esp32_deauth_patch) (ESP-IDF / Arduino). Для **ESP32-S3** и **PlatformIO** (espressif32 6.x) нужно подобрать или собрать подходящий патч под свою версию платформы.
-- **Дополнительно:** не сработает против сетей с **Protected Management Frames** (802.11w / WPA3); цель должна быть в **2.4 GHz** (ESP32 не поддерживает 5 GHz). При входе в режим DEAUTH прошивка отключается от текущей точки доступа, чтобы не мешать инъекции.
+Выход из любого режима: **двойной тап** → меню → с уровня категорий снова двойной тап — закрытие меню и возврат в Normal.
 
 ---
 
@@ -171,12 +130,12 @@
 
 Сервер (`monitor.py`) при превышении порогов отправляет `alert: "CRITICAL"` и `alert_metric`. Устройство:
 
-- мигает белым LED **ровно 2 раза**;
+- мигает белым LED два раза;
 - переключает экран на нужную сцену (CPU/GPU/RAM);
-- подсвечивает проблемную метрику (температура/нагрузка/RAM);
-- рисует толстую рамку по краям экрана (RED ALERT overlay).
+- подсвечивает проблемную метрику;
+- рисует RED ALERT overlay по краям экрана.
 
-Пороги задаются в **`server/monitor.py`** (и при необходимости дублируются в **`include/nocturne/config.h`** для справки):
+Пороги задаются в **`server/monitor.py`** (и в **`include/nocturne/config.h`** для справки):
 
 | Метрика   | Порог                    | Гистерезис (сброс) |
 | --------- | ------------------------ | ------------------ |
@@ -185,7 +144,7 @@
 | CPU load  | 90 %                     | −5 %               |
 | GPU load  | 100 %                    | −5 %               |
 | VRAM load | 95 %                     | −5 %               |
-| **RAM**   | **30 ГБ** (использовано) | &lt; 28 ГБ         |
+| **RAM**   | **30 ГБ** (использовано) | < 28 ГБ            |
 
 ---
 
@@ -195,7 +154,7 @@
 
 - **Прошивка:** VS Code + PlatformIO, проект открыт по корню репозитория.
 - **Сервер на ПК:** Python 3.x, зависимости из `server/requirements.txt`.
-- **Телеметрия:** [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) — запуск **от имени администратора**, в настройках включён **Remote Web Server** (порт 8085 по умолчанию).
+- **Телеметрия:** [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) — запуск **от имени администратора**, в настройках включён **Remote Web Server** (порт 8085).
 
 ### Прошивка устройства
 
@@ -211,68 +170,39 @@
 
 ### Сервер на ПК (монитор)
 
-Всё, что относится к серверу телеметрии, находится в папке **`server/`**.
+Всё, что относится к серверу телеметрии, в папке **`server/`**.
 
 ```bash
 cd server
 pip install -r requirements.txt
 ```
 
-При необходимости отредактировать `server/config.json` (хост, порт, `lhm_url`, город для погоды). Запуск:
+Отредактировать при необходимости `server/config.json`. Запуск:
 
 ```bash
 cd server
 python monitor.py
 ```
 
-Варианты:
-
-- **С треем (по умолчанию):** иконка в трее, пункты: Add/Remove startup, Restart Server, Close.
-- **Без трея:** `python monitor.py --no-tray` или `--console` (логи в консоль).
-
-Логи пишутся в `nocturne.log` в корне проекта (или рядом с exe при сборке в один файл).
+Варианты: с треем (по умолчанию), без трея (`--no-tray`), в консоль (`--console`). Логи — в `nocturne.log` в корне проекта.
 
 ### Сборка exe (Windows)
 
-Из папки **`server/`**: запустить `build_server.bat` — установка зависимостей, сборка exe, копирование `config.json` в `dist/`. Результат: **`server/dist/NocturneServer.exe`**.
+Из папки **`server/`**: запустить `build_server.bat`. Результат: **`server/dist/NocturneServer.exe`**.
 
 ---
 
 ## Конфигурация
 
-| Файл                            | Назначение                                                                                |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| **`include/secrets.h`**         | Wi‑Fi SSID/пароль, IP ПК, TCP-порт. Не коммитить.                                         |
-| **`include/nocturne/config.h`** | Пины, размеры экрана, таймауты, пороги алертов (для справки), параметры меню и батареи.   |
-| **`server/config.json`**        | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city`, `lhm_storage_fallback`. Рядом с exe или в `server/`. |
+| Файл                            | Назначение                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| **`include/secrets.h`**         | Wi‑Fi SSID/пароль, IP ПК, TCP-порт. Не коммитить.                          |
+| **`include/nocturne/config.h`** | Пины, экран, таймауты, пороги алертов, батарея, меню.                     |
+| **`server/config.json`**        | Сервер: `host`, `port`, `lhm_url`, `limits`, `weather_city` и др.          |
 
-Пример `config.json`:
+Порт в `config.json` должен совпадать с `TCP_PORT` в `secrets.h`.
 
-```json
-{
-  "host": "0.0.0.0",
-  "port": 8090,
-  "lhm_url": "http://localhost:8085/data.json",
-  "limits": { "gpu": 72, "cpu": 85 },
-  "weather_city": "London",
-  "lhm_storage_fallback": "psutil"
-}
-```
-
-**Формат и значения по умолчанию:** при отсутствии файла или полей используются: `host` = `"0.0.0.0"`, `port` = `8090`, `lhm_url` = `"http://localhost:8085/data.json"`, `limits` = `{"gpu": 80, "cpu": 75}`, `weather_city` = `"Moscow"`, `lhm_storage_fallback` = `"psutil"`. Поле `limits` задаёт пороги алертов (в °C для gpu/cpu при использовании в логике монитора; точные пороги см. в `monitor.py` и `config.h`). При `lhm_storage_fallback` = `"psutil"` и пустых данных о дисках от LHM используется psutil (used/total GB; температура = 0).
-
-Порт в `config.json` должен совпадать с `TCP_PORT` в `secrets.h` (или с тем портом, на котором реально слушает монитор).
-
-### Отладка дисков (сцена DISKS)
-
-Если LibreHardwareMonitor изменил формат JSON и данные о дисках не отображаются, используйте утилиту **`server/tools/dump_lhm_disks.py`**:
-
-```bash
-cd server
-python tools/dump_lhm_disks.py [--url http://localhost:8085/data.json] [--save lhm_raw.json]
-```
-
-Скрипт запрашивает `data.json` у LHM, выводит дерево storage-узлов и карту путей (`/hdd/N/data/31`, `/nvme/N/temperature/0` и т.д.). Флаг `--save` сохраняет сырой JSON для анализа.
+Подробнее: значения по умолчанию и отладка дисков — см. комментарии в `server/monitor.py` и утилиту `server/tools/dump_lhm_disks.py`.
 
 ---
 
@@ -281,44 +211,52 @@ python tools/dump_lhm_disks.py [--url http://localhost:8085/data.json] [--save l
 ```
 ├── include/
 │   ├── nocturne/
-│   │   ├── config.h      # Пины, экран, меню, алерты, сцены
-│   │   └── Types.h      # Типы состояния
-│   └── secrets.h.example # Шаблон → копировать в secrets.h
-├── server/              # Сервер телеметрии (ПК)
-│   ├── monitor.py       # TCP-сервер: LHM, погода, медиа, алерты, трей
-│   ├── tools/
-│   │   └── dump_lhm_disks.py  # Отладка: дамп структуры дисков из LHM data.json
-│   ├── build_server.bat # Сборка → server/dist/NocturneServer.exe
-│   ├── NocturneServer.spec
+│   │   ├── config.h         # Пины, экран, меню, алерты, сцены, батарея
+│   │   └── Types.h         # Типы состояния (AppState, HardwareData и др.)
+│   └── secrets.h.example   # Шаблон → копировать в secrets.h
+├── src/
+│   ├── main.cpp             # Точка входа: loop, setup, меню, сцены, режимы
+│   ├── InputHandler.h      # Кнопка (ButtonEvent), IntervalTimer, NonBlockingTimer
+│   ├── AppModeManager.h/cpp # Переключение режимов (cleanup, init, WiFi state)
+│   ├── MenuHandler.h/cpp   # Структура меню (submenuCount, getModeForHackerItem)
+│   └── modules/
+│       ├── display/        # DisplayEngine, SceneManager, BootAnim, RollingGraph
+│       ├── network/        # NetManager, TrapManager, WifiSniffManager
+│       ├── ble/            # BleManager
+│       ├── car/            # BmwManager, ForzaManager, BleKeyService, ibus/
+│       └── system/         # BatteryManager
+├── server/                  # Сервер телеметрии (ПК)
+│   ├── monitor.py           # TCP-сервер: LHM, погода, медиа, алерты, трей
+│   ├── tools/               # dump_lhm_disks.py и др.
+│   ├── build_server.bat     # Сборка exe
 │   ├── requirements.txt
 │   └── config.json
-├── src/
-│   ├── main.cpp         # Точка входа: WiFi, кнопка, меню, сцены, утилиты
-│   └── modules/
-│       ├── DisplayEngine.*   # Буфер, примитивы, хедер, glitch, RED ALERT
-│       ├── SceneManager.*    # 9 сцен + меню + все утилиты (RADAR, Kick, BLE, …)
-│       ├── NetManager.*     # WiFi, TCP, парсинг JSON, таймауты
-│       ├── BootAnim.*       # Заставка при старте
-│       ├── TrapManager.*    # AP + captive portal (MT_FREE)
-│       ├── KickManager.*    # Deauth
-│       ├── BleManager.*     # BLE Spam
-│       ├── UsbManager.*     # USB HID (BadWolf)
-│       ├── VaultManager.*   # TOTP
-│       └── RollingGraph.*   # Графики (sparkline)
-├── docs/                # Документация: FORZA_SETUP, reference/ (анализ Marauder, статус интеграции)
-├── tests/               # Unit-тесты (monitor: config, payload)
-├── platformio.ini       # Сборка ESP32 (env heltec_wifi_lora_32_V4, профиль V3 под железо V4)
-├── DataSheets/         # PDF платы
-└── optional/radio/     # LoRa (SX1262) — вынесено, подключается при необходимости
+├── data/                    # LittleFS: образ для загрузки (data/meshtastic.bin — см. data/README.txt)
+├── docs/                    # FORZA_SETUP, BMW_E39_Assistant, reference/ (в т.ч. docs/reference/BMW — референс AVR-IBus)
+├── tests/                   # Unit-тесты (monitor)
+├── tools/                   # Утилиты (напр. Forza UDP) — см. tools/README.md
+├── optional/radio/          # LoRa (SX1262) — опционально, см. optional/radio/README.md
+├── DataSheets/              # PDF платы
+├── platformio.ini           # Сборка: env heltec_wifi_lora_32_V4
+├── huge_app.csv             # Таблица разделов (Nocturne + ota_1 под Meshtastic + LittleFS)
+└── dual_boot.csv            # Альтернативная таблица (boot selector)
 ```
 
-В репозитории нет: `secrets.h`, `.env`, `.pio/`, артефактов сборки, логов.
+В репозитории нет: `secrets.h`, `.env`, `.pio/`, `firmware-*/`, `esp32_marauder/`, артефактов сборки, логов.
+
+---
+
+## Dual boot (Meshtastic)
+
+Опционально: в таблице **huge_app.csv** зарезервирован раздел **ota_1** под прошивку Meshtastic. Папка **firmware-\*** (исходники Meshtastic) в репозиторий не входит (см. `.gitignore`); при наличии такой папки в корне проекта скрипты загрузки FS могут собирать Meshtastic и класть `data/meshtastic.bin`. Подробности: **`data/README.txt`**.
+
+Кратко: положить **meshtastic.bin** в **data/**, выполнить `pio run -t upload` и `pio run -t uploadfs`. Переключение на Meshtastic — через пункт меню (если реализован в прошивке) или прошивку в ota_1. Возврат в Nocturne — прошить снова основную прошивку или переключить раздел из Meshtastic. Boot selector (таблица **dual_boot.csv**) — опционально для выбора раздела при загрузке.
 
 ---
 
 ## Опционально: LoRa
 
-Радиомодуль SX1262 (LoRa/FSK) вынесен в `optional/radio/` для экономии Flash/RAM. Инструкция по возврату режимов LoRa (MESH, JAM, SENSE), пины и зависимости — в **`optional/radio/README.md`**.
+Радиомодуль SX1262 (LoRa/FSK) вынесен в **`optional/radio/`** для экономии Flash/RAM. Инструкция по возврату режимов LoRa, пины и зависимости — в [optional/radio/README.md](optional/radio/README.md).
 
 ---
 
