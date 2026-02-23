@@ -115,24 +115,25 @@
 
 **Восстановление Nocturne:** если после прошивки экран чёрный (например, случайно залили boot_selector поверх Nocturne), снова прошейте только основную прошивку: `pio run -e heltec_wifi_lora_32_V4 --target upload`. По умолчанию кнопка «Upload» в IDE прошивает только её.
 
-В меню после **BMW** добавлена категория **Meshtastic**. Долгое нажатие по пункту **Switch to Meshtastic** переключает загрузку на раздел **ota_1** и перезагружает устройство в прошивку Meshtastic (если она прошита в ota_1).
+В меню после **BMW** добавлена категория **Meshtastic**. Долгое нажатие по пункту **Switch to Meshtastic** читает файл **meshtastic.bin** из раздела с файлами (LittleFS), прошивает его в раздел **ota_1**, переключает загрузку на ota_1 и перезагружает устройство в Meshtastic. Если файла нет — переключает загрузку на уже прошитый ota_1 (если вы раньше прошивали Meshtastic вручную).
 
 ### Таблица разделов
 
-Используется таблица **huge_app.csv**: ota_0 = Nocturne (0x10000, 3 MiB), ota_1 = Meshtastic (0x310000, 2 MiB), spiffs (0x510000).
+Используется таблица **huge_app.csv**: ota_0 = Nocturne (0x10000, 3 MiB), ota_1 = Meshtastic (0x310000, 2 MiB), раздел с файлами (0x510000, LittleFS).
 
-**Сообщение «No ota_1 - reflash FW»:** значит во флеше старая таблица разделов (без ota_1). Нужно один раз заново прошить прошивку Nocturne, чтобы в устройство попала таблица из `huge_app.csv` (с разделами app0 и app1): `pio run -e heltec_wifi_lora_32_V4 --target upload`. После этого пункт Meshtastic будет находить ota_1.
+**Сообщение «No ota_1 - reflash FW»:** во флеше старая таблица разделов (без ota_1). Один раз прошейте Nocturne заново: `pio run -e heltec_wifi_lora_32_V4 --target upload`.
 
-### Прошивка Meshtastic в ota_1 (один раз)
+### Включение Meshtastic файлом (рекомендуется)
 
-1. Соберите или скачайте прошивку Meshtastic для **Heltec V4** (ESP32-S3). В репозитории прошивка для Heltec v4 лежит в папке **firmware-2.7.15.567b8ea** (вариант `variants/esp32s3/heltec_v4`).
-2. Прошейте бинарник Meshtastic в раздел ota_1 с смещением **0x310000** (esptool или скрипт PlatformIO):
+**Автоматически:** если в корне проекта есть папка **firmware-2.7.15.567b8ea** (исходники Meshtastic), при загрузке FS скрипт сам соберёт Meshtastic и положит `data/meshtastic.bin`. Ручной шаг не нужен.
 
-   ```bash
-   esptool.py --chip esp32s3 -p COMx write_flash 0x310000 firmware-heltec-v4-*.bin
-   ```
-
-3. После этого в меню Nocturne: **Meshtastic → Switch to Meshtastic** (долгое нажатие) — устройство перезагрузится в Meshtastic.
+Вручную (если папки нет):
+1. Возьмите бинарник Meshtastic для **Heltec V4** (соберите из `firmware-2.7.15.567b8ea` или скачайте готовый .bin).
+2. Положите его в **data/** под именем **meshtastic.bin** (см. `data/README.txt`).
+3. Залейте прошивку Nocturne и образ файловой системы:
+   - `pio run -e heltec_wifi_lora_32_V4 --target upload`
+   - `pio run -e heltec_wifi_lora_32_V4 --target uploadfs`
+4. В меню Nocturne: **Meshtastic → Switch to Meshtastic** (долгое нажатие). Устройство прошьёт meshtastic.bin из LittleFS в ota_1 и перезагрузится в Meshtastic.
 
 ### Возврат в Nocturne
 

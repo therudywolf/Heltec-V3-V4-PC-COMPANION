@@ -26,6 +26,7 @@ build/
 
 # Meshtastic / other firmware packs (do not commit)
 firmware-*/
+data/meshtastic.bin
 
 # IDE / OS
 .idea/

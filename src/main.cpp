@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <LittleFS.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include <esp_sleep.h>
@@ -1712,7 +1713,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
   }
   if (cat == 4)
   {
-    // Meshtastic: switch boot partition to ota_1 and reboot
+    // Meshtastic: flash from LittleFS /meshtastic.bin to ota_1, then boot ota_1
     if (item == 0)
     {
       const esp_partition_t *ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
@@ -1728,6 +1729,44 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
         toastUntil = now + 2500;
         return true;
       }
+      bool flashed = false;
+      if (LittleFS.begin(false))
+      {
+        File f = LittleFS.open("/meshtastic.bin", "r");
+        if (f && f.size() > 0 && (size_t)f.size() <= ota1->size)
+        {
+          esp_ota_handle_t otaHandle = 0;
+          if (esp_ota_begin(ota1, (size_t)f.size(), &otaHandle) == ESP_OK)
+          {
+            static const size_t kChunk = 4096;
+            uint8_t buf[kChunk];
+            size_t written = 0;
+            bool ok = true;
+            while (written < (size_t)f.size() && ok)
+            {
+              size_t toRead = (size_t)f.size() - written;
+              if (toRead > kChunk)
+                toRead = kChunk;
+              size_t n = f.read(buf, toRead);
+              if (n == 0)
+                break;
+              if (esp_ota_write(otaHandle, buf, n) != ESP_OK)
+                ok = false;
+              else
+                written += n;
+            }
+            if (ok && esp_ota_end(otaHandle) == ESP_OK)
+              flashed = true;
+          }
+          f.close();
+        }
+        LittleFS.end();
+      }
+      if (!flashed)
+      {
+        // No file or flash failed: still try to switch if ota_1 might already have Meshtastic
+        (void)0;
+      }
       if (esp_ota_set_boot_partition(ota1) != ESP_OK)
       {
         snprintf(toastMsg, sizeof(toastMsg), "Switch FAIL");
@@ -1736,7 +1775,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       }
       quickMenuOpen = false;
       rebootConfirmed = false;
-      snprintf(toastMsg, sizeof(toastMsg), "Meshtastic...");
+      snprintf(toastMsg, sizeof(toastMsg), flashed ? "Flashed+reboot" : "Meshtastic...");
       toastUntil = now + 500;
       delay(400);
       esp_restart();
