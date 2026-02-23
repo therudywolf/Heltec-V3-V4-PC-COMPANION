@@ -21,6 +21,8 @@ void IbusDriver::onPacket(uint8_t *packet) {
 void IbusDriver::begin(int txPin, int rxPin) {
   if (begun_)
     return;
+  if (txPin < 0 || rxPin < 0)
+    return;  /* I-Bus disabled (pins not configured) */
   instance_ = this;
   serial_ = &Serial1;
   serial_->begin(9600, SERIAL_8E1, rxPin, txPin);

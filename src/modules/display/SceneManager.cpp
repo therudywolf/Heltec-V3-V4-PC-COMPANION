@@ -972,6 +972,7 @@ void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
     u8g2.drawUTF8(24, 38, "NO BATTERY");
     u8g2.drawUTF8(20, 52, "Connect USB");
   }
+  drawBottomHint();
   u8g2.setDrawColor(1);
 }
 
@@ -1241,13 +1242,24 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 
   /* Hint: how to use the menu */
   u8g2.setFont(UNIT_FONT);
-  const char *hint = "1x next  2s ok  2x back";
+  const char *hint = "1x next  2s ok  2x menu";
   int hintW = u8g2.getUTF8Width(hint);
   int hintX = boxX + (boxW - hintW) / 2;
   if (hintX < NOCT_MENU_LIST_LEFT)
     hintX = NOCT_MENU_LIST_LEFT;
   u8g2.setDrawColor(1);
   u8g2.drawUTF8(hintX, boxY + boxH - 2, hint);
+}
+
+static const char DEFAULT_BOTTOM_HINT[] = "1x next  2s ok  2x menu";
+
+void SceneManager::drawBottomHint(const char *hint)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+  u8g2.print(hint ? hint : DEFAULT_BOTTOM_HINT);
 }
 
 void SceneManager::drawToast(const char *msg)
@@ -1745,21 +1757,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     u8g2.setDrawColor(1);
   }
 
-  u8g2.setDrawColor(1);
-  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
-  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
-  if (footerOverride && footerOverride[0] != '\0')
-  {
-    u8g2.print(footerOverride);
-  }
-  else if (WiFi.status() == WL_CONNECTED)
-  {
-    u8g2.print("LINK: ONLINE");
-  }
-  else
-  {
-    u8g2.print("LINK: DISCONNECTED");
-  }
+  drawBottomHint();
 }
 
 // ---------------------------------------------------------------------------
@@ -1804,9 +1802,10 @@ void SceneManager::drawBleSpammer(int packetCount)
 
   static char pktBuf[20];
   snprintf(pktBuf, sizeof(pktBuf), "PKT: %lu", (unsigned long)packetCount);
-  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+  u8g2.setCursor(NOCT_MARGIN, 46);
   u8g2.print(pktBuf);
 
+  drawBottomHint();
   disp_.drawGreebles();
 }
 
@@ -1894,10 +1893,7 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
     u8g2.print(buf);
   }
 
-  u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
-  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
-  u8g2.print("3x Out");
-
+  drawBottomHint();
   disp_.drawGreebles();
 }
 
@@ -2020,8 +2016,7 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
         u8g2.print(" [EAPOL]");
     }
   }
-  u8g2.setCursor(2, 58);
-  u8g2.print("1x next | 2x back");
+  drawBottomHint();
   disp_.drawGreebles();
 }
 
@@ -2153,6 +2148,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, NOCT_FOOTER_TEXT_Y + shakeY,
                 "km/h");
 
+  drawBottomHint();
+
   // --- 5. REDLINE STROBE ---
   if (isRedline)
   {
@@ -2208,7 +2205,6 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
     u8g2.setCursor(NOCT_MARGIN, y);
     u8g2.print(pdcBuf);
   }
-  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
-  u8g2.print("1x next  2s run  2x back");
+  drawBottomHint("1x next  2s run  2x menu");
   disp_.drawGreebles();
 }

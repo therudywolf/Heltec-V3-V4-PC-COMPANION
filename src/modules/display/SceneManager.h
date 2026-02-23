@@ -91,6 +91,9 @@ public:
   /** BMW E39 Assistant: I-Bus status, BLE, selected action (1x next, 2s run). */
   void drawBmwAssistant(class BmwManager &bmw, int selectedActionIndex);
 
+  /** Bottom hint line for fullscreen modes (1x next  2s ok  2x menu). hint==nullptr = default. */
+  void drawBottomHint(const char *hint = nullptr);
+
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).
    * valueYOffset: extra pixels to move value baseline down (e.g. 6 for
