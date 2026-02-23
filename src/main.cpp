@@ -15,6 +15,9 @@
 
 // -----------------------------------
 
+#include "AppModeManager.h"
+#include "InputHandler.h"
+#include "MenuHandler.h"
 #include "modules/ble/BleManager.h"
 #include "modules/display/BootAnim.h"
 #include "modules/display/DisplayEngine.h"
@@ -24,6 +27,7 @@
 #include "modules/car/BmwManager.h"
 #include "modules/car/ForzaManager.h"
 #include "modules/network/WifiSniffManager.h"
+#include "modules/system/BatteryManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 #include "secrets.h"
@@ -35,127 +39,8 @@
 #define NOCT_BAT_READ_INTERVAL_MS 5000
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
-// Flipper-style: level 0 = 6 categories, level 1 = submenu, level 2 = hacker group items
-#define MENU_CATEGORIES 5
-// Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
-#define HACKER_GROUP_WIFI 0
-#define HACKER_GROUP_BLE 1
-#define HACKER_GROUP_COUNT 2
-static int menuHackerGroup = 0; // when menuLevel==2 and menuCategory==2
 #define WOLF_MENU_ITEMS 12
-
-// ---------------------------------------------------------------------------
-// Input: Event-based (SHORT = navigate, LONG = select, DOUBLE = back/menu)
-// ---------------------------------------------------------------------------
-enum ButtonEvent
-{
-  EV_NONE,
-  EV_SHORT,
-  EV_LONG,
-  EV_DOUBLE
-};
-
-struct InputSystem
-{
-  const int pin;
-  unsigned long pressTime = 0;
-  unsigned long releaseTime = 0;
-  bool btnState = false;
-  int clickCount = 0;
-
-  InputSystem(int p) : pin(p) { pinMode(pin, INPUT_PULLUP); }
-
-  ButtonEvent update()
-  {
-    bool down = (digitalRead(pin) == LOW);
-    unsigned long now = millis();
-    ButtonEvent event = EV_NONE;
-
-    if (down && !btnState)
-    {
-      btnState = true;
-      pressTime = now;
-    }
-    else if (!down && btnState)
-    {
-      btnState = false;
-      unsigned long duration = now - pressTime;
-      if (duration > 50 && duration < 500)
-      {
-        clickCount++;
-        releaseTime = now;
-        // Do NOT return here for 2 clicks — wait for multi-tap window to expire
-        if (clickCount >= 4)
-        {
-          clickCount = 0;
-          return EV_DOUBLE;
-        }
-      }
-      else if (duration >= 500)
-      {
-        clickCount = 0;
-        return EV_LONG;
-      }
-    }
-
-    const unsigned long multiTapWindowMs = 300;
-    if (clickCount > 0 && !btnState && (now - releaseTime > multiTapWindowMs))
-    {
-      if (clickCount == 1)
-        event = EV_SHORT;
-      else if (clickCount >= 2)
-        event = EV_DOUBLE; // Double-click = 2 (or more) short presses in window
-      clickCount = 0;
-    }
-    return event;
-  }
-};
-
-struct IntervalTimer
-{
-  unsigned long intervalMs;
-  unsigned long lastMs = 0;
-  IntervalTimer(unsigned long interval) : intervalMs(interval) {}
-  bool check(unsigned long now)
-  {
-    if (now - lastMs >= intervalMs)
-    {
-      lastMs = now;
-      return true;
-    }
-    return false;
-  }
-  void reset(unsigned long now) { lastMs = now; }
-};
-
-// Non-blocking timer for replacing delay() calls
-class NonBlockingTimer
-{
-  unsigned long targetTime_;
-  bool active_;
-
-public:
-  NonBlockingTimer() : targetTime_(0), active_(false) {}
-  void start(unsigned long durationMs)
-  {
-    targetTime_ = millis() + durationMs;
-    active_ = true;
-  }
-  bool isReady() const { return active_ && (millis() >= targetTime_); }
-  void reset()
-  {
-    active_ = false;
-    targetTime_ = 0;
-  }
-  bool isActive() const { return active_; }
-  unsigned long remaining() const
-  {
-    if (!active_)
-      return 0;
-    unsigned long now = millis();
-    return (now >= targetTime_) ? 0 : (targetTime_ - now);
-  }
-};
+static int menuHackerGroup = 0; // when menuLevel==2 and menuCategory==2
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -169,6 +54,9 @@ ForzaManager forzaManager;
 BmwManager bmwManager;
 AppState state;
 SceneManager sceneManager(display, state);
+AppModeManager appModeManager(netManager, trapManager, wifiSniffManager,
+                              bleManager, forzaManager, bmwManager);
+BatteryManager batteryManager;
 
 InputSystem input(NOCT_BUTTON_PIN);
 IntervalTimer guiTimer(NOCT_REDRAW_INTERVAL_MS);
@@ -228,37 +116,6 @@ static int bmwActionIndex = 0;
 static unsigned long forzaSplashUntil = 0;
 #define FORZA_SPLASH_MS 3000
 
-// --- Cyberdeck Modes --- Full Marauder integration
-enum AppMode
-{
-  MODE_NORMAL,
-  // WiFi: scanner + duplicator only
-  MODE_RADAR,
-  MODE_WIFI_PROBE_SCAN,
-  MODE_WIFI_EAPOL_SCAN,
-  MODE_WIFI_STATION_SCAN,
-  MODE_WIFI_PACKET_MONITOR,
-  MODE_WIFI_CHANNEL_ANALYZER,
-  MODE_WIFI_CHANNEL_ACTIVITY,
-  MODE_WIFI_PACKET_RATE,
-  MODE_WIFI_PINESCAN,
-  MODE_WIFI_MULTISSID,
-  MODE_WIFI_SIGNAL_STRENGTH,
-  MODE_WIFI_RAW_CAPTURE,
-  MODE_WIFI_AP_STA,
-  MODE_WIFI_SNIFF,
-  MODE_WIFI_TRAP, // WiFi duplicator (clone AP)
-  // BLE: mimic only
-  MODE_BLE_SPAM,
-  MODE_BLE_SOUR_APPLE,
-  MODE_BLE_SWIFTPAIR_MICROSOFT,
-  MODE_BLE_SWIFTPAIR_GOOGLE,
-  MODE_BLE_SWIFTPAIR_SAMSUNG,
-  MODE_BLE_FLIPPER_SPAM,
-  MODE_GAME_FORZA,
-  MODE_BMW_ASSISTANT,
-  MODE_CHARGE_ONLY
-};
 AppMode currentMode = MODE_NORMAL;
 
 // --- Netrunner WiFi Scanner ---
@@ -392,181 +249,7 @@ static void sortAndFilterWiFiNetworks()
 
 static bool needRedraw = true;
 
-// Battery reading optimization: moving average buffer
-static float batteryVoltageHistory[NOCT_BAT_SMOOTHING_SAMPLES] = {0};
-static int batteryHistoryIndex = 0;
-static bool batteryHistoryFilled = false;
-static bool batCtrlPinState =
-    false;                        // Track GPIO 37 state to avoid unnecessary writes
 static bool vextPinState = false; // Track Vext pin (never drive HIGH)
-
-/** Get battery voltage from ADC (GPIO 1). Heltec V4: divider factor 4.9
- * (390k/100k resistors). Requires GPIO 37 (ADC control) to be HIGH to enable
- * divider. Optimized: only enables divider when needed, uses multiple readings
- * for accuracy.
- */
-static float getBatteryVoltage()
-{
-  // Step 1: Enable voltage divider by setting GPIO 37 to HIGH (open transistor)
-  // Only change state if needed (optimization: avoid unnecessary GPIO writes)
-  if (!batCtrlPinState)
-  {
-    pinMode(NOCT_BAT_CTRL_PIN, OUTPUT);
-    digitalWrite(NOCT_BAT_CTRL_PIN, HIGH);
-    batCtrlPinState = true;
-    delay(
-        10); // Wait for voltage to stabilize (acceptable: called infrequently)
-  }
-
-  // Step 2: Read voltage multiple times and average for accuracy
-  uint32_t mvSum = 0;
-  const int readCount = 3; // Read 3 times for better accuracy
-  for (int i = 0; i < readCount; i++)
-  {
-    mvSum += analogReadMilliVolts(NOCT_BAT_PIN);
-    if (i < readCount - 1)
-    {
-      delay(2); // Small delay between readings (acceptable: very short)
-    }
-  }
-  uint32_t mv = mvSum / readCount;
-
-  // Step 3: Disable divider by setting GPIO 37 to LOW (close transistor)
-  // This prevents battery drain through the divider circuit
-  if (batCtrlPinState)
-  {
-    digitalWrite(NOCT_BAT_CTRL_PIN, LOW);
-    batCtrlPinState = false;
-  }
-
-  // Step 4: Calculate actual battery voltage: multiply by divider factor 4.9
-  // Apply calibration offset (e.g. for 103450-LP when full charge showed ~88%)
-  float voltage =
-      (mv * NOCT_BAT_DIVIDER_FACTOR) / 1000.0f + NOCT_BAT_CALIBRATION_OFFSET;
-
-  // Step 5: Add to moving average buffer
-  batteryVoltageHistory[batteryHistoryIndex] = voltage;
-  batteryHistoryIndex = (batteryHistoryIndex + 1) % NOCT_BAT_SMOOTHING_SAMPLES;
-  if (batteryHistoryIndex == 0)
-  {
-    batteryHistoryFilled = true;
-  }
-
-  // Step 6: Calculate smoothed average
-  float sum = 0.0f;
-  int count =
-      batteryHistoryFilled ? NOCT_BAT_SMOOTHING_SAMPLES : batteryHistoryIndex;
-  for (int i = 0; i < count; i++)
-  {
-    sum += batteryVoltageHistory[i];
-  }
-  float smoothedVoltage = sum / count;
-
-  // Debug output
-  static unsigned long lastDebug = 0;
-  if (millis() - lastDebug > 5000)
-  {
-    Serial.printf("[BAT] Raw_mV: %d | Calculated_V: %.2f | Smoothed_V: %.2f\n",
-                  mv, voltage, smoothedVoltage);
-    lastDebug = millis();
-  }
-
-  return smoothedVoltage;
-}
-
-/** Update state.batteryVoltage, state.batteryPct, state.isCharging.
- * Uses adaptive reading intervals based on battery state.
- * Returns the next reading interval in milliseconds.
- */
-static unsigned long updateBatteryState()
-{
-  state.batteryVoltage = getBatteryVoltage();
-  float v = state.batteryVoltage;
-
-  // Determine next reading interval based on battery state
-  unsigned long nextInterval = NOCT_BAT_READ_INTERVAL_STABLE_MS;
-
-  // Определение статуса батареи
-  // Если напряжение очень низкое (< 1.0V) или очень высокое (> 5.5V),
-  // батарея не подключена или некорректное значение ADC
-  // При работе от USB без аккумулятора напряжение может быть в
-  // диапазоне 3.3-4.2V Но если напряжение стабильно в диапазоне 3.3-3.5V, это
-  // может быть USB питание
-  if (v < 1.0f || v > 5.5f)
-  {
-    // Батарея не подключена или некорректное значение ADC
-    state.batteryPct = 0;
-    state.isCharging = false;
-    nextInterval =
-        NOCT_BAT_READ_INTERVAL_STABLE_MS; // Check less frequently if invalid
-  }
-  else
-  {
-    // Проверка на USB питание без аккумулятора
-    // При работе от USB без аккумулятора напряжение может быть стабильным в
-    // диапазоне 3.3-4.2V Но если напряжение близко к 3.3V или ниже 3.5V, это
-    // может быть USB питание Для простоты считаем, что если напряжение в
-    // диапазоне 3.3-3.5V, это USB питание без аккумулятора
-    if (v < 3.5f)
-    {
-      // Напряжение ниже 3.5V - возможно USB питание без аккумулятора
-      // Показываем 0% и не показываем зарядку
-      state.batteryPct = 0;
-      state.isCharging = false;
-      nextInterval = NOCT_BAT_READ_INTERVAL_STABLE_MS; // USB power is stable
-    }
-    else
-    {
-      // Батарея подключена
-      // Если напряжение > 4.4V, батарея заряжается
-      state.isCharging = (v > NOCT_VOLT_CHARGING);
-
-      // Расчет процента заряда: 3.3V = 0%, 4.2V = 100%
-      // Если напряжение ниже 3.3V, считаем что батарея разряжена
-      if (v < NOCT_VOLT_MIN)
-      {
-        state.batteryPct = 0;
-      }
-      else
-      {
-        int pct = (int)((v - NOCT_VOLT_MIN) / (NOCT_VOLT_MAX - NOCT_VOLT_MIN) *
-                        100.0f);
-        state.batteryPct = constrain(pct, 0, 100);
-      }
-
-      // Adaptive reading interval based on battery state
-      if (state.isCharging)
-      {
-        // Charging: read more frequently to track charge progress
-        nextInterval = NOCT_BAT_READ_INTERVAL_CHARGING_MS;
-      }
-      else if (state.batteryPct < 20)
-      {
-        // Low battery: read more frequently to monitor discharge
-        nextInterval = NOCT_BAT_READ_INTERVAL_LOW_MS;
-      }
-      else
-      {
-        // Stable: read less frequently to save power
-        nextInterval = NOCT_BAT_READ_INTERVAL_STABLE_MS;
-      }
-    }
-
-    // Debug output: Raw_mV | Calculated_V | Pct | NextInterval
-    static unsigned long lastDebug = 0;
-    if (millis() - lastDebug > 2000)
-    {
-      // Calculate raw mV from voltage (reverse calculation)
-      uint32_t raw_mv = (uint32_t)(v * 1000.0f / NOCT_BAT_DIVIDER_FACTOR);
-      Serial.printf(
-          "[BAT] Raw_mV: %d | Calculated_V: %.2f | Pct: %d%% | Next: %lums\n",
-          raw_mv, v, state.batteryPct, nextInterval);
-      lastDebug = millis();
-    }
-  }
-
-  return nextInterval;
-}
 
 static void VextON()
 {
@@ -675,464 +358,7 @@ void setup()
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
 
-  updateBatteryState();
-}
-
-// ---------------------------------------------------------------------------
-// Mode Management System - единая система управления режимами
-// ---------------------------------------------------------------------------
-
-/** Очистка ресурсов режима перед переключением */
-static void cleanupMode(AppMode mode)
-{
-  switch (mode)
-  {
-  // WiFi Scans
-  case MODE_RADAR:
-  case MODE_WIFI_PROBE_SCAN:
-  case MODE_WIFI_EAPOL_SCAN:
-  case MODE_WIFI_STATION_SCAN:
-  case MODE_WIFI_PACKET_MONITOR:
-  case MODE_WIFI_CHANNEL_ANALYZER:
-  case MODE_WIFI_CHANNEL_ACTIVITY:
-  case MODE_WIFI_PACKET_RATE:
-  case MODE_WIFI_PINESCAN:
-  case MODE_WIFI_MULTISSID:
-  case MODE_WIFI_SIGNAL_STRENGTH:
-  case MODE_WIFI_RAW_CAPTURE:
-  case MODE_WIFI_AP_STA:
-  case MODE_WIFI_SNIFF:
-    wifiSniffManager.stop();
-    WiFi.scanDelete();
-    break;
-  case MODE_WIFI_TRAP:
-    trapManager.stop();
-    WiFi.mode(WIFI_STA);
-    break;
-  case MODE_BLE_SPAM:
-  case MODE_BLE_SOUR_APPLE:
-  case MODE_BLE_SWIFTPAIR_MICROSOFT:
-  case MODE_BLE_SWIFTPAIR_GOOGLE:
-  case MODE_BLE_SWIFTPAIR_SAMSUNG:
-  case MODE_BLE_FLIPPER_SPAM:
-    bleManager.stop();
-    WiFi.mode(WIFI_STA);
-    break;
-  case MODE_GAME_FORZA:
-    forzaManager.stop();
-    break;
-  case MODE_BMW_ASSISTANT:
-    bmwManager.end();
-    break;
-  case MODE_CHARGE_ONLY:
-    break;
-  case MODE_NORMAL:
-  default:
-    break;
-  }
-}
-
-/** Управление состоянием WiFi в зависимости от режима */
-static void manageWiFiState(AppMode mode)
-{
-  switch (mode)
-  {
-  case MODE_BLE_SPAM:
-  case MODE_BLE_SOUR_APPLE:
-  case MODE_BLE_SWIFTPAIR_MICROSOFT:
-  case MODE_BLE_SWIFTPAIR_GOOGLE:
-  case MODE_BLE_SWIFTPAIR_SAMSUNG:
-  case MODE_BLE_FLIPPER_SPAM:
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for BLE");
-    }
-    netManager.setSuspend(true);
-    break;
-  // WiFi modes - WiFi STA
-  case MODE_RADAR:
-  case MODE_WIFI_PROBE_SCAN:
-  case MODE_WIFI_EAPOL_SCAN:
-  case MODE_WIFI_STATION_SCAN:
-  case MODE_WIFI_PACKET_MONITOR:
-  case MODE_WIFI_CHANNEL_ANALYZER:
-  case MODE_WIFI_CHANNEL_ACTIVITY:
-  case MODE_WIFI_PACKET_RATE:
-  case MODE_WIFI_PINESCAN:
-  case MODE_WIFI_MULTISSID:
-  case MODE_WIFI_SIGNAL_STRENGTH:
-  case MODE_WIFI_RAW_CAPTURE:
-  case MODE_WIFI_AP_STA:
-  case MODE_WIFI_SNIFF:
-  case MODE_WIFI_TRAP:
-    if (WiFi.getMode() != WIFI_STA)
-    {
-      WiFi.mode(WIFI_STA);
-      Serial.println("[SYS] WiFi STA for WiFi mode");
-    }
-    netManager.setSuspend(true);
-    break;
-  case MODE_GAME_FORZA:
-    if (WiFi.getMode() != WIFI_STA)
-    {
-      WiFi.mode(WIFI_STA);
-      Serial.println("[SYS] WiFi STA for Forza");
-    }
-    netManager.setSuspend(true);
-    break;
-  case MODE_BMW_ASSISTANT:
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for BMW Assistant (BLE key)");
-    }
-    netManager.setSuspend(true);
-    break;
-  case MODE_CHARGE_ONLY:
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for Charge only");
-    }
-    netManager.setSuspend(true);
-    break;
-  case MODE_NORMAL:
-  default:
-    // Нормальный режим - WiFi включен, NetManager активен
-    if (WiFi.getMode() != WIFI_STA)
-    {
-      WiFi.mode(WIFI_STA);
-    }
-    netManager.setSuspend(false);
-    break;
-  }
-}
-
-/** Инициализация режима с проверкой ошибок */
-static bool initializeMode(AppMode mode)
-{
-  switch (mode)
-  {
-  case MODE_BLE_SPAM:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      Serial.println("[SYS] ERROR: WiFi not off before BLE start");
-      WiFi.disconnect(true);
-      yield(); // Allow WiFi stack to process disconnect
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.begin();
-    if (!bleManager.isActive())
-    {
-      Serial.println("[SYS] BLE init failed");
-      return false;
-    }
-    Serial.println("[SYS] BLE SPAM mode initialized");
-    return true;
-
-  case MODE_RADAR:
-    manageWiFiState(mode);
-    WiFi.scanNetworks(true, true);
-    wifiScanSelected = 0;
-    wifiListPage = 0;
-    wifiFilteredCount = 0;
-    Serial.println("[SYS] RADAR mode initialized");
-    return true;
-
-  case MODE_WIFI_SNIFF:
-    manageWiFiState(mode);
-    wifiSniffManager.begin();
-    Serial.println("[SYS] SNIFF mode initialized");
-    return true;
-
-  case MODE_WIFI_TRAP:
-  {
-    manageWiFiState(mode);
-    // Перед запуском AP можно клонировать SSID из сканирования
-    // Если сканирование еще не завершено, запустим его
-    int n = WiFi.scanComplete();
-    if (n == -1)
-    {
-      WiFi.scanNetworks(true, true);
-      Serial.println("[TRAP] Starting scan for SSID cloning...");
-    }
-    // Если есть завершенное сканирование и выбран индекс, клонируем SSID
-    if (n > 0 && wifiScanSelected >= 0 && wifiScanSelected < n)
-    {
-      sortAndFilterWiFiNetworks();
-      int actualIndex =
-          (wifiFilteredCount > 0 && wifiScanSelected < wifiFilteredCount)
-              ? wifiSortedIndices[wifiScanSelected]
-              : wifiScanSelected;
-      trapManager.setClonedSSID(actualIndex);
-    }
-    trapManager.start();
-    yield(); // Allow AP to start (non-blocking)
-    if (!trapManager.isActive())
-    {
-      Serial.println("[SYS] TRAP init failed - AP not started");
-      return false;
-    }
-    Serial.println("[SYS] TRAP mode initialized");
-    return true;
-  }
-
-  case MODE_GAME_FORZA:
-    manageWiFiState(mode);
-    forzaManager.begin();
-    Serial.println("[SYS] FORZA mode initialized");
-    return true;
-
-  case MODE_BMW_ASSISTANT:
-    manageWiFiState(mode);
-    bmwManager.begin();
-    Serial.println("[SYS] BMW Assistant mode initialized");
-    return true;
-
-  case MODE_WIFI_PROBE_SCAN:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_PROBE_SCAN);
-    Serial.println("[SYS] PROBE SCAN mode initialized");
-    return true;
-  case MODE_WIFI_EAPOL_SCAN:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_EAPOL_CAPTURE);
-    Serial.println("[SYS] EAPOL SCAN mode initialized");
-    return true;
-  case MODE_WIFI_STATION_SCAN:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_STATION_SCAN);
-    Serial.println("[SYS] STATION SCAN mode initialized");
-    return true;
-  case MODE_WIFI_PACKET_MONITOR:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_PACKET_MONITOR);
-    Serial.println("[SYS] PACKET MONITOR mode initialized");
-    return true;
-  case MODE_WIFI_CHANNEL_ANALYZER:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_CHANNEL_ANALYZER);
-    Serial.println("[SYS] CHANNEL ANALYZER mode initialized");
-    return true;
-  case MODE_WIFI_CHANNEL_ACTIVITY:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_CHANNEL_ACTIVITY);
-    Serial.println("[SYS] CHANNEL ACTIVITY mode initialized");
-    return true;
-  case MODE_WIFI_PACKET_RATE:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(SNIFF_MODE_PACKET_RATE);
-    Serial.println("[SYS] PACKET RATE mode initialized");
-    return true;
-  case MODE_WIFI_PINESCAN:
-  case MODE_WIFI_MULTISSID:
-  case MODE_WIFI_SIGNAL_STRENGTH:
-  case MODE_WIFI_RAW_CAPTURE:
-  case MODE_WIFI_AP_STA:
-    manageWiFiState(mode);
-    wifiSniffManager.begin(
-        SNIFF_MODE_AP); // Use AP mode as base, can be extended
-    Serial.printf("[SYS] WiFi scan mode %d initialized\n", mode);
-    return true;
-  case MODE_BLE_SOUR_APPLE:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.startAttack(BLE_ATTACK_SOUR_APPLE);
-    Serial.println("[SYS] SOUR APPLE mode initialized");
-    return true;
-  case MODE_BLE_SWIFTPAIR_MICROSOFT:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_MICROSOFT);
-    Serial.println("[SYS] SWIFTPAIR MS mode initialized");
-    return true;
-  case MODE_BLE_SWIFTPAIR_GOOGLE:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_GOOGLE);
-    Serial.println("[SYS] SWIFTPAIR GOOGLE mode initialized");
-    return true;
-  case MODE_BLE_SWIFTPAIR_SAMSUNG:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_SAMSUNG);
-    Serial.println("[SYS] SWIFTPAIR SAMSUNG mode initialized");
-    return true;
-  case MODE_BLE_FLIPPER_SPAM:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.startAttack(BLE_ATTACK_FLIPPER_SPAM);
-    Serial.println("[SYS] BLE FLIPPER SPAM mode initialized");
-    return true;
-  case MODE_NORMAL:
-    manageWiFiState(mode);
-    WiFi.scanDelete();
-    Serial.println("[SYS] NORMAL mode initialized");
-    return true;
-  case MODE_CHARGE_ONLY:
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    Serial.println("[SYS] CHARGE_ONLY mode initialized");
-    return true;
-
-  default:
-    Serial.println("[SYS] Unknown mode");
-    return false;
-  }
-}
-
-/** Безопасное переключение режима с очисткой и инициализацией */
-static bool switchToMode(AppMode newMode)
-{
-  if (newMode == currentMode)
-  {
-    return true; // Уже в этом режиме
-  }
-
-  Serial.printf("[SYS] Switching from MODE_%d to MODE_%d\n", currentMode,
-                newMode);
-
-  // 1. Очистка текущего режима
-  cleanupMode(currentMode);
-
-  // 2. Освобождение ресурсов
-  // WiFi и NetManager управляются в manageWiFiState
-
-  // 3. Инициализация нового режима
-  if (!initializeMode(newMode))
-  {
-    Serial.println("[SYS] Mode initialization failed, falling back to NORMAL");
-    // Fallback: вернуться в NORMAL при ошибке
-    cleanupMode(currentMode);
-    currentMode = MODE_NORMAL;
-    initializeMode(MODE_NORMAL);
-    return false;
-  }
-
-  // 4. Установка нового режима
-  currentMode = newMode;
-  if (newMode == MODE_GAME_FORZA)
-  {
-    forzaSplashUntil = millis() + FORZA_SPLASH_MS;
-  }
-  Serial.printf("[SYS] Successfully switched to MODE_%d\n", currentMode);
-  return true;
-}
-
-/** Старая функция для обратной совместимости */
-static void exitAppModeToNormal()
-{
-  switchToMode(MODE_NORMAL);
-  Serial.println("[SYS] NETMANAGER RESUMED.");
-}
-
-// ---------------------------------------------------------------------------
-// Menu: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
-// Hacker: WiFi 14 (scanner + duplicator), BLE 6 (mimic only)
-// ---------------------------------------------------------------------------
-static int submenuCount(int category)
-{
-  switch (category)
-  {
-  case 0:
-    return 2; // Monitoring: PC, Forza
-  case 1:
-    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
-  case 2:
-    return HACKER_GROUP_COUNT; // Hacker: WiFi, BLE
-  case 3:
-    return 1; // BMW: BMW Assistant
-  case 4:
-    return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
-  default:
-    return 2;
-  }
-}
-
-static int submenuCountForHackerGroup(int group)
-{
-  switch (group)
-  {
-  case HACKER_GROUP_WIFI:
-    return 14; // 13 scan + 1 duplicator
-  case HACKER_GROUP_BLE:
-    return 6; // mimic only
-  default:
-    return 1;
-  }
-}
-
-/** Map (hacker group, item index) to AppMode. Used when menuLevel==2. */
-static AppMode getModeForHackerItem(int group, int item)
-{
-  if (group == HACKER_GROUP_WIFI)
-  {
-    switch (item)
-    {
-    case 0: return MODE_RADAR;
-    case 1: return MODE_WIFI_PROBE_SCAN;
-    case 2: return MODE_WIFI_EAPOL_SCAN;
-    case 3: return MODE_WIFI_STATION_SCAN;
-    case 4: return MODE_WIFI_PACKET_MONITOR;
-    case 5: return MODE_WIFI_CHANNEL_ANALYZER;
-    case 6: return MODE_WIFI_CHANNEL_ACTIVITY;
-    case 7: return MODE_WIFI_PACKET_RATE;
-    case 8: return MODE_WIFI_PINESCAN;
-    case 9: return MODE_WIFI_MULTISSID;
-    case 10: return MODE_WIFI_SIGNAL_STRENGTH;
-    case 11: return MODE_WIFI_RAW_CAPTURE;
-    case 12: return MODE_WIFI_AP_STA;
-    case 13: return MODE_WIFI_TRAP; // WiFi duplicator
-    default: return MODE_NORMAL;
-    }
-  }
-  if (group == HACKER_GROUP_BLE)
-  {
-    switch (item)
-    {
-    case 0: return MODE_BLE_SPAM;
-    case 1: return MODE_BLE_SOUR_APPLE;
-    case 2: return MODE_BLE_SWIFTPAIR_MICROSOFT;
-    case 3: return MODE_BLE_SWIFTPAIR_GOOGLE;
-    case 4: return MODE_BLE_SWIFTPAIR_SAMSUNG;
-    case 5: return MODE_BLE_FLIPPER_SPAM;
-    default: return MODE_NORMAL;
-    }
-  }
-  return MODE_NORMAL;
+  batteryManager.update(state);
 }
 
 static bool handleHackerItem(int group, int item, unsigned long now)
@@ -1140,17 +366,31 @@ static bool handleHackerItem(int group, int item, unsigned long now)
   quickMenuOpen = false;
   rebootConfirmed = false;
   AppMode mode = getModeForHackerItem(group, item);
-  if (!switchToMode(mode))
+  if (mode == MODE_RADAR)
+  {
+    wifiScanSelected = 0;
+    wifiListPage = 0;
+    wifiFilteredCount = 0;
+  }
+  bool ok = (mode == MODE_WIFI_TRAP)
+                ? (sortAndFilterWiFiNetworks(),
+                   appModeManager.switchToMode(currentMode, mode,
+                                              wifiScanSelected, wifiFilteredCount,
+                                              wifiSortedIndices))
+                : appModeManager.switchToMode(currentMode, mode);
+  if (!ok)
   {
     snprintf(toastMsg, sizeof(toastMsg), "FAIL");
     toastUntil = now + 1500;
     return false;
   }
+  if (mode == MODE_GAME_FORZA)
+    forzaSplashUntil = now + FORZA_SPLASH_MS;
   return true;
 }
 
 /** Execute action for (category, item). Called when menuLevel==1 and user
- * Long-press. Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System. */
+ * Long-press. Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System. */
 static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
 {
   if (cat == 0)
@@ -1160,7 +400,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     rebootConfirmed = false;
     if (item == 0)
     {
-      if (!switchToMode(MODE_NORMAL))
+      if (!appModeManager.switchToMode(currentMode, MODE_NORMAL))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -1169,12 +409,13 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     }
     else if (item == 1)
     {
-      if (!switchToMode(MODE_GAME_FORZA))
+      if (!appModeManager.switchToMode(currentMode, MODE_GAME_FORZA))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
+      forzaSplashUntil = now + FORZA_SPLASH_MS;
     }
     return true;
   }
@@ -1298,7 +539,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     {
       quickMenuOpen = false;
       rebootConfirmed = false;
-      if (!switchToMode(MODE_BMW_ASSISTANT))
+      if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -1328,7 +569,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     { // CHARGE ONLY
       quickMenuOpen = false;
       rebootConfirmed = false;
-      if (!switchToMode(MODE_CHARGE_ONLY))
+      if (!appModeManager.switchToMode(currentMode, MODE_CHARGE_ONLY))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -1420,7 +661,7 @@ void loop()
   if (event == EV_DOUBLE && !quickMenuOpen)
   {
     if (currentMode != MODE_NORMAL)
-      exitAppModeToNormal();
+      appModeManager.exitToNormal(currentMode);
     quickMenuOpen = true;
     menuState = MENU_MAIN;
     menuLevel = 0;
@@ -1447,7 +688,11 @@ void loop()
   // Alert / carousel / screen sync / fan animation
   if (state.alertActive)
   {
-    currentScene = state.alertTargetScene;
+    int total = sceneManager.totalScenes();
+    int target = state.alertTargetScene;
+    currentScene = (total > 0 && target >= 0 && target < total)
+                       ? target
+                       : 0;
     needRedraw = true;
   }
   if (settings.carouselEnabled && !predatorMode && !state.alertActive)
@@ -1484,10 +729,9 @@ void loop()
   // Battery: periodic update with adaptive interval
   if (batTimer.check(now))
   {
-    unsigned long nextInterval = updateBatteryState();
-    // Update timer interval for next reading
+    unsigned long nextInterval = batteryManager.update(state);
     batTimer.intervalMs = nextInterval;
-    batTimer.lastMs = now; // Reset timer with new interval
+    batTimer.lastMs = now;
   }
 
   // LED: predator breath / alert blink / Forza shift light / cursor blink
@@ -1837,9 +1081,10 @@ void loop()
 
   if (lastInputTime == 0)
     lastInputTime = now;
+  // Display timeout: dim to NOCT_CONTRAST_MIN (not 0) so user sees device is on
   if (!quickMenuOpen && settings.displayTimeoutSec > 0 &&
       (now - lastInputTime > (unsigned long)settings.displayTimeoutSec * 1000))
-    display.u8g2().setContrast(0);
+    display.u8g2().setContrast(NOCT_CONTRAST_MIN);
   else
     display.u8g2().setContrast(settings.displayContrast);
 
