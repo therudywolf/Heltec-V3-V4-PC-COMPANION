@@ -102,7 +102,7 @@
 | **Monitoring** | PC, Forza | Переход в режим мониторинга с ПК или в дашборд Forza. |
 | **Config**   | AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT | AUTO: карусель OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. CONTRAST: цикл уровней. TIMEOUT: таймаут затемнения дисплея (0 / 30 / 60 с). Всё сохраняется в NVS. |
 | **Hacker**   | WiFi, BLE | **WiFi:** RADAR, Probe Scan, EAPOL, Station Scan, Packet Monitor, Channel Analyzer/Activity, Packet Rate, Pinescan, MultiSSID, Signal Strength, Raw Capture, AP+STA, **Trap** (portal). **BLE:** Spam, Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
-| **BMW**      | BMW Assistant | Режим ассистента BMW E39: BLE-ключ, I-Bus (замки, свет, MFL, PDC, приборка). Подробно: [BMW E39 Assistant](docs/BMW_E39_Assistant.md). |
+| **BMW**      | BMW Assistant | Режим ассистента BMW E39: BLE-ключ, I-Bus (замки, свет, MFL, PDC, приборка). Подробно: [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md). |
 | **System**   | REBOOT, CHARGE ONLY, POWER OFF, VERSION | Перезагрузка (с подтверждением), режим зарядки, глубокий сон, показ версии. |
 
 ---
@@ -117,8 +117,8 @@
 | **Trap (Portal)**| Точка доступа + captive portal; клонирование SSID из скана; логи и пароли. |
 | **WiFi Sniff**   | Режимы сканирования/анализа (Probe, EAPOL, Station, Packet Monitor, Channel Analyzer/Activity, Packet Rate и др.). |
 | **BLE Spam**     | NimBLE spam; счётчик пакетов. Варианты: Sour Apple, SwiftPair (MS/Google/Samsung), Flipper Spam. |
-| **Forza**        | Дашборд телеметрии Forza (UDP): RPM, скорость, передача, shift lamp. См. [FORZA_SETUP](docs/FORZA_SETUP.md). |
-| **BMW Assistant** | BLE-ключ, I-Bus (свет, замки, PDC, текст на приборку). См. [BMW E39 Assistant](docs/BMW_E39_Assistant.md). |
+| **Forza**        | Дашборд телеметрии Forza (UDP): RPM, скорость, передача, shift lamp. См. [FORZA_SETUP](docs/forza/FORZA_SETUP.md). |
+| **BMW Assistant** | BLE-ключ, I-Bus (свет, замки, PDC, текст на приборку). См. [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md). |
 | **Charge only** | Экран зарядки; WiFi выключен для экономии. |
 
 Выход из любого режима: **двойной тап** → меню → с уровня категорий снова двойной тап — закрытие меню и возврат в Normal.
@@ -231,7 +231,9 @@ python monitor.py
 │   ├── requirements.txt
 │   └── config.json
 ├── data/                    # LittleFS: файлы для загрузки на устройство (см. data/README.txt)
-├── docs/                    # FORZA_SETUP, BMW_E39_Assistant
+├── docs/
+│   ├── bmw/                 # BMW E39 Assistant: подключение, I-Bus, BLE-ключ (см. docs/bmw/BMW_E39_Assistant.md)
+│   └── forza/               # Forza Data Out: настройка UDP, порт 5300 (см. docs/forza/FORZA_SETUP.md)
 ├── tests/                   # Unit-тесты (monitor)
 ├── tools/                   # Утилиты (напр. Forza UDP) — см. tools/README.md
 ├── optional/radio/          # LoRa (SX1262) — опционально, см. optional/radio/README.md
@@ -240,7 +242,7 @@ python monitor.py
 └── huge_app.csv             # Таблица разделов (Nocturne + LittleFS)
 ```
 
-В репозитории нет: `secrets.h`, `.env`, `.pio/`, артефактов сборки, логов.
+**Не входят в репозиторий** (и не должны быть в корне): `secrets.h`, `.env`, `.pio/`, артефакты сборки, логи. Папки `esp32_marauder/` и `firmware-*/` — чужие прошивки; в репо их нет. Если они остались на диске после старых экспериментов — смело удаляйте.
 
 ---
 
