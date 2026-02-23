@@ -22,7 +22,6 @@
 - [Установка](#-установка)
 - [Конфигурация](#-конфигурация)
 - [Структура проекта](#-структура-проекта)
-- [Dual boot (Meshtastic)](#-dual-boot-meshtastic)
 - [Опционально: LoRa](#-опционально-lora)
 - [Авторы и лицензия](#-авторы-и-лицензия)
 
@@ -231,26 +230,17 @@ python monitor.py
 │   ├── build_server.bat     # Сборка exe
 │   ├── requirements.txt
 │   └── config.json
-├── data/                    # LittleFS: образ для загрузки (data/meshtastic.bin — см. data/README.txt)
-├── docs/                    # FORZA_SETUP, BMW_E39_Assistant, reference/ (в т.ч. docs/reference/BMW — референс AVR-IBus)
+├── data/                    # LittleFS: файлы для загрузки на устройство (см. data/README.txt)
+├── docs/                    # FORZA_SETUP, BMW_E39_Assistant
 ├── tests/                   # Unit-тесты (monitor)
 ├── tools/                   # Утилиты (напр. Forza UDP) — см. tools/README.md
 ├── optional/radio/          # LoRa (SX1262) — опционально, см. optional/radio/README.md
 ├── DataSheets/              # PDF платы
 ├── platformio.ini           # Сборка: env heltec_wifi_lora_32_V4
-├── huge_app.csv             # Таблица разделов (Nocturne + ota_1 под Meshtastic + LittleFS)
-└── dual_boot.csv            # Альтернативная таблица (boot selector)
+└── huge_app.csv             # Таблица разделов (Nocturne + LittleFS)
 ```
 
-В репозитории нет: `secrets.h`, `.env`, `.pio/`, `firmware-*/`, `esp32_marauder/`, артефактов сборки, логов.
-
----
-
-## Dual boot (Meshtastic)
-
-Опционально: в таблице **huge_app.csv** зарезервирован раздел **ota_1** под прошивку Meshtastic. Папка **firmware-\*** (исходники Meshtastic) в репозиторий не входит (см. `.gitignore`); при наличии такой папки в корне проекта скрипты загрузки FS могут собирать Meshtastic и класть `data/meshtastic.bin`. Подробности: **`data/README.txt`**.
-
-Кратко: положить **meshtastic.bin** в **data/**, выполнить `pio run -t upload` и `pio run -t uploadfs`. Переключение на Meshtastic — через пункт меню (если реализован в прошивке) или прошивку в ota_1. Возврат в Nocturne — прошить снова основную прошивку или переключить раздел из Meshtastic. Boot selector (таблица **dual_boot.csv**) — опционально для выбора раздела при загрузке.
+В репозитории нет: `secrets.h`, `.env`, `.pio/`, артефактов сборки, логов.
 
 ---
 
