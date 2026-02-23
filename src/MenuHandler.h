@@ -9,9 +9,7 @@
 
 // Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
 #define MENU_CATEGORIES 5
-#define HACKER_GROUP_WIFI 0
-#define HACKER_GROUP_BLE 1
-#define HACKER_GROUP_COUNT 2
+// Hacker: flat list of 5 items (no WiFi/BLE subgroups)
 
 /** Number of items in a category (level 1 submenu). */
 int submenuCount(int category);

