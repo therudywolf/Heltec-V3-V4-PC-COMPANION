@@ -163,18 +163,7 @@ bool AppModeManager::initializeMode(AppMode mode, int trapWifiSelected,
   case MODE_WIFI_TRAP:
   {
     manageWiFiState(mode);
-    int n = WiFi.scanComplete();
-    if (n == -1)
-    {
-      WiFi.scanNetworks(true, true);
-      Serial.println("[TRAP] Starting scan for SSID cloning...");
-    }
-    if (n > 0 && trapFilteredCount > 0 && trapWifiSelected >= 0 &&
-        trapWifiSelected < trapFilteredCount && trapSortedIndices)
-    {
-      int actualIndex = trapSortedIndices[trapWifiSelected];
-      trap_.setClonedSSID(actualIndex);
-    }
+    /* Clone SSID already set in switchToMode (before cleanup) when coming from RADAR. */
     trap_.start();
     yield();
     if (!trap_.isActive())
@@ -225,6 +214,16 @@ bool AppModeManager::switchToMode(AppMode &current, AppMode next,
 
   Serial.printf("[SYS] Switching from MODE_%d to MODE_%d\n", (int)current,
                 (int)next);
+
+  /* When switching to TRAP, read clone SSID from scan before cleanup (cleanup deletes scan). */
+  if (next == MODE_WIFI_TRAP && trapFilteredCount > 0 && trapWifiSelected >= 0 &&
+      trapWifiSelected < trapFilteredCount && trapSortedIndices &&
+      WiFi.scanComplete() > 0) {
+    int actualIndex = trapSortedIndices[trapWifiSelected];
+    String ssid = WiFi.SSID(actualIndex);
+    wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
+    trap_.setClonedSSIDFromStrings(ssid.c_str(), auth != WIFI_AUTH_OPEN);
+  }
 
   /* Always cleanup current mode first, then init next — avoids double init and leftover peripherals. */
   cleanupMode(current);

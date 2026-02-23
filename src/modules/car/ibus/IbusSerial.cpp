@@ -20,7 +20,7 @@ IbusSerial::IbusSerial()
 
 void IbusSerial::setIbusSerial(HardwareSerial &serial) {
   ibusSerial_ = &serial;
-  ibusSerial_->begin(9600, SERIAL_8E1);
+  /* Serial must be initialized once in IbusDriver::begin() with correct pins. */
 }
 
 void IbusSerial::setPacketHandler(void (*handler)(uint8_t *packet)) {
