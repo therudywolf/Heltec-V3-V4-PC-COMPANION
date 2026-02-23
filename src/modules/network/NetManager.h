@@ -6,7 +6,7 @@
 #ifndef NOCTURNE_NET_MANAGER_H
 #define NOCTURNE_NET_MANAGER_H
 
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>

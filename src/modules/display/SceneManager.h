@@ -5,8 +5,8 @@
 #ifndef NOCTURNE_SCENE_MANAGER_H
 #define NOCTURNE_SCENE_MANAGER_H
 
-#include "../../include/nocturne/Types.h"
-#include "../../include/nocturne/config.h"
+#include "nocturne/Types.h"
+#include "nocturne/config.h"
 #include "DisplayEngine.h"
 
 class KickManager;
@@ -39,13 +39,15 @@ public:
 
   // --- Utility / overlay screens ---
   void drawSearchMode(int scanPhase);
-  /** Flipper-style two-level menu: menuLevel 0 = 4 categories
-   * (Config/WiFi/Tools/System), menuLevel 1 = submenu; menuCategory = which
-   * category (0..3), mainIndex = selected item. */
-  void drawMenu(int menuLevel, int menuCategory, int mainIndex, bool carouselOn,
-                int carouselSec, bool screenRotated, bool glitchEnabled,
-                bool ledEnabled, bool lowBrightnessDefault,
-                bool rebootConfirmed = false);
+  /** Menu: level 0 = 6 categories (Monitoring/Config/Hacker/BMW/Meshtastic/System),
+   * level 1 = submenu, level 2 = Hacker group items. menuHackerGroup used when
+   * menuLevel==2. */
+  void drawMenu(int menuLevel, int menuCategory, int mainIndex,
+                int menuHackerGroup, bool carouselOn, int carouselSec,
+                bool screenRotated, bool glitchEnabled, bool ledEnabled,
+                bool lowBrightnessDefault, bool rebootConfirmed = false);
+  /** Charge-only full screen: battery %, charging indicator, voltage. */
+  void drawChargeOnlyScreen(int pct, bool isCharging, float batteryVoltage);
   /** Brief toast overlay (e.g. "FAIL", "Saved"). Call after main content. */
   void drawToast(const char *msg);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);
@@ -105,6 +107,9 @@ public:
    * for 3s on enter. localIp: WiFi.localIP() as uint32_t. */
   void drawForzaDash(class ForzaManager &forza, bool showSplash,
                      uint32_t localIp);
+
+  /** BMW E39 Assistant: I-Bus status, BLE phone, lock/unlock, diagnostics, etc. */
+  void drawBmwAssistant(class BmwManager &bmw);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).

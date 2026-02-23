@@ -3,7 +3,7 @@
  * Resolution 128x64; zero-overlap policy.
  */
 #include "DisplayEngine.h"
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <mbedtls/base64.h>

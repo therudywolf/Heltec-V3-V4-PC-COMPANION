@@ -17,6 +17,7 @@
 - [Экраны (сцены)](#-экраны-сцены)
 - [Управление](#-управление)
 - [Меню](#-меню)
+- [Dual boot (Meshtastic)](#-dual-boot-meshtastic)
 - [Утилиты (Tools)](#-утилиты-tools)
 - [Алерты (RED ALERT)](#-алерты-red-alert)
 - [Установка](#-установка)
@@ -97,14 +98,43 @@
 
 ### Структура меню
 
-| Категория  | Пункты                           | Действия                                                                                                                                                 |
-| ---------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config** | AUTO, FLIP, GLITCH, LED, DIM     | AUTO: цикл OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. Все сохраняются в NVS. |
-| **WiFi**   | SCAN, DEAUTH, PORTAL             | Переход в RADAR, Deauth, Captive Portal (AP **MT_FREE**).                                                                                                |
-| **Tools**  | BLE SPAM, USB HID, VAULT, DAEMON | BLE Spam, BadWolf USB HID, TOTP Vault, экран Daemon (Wolf + телеметрия).                                                                                 |
-| **System** | REBOOT, VERSION, EXIT            | Перезагрузка (с подтверждением), показ версии (v1.0), выход из меню.                                                                                     |
+| Категория   | Пункты                           | Действия                                                                                                                                                 |
+| ----------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config**  | AUTO, FLIP, GLITCH, LED, DIM     | AUTO: цикл OFF → 5 s → 10 s → 15 s → OFF. FLIP: поворот 180°. GLITCH: вкл/выкл. LED: подсветка. DIM: низкая яркость по умолчанию. Все сохраняются в NVS. |
+| **WiFi**    | SCAN, DEAUTH, PORTAL             | Переход в RADAR, Deauth, Captive Portal (AP **MT_FREE**).                                                                                                |
+| **BMW**     | BMW Assistant                    | Режим ассистента BMW E39: BLE-ключ, I-Bus (замки, свет, MFL, PDC, приборка). Подробно: [BMW E39 Assistant](docs/BMW_E39_Assistant.md).                   |
+| **Meshtastic** | Switch to Meshtastic           | Переключение на прошивку Meshtastic (ota_1). Требуется один раз прошить Meshtastic в раздел ota_1. См. [Dual boot (Meshtastic)](#-dual-boot-meshtastic). |
+| **Tools**   | BLE SPAM, USB HID, VAULT, DAEMON | BLE Spam, BadWolf USB HID, TOTP Vault, экран Daemon (Wolf + телеметрия).                                                                                 |
+| **System**  | REBOOT, Charge only, Power off, VERSION | Перезагрузка (с подтверждением), режим зарядки, глубокий сон, показ версии (v1.0).                                                                  |
 
 Настройки Config и яркость сохраняются в NVS.
+
+---
+
+## Dual boot (Meshtastic)
+
+В меню после **BMW** добавлена категория **Meshtastic**. Долгое нажатие по пункту **Switch to Meshtastic** переключает загрузку на раздел **ota_1** и перезагружает устройство в прошивку Meshtastic (если она прошита в ota_1).
+
+### Таблица разделов
+
+Используется таблица **huge_app.csv**: ota_0 = Nocturne (0x10000, 3 MiB), ota_1 = Meshtastic (0x310000, 2 MiB), spiffs (0x510000).
+
+### Прошивка Meshtastic в ota_1 (один раз)
+
+1. Соберите или скачайте прошивку Meshtastic для **Heltec V4** (ESP32-S3). В репозитории прошивка для Heltec v4 лежит в папке **firmware-2.7.15.567b8ea** (вариант `variants/esp32s3/heltec_v4`).
+2. Прошейте бинарник Meshtastic в раздел ota_1 с смещением **0x310000** (esptool или скрипт PlatformIO):
+
+   ```bash
+   esptool.py --chip esp32s3 -p COMx write_flash 0x310000 firmware-heltec-v4-*.bin
+   ```
+
+3. После этого в меню Nocturne: **Meshtastic → Switch to Meshtastic** (долгое нажатие) — устройство перезагрузится в Meshtastic.
+
+### Возврат в Nocturne
+
+- **Способ 1:** из Meshtastic (если в прошивке есть переключение раздела) — выберите загрузку с другого раздела и перезагрузка в Nocturne.
+- **Способ 2:** перепрошейте Nocturne по USB в раздел ota_0 (обычная прошивка через PlatformIO: `pio run -t upload`).
+- **Способ 3 (опционально):** Boot selector в разделе factory. Если устройство разбито таблицей **dual_boot.csv** и в factory прошит boot selector (`pio run -e boot_selector -t upload`), то при **пустом otadata** загружается selector: без кнопки — Nocturne (ota_0), с удержанием кнопки при включении — Meshtastic (ota_1). Чтобы снова попасть в selector, нужно стереть otadata (например, `esptool.py erase_region 0xe000 0x2000`) и включить устройство.
 
 ---
 
@@ -270,6 +300,7 @@ python tools/dump_lhm_disks.py [--url http://localhost:8085/data.json] [--save l
 │       ├── UsbManager.*     # USB HID (BadWolf)
 │       ├── VaultManager.*   # TOTP
 │       └── RollingGraph.*   # Графики (sparkline)
+├── docs/                # Документация: FORZA_SETUP, reference/ (анализ Marauder, статус интеграции)
 ├── tests/               # Unit-тесты (monitor: config, payload)
 ├── platformio.ini       # Сборка ESP32 (env heltec_wifi_lora_32_V4, профиль V3 под железо V4)
 ├── DataSheets/         # PDF платы

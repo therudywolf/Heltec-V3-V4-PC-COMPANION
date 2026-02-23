@@ -2,7 +2,7 @@
  * NOCTURNE_OS — ForzaManager: UDP listener for Forza Data Out telemetry.
  */
 #include "ForzaManager.h"
-#include "../../include/nocturne/config.h"
+#include "nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
