@@ -1231,6 +1231,7 @@ void SceneManager::drawBottomHint(const char *hint)
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
   u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
   u8g2.print(hint ? hint : DEFAULT_BOTTOM_HINT);
 }
@@ -1810,7 +1811,7 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
   {
     u8g2.setCursor(2, 20);
     u8g2.print("Scanning...");
-    drawBottomHint("1x next  2s: clone");
+    drawBottomHint("1x next  2s clone  2x menu");
     disp_.drawGreebles();
     return;
   }
@@ -1840,7 +1841,7 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
     u8g2.print("/");
     u8g2.print(n);
   }
-  drawBottomHint("1x next  2s: clone");
+  drawBottomHint("1x next  2s clone  2x menu");
   disp_.drawGreebles();
 }
 
@@ -2214,7 +2215,7 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
   U8G2 &u8g2 = disp_.u8g2();
   u8g2.setFont(FONT_HEADER);
   u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "BMW E39");
-  u8g2.setFont(FONT_LABEL);
+  u8g2.setFont(LABEL_FONT);
   char line[32];
   bmw.getStatusLine(line, sizeof(line));
   int y = NOCT_CONTENT_TOP + NOCT_ROW_DY;
@@ -2230,7 +2231,12 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
   u8g2.print("> ");
   u8g2.print(bmwActionNames[actIdx]);
   y += NOCT_ROW_DY;
-  /* Content zone 14..50: at most one extra line (track, artist, or PDC) */
+  if (!bmw.isIbusSynced() && y <= NOCT_FOOTER_Y - NOCT_ROW_DY)
+  {
+    u8g2.setCursor(NOCT_MARGIN, y);
+    u8g2.print("I-Bus: connect to send");
+    y += NOCT_ROW_DY;
+  }
   if (y <= NOCT_FOOTER_Y - NOCT_ROW_DY && bmw.getNowPlayingTrack()[0])
   {
     u8g2.setCursor(NOCT_MARGIN, y);
