@@ -20,4 +20,7 @@ extern const uint8_t Doors_Unlock_Interior[7];
 extern const uint8_t Doors_Lock_Key[7];
 extern const uint8_t Trunk_Open[7];
 
+/** Request IKE (cluster) status — for periodic I-Bus poll. */
+extern const uint8_t IKE_Status_Request[4];
+
 #endif

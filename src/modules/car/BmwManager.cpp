@@ -130,6 +130,26 @@ void BmwManager::sendHazardLights() {
   ibus_.write(HazardLights, sizeof(HazardLights));
 }
 
+void BmwManager::sendLowBeams() {
+  ibus_.write(Low_Beams, sizeof(Low_Beams));
+}
+
+void BmwManager::sendLightsOff() {
+  ibus_.write(TurnOffLights, sizeof(TurnOffLights));
+}
+
+void BmwManager::sendLock() {
+  ibus_.write(REMOTE_LOCK, sizeof(REMOTE_LOCK));
+}
+
+void BmwManager::sendUnlock() {
+  ibus_.write(REMOTE_UNLOCK, sizeof(REMOTE_UNLOCK));
+}
+
+void BmwManager::sendTrunkOpen() {
+  ibus_.write(Trunk_Open, sizeof(Trunk_Open));
+}
+
 void BmwManager::begin() {
   active_ = true;
   ibusSynced_ = false;
@@ -159,6 +179,12 @@ void BmwManager::tick() {
   ibusSynced_ = ibus_.isSynced();
   if (bleKey_.isConnected() != phoneConnected_)
     phoneConnected_ = bleKey_.isConnected();
+  /* Periodic I-Bus poll: request IKE status every 3 s to keep bus active. */
+  unsigned long now = millis();
+  if (ibusSynced_ && now - lastPollMs_ >= 3000) {
+    ibus_.write(IKE_Status_Request, sizeof(IKE_Status_Request));
+    lastPollMs_ = now;
+  }
 }
 
 void BmwManager::getStatusLine(char *buf, size_t len) const {

@@ -108,8 +108,8 @@ public:
   void drawForzaDash(class ForzaManager &forza, bool showSplash,
                      uint32_t localIp);
 
-  /** BMW E39 Assistant: I-Bus status, BLE phone, lock/unlock, diagnostics, etc. */
-  void drawBmwAssistant(class BmwManager &bmw);
+  /** BMW E39 Assistant: I-Bus status, BLE, selected action (1x next, 2s run). */
+  void drawBmwAssistant(class BmwManager &bmw, int selectedActionIndex);
 
 private:
   /** Unified 2x2 grid cell: bracket + label (top-left) + value (right-aligned).

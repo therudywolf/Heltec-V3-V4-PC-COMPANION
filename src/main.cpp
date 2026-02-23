@@ -241,6 +241,10 @@ unsigned long lastMenuEventTime = 0;
 static char toastMsg[20] = "";
 static unsigned long toastUntil = 0;
 
+// BMW Assistant: selected action index (short = next, long = execute)
+#define BMW_ACTION_COUNT 10
+static int bmwActionIndex = 0;
+
 // Forza: splash "IP | PORT | WAITING" shown for 3s on enter
 static unsigned long forzaSplashUntil = 0;
 #define FORZA_SPLASH_MS 3000
@@ -1715,9 +1719,13 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
                                                              ESP_PARTITION_SUBTYPE_APP_OTA_1,
                                                              NULL);
       if (!ota1)
+        ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "app1");
+      if (!ota1)
+        ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, "app1");
+      if (!ota1)
       {
-        snprintf(toastMsg, sizeof(toastMsg), "No ota_1 partition");
-        toastUntil = now + 2000;
+        snprintf(toastMsg, sizeof(toastMsg), "No ota_1 - reflash FW");
+        toastUntil = now + 2500;
         return true;
       }
       if (esp_ota_set_boot_partition(ota1) != ESP_OK)
@@ -2332,6 +2340,41 @@ void loop()
         needRedraw = true;
       }
       break;
+    case MODE_BMW_ASSISTANT:
+      if (event == EV_SHORT)
+      {
+        bmwActionIndex = (bmwActionIndex + 1) % BMW_ACTION_COUNT;
+        needRedraw = true;
+      }
+      else if (event == EV_LONG)
+      {
+        if (!bmwManager.isIbusSynced())
+        {
+          snprintf(toastMsg, sizeof(toastMsg), "No IBus");
+          toastUntil = now + 1500;
+        }
+        else
+        {
+          switch (bmwActionIndex)
+          {
+          case 0: bmwManager.sendGoodbyeLights(); break;
+          case 1: bmwManager.sendFollowMeHome(); break;
+          case 2: bmwManager.sendParkLights(); break;
+          case 3: bmwManager.sendHazardLights(); break;
+          case 4: bmwManager.sendLowBeams(); break;
+          case 5: bmwManager.sendLightsOff(); break;
+          case 6: bmwManager.sendUnlock(); break;
+          case 7: bmwManager.sendLock(); break;
+          case 8: bmwManager.sendTrunkOpen(); break;
+          case 9: bmwManager.sendClusterText("NOCT"); break;
+          default: break;
+          }
+          snprintf(toastMsg, sizeof(toastMsg), "OK");
+          toastUntil = now + 600;
+        }
+        needRedraw = true;
+      }
+      break;
     default:
       break;
     }
@@ -2759,7 +2802,7 @@ void loop()
     }
     case MODE_BMW_ASSISTANT:
       bmwManager.tick();
-      sceneManager.drawBmwAssistant(bmwManager);
+      sceneManager.drawBmwAssistant(bmwManager, bmwActionIndex);
       break;
     default:
       break;

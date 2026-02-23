@@ -95,7 +95,9 @@ OLED (SDA 17, SCL 18, RST 21) и батарея уже используются 
 - **Температуры/OBD:** при реализации OBD-клиента вызывать `bmwManager.setObdData(true, rpm, coolantC, oilC)`; значения отображаются на экране (при добавлении экрана диагностики).
 - **Кнопки руля:** нажатия MFL парсятся, последнее действие доступно как `getLastMflAction()` (Next/Prev/Play-Pause/Vol). Дальше — маппинг в AVRCP или HID на телефоне (доработка).
 - **Трек на OLED:** вызов `bmwManager.setNowPlaying("Track Name", "Artist")` (из приложения или при появлении AVRCP «Now Playing»).
-- **Свет:** вызовы `sendGoodbyeLights()`, `sendFollowMeHome()`, `sendParkLights()`, `sendHazardLights()` (из кода или будущего меню сценариев).
+- **Управление с платы:** в режиме BMW Assistant на экране отображается текущее выбранное действие. **Короткое нажатие** — следующее действие (Goodbye, FollowMe, Park, Hazard, LowBeam, LightsOff, Unlock, Lock, Trunk, Cluster). **Долгое нажатие** — выполнить выбранную команду по I-Bus (при отсутствии синха с шиной показывается «No IBus»). Двойной тап — выход в меню.
+- **Опрос шины:** раз в 3 с отправляется запрос статуса IKE (опрос I-Bus), чтобы шина оставалась активной.
+- **Свет (с платы или из кода):** GoodbyeLights, FollowMeHome, ParkLights, HazardLights, LowBeams, LightsOff, Lock/Unlock, Trunk, текст на приборку (Cluster).
 - **Парктроники:** при появлении сообщений PDC (0x60) дистанции выводятся на OLED.
 - **Текст на приборку:** `bmwManager.sendClusterText("HELLO")` — отправить строку на комбинацию (до ~20 символов, кодировка OEM).
 
