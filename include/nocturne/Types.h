@@ -61,6 +61,7 @@ struct Settings {
   bool carouselEnabled = false;
   int carouselIntervalSec = 10;
   int displayContrast = 128;
+  int displayTimeoutSec = 0;   /* 0=off, 30/60 = dim after sec of no input */
   bool displayInverted = false;
   bool glitchEnabled = false;
   bool lowBrightnessDefault =

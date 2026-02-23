@@ -25,7 +25,8 @@ public:
   unsigned long getLastPasswordShowUntil() const {
     return lastPasswordShowUntil_;
   }
-  /** Set SSID to clone from scan (index). If -1, use default. */
+  /** Set SSID to clone from scan (index). If -1, use default.
+   * If the scanned network has encryption, AP will use TRAP_AP_PASSWORD. */
   void setClonedSSID(int scanIndex);
   const char *getClonedSSID() const { return clonedSSID_; }
 
@@ -40,6 +41,7 @@ private:
   unsigned long lastPasswordShowUntil_ = 0;
   char clonedSSID_[33];
   bool useClonedSSID_ = false;
+  bool useApPassword_ = false;  // true when cloned network had encryption
 };
 
 #endif

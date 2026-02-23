@@ -104,6 +104,10 @@
 #define NOCT_CARD_TOP NOCT_CONTENT_TOP
 #define NOCT_CARD_ROW_DY NOCT_ROW_DY
 #define NOCT_FOOTER_Y 50
+/* Single-line footer text: top Y so that top + font height <= 64 */
+#define NOCT_FOOTER_TEXT_Y 52
+/* Mode screens (WiFi/BLE/Trap etc.): header bar height, match menu bar */
+#define NOCT_MODE_HEADER_H 10
 #define NOCT_LINE_H_DATA 12
 #define NOCT_LINE_H_LABEL 5
 #define NOCT_LINE_H_HEAD 10

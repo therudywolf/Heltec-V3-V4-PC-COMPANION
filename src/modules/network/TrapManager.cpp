@@ -7,6 +7,7 @@
 #include <WiFi.h>
 
 static const char *TRAP_SSID_DEFAULT = "MT_FREE";
+static const char *TRAP_AP_PASSWORD = "YourAPPassword";  // used when cloning encrypted network
 static const byte DNS_PORT = 53;
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_NETMASK(255, 255, 255, 0);
@@ -28,7 +29,8 @@ void TrapManager::start() {
   const char *ssidToUse = useClonedSSID_ && clonedSSID_[0] != '\0'
                               ? clonedSSID_
                               : TRAP_SSID_DEFAULT;
-  WiFi.softAP(ssidToUse, nullptr, 1, 0, 4);
+  const char *pass = (useClonedSSID_ && useApPassword_) ? TRAP_AP_PASSWORD : nullptr;
+  WiFi.softAP(ssidToUse, pass, 1, 0, 4);
   dnsServer.start(DNS_PORT, "*", AP_IP);
   setupHandlers();
   server.begin();
@@ -111,13 +113,14 @@ void TrapManager::setClonedSSID(int scanIndex) {
   int n = WiFi.scanComplete();
   if (n <= 0 || scanIndex < 0 || scanIndex >= n) {
     useClonedSSID_ = false;
+    useApPassword_ = false;
     clonedSSID_[0] = '\0';
     return;
   }
-  // Optimized: use c_str() instead of String
   const char *ssid = WiFi.SSID(scanIndex).c_str();
   if (!ssid || strlen(ssid) == 0) {
     useClonedSSID_ = false;
+    useApPassword_ = false;
     clonedSSID_[0] = '\0';
     return;
   }
@@ -127,7 +130,10 @@ void TrapManager::setClonedSSID(int scanIndex) {
   strncpy(clonedSSID_, ssid, len);
   clonedSSID_[len] = '\0';
   useClonedSSID_ = true;
-  Serial.println("[TRAP] Cloned SSID: " + String(clonedSSID_));
+  wifi_auth_mode_t auth = WiFi.encryptionType(scanIndex);
+  useApPassword_ = (auth != WIFI_AUTH_OPEN);
+  Serial.println("[TRAP] Cloned SSID: " + String(clonedSSID_) +
+                 (useApPassword_ ? " (AP with password)" : " (open AP)"));
 }
 
 int TrapManager::getClientCount() const {

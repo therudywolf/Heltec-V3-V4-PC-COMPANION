@@ -8,35 +8,21 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WiFi.h>
-#include <LittleFS.h>
-#include <esp_ota_ops.h>
-#include <esp_partition.h>
 #include <esp_sleep.h>
 #include <Wire.h>
 
-// --- FORCE DEPENDENCY VISIBILITY ---
-// Required here so LDF finds them for the sub-modules
-#include "USB.h"
-#include "USBHIDKeyboard.h"
 #include <NimBLEDevice.h>
 
 // -----------------------------------
 
-#include "modules/network/BeaconManager.h"
 #include "modules/ble/BleManager.h"
 #include "modules/display/BootAnim.h"
 #include "modules/display/DisplayEngine.h"
-#include "modules/network/KickManager.h"
-#include "modules/network/MdnsManager.h"
 #include "modules/network/NetManager.h"
-#include "modules/network/NetworkScanManager.h"
 #include "modules/display/SceneManager.h"
 #include "modules/network/TrapManager.h"
-#include "modules/usb/UsbManager.h"
-#include "modules/system/VaultManager.h"
 #include "modules/car/BmwManager.h"
 #include "modules/car/ForzaManager.h"
-#include "modules/network/WifiAttackManager.h"
 #include "modules/network/WifiSniffManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
@@ -50,13 +36,11 @@
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
 // Flipper-style: level 0 = 6 categories, level 1 = submenu, level 2 = hacker group items
-#define MENU_CATEGORIES 6
-// Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System (direct 0..5)
+#define MENU_CATEGORIES 5
+// Categories: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
 #define HACKER_GROUP_WIFI 0
 #define HACKER_GROUP_BLE 1
-#define HACKER_GROUP_NETWORK 2
-#define HACKER_GROUP_USB 3
-#define HACKER_GROUP_COUNT 4
+#define HACKER_GROUP_COUNT 2
 static int menuHackerGroup = 0; // when menuLevel==2 and menuCategory==2
 #define WOLF_MENU_ITEMS 12
 
@@ -179,17 +163,10 @@ public:
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
 NetManager netManager;
 BleManager bleManager;
-UsbManager usbManager;
 TrapManager trapManager;
-KickManager kickManager;
-BeaconManager beaconManager;
 WifiSniffManager wifiSniffManager;
-WifiAttackManager wifiAttackManager;
-NetworkScanManager networkScanManager;
-MdnsManager mdnsManager;
 ForzaManager forzaManager;
 BmwManager bmwManager;
-VaultManager vaultManager;
 AppState state;
 SceneManager sceneManager(display, state);
 
@@ -233,6 +210,7 @@ int submenuIndex =
     0; // Оставлено для совместимости с drawMenu, но не используется
 bool rebootConfirmed = false;
 unsigned long rebootConfirmTime = 0;
+static unsigned long lastInputTime = 0;  // for display timeout
 
 // Защита от множественных срабатываний событий
 unsigned long lastMenuEventTime = 0;
@@ -249,86 +227,37 @@ static int bmwActionIndex = 0;
 // Forza: splash "IP | PORT | WAITING" shown for 3s on enter
 static unsigned long forzaSplashUntil = 0;
 #define FORZA_SPLASH_MS 3000
-// Auto-switch to Forza when first UDP packet received; disabled after user exits
-static bool forzaAutoSwitchDone = false;
-static bool forzaListeningForAutoSwitch = false;
 
 // --- Cyberdeck Modes --- Full Marauder integration
 enum AppMode
 {
   MODE_NORMAL,
-  MODE_DAEMON,
-  // WiFi Scans
-  MODE_RADAR,                 // AP Scan (existing)
-  MODE_WIFI_PROBE_SCAN,       // Probe requests
-  MODE_WIFI_EAPOL_SCAN,       // EAPOL handshake capture
-  MODE_WIFI_STATION_SCAN,     // Station scan (existing)
-  MODE_WIFI_PACKET_MONITOR,   // Packet Monitor (existing)
-  MODE_WIFI_CHANNEL_ANALYZER, // Channel Analyzer
-  MODE_WIFI_CHANNEL_ACTIVITY, // Channel Activity
-  MODE_WIFI_PACKET_RATE,      // Packet Rate
-  MODE_WIFI_PINESCAN,         // Pineapple detection
-  MODE_WIFI_MULTISSID,        // MultiSSID detection
-  MODE_WIFI_SIGNAL_STRENGTH,  // Signal Strength scan
-  MODE_WIFI_RAW_CAPTURE,      // Raw packet capture
-  MODE_WIFI_AP_STA,           // AP + Station scan
-  MODE_WIFI_SNIFF,            // Basic sniff (existing)
-  // WiFi Attacks
-  MODE_WIFI_DEAUTH,               // Deauth (existing)
-  MODE_WIFI_DEAUTH_TARGETED,      // Targeted deauth
-  MODE_WIFI_DEAUTH_MANUAL,        // Manual deauth
-  MODE_WIFI_BEACON,               // Beacon spam (existing)
-  MODE_WIFI_BEACON_RICKROLL,      // Rick Roll beacon
-  MODE_WIFI_BEACON_LIST,          // Beacon list spam
-  MODE_WIFI_BEACON_FUNNY,         // Funny beacon
-  MODE_WIFI_AUTH_ATTACK,          // Auth attack
-  MODE_WIFI_MIMIC_FLOOD,          // Mimic flood
-  MODE_WIFI_AP_SPAM,              // AP spam
-  MODE_WIFI_BAD_MESSAGE,          // Bad message attack
-  MODE_WIFI_BAD_MESSAGE_TARGETED, // Bad message targeted
-  MODE_WIFI_SLEEP_ATTACK,         // Sleep attack
-  MODE_WIFI_SLEEP_TARGETED,       // Sleep targeted
-  MODE_WIFI_SAE_COMMIT,           // SAE commit attack
-  MODE_WIFI_TRAP,                 // Evil Portal (existing)
-  // BLE Scans
-  MODE_BLE_SCAN,            // Basic scan (existing)
-  MODE_BLE_SCAN_SKIMMERS,   // Skimmers scan
-  MODE_BLE_SCAN_AIRTAG,     // AirTag scan
-  MODE_BLE_SCAN_AIRTAG_MON, // AirTag monitor
-  MODE_BLE_SCAN_FLIPPER,    // Flipper scan
-  MODE_BLE_SCAN_FLOCK,      // Flock detection
-  MODE_BLE_SCAN_ANALYZER,   // BLE Analyzer
-  MODE_BLE_SCAN_SIMPLE,     // Simple scan
-  MODE_BLE_SCAN_SIMPLE_TWO, // Simple scan variant
-  // BLE Attacks
-  MODE_BLE_SPAM,                // Basic spam (existing)
-  MODE_BLE_SOUR_APPLE,          // Sour Apple (existing)
-  MODE_BLE_SWIFTPAIR_MICROSOFT, // SwiftPair Microsoft
-  MODE_BLE_SWIFTPAIR_GOOGLE,    // SwiftPair Google
-  MODE_BLE_SWIFTPAIR_SAMSUNG,   // SwiftPair Samsung
-  MODE_BLE_SPAM_ALL,            // Spam all types
-  MODE_BLE_FLIPPER_SPAM,        // Flipper spam
-  MODE_BLE_AIRTAG_SPOOF,        // AirTag spoof
-  // Network Scans
-  MODE_NETWORK_ARP_SCAN,    // ARP scan
-  MODE_NETWORK_PORT_SCAN,   // Port scan
-  MODE_NETWORK_PING_SCAN,   // Ping scan
-  MODE_NETWORK_DNS_SCAN,    // DNS scan
-  MODE_NETWORK_HTTP_SCAN,   // HTTP scan
-  MODE_NETWORK_HTTPS_SCAN,  // HTTPS scan
-  MODE_NETWORK_SMTP_SCAN,   // SMTP scan
-  MODE_NETWORK_RDP_SCAN,    // RDP scan
-  MODE_NETWORK_TELNET_SCAN, // Telnet scan
-  MODE_NETWORK_SSH_SCAN,    // SSH scan
-  // Tools
-  MODE_BADWOLF,    // USB HID (existing)
-  MODE_VAULT,      // TOTP Vault (existing)
-  MODE_FAKE_LOGIN, // Fake Login (existing)
-  MODE_QR,         // QR code (existing)
-  MODE_MDNS,       // mDNS spoof (existing)
-  MODE_GAME_FORZA,    // Forza Horizon/Motorsport telemetry dashboard
-  MODE_BMW_ASSISTANT, // BMW E39 Assistant (I-Bus: lock/unlock, diagnostics, media, light, PDC, cluster)
-  MODE_CHARGE_ONLY    // Charge-only screen (no OS, battery + charging indicator)
+  // WiFi: scanner + duplicator only
+  MODE_RADAR,
+  MODE_WIFI_PROBE_SCAN,
+  MODE_WIFI_EAPOL_SCAN,
+  MODE_WIFI_STATION_SCAN,
+  MODE_WIFI_PACKET_MONITOR,
+  MODE_WIFI_CHANNEL_ANALYZER,
+  MODE_WIFI_CHANNEL_ACTIVITY,
+  MODE_WIFI_PACKET_RATE,
+  MODE_WIFI_PINESCAN,
+  MODE_WIFI_MULTISSID,
+  MODE_WIFI_SIGNAL_STRENGTH,
+  MODE_WIFI_RAW_CAPTURE,
+  MODE_WIFI_AP_STA,
+  MODE_WIFI_SNIFF,
+  MODE_WIFI_TRAP, // WiFi duplicator (clone AP)
+  // BLE: mimic only
+  MODE_BLE_SPAM,
+  MODE_BLE_SOUR_APPLE,
+  MODE_BLE_SWIFTPAIR_MICROSOFT,
+  MODE_BLE_SWIFTPAIR_GOOGLE,
+  MODE_BLE_SWIFTPAIR_SAMSUNG,
+  MODE_BLE_FLIPPER_SPAM,
+  MODE_GAME_FORZA,
+  MODE_BMW_ASSISTANT,
+  MODE_CHARGE_ONLY
 };
 AppMode currentMode = MODE_NORMAL;
 
@@ -339,11 +268,8 @@ int wifiSortMode = 0;      // 0=RSSI desc, 1=alphabetical, 2=RSSI asc
 int wifiRssiFilter = -100; // Минимальный RSSI для отображения (-100 = все)
 int wifiSortedIndices[32]; // Индексы отсортированных сетей
 int wifiFilteredCount = 0; // Количество отфильтрованных сетей
-// DEAUTH: индекс скана выбранной цели (-1 = ещё не выбирали долгим нажатием).
-static int lastDeauthTargetScanIndex = -1;
 static int wifiSniffSelected = 0;
 static int bleScanSelected = 0;
-static int badWolfScriptIndex = 0;
 
 // Функция сортировки и фильтрации WiFi сетей
 static void sortAndFilterWiFiNetworks()
@@ -730,11 +656,17 @@ void setup()
   settings.displayInverted = prefs.getBool("inverted", true);
   settings.glitchEnabled = prefs.getBool("glitch", false);
   settings.lowBrightnessDefault = prefs.getBool("lowBright", false);
+  settings.displayTimeoutSec = prefs.getInt("dispTimeout", 0);
+  if (settings.displayTimeoutSec != 0 && settings.displayTimeoutSec != 30 &&
+      settings.displayTimeoutSec != 60)
+    settings.displayTimeoutSec = 0;
   prefs.end();
 
   {
     uint8_t contrast =
         settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX;
+    if (!settings.lowBrightnessDefault && settings.displayContrast >= 0)
+      contrast = (uint8_t)settings.displayContrast;
     display.u8g2().setContrast(contrast);
   }
   display.setScreenFlipped(settings.displayInverted);
@@ -742,7 +674,6 @@ void setup()
 
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
-  vaultManager.begin();
 
   updateBatteryState();
 }
@@ -774,83 +705,18 @@ static void cleanupMode(AppMode mode)
     wifiSniffManager.stop();
     WiFi.scanDelete();
     break;
-  // WiFi Attacks
-  case MODE_WIFI_DEAUTH:
-  case MODE_WIFI_DEAUTH_TARGETED:
-  case MODE_WIFI_DEAUTH_MANUAL:
-    kickManager.stopAttack();
-    lastDeauthTargetScanIndex = -1;
-    WiFi.scanDelete();
-    break;
-  case MODE_WIFI_BEACON:
-  case MODE_WIFI_BEACON_RICKROLL:
-  case MODE_WIFI_BEACON_LIST:
-  case MODE_WIFI_BEACON_FUNNY:
-    beaconManager.stop();
-    break;
-  case MODE_WIFI_AUTH_ATTACK:
-  case MODE_WIFI_MIMIC_FLOOD:
-  case MODE_WIFI_AP_SPAM:
-  case MODE_WIFI_BAD_MESSAGE:
-  case MODE_WIFI_BAD_MESSAGE_TARGETED:
-  case MODE_WIFI_SLEEP_ATTACK:
-  case MODE_WIFI_SLEEP_TARGETED:
-  case MODE_WIFI_SAE_COMMIT:
-    wifiAttackManager.stop();
-    WiFi.scanDelete();
-    break;
   case MODE_WIFI_TRAP:
     trapManager.stop();
     WiFi.mode(WIFI_STA);
     break;
-  // BLE Scans
-  case MODE_BLE_SCAN:
-  case MODE_BLE_SCAN_SKIMMERS:
-  case MODE_BLE_SCAN_AIRTAG:
-  case MODE_BLE_SCAN_AIRTAG_MON:
-  case MODE_BLE_SCAN_FLIPPER:
-  case MODE_BLE_SCAN_FLOCK:
-  case MODE_BLE_SCAN_ANALYZER:
-  case MODE_BLE_SCAN_SIMPLE:
-  case MODE_BLE_SCAN_SIMPLE_TWO:
-    bleManager.stopScan();
-    WiFi.mode(WIFI_STA);
-    break;
-  // BLE Attacks
   case MODE_BLE_SPAM:
   case MODE_BLE_SOUR_APPLE:
   case MODE_BLE_SWIFTPAIR_MICROSOFT:
   case MODE_BLE_SWIFTPAIR_GOOGLE:
   case MODE_BLE_SWIFTPAIR_SAMSUNG:
-  case MODE_BLE_SPAM_ALL:
   case MODE_BLE_FLIPPER_SPAM:
-  case MODE_BLE_AIRTAG_SPOOF:
     bleManager.stop();
     WiFi.mode(WIFI_STA);
-    break;
-  // Network Scans
-  case MODE_NETWORK_ARP_SCAN:
-  case MODE_NETWORK_PORT_SCAN:
-  case MODE_NETWORK_PING_SCAN:
-  case MODE_NETWORK_DNS_SCAN:
-  case MODE_NETWORK_HTTP_SCAN:
-  case MODE_NETWORK_HTTPS_SCAN:
-  case MODE_NETWORK_SMTP_SCAN:
-  case MODE_NETWORK_RDP_SCAN:
-  case MODE_NETWORK_TELNET_SCAN:
-  case MODE_NETWORK_SSH_SCAN:
-    networkScanManager.stop();
-    WiFi.scanDelete();
-    break;
-  // Tools
-  case MODE_BADWOLF:
-    usbManager.stop();
-    break;
-  case MODE_FAKE_LOGIN:
-  case MODE_QR:
-    break;
-  case MODE_MDNS:
-    mdnsManager.stop();
     break;
   case MODE_GAME_FORZA:
     forzaManager.stop();
@@ -859,10 +725,6 @@ static void cleanupMode(AppMode mode)
     bmwManager.end();
     break;
   case MODE_CHARGE_ONLY:
-    break;
-  case MODE_VAULT:
-  case MODE_DAEMON:
-    // Эти режимы не требуют специальной очистки
     break;
   case MODE_NORMAL:
   default:
@@ -875,24 +737,12 @@ static void manageWiFiState(AppMode mode)
 {
   switch (mode)
   {
-  // BLE modes - WiFi OFF
   case MODE_BLE_SPAM:
-  case MODE_BLE_SCAN:
-  case MODE_BLE_SCAN_SKIMMERS:
-  case MODE_BLE_SCAN_AIRTAG:
-  case MODE_BLE_SCAN_AIRTAG_MON:
-  case MODE_BLE_SCAN_FLIPPER:
-  case MODE_BLE_SCAN_FLOCK:
-  case MODE_BLE_SCAN_ANALYZER:
-  case MODE_BLE_SCAN_SIMPLE:
-  case MODE_BLE_SCAN_SIMPLE_TWO:
   case MODE_BLE_SOUR_APPLE:
   case MODE_BLE_SWIFTPAIR_MICROSOFT:
   case MODE_BLE_SWIFTPAIR_GOOGLE:
   case MODE_BLE_SWIFTPAIR_SAMSUNG:
-  case MODE_BLE_SPAM_ALL:
   case MODE_BLE_FLIPPER_SPAM:
-  case MODE_BLE_AIRTAG_SPOOF:
     if (WiFi.getMode() != WIFI_OFF)
     {
       WiFi.disconnect(true);
@@ -917,33 +767,7 @@ static void manageWiFiState(AppMode mode)
   case MODE_WIFI_RAW_CAPTURE:
   case MODE_WIFI_AP_STA:
   case MODE_WIFI_SNIFF:
-  case MODE_WIFI_DEAUTH:
-  case MODE_WIFI_DEAUTH_TARGETED:
-  case MODE_WIFI_DEAUTH_MANUAL:
-  case MODE_WIFI_BEACON:
-  case MODE_WIFI_BEACON_RICKROLL:
-  case MODE_WIFI_BEACON_LIST:
-  case MODE_WIFI_BEACON_FUNNY:
-  case MODE_WIFI_AUTH_ATTACK:
-  case MODE_WIFI_MIMIC_FLOOD:
-  case MODE_WIFI_AP_SPAM:
-  case MODE_WIFI_BAD_MESSAGE:
-  case MODE_WIFI_BAD_MESSAGE_TARGETED:
-  case MODE_WIFI_SLEEP_ATTACK:
-  case MODE_WIFI_SLEEP_TARGETED:
-  case MODE_WIFI_SAE_COMMIT:
   case MODE_WIFI_TRAP:
-  case MODE_MDNS:
-  case MODE_NETWORK_ARP_SCAN:
-  case MODE_NETWORK_PORT_SCAN:
-  case MODE_NETWORK_PING_SCAN:
-  case MODE_NETWORK_DNS_SCAN:
-  case MODE_NETWORK_HTTP_SCAN:
-  case MODE_NETWORK_HTTPS_SCAN:
-  case MODE_NETWORK_SMTP_SCAN:
-  case MODE_NETWORK_RDP_SCAN:
-  case MODE_NETWORK_TELNET_SCAN:
-  case MODE_NETWORK_SSH_SCAN:
     if (WiFi.getMode() != WIFI_STA)
     {
       WiFi.mode(WIFI_STA);
@@ -977,16 +801,6 @@ static void manageWiFiState(AppMode mode)
       WiFi.mode(WIFI_OFF);
       Serial.println("[SYS] WiFi OFF for Charge only");
     }
-    netManager.setSuspend(true);
-    break;
-  // Normal modes - WiFi STA, NetManager active
-  case MODE_VAULT:
-  case MODE_DAEMON:
-  case MODE_FAKE_LOGIN:
-  case MODE_QR:
-    netManager.setSuspend(false);
-    break;
-  case MODE_BADWOLF:
     netManager.setSuspend(true);
     break;
   case MODE_NORMAL:
@@ -1033,53 +847,10 @@ static bool initializeMode(AppMode mode)
     Serial.println("[SYS] RADAR mode initialized");
     return true;
 
-  case MODE_WIFI_DEAUTH:
-  {
-    manageWiFiState(mode);
-    WiFi.disconnect(true);
-    delay(80);
-    WiFi.scanNetworks(true, true);
-    wifiScanSelected = 0;
-    wifiListPage = 0;
-    wifiFilteredCount = 0;
-    lastDeauthTargetScanIndex = -1;
-    Serial.println(
-        "[SYS] DEAUTH mode initialized (WiFi disconnected for injection)");
-    return true;
-  }
-
-  case MODE_WIFI_BEACON:
-    manageWiFiState(mode);
-    beaconManager.begin();
-    Serial.println("[SYS] BEACON mode initialized");
-    return true;
-
   case MODE_WIFI_SNIFF:
     manageWiFiState(mode);
     wifiSniffManager.begin();
     Serial.println("[SYS] SNIFF mode initialized");
-    return true;
-
-  case MODE_BLE_SCAN:
-    manageWiFiState(mode);
-    bleManager.beginScan();
-    Serial.println("[SYS] BLE SCAN mode initialized");
-    return true;
-
-  case MODE_FAKE_LOGIN:
-    manageWiFiState(mode);
-    Serial.println("[SYS] FAKE LOGIN mode initialized");
-    return true;
-
-  case MODE_QR:
-    manageWiFiState(mode);
-    Serial.println("[SYS] QR mode initialized");
-    return true;
-
-  case MODE_MDNS:
-    manageWiFiState(mode);
-    mdnsManager.begin();
-    Serial.println("[SYS] MDNS mode initialized");
     return true;
 
   case MODE_WIFI_TRAP:
@@ -1114,23 +885,9 @@ static bool initializeMode(AppMode mode)
     return true;
   }
 
-  case MODE_BADWOLF:
-    manageWiFiState(mode);
-    usbManager.begin();
-    Serial.println("[SYS] BADWOLF mode initialized");
-    return true;
-
-  case MODE_VAULT:
-    manageWiFiState(mode);
-    vaultManager.trySyncNtp();
-    Serial.println("[SYS] VAULT mode initialized");
-    return true;
-
   case MODE_GAME_FORZA:
     manageWiFiState(mode);
-    if (!forzaListeningForAutoSwitch)
-      forzaManager.begin();
-    forzaListeningForAutoSwitch = false; // Reset; Forza mode owns the listener
+    forzaManager.begin();
     Serial.println("[SYS] FORZA mode initialized");
     return true;
 
@@ -1140,12 +897,6 @@ static bool initializeMode(AppMode mode)
     Serial.println("[SYS] BMW Assistant mode initialized");
     return true;
 
-  case MODE_DAEMON:
-    manageWiFiState(mode);
-    Serial.println("[SYS] DAEMON mode initialized");
-    return true;
-
-  // WiFi Scans
   case MODE_WIFI_PROBE_SCAN:
     manageWiFiState(mode);
     wifiSniffManager.begin(SNIFF_MODE_PROBE_SCAN);
@@ -1191,141 +942,6 @@ static bool initializeMode(AppMode mode)
         SNIFF_MODE_AP); // Use AP mode as base, can be extended
     Serial.printf("[SYS] WiFi scan mode %d initialized\n", mode);
     return true;
-  // WiFi Attacks
-  case MODE_WIFI_DEAUTH_TARGETED:
-  case MODE_WIFI_DEAUTH_MANUAL:
-    manageWiFiState(mode);
-    WiFi.disconnect(true);
-    delay(80);
-    WiFi.scanNetworks(true, true);
-    wifiScanSelected = 0;
-    wifiListPage = 0;
-    wifiFilteredCount = 0;
-    lastDeauthTargetScanIndex = -1;
-    Serial.printf("[SYS] DEAUTH mode %d initialized\n", mode);
-    return true;
-  case MODE_WIFI_BEACON_RICKROLL:
-    manageWiFiState(mode);
-    beaconManager.setMode(BEACON_MODE_RICK_ROLL);
-    beaconManager.begin();
-    Serial.println("[SYS] BEACON RICKROLL mode initialized");
-    return true;
-  case MODE_WIFI_BEACON_LIST:
-    manageWiFiState(mode);
-    beaconManager.setMode(BEACON_MODE_CUSTOM_LIST);
-    beaconManager.begin();
-    Serial.println("[SYS] BEACON LIST mode initialized");
-    return true;
-  case MODE_WIFI_BEACON_FUNNY:
-    manageWiFiState(mode);
-    beaconManager.setMode(BEACON_MODE_FUNNY);
-    beaconManager.begin();
-    Serial.println("[SYS] BEACON FUNNY mode initialized");
-    return true;
-  case MODE_WIFI_AUTH_ATTACK:
-  case MODE_WIFI_MIMIC_FLOOD:
-  case MODE_WIFI_AP_SPAM:
-  case MODE_WIFI_BAD_MESSAGE:
-  case MODE_WIFI_BAD_MESSAGE_TARGETED:
-  case MODE_WIFI_SLEEP_ATTACK:
-  case MODE_WIFI_SLEEP_TARGETED:
-  case MODE_WIFI_SAE_COMMIT:
-    manageWiFiState(mode);
-    WiFi.scanNetworks(true, true);
-    Serial.printf("[SYS] WiFi attack mode %d initialized (TODO: implement)\n",
-                  mode);
-    return true; // TODO: Implement these attacks
-  // BLE Scans
-  case MODE_BLE_SCAN_SKIMMERS:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_SKIMMERS);
-    Serial.println("[SYS] BLE SKIMMERS scan initialized");
-    return true;
-  case MODE_BLE_SCAN_AIRTAG:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_AIRTAG);
-    Serial.println("[SYS] BLE AIRTAG scan initialized");
-    return true;
-  case MODE_BLE_SCAN_AIRTAG_MON:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_BASIC);
-    bleManager.startAirTagMonitor();
-    Serial.println("[SYS] BLE AIRTAG MONITOR initialized");
-    return true;
-  case MODE_BLE_SCAN_FLIPPER:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_FLIPPER);
-    Serial.println("[SYS] BLE FLIPPER scan initialized");
-    return true;
-  case MODE_BLE_SCAN_FLOCK:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_FLOCK);
-    Serial.println("[SYS] BLE FLOCK scan initialized");
-    return true;
-  case MODE_BLE_SCAN_ANALYZER:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_ANALYZER);
-    Serial.println("[SYS] BLE ANALYZER initialized");
-    return true;
-  case MODE_BLE_SCAN_SIMPLE:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_SIMPLE);
-    Serial.println("[SYS] BLE SIMPLE scan initialized");
-    return true;
-  case MODE_BLE_SCAN_SIMPLE_TWO:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    bleManager.beginScan(BLE_SCAN_SIMPLE_TWO);
-    Serial.println("[SYS] BLE SIMPLE TWO scan initialized");
-    return true;
-  // BLE Attacks
   case MODE_BLE_SOUR_APPLE:
     manageWiFiState(mode);
     if (WiFi.getMode() != WIFI_OFF)
@@ -1370,9 +986,7 @@ static bool initializeMode(AppMode mode)
     bleManager.startAttack(BLE_ATTACK_SWIFTPAIR_SAMSUNG);
     Serial.println("[SYS] SWIFTPAIR SAMSUNG mode initialized");
     return true;
-  case MODE_BLE_SPAM_ALL:
   case MODE_BLE_FLIPPER_SPAM:
-  case MODE_BLE_AIRTAG_SPOOF:
     manageWiFiState(mode);
     if (WiFi.getMode() != WIFI_OFF)
     {
@@ -1380,24 +994,9 @@ static bool initializeMode(AppMode mode)
       yield();
       WiFi.mode(WIFI_OFF);
     }
-    bleManager.startAttack(BLE_ATTACK_SPAM); // TODO: Add specific attack types
-    Serial.printf("[SYS] BLE attack mode %d initialized\n", mode);
+    bleManager.startAttack(BLE_ATTACK_FLIPPER_SPAM);
+    Serial.println("[SYS] BLE FLIPPER SPAM mode initialized");
     return true;
-  // Network Scans
-  case MODE_NETWORK_ARP_SCAN:
-  case MODE_NETWORK_PORT_SCAN:
-  case MODE_NETWORK_PING_SCAN:
-  case MODE_NETWORK_DNS_SCAN:
-  case MODE_NETWORK_HTTP_SCAN:
-  case MODE_NETWORK_HTTPS_SCAN:
-  case MODE_NETWORK_SMTP_SCAN:
-  case MODE_NETWORK_RDP_SCAN:
-  case MODE_NETWORK_TELNET_SCAN:
-  case MODE_NETWORK_SSH_SCAN:
-    manageWiFiState(mode);
-    Serial.printf("[SYS] Network scan mode %d initialized (TODO: implement)\n",
-                  mode);
-    return true; // TODO: Implement network scans
   case MODE_NORMAL:
     manageWiFiState(mode);
     WiFi.scanDelete();
@@ -1456,15 +1055,13 @@ static bool switchToMode(AppMode newMode)
 /** Старая функция для обратной совместимости */
 static void exitAppModeToNormal()
 {
-  if (currentMode == MODE_GAME_FORZA)
-    forzaAutoSwitchDone = true; // Never auto-switch again after user exit
   switchToMode(MODE_NORMAL);
   Serial.println("[SYS] NETMANAGER RESUMED.");
 }
 
 // ---------------------------------------------------------------------------
-// Menu: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=Meshtastic, 5=System
-// Level 2: Hacker group items (WiFi 20, BLE 12, Network 10, USB 1)
+// Menu: 0=Monitoring, 1=Config, 2=Hacker, 3=BMW, 4=System
+// Hacker: WiFi 14 (scanner + duplicator), BLE 6 (mimic only)
 // ---------------------------------------------------------------------------
 static int submenuCount(int category)
 {
@@ -1473,14 +1070,12 @@ static int submenuCount(int category)
   case 0:
     return 2; // Monitoring: PC, Forza
   case 1:
-    return 5; // Config: AUTO, FLIP, GLITCH, LED, DIM
+    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 2:
-    return HACKER_GROUP_COUNT; // Hacker: WiFi, BLE, Network, USB HID (groups)
+    return HACKER_GROUP_COUNT; // Hacker: WiFi, BLE
   case 3:
     return 1; // BMW: BMW Assistant
   case 4:
-    return 1; // Meshtastic: Switch to Meshtastic
-  case 5:
     return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
     return 2;
@@ -1492,13 +1087,9 @@ static int submenuCountForHackerGroup(int group)
   switch (group)
   {
   case HACKER_GROUP_WIFI:
-    return 20;
+    return 14; // 13 scan + 1 duplicator
   case HACKER_GROUP_BLE:
-    return 12;
-  case HACKER_GROUP_NETWORK:
-    return 10;
-  case HACKER_GROUP_USB:
-    return 1;
+    return 6; // mimic only
   default:
     return 1;
   }
@@ -1524,13 +1115,7 @@ static AppMode getModeForHackerItem(int group, int item)
     case 10: return MODE_WIFI_SIGNAL_STRENGTH;
     case 11: return MODE_WIFI_RAW_CAPTURE;
     case 12: return MODE_WIFI_AP_STA;
-    case 13: return MODE_WIFI_DEAUTH;
-    case 14: return MODE_WIFI_DEAUTH_TARGETED;
-    case 15: return MODE_WIFI_DEAUTH_MANUAL;
-    case 16: return MODE_WIFI_BEACON;
-    case 17: return MODE_WIFI_BEACON_RICKROLL;
-    case 18: return MODE_WIFI_AUTH_ATTACK;
-    case 19: return MODE_WIFI_TRAP;
+    case 13: return MODE_WIFI_TRAP; // WiFi duplicator
     default: return MODE_NORMAL;
     }
   }
@@ -1538,40 +1123,15 @@ static AppMode getModeForHackerItem(int group, int item)
   {
     switch (item)
     {
-    case 0: return MODE_BLE_SCAN;
-    case 1: return MODE_BLE_SCAN_SKIMMERS;
-    case 2: return MODE_BLE_SCAN_AIRTAG;
-    case 3: return MODE_BLE_SCAN_AIRTAG_MON;
-    case 4: return MODE_BLE_SCAN_FLIPPER;
-    case 5: return MODE_BLE_SCAN_ANALYZER;
-    case 6: return MODE_BLE_SPAM;
-    case 7: return MODE_BLE_SOUR_APPLE;
-    case 8: return MODE_BLE_SWIFTPAIR_MICROSOFT;
-    case 9: return MODE_BLE_SWIFTPAIR_GOOGLE;
-    case 10: return MODE_BLE_SWIFTPAIR_SAMSUNG;
-    case 11: return MODE_BLE_FLIPPER_SPAM;
+    case 0: return MODE_BLE_SPAM;
+    case 1: return MODE_BLE_SOUR_APPLE;
+    case 2: return MODE_BLE_SWIFTPAIR_MICROSOFT;
+    case 3: return MODE_BLE_SWIFTPAIR_GOOGLE;
+    case 4: return MODE_BLE_SWIFTPAIR_SAMSUNG;
+    case 5: return MODE_BLE_FLIPPER_SPAM;
     default: return MODE_NORMAL;
     }
   }
-  if (group == HACKER_GROUP_NETWORK)
-  {
-    switch (item)
-    {
-    case 0: return MODE_NETWORK_ARP_SCAN;
-    case 1: return MODE_NETWORK_PORT_SCAN;
-    case 2: return MODE_NETWORK_PING_SCAN;
-    case 3: return MODE_NETWORK_DNS_SCAN;
-    case 4: return MODE_NETWORK_HTTP_SCAN;
-    case 5: return MODE_NETWORK_HTTPS_SCAN;
-    case 6: return MODE_NETWORK_SMTP_SCAN;
-    case 7: return MODE_NETWORK_RDP_SCAN;
-    case 8: return MODE_NETWORK_TELNET_SCAN;
-    case 9: return MODE_NETWORK_SSH_SCAN;
-    default: return MODE_NORMAL;
-    }
-  }
-  if (group == HACKER_GROUP_USB && item == 0)
-    return MODE_BADWOLF;
   return MODE_NORMAL;
 }
 
@@ -1682,14 +1242,50 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     else if (item == 4)
     {
       settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
-      display.u8g2().setContrast(settings.lowBrightnessDefault
-                                     ? NOCT_CONTRAST_MIN
-                                     : NOCT_CONTRAST_MAX);
+      settings.displayContrast =
+          settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX;
+      display.u8g2().setContrast(settings.displayContrast);
       Preferences prefs;
       prefs.begin("nocturne", false);
       prefs.putBool("lowBright", settings.lowBrightnessDefault);
+      prefs.putInt("contrast", settings.displayContrast);
       prefs.end();
       snprintf(toastMsg, sizeof(toastMsg), "Saved");
+      toastUntil = now + 800;
+    }
+    else if (item == 5)
+    {
+      // CONTRAST: cycle 12 -> 64 -> 128 -> 192 -> 255 -> 12
+      const int levels[] = {NOCT_CONTRAST_MIN, 64, 128, 192, NOCT_CONTRAST_MAX};
+      const int nLevels = sizeof(levels) / sizeof(levels[0]);
+      int i = 0;
+      while (i < nLevels && levels[i] != settings.displayContrast)
+        i++;
+      settings.displayContrast = levels[(i + 1) % nLevels];
+      display.u8g2().setContrast(settings.displayContrast);
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putInt("contrast", settings.displayContrast);
+      prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "C:%d", settings.displayContrast);
+      toastUntil = now + 800;
+    }
+    else if (item == 6)
+    {
+      // TIMEOUT: 0 -> 30 -> 60 -> 0 (display dim after sec of no input)
+      if (settings.displayTimeoutSec == 0)
+        settings.displayTimeoutSec = 30;
+      else if (settings.displayTimeoutSec == 30)
+        settings.displayTimeoutSec = 60;
+      else
+        settings.displayTimeoutSec = 0;
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      prefs.putInt("dispTimeout", settings.displayTimeoutSec);
+      prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg),
+              settings.displayTimeoutSec ? "T:%ds" : "T:OFF",
+              settings.displayTimeoutSec);
       toastUntil = now + 800;
     }
     return true;
@@ -1712,77 +1308,6 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     return true;
   }
   if (cat == 4)
-  {
-    // Meshtastic: flash from LittleFS /meshtastic.bin to ota_1, then boot ota_1
-    if (item == 0)
-    {
-      const esp_partition_t *ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
-                                                             ESP_PARTITION_SUBTYPE_APP_OTA_1,
-                                                             NULL);
-      if (!ota1)
-        ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, "app1");
-      if (!ota1)
-        ota1 = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, "app1");
-      if (!ota1)
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "No ota_1 - reflash FW");
-        toastUntil = now + 2500;
-        return true;
-      }
-      bool flashed = false;
-      if (LittleFS.begin(false))
-      {
-        File f = LittleFS.open("/meshtastic.bin", "r");
-        if (f && f.size() > 0 && (size_t)f.size() <= ota1->size)
-        {
-          esp_ota_handle_t otaHandle = 0;
-          if (esp_ota_begin(ota1, (size_t)f.size(), &otaHandle) == ESP_OK)
-          {
-            static const size_t kChunk = 4096;
-            uint8_t buf[kChunk];
-            size_t written = 0;
-            bool ok = true;
-            while (written < (size_t)f.size() && ok)
-            {
-              size_t toRead = (size_t)f.size() - written;
-              if (toRead > kChunk)
-                toRead = kChunk;
-              size_t n = f.read(buf, toRead);
-              if (n == 0)
-                break;
-              if (esp_ota_write(otaHandle, buf, n) != ESP_OK)
-                ok = false;
-              else
-                written += n;
-            }
-            if (ok && esp_ota_end(otaHandle) == ESP_OK)
-              flashed = true;
-          }
-          f.close();
-        }
-        LittleFS.end();
-      }
-      if (!flashed)
-      {
-        // No file or flash failed: still try to switch if ota_1 might already have Meshtastic
-        (void)0;
-      }
-      if (esp_ota_set_boot_partition(ota1) != ESP_OK)
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "Switch FAIL");
-        toastUntil = now + 2000;
-        return true;
-      }
-      quickMenuOpen = false;
-      rebootConfirmed = false;
-      snprintf(toastMsg, sizeof(toastMsg), flashed ? "Flashed+reboot" : "Meshtastic...");
-      toastUntil = now + 500;
-      delay(400);
-      esp_restart();
-    }
-    return true;
-  }
-  if (cat == 5)
   {
     // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
     if (item == 0)
@@ -1834,29 +1359,17 @@ void loop()
 {
   unsigned long now = millis();
 
-  // 1. Critical background tasks
-  netManager.tick(now);
+  // 1. Critical background tasks — only when actually in that mode
+  // PC monitoring: connect/tick only when user is viewing PC (not in menu/splash)
+  bool pcMonitoringActive =
+      (currentMode == MODE_NORMAL && splashDone && !quickMenuOpen);
+  if (pcMonitoringActive)
+    netManager.tick(now);
+  else if (netManager.isTcpConnected())
+    netManager.disconnectTcp();
+
   if (currentMode == MODE_GAME_FORZA)
-  {
     forzaManager.tick();
-  }
-  else if (currentMode == MODE_NORMAL && netManager.isWifiConnected() &&
-           !forzaAutoSwitchDone)
-  {
-    // Listen for Forza UDP to auto-switch once when first packet arrives
-    if (!forzaListeningForAutoSwitch)
-    {
-      forzaManager.begin();
-      forzaListeningForAutoSwitch = true;
-    }
-    forzaManager.tick();
-    if (forzaManager.isConnected())
-    {
-      forzaAutoSwitchDone = true;
-      if (switchToMode(MODE_GAME_FORZA))
-        needRedraw = true;
-    }
-  }
 
   if (netManager.isTcpConnected())
   {
@@ -1898,6 +1411,8 @@ void loop()
 
   // 2. Non-blocking input
   ButtonEvent event = input.update();
+  if (event != EV_NONE)
+    lastInputTime = now;
 
   // 3. Global: DOUBLE = open menu when closed; when menu already open, leave
   // EV_DOUBLE for menu block (back / close). Menu is available regardless of
@@ -1952,7 +1467,7 @@ void loop()
       lastCarousel = now;
     }
   }
-  if (netManager.isTcpConnected() &&
+  if (pcMonitoringActive && netManager.isTcpConnected() &&
       netManager.getLastSentScreen() != currentScene)
   {
     char screenMsg[16];
@@ -2134,7 +1649,7 @@ void loop()
       {
         int count = submenuCount(menuCategory);
         quickMenuItem = (quickMenuItem + 1) % count;
-        if (menuCategory == 5 && quickMenuItem != 0)
+        if (menuCategory == 4 && quickMenuItem != 0)
           rebootConfirmed = false;
       }
       else
@@ -2193,64 +1708,6 @@ void loop()
         needRedraw = true;
       }
       break;
-    case MODE_WIFI_DEAUTH:
-    {
-      if (event == EV_SHORT)
-      {
-        int n = WiFi.scanComplete();
-        if (n > 0)
-        {
-          sortAndFilterWiFiNetworks();
-          int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
-          if (count > 0)
-          {
-            wifiScanSelected = (wifiScanSelected + 1) % count;
-            if (wifiScanSelected >= wifiListPage + 5)
-              wifiListPage = wifiScanSelected - 4;
-            else if (wifiScanSelected < wifiListPage)
-              wifiListPage = wifiScanSelected;
-          }
-        }
-        needRedraw = true;
-      }
-      else if (event == EV_LONG)
-      {
-        if (kickManager.isAttacking())
-        {
-          kickManager.stopAttack();
-        }
-        else
-        {
-          int n = WiFi.scanComplete();
-          if (n > 0)
-          {
-            sortAndFilterWiFiNetworks();
-            int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
-            if (count > 0)
-            {
-              int actualIndex =
-                  (wifiFilteredCount > 0 &&
-                   wifiScanSelected < wifiFilteredCount)
-                      ? wifiSortedIndices[wifiScanSelected]
-                      : (wifiScanSelected >= 0 && wifiScanSelected < n
-                             ? wifiScanSelected
-                             : 0);
-              if (lastDeauthTargetScanIndex != actualIndex)
-              {
-                kickManager.setTargetFromScan(actualIndex);
-                lastDeauthTargetScanIndex = actualIndex;
-              }
-              else
-              {
-                kickManager.startAttack();
-              }
-            }
-          }
-        }
-        needRedraw = true;
-      }
-      break;
-    }
     case MODE_RADAR:
       if (event == EV_SHORT)
       {
@@ -2297,39 +1754,6 @@ void loop()
         needRedraw = true;
       }
       break;
-    case MODE_VAULT:
-      if (event == EV_SHORT)
-      {
-        int n = vaultManager.getAccountCount();
-        if (n > 0)
-          vaultManager.setCurrentIndex((vaultManager.getCurrentIndex() + 1) %
-                                       n);
-        needRedraw = true;
-      }
-      break;
-    case MODE_BADWOLF:
-      if (event == EV_SHORT)
-      {
-        badWolfScriptIndex =
-            (badWolfScriptIndex + 1) % UsbManager::DUCKY_SCRIPT_COUNT;
-        needRedraw = true;
-      }
-      else if (event == EV_LONG)
-      {
-        if (badWolfScriptIndex == 4)
-          usbManager.runBackdoor();
-        else
-          usbManager.runDuckyScript(badWolfScriptIndex);
-        needRedraw = true;
-      }
-      break;
-    case MODE_WIFI_BEACON:
-      if (event == EV_SHORT)
-      {
-        beaconManager.nextSSID();
-        needRedraw = true;
-      }
-      break;
     case MODE_WIFI_SNIFF:
       if (event == EV_SHORT)
       {
@@ -2339,44 +1763,6 @@ void loop()
           wifiSniffSelected = (wifiSniffSelected + 1) % n;
           needRedraw = true;
         }
-      }
-      break;
-    case MODE_BLE_SCAN:
-      if (event == EV_SHORT)
-      {
-        int n = bleManager.getScanCount();
-        if (n > 0)
-        {
-          bleScanSelected = (bleScanSelected + 1) % n;
-          needRedraw = true;
-        }
-      }
-      else if (event == EV_LONG)
-      {
-        int n = bleManager.getScanCount();
-        if (n > 0)
-        {
-          bleManager.cloneDevice(bleScanSelected);
-          needRedraw = true;
-        }
-      }
-      break;
-    case MODE_FAKE_LOGIN:
-    case MODE_QR:
-      if (event == EV_SHORT)
-        needRedraw = true;
-      break;
-    case MODE_MDNS:
-      if (event == EV_SHORT)
-      {
-        static int mdnsNameIdx = 0;
-        const char *names[] = {"NOCTURNE", "HP-Print", "Chromecast", "AirPlay"};
-        mdnsNameIdx = (mdnsNameIdx + 1) % 4;
-        mdnsManager.setServiceName(names[mdnsNameIdx]);
-        if (mdnsManager.isActive())
-          mdnsManager.stop();
-        mdnsManager.begin();
-        needRedraw = true;
       }
       break;
     case MODE_BMW_ASSISTANT:
@@ -2449,6 +1835,14 @@ void loop()
   }
   needRedraw = false;
 
+  if (lastInputTime == 0)
+    lastInputTime = now;
+  if (!quickMenuOpen && settings.displayTimeoutSec > 0 &&
+      (now - lastInputTime > (unsigned long)settings.displayTimeoutSec * 1000))
+    display.u8g2().setContrast(0);
+  else
+    display.u8g2().setContrast(settings.displayContrast);
+
   display.clearBuffer();
   bool signalLost = splashDone && netManager.isSignalLost(now);
   if (signalLost && netManager.isTcpConnected() && netManager.hasReceivedData())
@@ -2464,7 +1858,8 @@ void loop()
         menuLevel, menuCategory, quickMenuItem, menuHackerGroup,
         settings.carouselEnabled, settings.carouselIntervalSec,
         settings.displayInverted, settings.glitchEnabled, settings.ledEnabled,
-        settings.lowBrightnessDefault, rebootConfirmed);
+        settings.lowBrightnessDefault, rebootConfirmed,
+        settings.displayContrast, settings.displayTimeoutSec);
   }
   else
   {
@@ -2552,11 +1947,6 @@ void loop()
       }
       break;
     }
-    case MODE_DAEMON:
-      // Полноэкранный режим без хедера; батарея не рисуем
-      sceneManager.drawDaemon(bootTime, netManager.isWifiConnected(),
-                              netManager.isTcpConnected(), netManager.rssi());
-      break;
     case MODE_CHARGE_ONLY:
       sceneManager.drawChargeOnlyScreen(state.batteryPct, state.isCharging,
                                         state.batteryVoltage);
@@ -2589,202 +1979,16 @@ void loop()
       wifiSniffManager.tick();
       sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
       break;
-    case MODE_WIFI_DEAUTH:
-    {
-      int n = WiFi.scanComplete();
-      if (n > 0 && wifiFilteredCount == 0)
-      {
-        sortAndFilterWiFiNetworks();
-      }
-      kickManager.tick();
-      static char deauthFooter[48];
-      snprintf(deauthFooter, sizeof(deauthFooter), "%s PKTS:%d  L=sel L=atk",
-               kickManager.isAttacking() ? "INJ" : "IDLE",
-               kickManager.getPacketCount());
-      sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage,
-                                   wifiFilteredCount > 0 ? wifiSortedIndices
-                                                         : nullptr,
-                                   wifiFilteredCount, deauthFooter);
-      break;
-    }
-    case MODE_WIFI_BEACON:
-    case MODE_WIFI_BEACON_RICKROLL:
-    case MODE_WIFI_BEACON_LIST:
-    case MODE_WIFI_BEACON_FUNNY:
-      beaconManager.tick();
-      sceneManager.drawBeaconMode(beaconManager.getCurrentSSID(),
-                                  beaconManager.getBeaconCount(),
-                                  beaconManager.getCurrentIndex(), 8);
-      break;
-    case MODE_WIFI_AUTH_ATTACK:
-    case MODE_WIFI_MIMIC_FLOOD:
-    case MODE_WIFI_AP_SPAM:
-    case MODE_WIFI_BAD_MESSAGE:
-    case MODE_WIFI_BAD_MESSAGE_TARGETED:
-    case MODE_WIFI_SLEEP_ATTACK:
-    case MODE_WIFI_SLEEP_TARGETED:
-    case MODE_WIFI_SAE_COMMIT:
-    {
-      wifiAttackManager.tick();
-      static char attackFooter[48];
-      const char *attackNames[] = {"AUTH", "MIMIC", "AP SPAM", "BAD MSG",
-                                   "BAD MSG T", "SLEEP", "SLEEP T", "SAE"};
-      int attackIdx = 0;
-      switch (currentMode)
-      {
-      case MODE_WIFI_AUTH_ATTACK:
-        attackIdx = 0;
-        break;
-      case MODE_WIFI_MIMIC_FLOOD:
-        attackIdx = 1;
-        break;
-      case MODE_WIFI_AP_SPAM:
-        attackIdx = 2;
-        break;
-      case MODE_WIFI_BAD_MESSAGE:
-        attackIdx = 3;
-        break;
-      case MODE_WIFI_BAD_MESSAGE_TARGETED:
-        attackIdx = 4;
-        break;
-      case MODE_WIFI_SLEEP_ATTACK:
-        attackIdx = 5;
-        break;
-      case MODE_WIFI_SLEEP_TARGETED:
-        attackIdx = 6;
-        break;
-      case MODE_WIFI_SAE_COMMIT:
-        attackIdx = 7;
-        break;
-      default:
-        break;
-      }
-      snprintf(attackFooter, sizeof(attackFooter), "%s PKTS:%lu",
-               attackNames[attackIdx], wifiAttackManager.getPacketsSent());
-      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, attackFooter);
-      break;
-    }
-    case MODE_NETWORK_ARP_SCAN:
-    case MODE_NETWORK_PORT_SCAN:
-    case MODE_NETWORK_PING_SCAN:
-    case MODE_NETWORK_DNS_SCAN:
-    case MODE_NETWORK_HTTP_SCAN:
-    case MODE_NETWORK_HTTPS_SCAN:
-    case MODE_NETWORK_SMTP_SCAN:
-    case MODE_NETWORK_RDP_SCAN:
-    case MODE_NETWORK_TELNET_SCAN:
-    case MODE_NETWORK_SSH_SCAN:
-    {
-      networkScanManager.tick();
-      static char scanFooter[48];
-      const char *scanNames[] = {"ARP", "PORT", "PING", "DNS", "HTTP",
-                                 "HTTPS", "SMTP", "RDP", "TELNET", "SSH"};
-      int scanIdx = 0;
-      switch (currentMode)
-      {
-      case MODE_NETWORK_ARP_SCAN:
-        scanIdx = 0;
-        break;
-      case MODE_NETWORK_PORT_SCAN:
-        scanIdx = 1;
-        break;
-      case MODE_NETWORK_PING_SCAN:
-        scanIdx = 2;
-        break;
-      case MODE_NETWORK_DNS_SCAN:
-        scanIdx = 3;
-        break;
-      case MODE_NETWORK_HTTP_SCAN:
-        scanIdx = 4;
-        break;
-      case MODE_NETWORK_HTTPS_SCAN:
-        scanIdx = 5;
-        break;
-      case MODE_NETWORK_SMTP_SCAN:
-        scanIdx = 6;
-        break;
-      case MODE_NETWORK_RDP_SCAN:
-        scanIdx = 7;
-        break;
-      case MODE_NETWORK_TELNET_SCAN:
-        scanIdx = 8;
-        break;
-      case MODE_NETWORK_SSH_SCAN:
-        scanIdx = 9;
-        break;
-      default:
-        break;
-      }
-      snprintf(scanFooter, sizeof(scanFooter), "%s HOSTS:%d %s",
-               scanNames[scanIdx], networkScanManager.getHostCount(),
-               networkScanManager.isScanComplete() ? "DONE" : "SCAN");
-      sceneManager.drawWiFiScanner(0, 0, nullptr, 0, scanFooter);
-      break;
-    }
-    case MODE_BLE_SCAN_SKIMMERS:
-    case MODE_BLE_SCAN_AIRTAG:
-    case MODE_BLE_SCAN_FLIPPER:
-    case MODE_BLE_SCAN_FLOCK:
-    case MODE_BLE_SCAN_ANALYZER:
-    case MODE_BLE_SCAN_SIMPLE:
-    case MODE_BLE_SCAN_SIMPLE_TWO:
-    {
-      static char bleFooter[48];
-      const char *scanNames[] = {"SKIMMERS", "AIRTAG", "FLIPPER", "FLOCK",
-                                 "ANALYZER", "SIMPLE", "SIMPLE2"};
-      int scanIdx = 0;
-      int count = 0;
-      switch (currentMode)
-      {
-      case MODE_BLE_SCAN_SKIMMERS:
-        scanIdx = 0;
-        count = bleManager.getSkimmerCount();
-        break;
-      case MODE_BLE_SCAN_AIRTAG:
-        scanIdx = 1;
-        count = bleManager.getAirTagCount();
-        break;
-      case MODE_BLE_SCAN_FLIPPER:
-        scanIdx = 2;
-        count = bleManager.getFlipperCount();
-        break;
-      case MODE_BLE_SCAN_FLOCK:
-        scanIdx = 3;
-        count = bleManager.getFlockCount();
-        break;
-      case MODE_BLE_SCAN_ANALYZER:
-        scanIdx = 4;
-        count = bleManager.getAnalyzerValue();
-        break;
-      case MODE_BLE_SCAN_SIMPLE:
-      case MODE_BLE_SCAN_SIMPLE_TWO:
-        scanIdx = currentMode == MODE_BLE_SCAN_SIMPLE ? 5 : 6;
-        count = bleManager.getScanCount();
-        break;
-      default:
-        break;
-      }
-      snprintf(bleFooter, sizeof(bleFooter), "%s CNT:%d", scanNames[scanIdx],
-               count);
-      sceneManager.drawBleScanMode(bleScanSelected, bleManager);
-      break;
-    }
-    case MODE_BLE_SCAN_AIRTAG_MON:
-    {
-      int count = bleManager.getAirTagCount();
-      static char airtagFooter[48];
-      snprintf(airtagFooter, sizeof(airtagFooter), "AIRTAG MON CNT:%d", count);
-      sceneManager.drawBleScanMode(bleScanSelected, bleManager);
-      break;
-    }
     case MODE_WIFI_SNIFF:
       wifiSniffManager.tick();
       sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
       break;
-    case MODE_BLE_SCAN:
-      sceneManager.drawBleScanMode(bleScanSelected, bleManager);
-      break;
     case MODE_BLE_SPAM:
+    case MODE_BLE_SOUR_APPLE:
+    case MODE_BLE_SWIFTPAIR_MICROSOFT:
+    case MODE_BLE_SWIFTPAIR_GOOGLE:
+    case MODE_BLE_SWIFTPAIR_SAMSUNG:
+    case MODE_BLE_FLIPPER_SPAM:
     {
       static int lastPhantomPayloadIndex = -1;
       if (bleManager.isActive())
@@ -2798,9 +2002,6 @@ void loop()
       lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
       break;
     }
-    case MODE_BADWOLF:
-      sceneManager.drawBadWolf(badWolfScriptIndex);
-      break;
     case MODE_WIFI_TRAP:
       if (trapManager.isActive())
       {
@@ -2810,27 +2011,6 @@ void loop()
           trapManager.getClientCount(), trapManager.getLogsCaptured(),
           trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
           trapManager.getClonedSSID());
-      break;
-    case MODE_VAULT:
-    {
-      vaultManager.tick();
-      static char codeBuf[8];
-      vaultManager.getCurrentCode(codeBuf, sizeof(codeBuf));
-      sceneManager.drawVaultMode(
-          vaultManager.getAccountName(vaultManager.getCurrentIndex()), codeBuf,
-          vaultManager.getCountdownSeconds());
-      break;
-    }
-    case MODE_FAKE_LOGIN:
-      sceneManager.drawFakeLoginMode();
-      break;
-    case MODE_QR:
-      sceneManager.drawQrMode("NOCTURNE_OS");
-      break;
-    case MODE_MDNS:
-      mdnsManager.tick();
-      sceneManager.drawMdnsMode(mdnsManager.getServiceName(),
-                                mdnsManager.isActive());
       break;
     case MODE_GAME_FORZA:
     {

@@ -45,7 +45,8 @@ public:
   void drawMenu(int menuLevel, int menuCategory, int mainIndex,
                 int menuHackerGroup, bool carouselOn, int carouselSec,
                 bool screenRotated, bool glitchEnabled, bool ledEnabled,
-                bool lowBrightnessDefault, bool rebootConfirmed = false);
+                bool lowBrightnessDefault, bool rebootConfirmed = false,
+                int displayContrast = 128, int displayTimeoutSec = 0);
   /** Charge-only full screen: battery %, charging indicator, voltage. */
   void drawChargeOnlyScreen(int pct, bool isCharging, float batteryVoltage);
   /** Brief toast overlay (e.g. "FAIL", "Saved"). Call after main content. */
