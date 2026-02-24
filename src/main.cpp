@@ -1068,11 +1068,17 @@ void loop()
       {
         if (!bmwManager.isIbusSynced())
         {
+#if NOCT_BMW_DEBUG
+          Serial.println("[BMW] Run ignored: No IBus");
+#endif
           snprintf(toastMsg, sizeof(toastMsg), "No IBus");
           toastUntil = now + 1500;
         }
         else
         {
+#if NOCT_BMW_DEBUG
+          Serial.printf("[BMW] Run action %d (0=Goodbye..11=DoorLock)\n", bmwActionIndex);
+#endif
           switch (bmwActionIndex)
           {
           case 0: bmwManager.sendGoodbyeLights(); break;
@@ -1089,6 +1095,9 @@ void loop()
           case 11: bmwManager.sendDoorsLockKey(); break;
           default: break;
           }
+#if NOCT_BMW_DEBUG
+          Serial.println("[BMW] Run done");
+#endif
           snprintf(toastMsg, sizeof(toastMsg), "OK");
           toastUntil = now + 600;
         }
