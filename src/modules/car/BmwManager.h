@@ -40,6 +40,24 @@ class BmwManager {
   void sendTrunkOpen();
   void sendDoorsUnlockInterior();
   void sendDoorsLockKey();
+  void sendDoorsHardLock();
+  void sendAllExceptDriverLock();
+  void sendDriverDoorLock();
+  void sendDoorsFuelTrunk();
+
+  void sendWindowFrontDriverOpen();
+  void sendWindowFrontDriverClose();
+  void sendWindowFrontPassengerOpen();
+  void sendWindowFrontPassengerClose();
+  void sendWindowRearDriverOpen();
+  void sendWindowRearDriverClose();
+  void sendWindowRearPassengerOpen();
+  void sendWindowRearPassengerClose();
+  void sendWipersFront();
+  void sendWasherFront();
+  void sendInteriorOff();
+  void sendInteriorOn3s();
+  void sendClownFlash();
 
   /** Cyclic light show (e.g. for shows/video): cycles Hazard/Park/Goodbye/LowBeam/LightsOff. */
   void startLightShow();
@@ -73,6 +91,14 @@ class BmwManager {
   /** Last coolant from I-Bus IKE (0x19), -128 = no data. Use when OBD not connected. */
   int getIkeCoolantC() const { return lastIkeCoolantC_; }
 
+  /** Door/lid status from GM 0x7a: byte1 (doors, lock, interior lamp), byte2 (windows, sunroof, trunk). 0xFF = no data. */
+  uint8_t getDoorLidByte1() const { return lastDoorLidByte1_; }
+  uint8_t getDoorLidByte2() const { return lastDoorLidByte2_; }
+  /** Ignition from IKE 0x11: 0=off, 1=pos1, 2=pos2 (run). -1 = no data. */
+  int getIgnitionState() const { return lastIgnition_; }
+  /** Odometer from IKE 0x17 (km), -1 = no data. */
+  int getOdometerKm() const { return lastOdometerKm_; }
+
   void onIbusPacket(uint8_t *packet);
   void onPhoneConnectionChanged(bool connected);
 
@@ -96,7 +122,13 @@ class BmwManager {
   int obdCoolantTempC_ = -1;
   int obdOilTempC_ = -1;
   int lastIkeCoolantC_ = -128;
+  uint8_t lastDoorLidByte1_ = 0xFF;
+  uint8_t lastDoorLidByte2_ = 0xFF;
+  int lastIgnition_ = -1;
+  int lastOdometerKm_ = -1;
   unsigned long lastPollMs_ = 0;
+  uint8_t pollAlternate_ = 0;
+  bool welcomeSentOnConnect_ = false;
   bool lightShowActive_ = false;
   uint8_t lightShowStep_ = 0;
   unsigned long lastLightShowMs_ = 0;

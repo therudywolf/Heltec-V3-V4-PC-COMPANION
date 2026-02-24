@@ -26,9 +26,14 @@ class BleKeyService {
   /** Optional: when phone writes to Now Playing characteristic (track\\0artist), this is called. */
   void setNowPlayingCallback(void (*cb)(const char *track, const char *artist)) { nowPlayingCb_ = cb; }
 
-  /** Update status characteristic (READ/NOTIFY). Call from BmwManager::tick(). lastMflAction: 0=none, 1=next, 2=prev, 3=play_pause, 4=vol_up, 5=vol_down. */
+  /** Update status characteristic (READ/NOTIFY). Call from BmwManager::tick().
+   * lastMflAction: 0=none, 1=next, 2=prev, 3=play_pause, 4=vol_up, 5=vol_down.
+   * doorByte1, doorByte2: GM 0x7a; lockState: 0=unlocked, 1=locked, 2=double, 0xFF=unknown;
+   * ignition: 0=off, 1=pos1, 2=pos2, -1=unknown; odometerKm: -1 = unknown. */
   void updateStatus(bool ibusSynced, bool phoneConnected, bool pdcValid, bool obdConnected,
-                   int coolantC, int oilC, int rpm, const int *pdcDists, uint8_t lastMflAction);
+                   int coolantC, int oilC, int rpm, const int *pdcDists, uint8_t lastMflAction,
+                   uint8_t doorByte1 = 0xFF, uint8_t doorByte2 = 0xFF, uint8_t lockState = 0xFF,
+                   int ignition = -1, int odometerKm = -1);
 
   /** Optional: when phone writes to cluster-text characteristic, this is called with UTF-8 string (max 20 bytes). */
   void setClusterTextCallback(void (*cb)(const char *text)) { clusterTextCb_ = cb; }
@@ -52,7 +57,7 @@ class BleKeyService {
   void (*nowPlayingCb_)(const char *track, const char *artist) = nullptr;
   void (*clusterTextCb_)(const char *text) = nullptr;
 
-  static const size_t kStatusPacketLen = 10;
+  static const size_t kStatusPacketLen = 16;
   uint8_t lastStatusPacket_[kStatusPacketLen];
   bool lastStatusPacketValid_ = false;
 

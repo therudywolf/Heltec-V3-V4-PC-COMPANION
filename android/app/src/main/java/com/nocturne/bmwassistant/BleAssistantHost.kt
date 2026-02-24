@@ -5,4 +5,5 @@ interface BleAssistantHost {
     fun sendNowPlaying(track: String, artist: String)
     fun sendClusterText(text: String)
     fun isConnected(): Boolean
+    fun isE46Model(): Boolean
 }

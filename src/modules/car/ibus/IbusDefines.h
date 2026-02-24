@@ -21,6 +21,9 @@
 #define IBUS_DEV_STAT_REQ    0x01
 #define IBUS_DEV_STAT_RDY    0x02
 #define IBUS_VEHICLE_CTRL    0x0C
+#define IBUS_GM_STAT_REQ     0x79
+#define IBUS_GM_STAT_RPLY    0x7A
+#define IBUS_IGN_STAT_REQ   0x10
 #define IBUS_IGN_STAT_RPLY   0x11
 #define IBUS_ODMTR_STAT_REQ  0x16
 #define IBUS_ODMTR_STAT_RPLY 0x17

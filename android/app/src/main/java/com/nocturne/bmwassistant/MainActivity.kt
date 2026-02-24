@@ -14,6 +14,7 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -40,6 +41,16 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
         private const val prefsName = "bmw_assistant"
         private const val prefsLastDevice = "last_device_address"
         private const val prefsAutoConnect = "auto_connect"
+        private const val prefsTheme = "theme"
+        private const val prefsCarModel = "car_model"
+        private const val prefsWelcomeCluster = "welcome_cluster"
+        private const val prefsShiftRpm = "shift_rpm"
+        private const val prefsShowTrackCluster = "show_track_cluster"
+        private const val prefsConfirmDangerous = "confirm_dangerous"
+        private const val prefsLeaveCloseWindows = "scenario_leave_close_windows"
+        private const val prefsLeaveLock = "scenario_leave_lock"
+        private const val prefsLeaveFollowMeHome = "scenario_leave_follow_me_home"
+        private const val prefsLeaveGoodbyeLights = "scenario_leave_goodbye_lights"
     }
 
     private var bluetoothAdapter: BluetoothAdapter? = null
@@ -56,6 +67,7 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyThemeFromPref()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         viewModel = ViewModelProvider(this)[BleAssistantViewModel::class.java]
@@ -72,6 +84,7 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
                 R.id.nav_commands -> pager.setCurrentItem(1, true)
                 R.id.nav_media -> pager.setCurrentItem(2, true)
                 R.id.nav_cluster -> pager.setCurrentItem(3, true)
+                R.id.nav_settings -> pager.setCurrentItem(4, true)
             }
             true
         }
@@ -103,6 +116,92 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
 
     fun setAutoConnectPref(value: Boolean) {
         getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsAutoConnect, value).apply()
+    }
+
+    fun getThemePref(): String =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(prefsTheme, "system") ?: "system"
+
+    fun setThemePref(value: String) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putString(prefsTheme, value).apply()
+    }
+
+    private fun applyThemeFromPref() {
+        val theme = getThemePref()
+        val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        when (theme) {
+            "light" -> setTheme(R.style.Theme_BMWAssistant_Light)
+            "dark" -> setTheme(R.style.Theme_BMWAssistant_Dark)
+            else -> if (isNight) setTheme(R.style.Theme_BMWAssistant_Dark) else setTheme(R.style.Theme_BMWAssistant_Light)
+        }
+    }
+
+    fun getCarModelPref(): String =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(prefsCarModel, "e39_fl") ?: "e39_fl"
+
+    fun setCarModelPref(value: String) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putString(prefsCarModel, value).apply()
+    }
+
+    fun getWelcomeClusterPref(): String =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(prefsWelcomeCluster, "") ?: ""
+
+    fun setWelcomeClusterPref(value: String) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putString(prefsWelcomeCluster, value.take(20)).apply()
+    }
+
+    fun getShiftRpmPref(): Int =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getInt(prefsShiftRpm, 5500).coerceIn(1000, 8000)
+
+    fun setShiftRpmPref(value: Int) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putInt(prefsShiftRpm, value.coerceIn(1000, 8000)).apply()
+    }
+
+    fun getShowTrackClusterPref(): Boolean =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getBoolean(prefsShowTrackCluster, true)
+
+    fun setShowTrackClusterPref(value: Boolean) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsShowTrackCluster, value).apply()
+    }
+
+    fun getConfirmDangerousPref(): Boolean =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getBoolean(prefsConfirmDangerous, true)
+
+    fun setConfirmDangerousPref(value: Boolean) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsConfirmDangerous, value).apply()
+    }
+
+    fun getScenarioLeaveCloseWindows(): Boolean =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getBoolean(prefsLeaveCloseWindows, true)
+
+    fun setScenarioLeaveCloseWindows(value: Boolean) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsLeaveCloseWindows, value).apply()
+    }
+
+    fun getScenarioLeaveLock(): Boolean =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getBoolean(prefsLeaveLock, true)
+
+    fun setScenarioLeaveLock(value: Boolean) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsLeaveLock, value).apply()
+    }
+
+    fun getScenarioLeaveFollowMeHome(): Boolean =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getBoolean(prefsLeaveFollowMeHome, false)
+
+    fun setScenarioLeaveFollowMeHome(value: Boolean) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsLeaveFollowMeHome, value).apply()
+    }
+
+    fun getScenarioLeaveGoodbyeLights(): Boolean =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getBoolean(prefsLeaveGoodbyeLights, true)
+
+    fun setScenarioLeaveGoodbyeLights(value: Boolean) {
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putBoolean(prefsLeaveGoodbyeLights, value).apply()
+    }
+
+    /** E46 uses K-Bus; cluster label is KOMBI. Others use IKE. */
+    override fun isE46Model(): Boolean {
+        val m = getCarModelPref()
+        return m == "e46" || m == "e46_fl"
     }
 
     override fun isConnected(): Boolean = controlChar != null

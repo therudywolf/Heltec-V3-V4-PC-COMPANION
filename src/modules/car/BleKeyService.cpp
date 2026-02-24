@@ -2,6 +2,7 @@
  * NOCTURNE_OS — BLE key service (NimBLE peripheral).
  */
 #include "BleKeyService.h"
+#include "nocturne/config.h"
 #if __has_include("NimBLEDevice.h")
 #include "NimBLEDevice.h"
 #endif
@@ -69,6 +70,9 @@ void BleKeyService::onConnect() {
   connected_ = true;
   disconnectPending_ = false;
   disconnectReportedAt_ = 0;
+#if NOCT_BMW_DEBUG
+  Serial.println("[BMW BLE] Phone connected");
+#endif
   if (connectionCb_)
     connectionCb_(true);
 }
@@ -77,6 +81,9 @@ void BleKeyService::onDisconnect() {
   connected_ = false;
   disconnectPending_ = true;
   disconnectReportedAt_ = millis();
+#if NOCT_BMW_DEBUG
+  Serial.println("[BMW BLE] Phone disconnected");
+#endif
 }
 
 void BleKeyService::onLightCommandReceived(uint8_t cmd) {
@@ -86,12 +93,22 @@ void BleKeyService::onLightCommandReceived(uint8_t cmd) {
 
 void BleKeyService::begin() {
 #if __has_include("NimBLEDevice.h")
-  if (active_)
+  if (active_) {
+#if NOCT_BMW_DEBUG
+    Serial.println("[BMW BLE] begin skipped (already active)");
+#endif
     return;
+  }
   s_keyService = this;
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW BLE] NimBLE initialized=%d, calling init...\n", NimBLEDevice::getInitialized() ? 1 : 0);
+#endif
   if (!NimBLEDevice::getInitialized())
     NimBLEDevice::init("BMW E39 Key");
   NimBLEServer *pServer = NimBLEDevice::createServer();
+#if NOCT_BMW_DEBUG
+  if (!pServer) Serial.println("[BMW BLE] createServer failed");
+#endif
   if (pServer)
     pServer->setCallbacks(&s_serverCb);
   NimBLEService *pService = pServer ? pServer->createService("1800") : nullptr;
@@ -99,6 +116,9 @@ void BleKeyService::begin() {
     pService->start();
   /* BMW control: one byte = action index 0..11 (Goodbye..DoorLock). */
   NimBLEService *pCtrl = pServer ? pServer->createService("1a2b0001-5e6f-4a5b-8c9d-0e1f2a3b4c5d") : nullptr;
+#if NOCT_BMW_DEBUG
+  if (!pCtrl) Serial.println("[BMW BLE] createService(1a2b0001..) failed");
+#endif
   if (pCtrl) {
     NimBLECharacteristic *pChar = pCtrl->createCharacteristic(
         "1a2b0002-5e6f-4a5b-8c9d-0e1f2a3b4c5d",
@@ -137,6 +157,9 @@ void BleKeyService::begin() {
   active_ = true;
   connected_ = false;
   disconnectPending_ = false;
+#if NOCT_BMW_DEBUG
+  Serial.println("[BMW BLE] begin OK, advertising started (name: BMW E39 Key)");
+#endif
 #endif
 }
 
@@ -148,8 +171,10 @@ void BleKeyService::end() {
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   if (pAdvertising)
     pAdvertising->stop();
+  /* deinit(false): shutdown stack without full clear; deinit(true) can trigger
+   * heap_caps_free "pointer outside heap areas" on mode switch (MODE_7 -> MODE_0). */
   if (NimBLEDevice::getInitialized())
-    NimBLEDevice::deinit(true);
+    NimBLEDevice::deinit(false);
   s_keyService = nullptr;
   active_ = false;
   connected_ = false;
@@ -160,7 +185,9 @@ void BleKeyService::end() {
 
 void BleKeyService::updateStatus(bool ibusSynced, bool phoneConnected, bool pdcValid,
                                  bool obdConnected, int coolantC, int oilC, int rpm,
-                                 const int *pdcDists, uint8_t lastMflAction) {
+                                 const int *pdcDists, uint8_t lastMflAction,
+                                 uint8_t doorByte1, uint8_t doorByte2, uint8_t lockState,
+                                 int ignition, int odometerKm) {
 #if __has_include("NimBLEDevice.h")
   if (!active_ || !s_pStatusChar)
     return;
@@ -180,6 +207,15 @@ void BleKeyService::updateStatus(bool ibusSynced, bool phoneConnected, bool pdcV
   if (!pdcDists)
     buf[5] = buf[6] = buf[7] = buf[8] = 0xFF;
   buf[9] = (lastMflAction <= 5) ? lastMflAction : 0;
+  buf[10] = doorByte1;
+  buf[11] = doorByte2;
+  buf[12] = (lockState <= 2) ? lockState : 0xFF;
+  buf[13] = (ignition >= 0 && ignition <= 3) ? (uint8_t)ignition : 0xFF;
+  if (odometerKm >= 0 && odometerKm <= 65535) {
+    buf[14] = (uint8_t)(odometerKm & 0xFF);
+    buf[15] = (uint8_t)(odometerKm >> 8);
+  } else
+    buf[14] = 0xFF, buf[15] = 0xFF;
 
   bool changed = !lastStatusPacketValid_;
   if (!changed) {
