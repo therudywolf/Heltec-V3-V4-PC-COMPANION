@@ -218,10 +218,11 @@ python monitor.py
 
 | Раздел | Описание |
 |--------|----------|
+| [**Руководство пользователя**](docs/USER_GUIDE.md) | Быстрый старт, кнопка и жесты, все режимы, настройки, типичные проблемы |
 | [Плата и настройки](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md) | Распиновка Heltec V4, config.h, сборка, загрузка |
 | [Мониторинг ПК](docs/monitoring/PC_MONITORING.md) | Телеметрия с ПК, сцены, сервер, алерты |
 | [Forza Data Out](docs/forza/FORZA_SETUP.md) | Дашборд Forza, UDP 5300, настройка в игре |
-| [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE-ключ, I-Bus, подключение, использование |
+| [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE-ключ, I-Bus, свет с телефона, OBD, подключение, использование |
 
 ---
 

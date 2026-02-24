@@ -25,6 +25,7 @@ TrapManager::TrapManager() {
 void TrapManager::start() {
   if (active_)
     return;
+  apFailed_ = false;
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(AP_IP, AP_IP, AP_NETMASK);
   const char *ssidToUse = useClonedSSID_ && clonedSSID_[0] != '\0'
@@ -36,7 +37,11 @@ void TrapManager::start() {
     cloneApPasswordDisplay_[sizeof(cloneApPasswordDisplay_) - 1] = '\0';
   } else
     cloneApPasswordDisplay_[0] = '\0';
-  WiFi.softAP(ssidToUse, pass, 1, 0, 4);
+  if (!WiFi.softAP(ssidToUse, pass, 1, 0, 4)) {
+    apFailed_ = true;
+    Serial.println("[TRAP] AP failed: " + String(ssidToUse));
+    return;
+  }
   dnsServer.start(DNS_PORT, "*", AP_IP);
   setupHandlers();
   server.begin();
@@ -51,6 +56,7 @@ void TrapManager::stop() {
   dnsServer.stop();
   WiFi.softAPdisconnect(true);
   active_ = false;
+  apFailed_ = false;
   Serial.println("[TRAP] AP down.");
 }
 

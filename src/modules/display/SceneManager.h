@@ -83,7 +83,8 @@ public:
   void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
                     unsigned long passwordShowUntil,
                     const char *clonedSSID = nullptr,
-                    const char *cloneApPassword = nullptr);
+                    const char *cloneApPassword = nullptr,
+                    bool apFailed = false);
 
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
 

@@ -60,6 +60,10 @@ public:
   BleScanType getScanType() const { return scanType_; }
   int getScanCount() const { return scanCount_; }
   const BleScanDevice *getScanDevice(int index) const;
+  /** Position in RSSI-sorted list (0 = strongest) for a raw device index */
+  int getSortedPositionForIndex(int rawIndex) const;
+  /** Raw device index at a given position in RSSI-sorted list */
+  int getDeviceIndexAtSortedPosition(int sortedPos) const;
   void cloneDevice(int index);
   bool isCloning() const { return cloning_; }
   void onScanResult(void *device);

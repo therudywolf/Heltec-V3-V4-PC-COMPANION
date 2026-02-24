@@ -350,6 +350,12 @@ void BleManager::onScanResult(void *device) {
     return; // Don't process regular scan when monitoring AirTags
   }
 
+  // For Clone / basic list: skip payload read to avoid NimBLE API issues; go straight to regular scan
+  bool needPayload = (scanType_ == BLE_SCAN_SKIMMERS || scanType_ == BLE_SCAN_FLIPPER ||
+                     scanType_ == BLE_SCAN_FLOCK || scanType_ == BLE_SCAN_ANALYZER);
+  if (!needPayload) {
+    // BLE_SCAN_BASIC, BLE_SCAN_SIMPLE, etc. — add to list without touching payload
+  } else {
   // Get payload for detection (if needed)
 #ifndef HAS_NIMBLE_2
   uint8_t *payLoad = dev->getPayload();
@@ -442,6 +448,7 @@ void BleManager::onScanResult(void *device) {
       analyzerFramesRecvd_++;
     // Continue to regular scan for analyzer
   }
+  }  // end needPayload
 
   // Regular scan
   if (scanCount_ >= BLE_SCAN_DEVICE_MAX)
@@ -546,6 +553,49 @@ const BleScanDevice *BleManager::getScanDevice(int index) const {
   if (index < 0 || index >= scanCount_)
     return nullptr;
   return &scanDevices_[index];
+}
+
+int BleManager::getSortedPositionForIndex(int rawIndex) const {
+  if (rawIndex < 0 || rawIndex >= scanCount_)
+    return 0;
+  int sortedIndices[BLE_SCAN_DEVICE_MAX];
+  int n = scanCount_;
+  if (n > BLE_SCAN_DEVICE_MAX)
+    n = BLE_SCAN_DEVICE_MAX;
+  for (int i = 0; i < n; i++)
+    sortedIndices[i] = i;
+  for (int i = 0; i < n - 1; i++)
+    for (int j = i + 1; j < n; j++)
+      if (scanDevices_[sortedIndices[i]].rssi < scanDevices_[sortedIndices[j]].rssi) {
+        int t = sortedIndices[i];
+        sortedIndices[i] = sortedIndices[j];
+        sortedIndices[j] = t;
+      }
+  for (int i = 0; i < n; i++)
+    if (sortedIndices[i] == rawIndex)
+      return i;
+  return 0;
+}
+
+int BleManager::getDeviceIndexAtSortedPosition(int sortedPos) const {
+  if (sortedPos < 0 || scanCount_ <= 0)
+    return 0;
+  int n = scanCount_;
+  if (n > BLE_SCAN_DEVICE_MAX)
+    n = BLE_SCAN_DEVICE_MAX;
+  int sortedIndices[BLE_SCAN_DEVICE_MAX];
+  for (int i = 0; i < n; i++)
+    sortedIndices[i] = i;
+  for (int i = 0; i < n - 1; i++)
+    for (int j = i + 1; j < n; j++)
+      if (scanDevices_[sortedIndices[i]].rssi < scanDevices_[sortedIndices[j]].rssi) {
+        int t = sortedIndices[i];
+        sortedIndices[i] = sortedIndices[j];
+        sortedIndices[j] = t;
+      }
+  if (sortedPos >= n)
+    sortedPos = n - 1;
+  return sortedIndices[sortedPos];
 }
 
 void BleManager::cloneDevice(int index) {
