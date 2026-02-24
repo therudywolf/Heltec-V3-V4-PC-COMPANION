@@ -192,4 +192,21 @@
 #define NOCT_IBUS_TX_PIN 39
 #define NOCT_IBUS_RX_PIN 38
 
+/* OBD-II / ELM327: 0 = off. When 1, ObdClient uses Serial2 on the pins below to request RPM/coolant/oil and call setObdData. */
+#define NOCT_OBD_ENABLED 0
+#define NOCT_OBD_TX_PIN 9
+#define NOCT_OBD_RX_PIN 10
+
+/* I-Bus full stream: when 1, log every received packet to Serial (hex). For debugging and reverse-engineering. */
+#define NOCT_IBUS_MONITOR_VERBOSE 0
+
+/* USB CDC: 0 = off. When 1, device exposes virtual COM over built-in USB (GPIO19=D-, GPIO20=D+ per DataSheets/WiFi_LoRa_32_V4.2.0.pdf). */
+#define NOCT_USB_CDC_ENABLED 0
+
+/* A2DP Sink + I2S DAC: 0 = off. When 1, board acts as Bluetooth audio sink; PCM output on I2S pins to external DAC (e.g. PCM5102A) -> AUX. Pins per datasheet V4.2.0 (J3 free GPIOs). */
+#define NOCT_A2DP_SINK_ENABLED 0
+#define NOCT_I2S_BCK_PIN 45  /* I2S bit clock -> DAC BCK */
+#define NOCT_I2S_WS_PIN  46  /* I2S word select (LRCK) -> DAC LRCK */
+#define NOCT_I2S_DOUT_PIN 40 /* I2S data out -> DAC DIN */
+
 #endif

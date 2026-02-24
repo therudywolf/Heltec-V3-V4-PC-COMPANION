@@ -8,9 +8,10 @@
 #include <Arduino.h>
 #include "ibus/IbusDriver.h"
 #include "BleKeyService.h"
+#include "A2dpSink.h"
 
-/** Number of I-Bus actions in the assistant menu (lights, locks, trunk, cluster). */
-#define BMW_ACTION_COUNT 10
+/** Number of I-Bus actions in the assistant menu (lights, locks, trunk, cluster, doors). */
+#define BMW_ACTION_COUNT 12
 
 class BmwManager {
  public:
@@ -37,6 +38,13 @@ class BmwManager {
   void sendLock();
   void sendUnlock();
   void sendTrunkOpen();
+  void sendDoorsUnlockInterior();
+  void sendDoorsLockKey();
+
+  /** Cyclic light show (e.g. for shows/video): cycles Hazard/Park/Goodbye/LowBeam/LightsOff. */
+  void startLightShow();
+  void stopLightShow();
+  bool isLightShowActive() const { return lightShowActive_; }
 
   /** MFL: last button from steering wheel (for AVRCP/media). */
   enum MflAction { MFL_NONE = 0, MFL_NEXT, MFL_PREV, MFL_PLAY_PAUSE, MFL_VOL_UP, MFL_VOL_DOWN };
@@ -53,6 +61,8 @@ class BmwManager {
   bool hasPdcData() const { return pdcValid_; }
 
   void sendClusterText(const char *text);
+  /** Send Now Playing to head unit display (MID) via I-Bus UPDATE_MID. Max 12 chars. */
+  void sendUpdateMid();
 
   /** OBD (stub): when ELM327/obd is connected, fill these for display/shift lamp. */
   bool isObdConnected() const { return obdConnected_; }
@@ -60,6 +70,8 @@ class BmwManager {
   int getObdCoolantTempC() const { return obdCoolantTempC_; }
   int getObdOilTempC() const { return obdOilTempC_; }
   void setObdData(bool connected, int rpm, int coolantC, int oilC);
+  /** Last coolant from I-Bus IKE (0x19), -128 = no data. Use when OBD not connected. */
+  int getIkeCoolantC() const { return lastIkeCoolantC_; }
 
   void onIbusPacket(uint8_t *packet);
   void onPhoneConnectionChanged(bool connected);
@@ -67,6 +79,7 @@ class BmwManager {
  private:
   void parseMflButton(uint8_t *packet);
   void parsePdcPacket(uint8_t *packet);
+  static const int kMidDisplayChars = 12;
 
   bool active_ = false;
   bool ibusSynced_ = false;
@@ -82,9 +95,18 @@ class BmwManager {
   int obdRpm_ = 0;
   int obdCoolantTempC_ = -1;
   int obdOilTempC_ = -1;
+  int lastIkeCoolantC_ = -128;
   unsigned long lastPollMs_ = 0;
+  bool lightShowActive_ = false;
+  uint8_t lightShowStep_ = 0;
+  unsigned long lastLightShowMs_ = 0;
+  static const unsigned long kLightShowIntervalMs = 800;
+  unsigned long lastShiftClusterMs_ = 0;
+  static const unsigned long kShiftClusterIntervalMs = 1000;
+  static const int kShiftRpmThreshold = 5500;
   IbusDriver ibus_;
   BleKeyService bleKey_;
+  A2dpSink a2dpSink_;
 };
 
 #endif

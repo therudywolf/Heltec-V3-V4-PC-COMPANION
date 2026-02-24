@@ -25,6 +25,7 @@
 #include "modules/display/SceneManager.h"
 #include "modules/network/TrapManager.h"
 #include "modules/car/BmwManager.h"
+#include "modules/car/ObdClient.h"
 #include "modules/car/ForzaManager.h"
 #include "modules/network/WifiSniffManager.h"
 #include "modules/system/BatteryManager.h"
@@ -52,6 +53,7 @@ TrapManager trapManager;
 WifiSniffManager wifiSniffManager;
 ForzaManager forzaManager;
 BmwManager bmwManager;
+ObdClient obdClient;
 AppState state;
 SceneManager sceneManager(display, state);
 AppModeManager appModeManager(netManager, trapManager, wifiSniffManager,
@@ -356,6 +358,12 @@ void setup()
 
   netManager.begin(WIFI_SSID, WIFI_PASS);
   netManager.setServer(PC_IP, TCP_PORT);
+
+#if NOCT_OBD_ENABLED
+  obdClient.begin(NOCT_OBD_TX_PIN, NOCT_OBD_RX_PIN);
+  obdClient.setDataCallback(
+      [](bool c, int r, int co, int o) { bmwManager.setObdData(c, r, co, o); });
+#endif
 
   batteryManager.update(state);
 }
@@ -975,7 +983,8 @@ void loop()
         if (n > 0)
         {
           sortAndFilterWiFiNetworks();
-          if (wifiFilteredCount > 0)
+          if (wifiFilteredCount > 0 &&
+              wifiScanSelected >= 0 && wifiScanSelected < wifiFilteredCount)
           {
             // Start WiFi clone (Trap) with selected network
             appModeManager.switchToMode(currentMode, MODE_WIFI_TRAP,
@@ -984,15 +993,26 @@ void loop()
             needRedraw = true;
             break;
           }
-          // No selection: cycle sort mode
-          wifiSortMode = (wifiSortMode + 1) % 3;
-          sortAndFilterWiFiNetworks();
-          wifiScanSelected = 0;
-          wifiListPage = 0;
-          Serial.printf("[RADAR] Sort mode: %d\n", wifiSortMode);
+          if (wifiFilteredCount > 0 &&
+              (wifiScanSelected < 0 || wifiScanSelected >= wifiFilteredCount))
+          {
+            snprintf(toastMsg, sizeof(toastMsg), "Select network");
+            toastUntil = now + 1500;
+          }
+          else if (wifiFilteredCount == 0)
+          {
+            // No selection: cycle sort mode
+            wifiSortMode = (wifiSortMode + 1) % 3;
+            sortAndFilterWiFiNetworks();
+            wifiScanSelected = 0;
+            wifiListPage = 0;
+            Serial.printf("[RADAR] Sort mode: %d\n", wifiSortMode);
+          }
         }
         else
         {
+          snprintf(toastMsg, sizeof(toastMsg), "Scan...");
+          toastUntil = now + 1500;
           Serial.println("[RADAR] INITIATING DISCONNECT...");
           WiFi.disconnect(true);
           WiFi.mode(WIFI_OFF);
@@ -1022,7 +1042,9 @@ void loop()
         int n = bleManager.getScanCount();
         if (n > 0)
         {
-          bleCloneSelected = (bleCloneSelected + 1) % n;
+          int pos = bleManager.getSortedPositionForIndex(bleCloneSelected);
+          pos = (pos + 1) % n;
+          bleCloneSelected = bleManager.getDeviceIndexAtSortedPosition(pos);
           needRedraw = true;
         }
       }
@@ -1063,6 +1085,8 @@ void loop()
           case 7: bmwManager.sendLock(); break;
           case 8: bmwManager.sendTrunkOpen(); break;
           case 9: bmwManager.sendClusterText("NOCT"); break;
+          case 10: bmwManager.sendDoorsUnlockInterior(); break;
+          case 11: bmwManager.sendDoorsLockKey(); break;
           default: break;
           }
           snprintf(toastMsg, sizeof(toastMsg), "OK");
@@ -1265,7 +1289,8 @@ void loop()
       sceneManager.drawTrapMode(
           trapManager.getClientCount(), trapManager.getLogsCaptured(),
           trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
-          trapManager.getClonedSSID(), trapManager.getCloneApPassword());
+          trapManager.getClonedSSID(), trapManager.getCloneApPassword(),
+          trapManager.isApFailed());
       break;
     case MODE_GAME_FORZA:
     {
@@ -1276,6 +1301,10 @@ void loop()
     }
     case MODE_BMW_ASSISTANT:
       bmwManager.tick();
+#if NOCT_OBD_ENABLED
+      if (obdClient.isEnabled())
+        obdClient.tick();
+#endif
       sceneManager.drawBmwAssistant(bmwManager, bmwActionIndex);
       break;
     default:

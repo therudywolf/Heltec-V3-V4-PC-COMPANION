@@ -940,50 +940,67 @@ void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
                                         float batteryVoltage)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setDrawColor(0);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
   u8g2.setDrawColor(1);
   u8g2.setFontMode(1);
-  disp_.drawTechFrame(2, 2, NOCT_DISP_W - 4, NOCT_DISP_H - 4);
+  u8g2.setBitmapMode(0);
 
-  const int titleY = 11;
-  const int lineY = 15;
-  const int contentTop = 17;
-  const int footerTop = NOCT_FOOTER_Y;
+  /* Same layout as MAIN: header, two brackets (BAT | VOLT), chamfer status bar. */
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "CHARGE");
 
-  u8g2.setFont(u8g2_font_profont12_tf);
-  u8g2.drawUTF8(8, titleY, "CHARGE ONLY");
-  u8g2.drawHLine(8, lineY, NOCT_DISP_W - 16);
+  /* Left bracket: BAT + percentage (like CPU in MAIN). */
+  disp_.drawTechBrackets(MAIN_CPU_X, MAIN_CPU_Y, MAIN_CPU_W, MAIN_CPU_H,
+                        MAIN_BRACKET_LEN);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(MAIN_CPU_X + 4, MAIN_CPU_Y + 8, "BAT");
 
-  char pctBuf[16];
+  /* Right bracket: V + voltage (like GPU in MAIN). */
+  disp_.drawTechBrackets(MAIN_GPU_X, MAIN_GPU_Y, MAIN_GPU_W, MAIN_GPU_H,
+                        MAIN_BRACKET_LEN);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(MAIN_GPU_X + 4, MAIN_GPU_Y + 8, "V");
+
   if (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f)
   {
+    static char pctBuf[16];
     snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
-    u8g2.setFont(u8g2_font_logisoso32_tn);
+    u8g2.setFont(VALUE_FONT);
     int pw = u8g2.getUTF8Width(pctBuf);
-    int pctBaselineY = contentTop + 24;
-    u8g2.drawUTF8((NOCT_DISP_W - pw) / 2, pctBaselineY, pctBuf);
+    int cx = MAIN_CPU_X + MAIN_CPU_W / 2 - pw / 2;
+    u8g2.drawUTF8(cx, MAIN_CPU_Y + 22, pctBuf);
 
-    u8g2.setFont(u8g2_font_profont12_tf);
-    char line2[32];
-    if (isCharging)
-      snprintf(line2, sizeof(line2), "CHARGING  %.2f V", batteryVoltage);
-    else
-      snprintf(line2, sizeof(line2), "READY  %.2f V", batteryVoltage);
-    int l2w = u8g2.getUTF8Width(line2);
-    int statusY = footerTop - 10;
-    u8g2.drawUTF8((NOCT_DISP_W - l2w) / 2, statusY, line2);
+    static char voltBuf[16];
+    snprintf(voltBuf, sizeof(voltBuf), "%.2f", batteryVoltage);
+    int vw = u8g2.getUTF8Width(voltBuf);
+    int vx = MAIN_GPU_X + MAIN_GPU_W / 2 - vw / 2;
+    u8g2.drawUTF8(vx, MAIN_GPU_Y + 22, voltBuf);
+
+    /* Bottom chamfer: status (like RAM bar in MAIN). */
+    disp_.drawChamferBox(0, MAIN_SCENE_RAM_Y, NOCT_DISP_W, MAIN_SCENE_RAM_H,
+                         MAIN_SCENE_RAM_CHAMFER);
+    u8g2.setFont(LABEL_FONT);
+    const char *statusStr = isCharging ? "CHARGING" : "READY";
+    u8g2.drawUTF8(NOCT_MARGIN + 4, MAIN_SCENE_RAM_TEXT_Y, statusStr);
+    snprintf(pctBuf, sizeof(pctBuf), "%.2f V", batteryVoltage);
+    int sw = u8g2.getUTF8Width(pctBuf);
+    u8g2.drawUTF8(NOCT_DISP_W - NOCT_MARGIN - 4 - sw, MAIN_SCENE_RAM_TEXT_Y,
+                  pctBuf);
   }
   else
   {
-    u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawUTF8((NOCT_DISP_W - u8g2.getUTF8Width("NO BATTERY")) / 2,
-                  contentTop + 14, "NO BATTERY");
-    u8g2.drawUTF8((NOCT_DISP_W - u8g2.getUTF8Width("Connect USB")) / 2,
-                  contentTop + 26, "Connect USB");
+    u8g2.setFont(LABEL_FONT);
+    const char *na = "N/A";
+    int naw = u8g2.getUTF8Width(na);
+    u8g2.drawUTF8(MAIN_CPU_X + MAIN_CPU_W / 2 - naw / 2, MAIN_CPU_Y + 22, na);
+    u8g2.drawUTF8(MAIN_GPU_X + MAIN_GPU_W / 2 - naw / 2, MAIN_GPU_Y + 22, na);
+    disp_.drawChamferBox(0, MAIN_SCENE_RAM_Y, NOCT_DISP_W, MAIN_SCENE_RAM_H,
+                         MAIN_SCENE_RAM_CHAMFER);
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(NOCT_MARGIN + 4, MAIN_SCENE_RAM_TEXT_Y, "Connect USB");
   }
+
   drawBottomHint("2x menu");
-  u8g2.setDrawColor(1);
+  disp_.drawGreebles();
 }
 
 void SceneManager::drawNoDataCross(int x, int y, int w, int h)
@@ -1097,7 +1114,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     else if (menuCategory == 1)
     {
       static const char *hackerItems[] = {"WiFi Clone", "BLE Clone",
-        "BLE Spam", "Infosec"};
+        "BLE Spam", "EAPOL Capture"};
       for (int i = 0; i < count && i < 4; i++)
       {
         strncpy(items[i], hackerItems[i], sizeof(items[i]) - 1);
@@ -1594,21 +1611,21 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   if (footerOverride && filteredCount == 0 && sortedIndices == nullptr)
   {
     u8g2.setDrawColor(1);
-    u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-    u8g2.setDrawColor(0);
-    u8g2.setCursor(NOCT_MARGIN, 7);
-    u8g2.print("ACTIVE");
-    u8g2.setDrawColor(1);
-    u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-    u8g2.setCursor(2, 20);
+    u8g2.setFont(FONT_HEADER);
+    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
+    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+    u8g2.setFont(TINY_FONT);
+    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 6);
     char footer[48];
     strncpy(footer, footerOverride, sizeof(footer) - 1);
     footer[sizeof(footer) - 1] = '\0';
     u8g2.print(footer);
-    u8g2.setCursor(2, 30);
+    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 16);
     u8g2.print("2x BACK to exit");
-    u8g2.setCursor(2, 40);
+    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 26);
     u8g2.print("Mode running...");
+    drawBottomHint();
+    disp_.drawGreebles();
     return;
   }
 
@@ -1619,27 +1636,57 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   // If no WiFi scan data and no footer, show a default message
   if (n == 0 && displayCount == 0 && !footerOverride)
   {
-    disp_.drawCentered(32, "NO DATA");
+    u8g2.setFont(FONT_HEADER);
+    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
+    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+    u8g2.setFont(TINY_FONT);
+    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("NO DATA")) / 2, 32);
+    u8g2.print("NO DATA");
+    drawBottomHint();
+    disp_.drawGreebles();
     return;
   }
 
   if (n == -2)
   {
-    disp_.drawCentered(32, "INIT RADAR...");
+    u8g2.setFont(FONT_HEADER);
+    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
+    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+    u8g2.setFont(TINY_FONT);
+    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("INIT RADAR...")) / 2, 32);
+    u8g2.print("INIT RADAR...");
+    drawBottomHint();
+    disp_.drawGreebles();
     return;
   }
   if (n == -1)
   {
-    disp_.drawCentered(25, "SCANNING...");
+    u8g2.setFont(FONT_HEADER);
+    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
+    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+    u8g2.setFont(TINY_FONT);
+    int tw = u8g2.getUTF8Width("SCANNING...");
+    u8g2.setCursor((NOCT_DISP_W - tw) / 2, NOCT_CONTENT_TOP + 8);
+    u8g2.print("SCANNING...");
     u8g2.drawFrame(34, 35, 60, 4);
     int w = (millis() / 10) % 60;
     u8g2.drawBox(34, 35, w, 4);
+    drawBottomHint();
+    disp_.drawGreebles();
     return;
   }
   if (displayCount == 0 && !footerOverride)
   {
-    disp_.drawCentered(32, "NO SIGNALS");
-    disp_.drawCentered(45, "[PRESS TO RESCAN]");
+    u8g2.setFont(FONT_HEADER);
+    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
+    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+    u8g2.setFont(TINY_FONT);
+    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("NO SIGNALS")) / 2, 28);
+    u8g2.print("NO SIGNALS");
+    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("[PRESS TO RESCAN]")) / 2, 42);
+    u8g2.print("[PRESS TO RESCAN]");
+    drawBottomHint();
+    disp_.drawGreebles();
     return;
   }
 
@@ -1650,19 +1697,13 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     return;
   }
 
-  // --- LIST RENDER (full screen, no header) ---
-  u8g2.setCursor(2, 2);
-  if (useFiltered && filteredCount < n)
-  {
-    u8g2.printf("TARGETS: %d/%d", filteredCount, n);
-  }
-  else
-  {
-    u8g2.printf("TARGETS: %d", displayCount);
-  }
-  u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  // --- LIST RENDER (unified header + content to NOCT_FOOTER_Y) ---
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
+  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+  u8g2.setFont(TINY_FONT);
 
-  int yStart = 12;
+  int yStart = NOCT_CONTENT_TOP;
   int h = 10;
   const int maxVisibleRows = 4;  // keep list above NOCT_FOOTER_Y (50)
   int endIdx = pageOffset + maxVisibleRows < displayCount
@@ -1735,6 +1776,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   }
 
   drawBottomHint();
+  disp_.drawGreebles();
 }
 
 // ---------------------------------------------------------------------------
@@ -1786,23 +1828,29 @@ void SceneManager::drawBleSpammer(int packetCount)
   disp_.drawGreebles();
 }
 
-// --- BLE Clone: scan list, select device, long-press to clone ---
+// --- BLE Clone: scan list (MAIN/menu layout), select device, long-press to clone ---
+#define BLE_CLONE_MAX_VISIBLE 4
+#define BLE_CLONE_NAME_CHARS 11
+
 void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(2, 7);
-  u8g2.print("BLE CLONE");
-  u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+
+  /* Header: same as MAIN/menu */
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "BLE Clone");
+  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+
+  u8g2.setFont(LABEL_FONT);
+  int contentY = NOCT_CONTENT_TOP;
+  int rowH = NOCT_ROW_DY;
 
   if (ble.isCloning())
   {
-    u8g2.setCursor(2, 20);
+    int tw = u8g2.getUTF8Width("Cloning...");
+    u8g2.setCursor((NOCT_DISP_W - tw) / 2, contentY + rowH + 4);
     u8g2.print("Cloning...");
     drawBottomHint("2s: back");
     disp_.drawGreebles();
@@ -1812,7 +1860,8 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
   int n = ble.getScanCount();
   if (n <= 0)
   {
-    u8g2.setCursor(2, 20);
+    int tw = u8g2.getUTF8Width("Scanning...");
+    u8g2.setCursor((NOCT_DISP_W - tw) / 2, contentY + rowH + 4);
     u8g2.print("Scanning...");
     drawBottomHint("1x next  2s clone  2x menu");
     disp_.drawGreebles();
@@ -1824,38 +1873,91 @@ void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
   if (selectedIndex >= n)
     selectedIndex = n - 1;
 
-  int prev = (selectedIndex - 1 + n) % n;
-  int next = (selectedIndex + 1) % n;
-  int indices[3] = {prev, selectedIndex, next};
-  int y = 18;
-  for (int row = 0; row < 3; row++)
+  /* Sort by RSSI (strongest first) for display */
+  int sortedIndices[32];
+  if (n > 32)
+    n = 32;
+  for (int i = 0; i < n; i++)
+    sortedIndices[i] = i;
+  for (int i = 0; i < n - 1; i++)
   {
-    const BleScanDevice *dev = ble.getScanDevice(indices[row]);
+    for (int j = i + 1; j < n; j++)
+    {
+      const BleScanDevice *a = ble.getScanDevice(sortedIndices[i]);
+      const BleScanDevice *b = ble.getScanDevice(sortedIndices[j]);
+      if (a && b && a->rssi < b->rssi)
+      {
+        int t = sortedIndices[i];
+        sortedIndices[i] = sortedIndices[j];
+        sortedIndices[j] = t;
+      }
+    }
+  }
+
+  /* selectedIndex is raw index; find its position in sorted list */
+  int selectedSortedRow = 0;
+  for (int i = 0; i < n; i++)
+    if (sortedIndices[i] == selectedIndex)
+    {
+      selectedSortedRow = i;
+      break;
+    }
+
+  int pageOffset = selectedSortedRow;
+  if (selectedSortedRow >= BLE_CLONE_MAX_VISIBLE)
+    pageOffset = selectedSortedRow - (BLE_CLONE_MAX_VISIBLE - 1);
+  if (pageOffset + BLE_CLONE_MAX_VISIBLE > n)
+    pageOffset = n - BLE_CLONE_MAX_VISIBLE;
+  if (pageOffset < 0)
+    pageOffset = 0;
+
+  int endIdx = pageOffset + BLE_CLONE_MAX_VISIBLE <= n ? pageOffset + BLE_CLONE_MAX_VISIBLE : n;
+  for (int i = pageOffset; i < endIdx; i++)
+  {
+    int devIdx = sortedIndices[i];
+    const BleScanDevice *dev = ble.getScanDevice(devIdx);
     if (!dev)
       continue;
-    u8g2.setCursor(2, y);
-    if (indices[row] == selectedIndex)
-      u8g2.print(">");
-    else
-      u8g2.print(" ");
-    char line[22];
-    strncpy(line, dev->name[0] ? dev->name : "-", sizeof(line) - 1);
-    line[sizeof(line) - 1] = '\0';
-    size_t maxName = 14;
-    if (strlen(line) > maxName)
+    int y = contentY + (i - pageOffset) * rowH;
+    bool selected = (i == selectedSortedRow);
+
+    if (selected)
     {
-      line[maxName - 1] = '.';
-      line[maxName] = '\0';
+      u8g2.setDrawColor(1);
+      u8g2.drawBox(0, y - 8, NOCT_DISP_W, rowH);
+      u8g2.setDrawColor(0);
     }
-    u8g2.print(line);
+    u8g2.setCursor(NOCT_MARGIN, y);
+    if (selected)
+      u8g2.setDrawColor(0);
+    u8g2.print(selected ? ">" : " ");
+    char nameBuf[BLE_CLONE_NAME_CHARS + 2];
+    const char *src = dev->name[0] ? dev->name : "-";
+    size_t slen = strlen(src);
+    if (slen > BLE_CLONE_NAME_CHARS)
+    {
+      strncpy(nameBuf, src, BLE_CLONE_NAME_CHARS - 1);
+      nameBuf[BLE_CLONE_NAME_CHARS - 1] = '.';
+      nameBuf[BLE_CLONE_NAME_CHARS] = '\0';
+    }
+    else
+    {
+      strncpy(nameBuf, src, sizeof(nameBuf) - 1);
+      nameBuf[sizeof(nameBuf) - 1] = '\0';
+    }
+    u8g2.print(nameBuf);
     u8g2.print(" ");
     u8g2.print(dev->rssi);
-    y += 10;
+    if (selected)
+      u8g2.setDrawColor(1);
   }
-  u8g2.setCursor(2, 48);
-  u8g2.print(selectedIndex + 1);
+
+  u8g2.setDrawColor(1);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_Y - rowH - 2);
+  u8g2.print(selectedSortedRow + 1);
   u8g2.print("/");
   u8g2.print(n);
+
   drawBottomHint("1x next  2s clone  2x menu");
   disp_.drawGreebles();
 }
@@ -1868,23 +1970,34 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
                                 const char *lastPassword,
                                 unsigned long passwordShowUntil,
                                 const char *clonedSSID,
-                                const char *cloneApPassword)
+                                const char *cloneApPassword,
+                                bool apFailed)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(NOCT_MARGIN, 7);
-  u8g2.print("PORTAL");
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "PORTAL");
   if (clonedSSID && clonedSSID[0] != '\0')
   {
-    u8g2.setCursor(60, 7);
+    u8g2.setCursor(60, NOCT_HEADER_BASELINE_Y);
+    u8g2.setFont(TINY_FONT);
     u8g2.print("[CLONE]");
+    u8g2.setFont(FONT_HEADER);
   }
-  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+  u8g2.setFont(TINY_FONT);
+
+  if (apFailed)
+  {
+    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 8);
+    u8g2.print("AP failed");
+    drawBottomHint();
+    disp_.drawGreebles();
+    return;
+  }
 
   unsigned long now = millis();
   bool showBite =
@@ -1893,8 +2006,8 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
   if (showBite)
   {
     u8g2.setDrawColor(0);
-    u8g2.drawBox(0, NOCT_MODE_HEADER_H, NOCT_DISP_W,
-                 NOCT_DISP_H - NOCT_MODE_HEADER_H);
+    u8g2.drawBox(0, NOCT_CONTENT_TOP, NOCT_DISP_W,
+                 NOCT_DISP_H - NOCT_CONTENT_TOP);
     u8g2.setDrawColor(1);
     u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
     u8g2.setCursor(NOCT_MARGIN, 42);
@@ -1965,12 +2078,9 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
-  u8g2.setDrawColor(0);
 
-  // Show mode name in header
+  // Show mode name in header (unified layout)
   const char *modeName = "SNIFF";
   SniffMode mode = mgr.getMode();
   switch (mode)
@@ -2015,10 +2125,10 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
     break;
   }
 
-  u8g2.setCursor(2, 7);
-  u8g2.print(modeName);
-  u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  u8g2.setFont(FONT_HEADER);
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, modeName);
+  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
+  u8g2.setFont(TINY_FONT);
 
   int n = mgr.getApCount();
   int pkts = mgr.getPacketCount();
@@ -2050,7 +2160,7 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
   else if (mode == SNIFF_MODE_EAPOL_CAPTURE)
   {
     u8g2.setCursor(2, 18);
-    u8g2.print("EAPOL: capture WPA handshakes");
+    u8g2.print("WPA handshake capture");
     u8g2.setCursor(2, 26);
     u8g2.print("PKTS:");
     u8g2.print(pkts);
@@ -2238,7 +2348,8 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
 
 static const char *bmwActionNames[] = {
   "Goodbye", "FollowMe", "Park", "Hazard", "LowBeam",
-  "LightsOff", "Unlock", "Lock", "Trunk", "Cluster"
+  "LightsOff", "Unlock", "Lock", "Trunk", "Cluster",
+  "DoorUnlk", "DoorLock"
 };
 
 void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
@@ -2256,12 +2367,25 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
   int actIdx = selectedActionIndex;
   if (actIdx < 0)
     actIdx = 0;
-  if (actIdx >= 10)
-    actIdx = 9;
+  if (actIdx >= 12)
+    actIdx = 11;
   u8g2.setCursor(NOCT_MARGIN, y);
   u8g2.print("> ");
   u8g2.print(bmwActionNames[actIdx]);
   y += NOCT_ROW_DY;
+  if (bmw.isObdConnected() && y <= NOCT_FOOTER_Y - NOCT_ROW_DY)
+  {
+    char obdBuf[32];
+    int oil = bmw.getObdOilTempC();
+    int cool = bmw.getObdCoolantTempC();
+    if (oil >= 0 || cool >= 0)
+      snprintf(obdBuf, sizeof(obdBuf), "OBD OIL %d COOL %d", oil >= 0 ? oil : 0, cool >= 0 ? cool : 0);
+    else
+      snprintf(obdBuf, sizeof(obdBuf), "OBD RPM %d", bmw.getObdRpm());
+    u8g2.setCursor(NOCT_MARGIN, y);
+    u8g2.print(obdBuf);
+    y += NOCT_ROW_DY;
+  }
   if (!bmw.isIbusSynced() && y <= NOCT_FOOTER_Y - NOCT_ROW_DY)
   {
     u8g2.setCursor(NOCT_MARGIN, y);

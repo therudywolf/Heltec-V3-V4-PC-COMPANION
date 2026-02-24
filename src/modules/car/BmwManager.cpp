@@ -91,6 +91,35 @@ void BmwManager::sendClusterText(const char *text) {
   ibus_.write(msg, 4 + len);
 }
 
+void BmwManager::sendUpdateMid() {
+  if (!ibus_.isSynced())
+    return;
+  char line[kMidDisplayChars + 1];
+  int n = 0;
+  const char *a = nowPlayingArtist_;
+  if (nowPlayingTrack_[0]) {
+    for (; n < kMidDisplayChars && nowPlayingTrack_[n]; n++)
+      line[n] = nowPlayingTrack_[n];
+  }
+  if (n < kMidDisplayChars && a && *a) {
+    if (n > 0)
+      line[n++] = ' ';
+    for (; n < kMidDisplayChars && *a; a++)
+      line[n++] = *a;
+  }
+  if (n == 0)
+    return;
+  line[n] = '\0';
+  uint8_t msg[4 + kMidDisplayChars];
+  msg[0] = IBUS_CDC;
+  msg[1] = (uint8_t)(2 + n);
+  msg[2] = IBUS_MID;
+  msg[3] = IBUS_UPDATE_MID;
+  for (int i = 0; i < n; i++)
+    msg[4 + i] = (uint8_t)(line[i] & 0x7F);
+  ibus_.write(msg, 4 + n);
+}
+
 void BmwManager::setObdData(bool connected, int rpm, int coolantC, int oilC) {
   obdConnected_ = connected;
   obdRpm_ = rpm >= 0 ? rpm : 0;
@@ -101,10 +130,29 @@ void BmwManager::setObdData(bool connected, int rpm, int coolantC, int oilC) {
 void BmwManager::onIbusPacket(uint8_t *packet) {
   if (!packet || packet[1] < 3 || packet[1] > 0x24)
     return;
+#if NOCT_IBUS_MONITOR_VERBOSE
+  {
+    size_t total = 2u + (size_t)packet[1];
+    Serial.printf("[IBUS] %02X %02X", packet[0], packet[1]);
+    for (size_t i = 2; i < total && i < 24; i++)
+      Serial.printf(" %02X", packet[i]);
+    Serial.println();
+  }
+#endif
   if (packet[0] == IBUS_MFL)
     parseMflButton(packet);
   else if (packet[0] == IBUS_PDC)
     parsePdcPacket(packet);
+  else if (packet[0] == IBUS_IKE && packet[1] >= 4 && packet[3] == IBUS_TEMP) {
+    /* IKE temperature broadcast: optional extraction for bus-sourced coolant. */
+    if (packet[1] >= 5)
+      lastIkeCoolantC_ = (int)(packet[4]) - 40;
+  }
+  /* CDC emulation: RAD requests CD status -> reply as CDC so head unit shows CD source. */
+  else if (packet[0] == IBUS_RAD && packet[1] >= 3 && packet[2] == IBUS_CDC && packet[3] == IBUS_CD_CTRL_REQ) {
+    uint8_t reply[] = { IBUS_CDC, 3, IBUS_RAD, IBUS_CD_STAT_RPLY, 0x01 };
+    ibus_.write(reply, sizeof(reply));
+  }
 }
 
 void BmwManager::onPhoneConnectionChanged(bool connected) {
@@ -153,6 +201,25 @@ void BmwManager::sendTrunkOpen() {
   ibus_.write(Trunk_Open, sizeof(Trunk_Open));
 }
 
+void BmwManager::sendDoorsUnlockInterior() {
+  ibus_.write(Doors_Unlock_Interior, sizeof(Doors_Unlock_Interior));
+}
+
+void BmwManager::sendDoorsLockKey() {
+  ibus_.write(Doors_Lock_Key, sizeof(Doors_Lock_Key));
+}
+
+void BmwManager::startLightShow() {
+  lightShowActive_ = true;
+  lightShowStep_ = 0;
+  lastLightShowMs_ = millis();
+}
+
+void BmwManager::stopLightShow() {
+  lightShowActive_ = false;
+  ibus_.write(TurnOffLights, sizeof(TurnOffLights));
+}
+
 void BmwManager::begin() {
   active_ = true;
   ibusSynced_ = false;
@@ -164,11 +231,48 @@ void BmwManager::begin() {
   bleKey_.setConnectionCallback([](bool connected) {
     if (s_bmwForIbus)
       s_bmwForIbus->onPhoneConnectionChanged(connected);
-  });  /* no capture: uses global s_bmwForIbus */
+  });
+  bleKey_.setLightCommandCallback([](uint8_t cmd) {
+    if (!s_bmwForIbus || !s_bmwForIbus->isIbusSynced())
+      return;
+    switch (cmd) {
+      case 0: s_bmwForIbus->sendGoodbyeLights(); break;
+      case 1: s_bmwForIbus->sendFollowMeHome(); break;
+      case 2: s_bmwForIbus->sendParkLights(); break;
+      case 3: s_bmwForIbus->sendHazardLights(); break;
+      case 4: s_bmwForIbus->sendLowBeams(); break;
+      case 5: s_bmwForIbus->sendLightsOff(); break;
+      case 6: s_bmwForIbus->sendUnlock(); break;
+      case 7: s_bmwForIbus->sendLock(); break;
+      case 8: s_bmwForIbus->sendTrunkOpen(); break;
+      case 9: s_bmwForIbus->sendClusterText("NOCT"); break;
+      case 10: s_bmwForIbus->sendDoorsUnlockInterior(); break;
+      case 11: s_bmwForIbus->sendDoorsLockKey(); break;
+      case 0x80: s_bmwForIbus->startLightShow(); break;
+      case 0x81: s_bmwForIbus->stopLightShow(); break;
+      default: break;
+    }
+  });
+  bleKey_.setNowPlayingCallback([](const char *track, const char *artist) {
+    if (s_bmwForIbus) {
+      s_bmwForIbus->setNowPlaying(track, artist);
+      s_bmwForIbus->sendUpdateMid();
+    }
+  });
+  bleKey_.setClusterTextCallback([](const char *text) {
+    if (s_bmwForIbus)
+      s_bmwForIbus->sendClusterText(text);
+  });
   bleKey_.begin();
+#if NOCT_A2DP_SINK_ENABLED
+  a2dpSink_.begin();
+#endif
 }
 
 void BmwManager::end() {
+#if NOCT_A2DP_SINK_ENABLED
+  a2dpSink_.end();
+#endif
   bleKey_.end();
   ibus_.end();
   s_bmwForIbus = nullptr;
@@ -190,6 +294,34 @@ void BmwManager::tick() {
     ibus_.write(IKE_Status_Request, sizeof(IKE_Status_Request));
     lastPollMs_ = now;
   }
+  /* Cyclic light show: Hazard -> Park -> Goodbye -> LowBeam -> LightsOff -> repeat. */
+  if (lightShowActive_ && ibusSynced_ && now - lastLightShowMs_ >= kLightShowIntervalMs) {
+    lastLightShowMs_ = now;
+    switch (lightShowStep_ % 5) {
+      case 0: ibus_.write(HazardLights, sizeof(HazardLights)); break;
+      case 1: ibus_.write(ParkLights_And_Signals, sizeof(ParkLights_And_Signals)); break;
+      case 2: ibus_.write(GoodbyeLights, sizeof(GoodbyeLights)); break;
+      case 3: ibus_.write(Low_Beams, sizeof(Low_Beams)); break;
+      case 4: ibus_.write(TurnOffLights, sizeof(TurnOffLights)); break;
+      default: break;
+    }
+    lightShowStep_++;
+  }
+  /* Shift indicator on cluster: when OBD connected and RPM >= threshold, send "SHIFT!" to IKE periodically. */
+  if (obdConnected_ && obdRpm_ >= kShiftRpmThreshold && ibusSynced_ && now - lastShiftClusterMs_ >= kShiftClusterIntervalMs) {
+    sendClusterText("SHIFT!");
+    lastShiftClusterMs_ = now;
+  }
+  /* BLE status characteristic: flags, coolant, oil, rpm, PDC. */
+  int coolantC = obdConnected_ ? obdCoolantTempC_ : lastIkeCoolantC_;
+  if (coolantC < -40 || coolantC > 127)
+    coolantC = -1;
+  int oilC = obdOilTempC_;
+  if (oilC < -40 || oilC > 127)
+    oilC = -1;
+  int rpm = (obdRpm_ >= 0 && obdRpm_ <= 65535) ? obdRpm_ : -1;
+  bleKey_.updateStatus(ibusSynced_, phoneConnected_, pdcValid_, obdConnected_,
+                      coolantC, oilC, rpm, pdcDists_, (uint8_t)lastMflAction_);
 }
 
 void BmwManager::getStatusLine(char *buf, size_t len) const {
@@ -197,6 +329,13 @@ void BmwManager::getStatusLine(char *buf, size_t len) const {
     return;
   if (!active_) {
     snprintf(buf, len, "BMW OFF");
+    return;
+  }
+  if (obdConnected_ && len >= 32) {
+    snprintf(buf, len, "IBUS %s | BLE %s | RPM %d",
+            ibusSynced_ ? "OK" : "--",
+            phoneConnected_ ? "ON" : "OFF",
+            obdRpm_);
     return;
   }
   snprintf(buf, len, "IBUS %s | BLE %s",
