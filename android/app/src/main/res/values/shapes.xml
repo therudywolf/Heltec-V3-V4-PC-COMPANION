@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- OEM-style: moderate rounded corners -->
-    <style name="ShapeAppearance.App.Card" parent="ShapeAppearance.Material3.MediumComponent">
+    <!-- OEM-style: moderate rounded corners. Parent from MaterialComponents for theme compatibility. -->
+    <style name="ShapeAppearance.App.Card" parent="ShapeAppearance.MaterialComponents.MediumComponent">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/radius_card</item>
     </style>
-    <style name="ShapeAppearance.App.Button" parent="ShapeAppearance.Material3.SmallComponent">
+    <style name="ShapeAppearance.App.Button" parent="ShapeAppearance.MaterialComponents.SmallComponent">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/radius_button</item>
     </style>

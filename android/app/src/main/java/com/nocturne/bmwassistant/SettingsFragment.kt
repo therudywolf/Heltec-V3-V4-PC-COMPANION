@@ -117,5 +117,9 @@ class SettingsFragment : Fragment() {
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+
+        view.findViewById<View>(R.id.settings_bus_data_row).setOnClickListener {
+            (activity as? MainActivity)?.showBusScreen()
+        }
     }
 }

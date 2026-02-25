@@ -240,6 +240,36 @@
             app:cardCornerRadius="@dimen/card_corner_radius"
             app:cardElevation="@dimen/card_elevation"
             app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Card"
+            android:layout_marginBottom="@dimen/screen_padding">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/screen_padding">
+
+                <TextView
+                    android:id="@+id/settings_bus_data_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_bus_data"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:textColor="?attr/colorPrimary"
+                    android:drawableEnd="@android:drawable/ic_menu_more"
+                    android:drawablePadding="8dp"
+                    android:paddingVertical="8dp"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Card"
             android:layout_marginTop="@dimen/screen_padding">
 
             <LinearLayout

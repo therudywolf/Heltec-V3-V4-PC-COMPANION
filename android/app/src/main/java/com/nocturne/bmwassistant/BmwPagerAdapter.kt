@@ -12,7 +12,7 @@ class BmwPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activit
         1 -> CommandsFragment()
         2 -> MediaFragment()
         3 -> ClusterFragment()
-        4 -> BusFragment()
-        else -> SettingsFragment()
+        4 -> SettingsFragment()
+        else -> BusFragment()
     }
 }

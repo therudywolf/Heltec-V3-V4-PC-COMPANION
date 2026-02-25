@@ -1,98 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Material 3. Applied theme (Light/Dark) set in MainActivity from preference. -->
-    <style name="Theme.BMWAssistant" parent="Theme.Material3.Dark">
+    <!-- Use MaterialComponents for stability (Material3 can crash on some devices). -->
+    <style name="Theme.BMWAssistant" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowBackground">@color/md_theme_dark_background</item>
         <item name="colorPrimary">@color/md_theme_dark_primary</item>
+        <item name="colorPrimaryVariant">@color/md_theme_dark_primaryContainer</item>
         <item name="colorOnPrimary">@color/md_theme_dark_onPrimary</item>
-        <item name="colorPrimaryContainer">@color/md_theme_dark_primaryContainer</item>
-        <item name="colorOnPrimaryContainer">@color/md_theme_dark_onPrimaryContainer</item>
         <item name="colorSecondary">@color/md_theme_dark_secondary</item>
+        <item name="colorSecondaryVariant">@color/md_theme_dark_secondaryContainer</item>
         <item name="colorOnSecondary">@color/md_theme_dark_onSecondary</item>
-        <item name="colorSecondaryContainer">@color/md_theme_dark_secondaryContainer</item>
-        <item name="colorOnSecondaryContainer">@color/md_theme_dark_onSecondaryContainer</item>
-        <item name="colorTertiary">@color/md_theme_dark_tertiary</item>
-        <item name="colorOnTertiary">@color/md_theme_dark_onTertiary</item>
         <item name="android:colorBackground">@color/md_theme_dark_background</item>
-        <item name="colorOnBackground">@color/md_theme_dark_onBackground</item>
         <item name="colorSurface">@color/md_theme_dark_surface</item>
         <item name="colorOnSurface">@color/md_theme_dark_onSurface</item>
-        <item name="colorSurfaceVariant">@color/md_theme_dark_surfaceVariant</item>
-        <item name="colorOnSurfaceVariant">@color/md_theme_dark_onSurfaceVariant</item>
-        <item name="colorOutline">@color/md_theme_dark_outline</item>
         <item name="colorError">@color/md_theme_dark_error</item>
         <item name="colorOnError">@color/md_theme_dark_onError</item>
-        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.App.Button</item>
-        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.App.Card</item>
-        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.App.Card</item>
         <item name="android:statusBarColor">@color/md_theme_dark_surface</item>
         <item name="android:navigationBarColor">@color/md_theme_dark_surface</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowContentTransitions">true</item>
-        <item name="android:windowAllowEnterTransitionOverlap">true</item>
-        <item name="android:windowAllowReturnTransitionOverlap">true</item>
     </style>
 
-    <style name="Theme.BMWAssistant.Light" parent="Theme.Material3.Light">
+    <style name="Theme.BMWAssistant.Light" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowBackground">@color/md_theme_light_background</item>
         <item name="colorPrimary">@color/md_theme_light_primary</item>
+        <item name="colorPrimaryVariant">@color/md_theme_light_primaryContainer</item>
         <item name="colorOnPrimary">@color/md_theme_light_onPrimary</item>
-        <item name="colorPrimaryContainer">@color/md_theme_light_primaryContainer</item>
-        <item name="colorOnPrimaryContainer">@color/md_theme_light_onPrimaryContainer</item>
         <item name="colorSecondary">@color/md_theme_light_secondary</item>
+        <item name="colorSecondaryVariant">@color/md_theme_light_secondaryContainer</item>
         <item name="colorOnSecondary">@color/md_theme_light_onSecondary</item>
-        <item name="colorSecondaryContainer">@color/md_theme_light_secondaryContainer</item>
-        <item name="colorOnSecondaryContainer">@color/md_theme_light_onSecondaryContainer</item>
-        <item name="colorTertiary">@color/md_theme_light_tertiary</item>
-        <item name="colorOnTertiary">@color/md_theme_light_onTertiary</item>
         <item name="android:colorBackground">@color/md_theme_light_background</item>
-        <item name="colorOnBackground">@color/md_theme_light_onBackground</item>
         <item name="colorSurface">@color/md_theme_light_surface</item>
         <item name="colorOnSurface">@color/md_theme_light_onSurface</item>
-        <item name="colorSurfaceVariant">@color/md_theme_light_surfaceVariant</item>
-        <item name="colorOnSurfaceVariant">@color/md_theme_light_onSurfaceVariant</item>
-        <item name="colorOutline">@color/md_theme_light_outline</item>
         <item name="colorError">@color/md_theme_light_error</item>
         <item name="colorOnError">@color/md_theme_light_onError</item>
-        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.App.Button</item>
-        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.App.Card</item>
-        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.App.Card</item>
         <item name="android:statusBarColor">@color/md_theme_light_surface</item>
         <item name="android:navigationBarColor">@color/md_theme_light_surface</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowContentTransitions">true</item>
     </style>
 
-    <style name="Theme.BMWAssistant.Dark" parent="Theme.Material3.Dark">
+    <style name="Theme.BMWAssistant.Dark" parent="Theme.MaterialComponents.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowBackground">@color/md_theme_dark_background</item>
         <item name="colorPrimary">@color/md_theme_dark_primary</item>
+        <item name="colorPrimaryVariant">@color/md_theme_dark_primaryContainer</item>
         <item name="colorOnPrimary">@color/md_theme_dark_onPrimary</item>
-        <item name="colorPrimaryContainer">@color/md_theme_dark_primaryContainer</item>
-        <item name="colorOnPrimaryContainer">@color/md_theme_dark_onPrimaryContainer</item>
         <item name="colorSecondary">@color/md_theme_dark_secondary</item>
+        <item name="colorSecondaryVariant">@color/md_theme_dark_secondaryContainer</item>
         <item name="colorOnSecondary">@color/md_theme_dark_onSecondary</item>
-        <item name="colorSecondaryContainer">@color/md_theme_dark_secondaryContainer</item>
-        <item name="colorOnSecondaryContainer">@color/md_theme_dark_onSecondaryContainer</item>
-        <item name="colorTertiary">@color/md_theme_dark_tertiary</item>
-        <item name="colorOnTertiary">@color/md_theme_dark_onTertiary</item>
         <item name="android:colorBackground">@color/md_theme_dark_background</item>
-        <item name="colorOnBackground">@color/md_theme_dark_onBackground</item>
         <item name="colorSurface">@color/md_theme_dark_surface</item>
         <item name="colorOnSurface">@color/md_theme_dark_onSurface</item>
-        <item name="colorSurfaceVariant">@color/md_theme_dark_surfaceVariant</item>
-        <item name="colorOnSurfaceVariant">@color/md_theme_dark_onSurfaceVariant</item>
-        <item name="colorOutline">@color/md_theme_dark_outline</item>
         <item name="colorError">@color/md_theme_dark_error</item>
         <item name="colorOnError">@color/md_theme_dark_onError</item>
-        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.App.Button</item>
-        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.App.Card</item>
-        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.App.Card</item>
         <item name="android:statusBarColor">@color/md_theme_dark_surface</item>
         <item name="android:navigationBarColor">@color/md_theme_dark_surface</item>
         <item name="android:windowLightStatusBar">false</item>

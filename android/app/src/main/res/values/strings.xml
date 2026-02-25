@@ -120,6 +120,7 @@
     <string name="about">About</string>
     <string name="welcome_cluster_hint">e.g. Hello</string>
     <string name="shift_rpm_hint">5500</string>
+    <string name="settings_bus_data">I-Bus / Bus data</string>
     <string name="about_developed_by">Developed by rudywolf</string>
     <string name="extended_locks">Extended locks</string>
     <string name="hard_lock">Hard lock</string>

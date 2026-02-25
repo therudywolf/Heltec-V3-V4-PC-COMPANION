@@ -19,7 +19,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
@@ -37,6 +39,7 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
     private val clusterTextCharUuid = UUID.fromString("1a2b0005-5e6f-4a5b-8c9d-0e1f2a3b4c5d")
 
     companion object {
+        private const val LOG_TAG = "BMWAssistant"
         private const val deviceName = "BMW E39 Key"
         private const val prefsName = "bmw_assistant"
         private const val prefsLastDevice = "last_device_address"
@@ -68,8 +71,21 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyThemeFromPref()
-        setContentView(R.layout.activity_main)
+        Log.d(LOG_TAG, "onCreate start")
+        try {
+            applyThemeFromPref()
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "applyThemeFromPref failed", e)
+            setTheme(R.style.Theme_BMWAssistant)
+        }
+        Log.d(LOG_TAG, "setContentView start")
+        try {
+            setContentView(R.layout.activity_main)
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "setContentView failed", e)
+            throw e
+        }
+        Log.d(LOG_TAG, "setContentView done")
         viewModel = ViewModelProvider(this)[BleAssistantViewModel::class.java]
 
         buttonScan = findViewById(R.id.buttonScan)
@@ -84,16 +100,25 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
                 R.id.nav_commands -> pager.setCurrentItem(1, true)
                 R.id.nav_media -> pager.setCurrentItem(2, true)
                 R.id.nav_cluster -> pager.setCurrentItem(3, true)
-                R.id.nav_bus -> pager.setCurrentItem(4, true)
-                R.id.nav_settings -> pager.setCurrentItem(5, true)
+                R.id.nav_settings -> pager.setCurrentItem(4, true)
             }
             true
         }
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 val menu = bottomNav.menu
-                if (position in 0 until menu.size()) {
+                if (position in 0..4) {
                     menu.getItem(position).isChecked = true
+                }
+            }
+        })
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (pager.currentItem == 5) {
+                    pager.setCurrentItem(4, true)
+                } else {
+                    finish()
                 }
             }
         })
@@ -113,6 +138,11 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
                 }
             }
         }
+    }
+
+    /** Opens the I-Bus / Bus data screen (page 5). Called from Settings. */
+    fun showBusScreen() {
+        findViewById<ViewPager2>(R.id.pager).setCurrentItem(5, true)
     }
 
     fun getAutoConnectPref(): Boolean =
