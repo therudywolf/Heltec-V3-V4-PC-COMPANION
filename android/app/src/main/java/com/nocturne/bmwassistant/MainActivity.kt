@@ -26,7 +26,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.viewpager2.widget.ViewPager2
-import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
 import java.util.UUID
 
@@ -93,25 +92,6 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
 
         val pager = findViewById<ViewPager2>(R.id.pager)
         pager.adapter = BmwPagerAdapter(this)
-        val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_nav)
-        bottomNav.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_dashboard -> pager.setCurrentItem(0, true)
-                R.id.nav_commands -> pager.setCurrentItem(1, true)
-                R.id.nav_media -> pager.setCurrentItem(2, true)
-                R.id.nav_cluster -> pager.setCurrentItem(3, true)
-                R.id.nav_settings -> pager.setCurrentItem(4, true)
-            }
-            true
-        }
-        pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-            override fun onPageSelected(position: Int) {
-                val menu = bottomNav.menu
-                if (position in 0..4) {
-                    menu.getItem(position).isChecked = true
-                }
-            }
-        })
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
