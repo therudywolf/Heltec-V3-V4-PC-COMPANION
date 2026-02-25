@@ -20,7 +20,9 @@ class BmwManager {
   void end();
   void tick();
 
-  bool isActive() const { return active_; }
+  /** Enable demo mode from menu: inject fake I-Bus/status so app can be tested without real bus. */
+  void setDemoMode(bool enable) { demoMode_ = enable; }
+  bool isDemoMode() const { return demoMode_; }
   bool isIbusSynced() const { return ibusSynced_; }
   bool isPhoneConnected() const { return phoneConnected_; }
   void setPhoneConnected(bool connected) { phoneConnected_ = connected; }
@@ -108,6 +110,7 @@ class BmwManager {
   static const int kMidDisplayChars = 12;
 
   bool active_ = false;
+  bool demoMode_ = false;
   bool ibusSynced_ = false;
   bool phoneConnected_ = false;
   MflAction lastMflAction_ = MFL_NONE;

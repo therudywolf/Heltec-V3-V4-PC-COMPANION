@@ -433,16 +433,15 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
   // cat==1 (Hacker): handled in long-press branch via handleHackerItem
   if (cat == 2)
   {
-    // BMW: E39 Asst (0), E46 (1), BMW Cfg (2)
+    // BMW: BMW Assistant (0), BMW Demo (1)
     quickMenuOpen = false;
     rebootConfirmed = false;
     Preferences prefs;
     prefs.begin("nocturne", false);
     if (item == 0)
     {
-      prefs.putString("bmw_model", "e39");
+      prefs.putBool("bmw_demo", false);
       prefs.end();
-      bmwModelHeader[0] = '\0'; // invalidate cache so next draw uses e39
       if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
@@ -452,21 +451,14 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     }
     else if (item == 1)
     {
-      prefs.putString("bmw_model", "e46");
+      prefs.putBool("bmw_demo", true);
       prefs.end();
-      bmwModelHeader[0] = '\0';
       if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
         return false;
       }
-    }
-    else if (item == 2)
-    {
-      prefs.end();
-      snprintf(toastMsg, sizeof(toastMsg), "Cfg soon");
-      toastUntil = now + 1200;
     }
     else
       prefs.end();
@@ -1345,18 +1337,26 @@ void loop()
       if (obdClient.isEnabled())
         obdClient.tick();
 #endif
-      if (bmwModelHeader[0] == '\0')
       {
         Preferences prefs;
         prefs.begin("nocturne", true);
-        String m = prefs.getString("bmw_model", "e39");
+        bool demo = prefs.getBool("bmw_demo", false);
+        const char *headerTitle;
+        if (demo) {
+          headerTitle = "BMW Demo";
+        } else {
+          if (bmwModelHeader[0] == '\0') {
+            String m = prefs.getString("bmw_model", "e39");
+            strncpy(bmwModelHeader, (m == "e46") ? "BMW E46" : "BMW E39",
+                    sizeof(bmwModelHeader) - 1);
+            bmwModelHeader[sizeof(bmwModelHeader) - 1] = '\0';
+          }
+          headerTitle = bmwModelHeader;
+        }
         prefs.end();
-        strncpy(bmwModelHeader, (m == "e46") ? "BMW E46" : "BMW E39",
-                sizeof(bmwModelHeader) - 1);
-        bmwModelHeader[sizeof(bmwModelHeader) - 1] = '\0';
+        display.drawGlobalHeader(headerTitle, nullptr, netManager.rssi(),
+                                 netManager.isWifiConnected());
       }
-      display.drawGlobalHeader(bmwModelHeader, nullptr, netManager.rssi(),
-                               netManager.isWifiConnected());
       sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
                                    state.batteryVoltage);
       sceneManager.drawBmwAssistant(bmwManager, bmwActionIndex);

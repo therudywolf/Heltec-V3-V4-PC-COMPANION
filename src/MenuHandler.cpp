@@ -15,7 +15,7 @@ int submenuCount(int category)
   case 1:
     return HACKER_ITEM_COUNT; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
   case 2:
-    return 3; // BMW: E39 Asst, E46, BMW Cfg
+    return 2; // BMW: BMW Assistant, BMW Demo
   case 3:
     return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 4:

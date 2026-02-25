@@ -11,6 +11,7 @@
 #include "nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <Preferences.h>
 
 AppModeManager::AppModeManager(NetManager &net, TrapManager &trap,
                                WifiSniffManager &wifiSniff, BleManager &ble,
@@ -183,6 +184,13 @@ bool AppModeManager::initializeMode(AppMode mode, int trapWifiSelected,
 
   case MODE_BMW_ASSISTANT:
     manageWiFiState(mode);
+    {
+      Preferences prefs;
+      prefs.begin("nocturne", true);
+      bool demo = prefs.getBool("bmw_demo", false);
+      prefs.end();
+      bmw_.setDemoMode(demo);
+    }
     bmw_.begin();
     Serial.println("[SYS] BMW Assistant mode initialized");
     return true;

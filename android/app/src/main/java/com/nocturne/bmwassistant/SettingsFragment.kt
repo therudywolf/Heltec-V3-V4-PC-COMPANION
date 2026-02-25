@@ -10,7 +10,7 @@ import android.widget.RadioButton
 import android.widget.Spinner
 import androidx.fragment.app.Fragment
 import com.google.android.material.checkbox.MaterialCheckBox
-import com.google.android.material.switchmaterial.SwitchMaterial
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
 
 class SettingsFragment : Fragment() {
@@ -54,7 +54,7 @@ class SettingsFragment : Fragment() {
             activity.recreate()
         }
 
-        val autoConnect = view.findViewById<SwitchMaterial>(R.id.settings_auto_connect)
+        val autoConnect = view.findViewById<MaterialSwitch>(R.id.settings_auto_connect)
         autoConnect.isChecked = activity.getAutoConnectPref()
         autoConnect.setOnCheckedChangeListener { _, isChecked ->
             activity.setAutoConnectPref(isChecked)
@@ -70,11 +70,11 @@ class SettingsFragment : Fragment() {
             if (!hasFocus) activity.setShiftRpmPref(shiftRpm.text?.toString()?.toIntOrNull() ?: 5500)
         }
 
-        val showTrackCluster = view.findViewById<SwitchMaterial>(R.id.settings_show_track_cluster)
+        val showTrackCluster = view.findViewById<MaterialSwitch>(R.id.settings_show_track_cluster)
         showTrackCluster.isChecked = activity.getShowTrackClusterPref()
         showTrackCluster.setOnCheckedChangeListener { _, isChecked -> activity.setShowTrackClusterPref(isChecked) }
 
-        val confirmDangerous = view.findViewById<SwitchMaterial>(R.id.settings_confirm_dangerous)
+        val confirmDangerous = view.findViewById<MaterialSwitch>(R.id.settings_confirm_dangerous)
         confirmDangerous.isChecked = activity.getConfirmDangerousPref()
         confirmDangerous.setOnCheckedChangeListener { _, isChecked -> activity.setConfirmDangerousPref(isChecked) }
 

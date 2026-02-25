@@ -42,7 +42,7 @@
                     android:textAppearance="?attr/textAppearanceTitleMedium"
                     android:textStyle="bold"
                     android:text="@string/status_disconnected" />
-                <com.google.android.material.switchmaterial.SwitchMaterial
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/dashboardAutoConnect"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -51,40 +51,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Bus & sensors -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurfaceVariant"
-            app:cardCornerRadius="@dimen/card_corner_radius"
-            app:cardElevation="@dimen/card_elevation"
-            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Card"
-            android:layout_marginBottom="@dimen/spacing_section">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_card">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/bus_sensors"
-                    android:textAppearance="?attr/textAppearanceTitleSmall"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:layout_marginBottom="6dp" />
-                <TextView
-                    android:id="@+id/dashboardBusSensors"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="—"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:lineSpacingMultiplier="1.2" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Vehicle -->
+        <!-- Vehicle status -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -106,18 +73,110 @@
                     android:text="@string/vehicle"
                     android:textAppearance="?attr/textAppearanceTitleSmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
-                    android:layout_marginBottom="6dp" />
-                <TextView
-                    android:id="@+id/dashboardVehicle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="—"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:lineSpacingMultiplier="1.2" />
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/status_lock" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardLock" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/status_doors" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardDoors" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/status_ignition" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardIgnition" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/status_odometer_km" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardOdometer" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- PDC & MFL -->
+        <!-- Engine -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Card"
+            android:layout_marginBottom="@dimen/spacing_section">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_card">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/engine"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/coolant" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardCoolant" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/oil" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardOil" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/rpm" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardRpm" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- PDC -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Card"
+            android:layout_marginBottom="@dimen/spacing_section">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_card">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pdc"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="FL" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardPdcFl" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="FR" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardPdcFr" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="RL" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardPdcRl" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="4dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="RR" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/dashboardPdcRr" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textAppearance="?attr/textAppearanceBodyMedium" android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- MFL -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -135,17 +194,17 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/pdc_steering"
+                    android:text="@string/mfl"
                     android:textAppearance="?attr/textAppearanceTitleSmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="4dp" />
                 <TextView
-                    android:id="@+id/dashboardPdcMfl"
+                    android:id="@+id/dashboardMfl"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="—"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:lineSpacingMultiplier="1.2" />
+                    android:textStyle="bold" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>

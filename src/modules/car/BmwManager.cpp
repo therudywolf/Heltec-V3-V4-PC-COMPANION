@@ -400,19 +400,17 @@ void BmwManager::tick() {
     return;
   ibus_.tick();
   bleKey_.tick();
-#if NOCT_BMW_DEMO_MODE
-  if (active_) {
-    ibusSynced_ = true;  /* In demo mode treat as synced so phone/button commands run. */
-  } else
-#endif
-  ibusSynced_ = ibus_.isSynced();
+  if (demoMode_)
+    ibusSynced_ = true;
+  else
+    ibusSynced_ = ibus_.isSynced();
   const bool wasConnected = phoneConnected_;
   if (bleKey_.isConnected() != phoneConnected_)
     phoneConnected_ = bleKey_.isConnected();
   unsigned long now = millis();
-#if NOCT_BMW_DEMO_MODE
-  /* Inject fake status data every NOCT_BMW_DEMO_INTERVAL_MS so app shows live-looking values. */
+  if (demoMode_)
   {
+    /* Inject fake status data so app shows live-looking values (interval from config). */
     static unsigned long lastDemoMs = 0;
     static uint8_t demoMflCycle = 0;
     if (now - lastDemoMs >= (unsigned long)NOCT_BMW_DEMO_INTERVAL_MS) {
@@ -444,7 +442,6 @@ void BmwManager::tick() {
 #endif
     }
   }
-#endif
 #if NOCT_BMW_DEBUG
   static bool lastLoggedConnected = false;
   if (phoneConnected_ != lastLoggedConnected) {

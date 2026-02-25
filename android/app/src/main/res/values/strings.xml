@@ -64,6 +64,11 @@
     <string name="cluster_kombi">Cluster (KOMBI)</string>
     <string name="cluster_desc_ike">Send custom text to instrument cluster (IKE). Max 20 characters.</string>
     <string name="cluster_desc_kombi">Send custom text to instrument cluster (KOMBI). Max 20 characters.</string>
+    <string name="cluster_presets">Presets</string>
+    <string name="cluster_preset_add">Add preset</string>
+    <string name="cluster_preset_delete">Delete</string>
+    <string name="cluster_preset_added">Preset added</string>
+    <string name="cluster_any_text">Any text up to 20 characters</string>
     <string name="scenarios">Scenarios</string>
     <string name="scenario_leave">Leave car</string>
     <string name="scenario_returned">Returned</string>
@@ -107,6 +112,7 @@
     <string name="confirm">OK</string>
     <string name="cancel">Cancel</string>
     <string name="connection">Connection</string>
+    <string name="engine">Engine</string>
     <string name="bus_sensors">Bus &amp; sensors</string>
     <string name="vehicle">Vehicle</string>
     <string name="pdc_steering">PDC &amp; steering</string>

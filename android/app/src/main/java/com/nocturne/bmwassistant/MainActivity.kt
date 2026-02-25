@@ -67,8 +67,8 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyThemeFromPref()
         super.onCreate(savedInstanceState)
+        applyThemeFromPref()
         setContentView(R.layout.activity_main)
         viewModel = ViewModelProvider(this)[BleAssistantViewModel::class.java]
 
@@ -91,7 +91,10 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
         }
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
-                bottomNav.menu.getItem(position).isChecked = true
+                val menu = bottomNav.menu
+                if (position in 0 until menu.size()) {
+                    menu.getItem(position).isChecked = true
+                }
             }
         })
 

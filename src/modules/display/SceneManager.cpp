@@ -1055,7 +1055,7 @@ static int submenuCountForCategory(int cat)
   case 1:
     return 4; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
   case 2:
-    return 3; // BMW: E39 Asst, E46, BMW Cfg
+    return 2; // BMW: BMW Assistant, BMW Demo
   case 3:
     return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 4:
@@ -1123,12 +1123,10 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     }
     else if (menuCategory == 2)
     {
-      strncpy(items[0], "E39 Asst", sizeof(items[0]) - 1);
-      strncpy(items[1], "E46", sizeof(items[1]) - 1);
-      strncpy(items[2], "BMW Cfg", sizeof(items[2]) - 1);
+      strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
+      strncpy(items[1], "BMW Demo", sizeof(items[1]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
-      items[2][sizeof(items[2]) - 1] = '\0';
     }
     else if (menuCategory == 3)
     {

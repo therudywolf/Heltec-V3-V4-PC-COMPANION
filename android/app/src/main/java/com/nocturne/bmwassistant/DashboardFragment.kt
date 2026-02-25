@@ -8,7 +8,7 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.switchmaterial.SwitchMaterial
+import com.google.android.material.materialswitch.MaterialSwitch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -22,14 +22,38 @@ class DashboardFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val connectionState = view.findViewById<TextView>(R.id.dashboardConnectionState)
-        val busSensors = view.findViewById<TextView>(R.id.dashboardBusSensors)
-        val vehicle = view.findViewById<TextView>(R.id.dashboardVehicle)
-        val pdcMfl = view.findViewById<TextView>(R.id.dashboardPdcMfl)
-        val autoConnect = view.findViewById<SwitchMaterial>(R.id.dashboardAutoConnect)
+        val autoConnect = view.findViewById<MaterialSwitch>(R.id.dashboardAutoConnect)
+        val lockTv = view.findViewById<TextView>(R.id.dashboardLock)
+        val doorsTv = view.findViewById<TextView>(R.id.dashboardDoors)
+        val ignitionTv = view.findViewById<TextView>(R.id.dashboardIgnition)
+        val odometerTv = view.findViewById<TextView>(R.id.dashboardOdometer)
+        val coolantTv = view.findViewById<TextView>(R.id.dashboardCoolant)
+        val oilTv = view.findViewById<TextView>(R.id.dashboardOil)
+        val rpmTv = view.findViewById<TextView>(R.id.dashboardRpm)
+        val pdcFlTv = view.findViewById<TextView>(R.id.dashboardPdcFl)
+        val pdcFrTv = view.findViewById<TextView>(R.id.dashboardPdcFr)
+        val pdcRlTv = view.findViewById<TextView>(R.id.dashboardPdcRl)
+        val pdcRrTv = view.findViewById<TextView>(R.id.dashboardPdcRr)
+        val mflTv = view.findViewById<TextView>(R.id.dashboardMfl)
 
         (activity as? MainActivity)?.let { act ->
             autoConnect.isChecked = act.getAutoConnectPref()
             autoConnect.setOnCheckedChangeListener { _, isChecked -> act.setAutoConnectPref(isChecked) }
+        }
+
+        fun setPlaceholders() {
+            lockTv.text = "—"
+            doorsTv.text = "—"
+            ignitionTv.text = "—"
+            odometerTv.text = "—"
+            coolantTv.text = "—"
+            oilTv.text = "—"
+            rpmTv.text = "—"
+            pdcFlTv.text = "—"
+            pdcFrTv.text = "—"
+            pdcRlTv.text = "—"
+            pdcRrTv.text = "—"
+            mflTv.text = "—"
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -45,25 +69,10 @@ class DashboardFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.statusData.collectLatest { data ->
                 if (data == null) {
-                    busSensors.text = "—"
-                    vehicle.text = "—"
-                    pdcMfl.text = "—"
+                    setPlaceholders()
                     return@collectLatest
                 }
-                val coolantStr = data.coolantC?.let { "$it °C" } ?: "—"
-                val oilStr = data.oilC?.let { "$it °C" } ?: "—"
-                val rpmStr = data.rpm?.toString() ?: "—"
-                busSensors.text = """
-                    ${getString(R.string.ibus)}: ${if (data.ibusOk) "OK" else "—"} · ${getString(R.string.obd)}: ${if (data.obdOk) "OK" else "—"}
-                    ${getString(R.string.coolant)}: $coolantStr · ${getString(R.string.oil)}: $oilStr · ${getString(R.string.rpm)}: $rpmStr
-                """.trimIndent()
-
-                val doorsStr = when {
-                    data.doorByte1 != null && data.doorByte2 != null ->
-                        String.format("0x%02X 0x%02X", data.doorByte1, data.doorByte2)
-                    else -> "—"
-                }
-                val lockStr = data.lockState?.let {
+                lockTv.text = data.lockState?.let {
                     when (it) {
                         0 -> getString(R.string.lock_unlocked)
                         1 -> getString(R.string.lock_locked)
@@ -71,7 +80,12 @@ class DashboardFragment : Fragment() {
                         else -> "—"
                     }
                 } ?: "—"
-                val ignStr = data.ignition?.let {
+                doorsTv.text = when {
+                    data.doorByte1 != null && data.doorByte2 != null ->
+                        String.format("0x%02X 0x%02X", data.doorByte1, data.doorByte2)
+                    else -> "—"
+                }
+                ignitionTv.text = data.ignition?.let {
                     when (it) {
                         0 -> getString(R.string.ign_off)
                         1 -> getString(R.string.ign_pos1)
@@ -79,19 +93,18 @@ class DashboardFragment : Fragment() {
                         else -> "—"
                     }
                 } ?: "—"
-                val odomStr = data.odometerKm?.toString() ?: "—"
-                vehicle.text = """
-                    ${getString(R.string.status_doors)}: $doorsStr · ${getString(R.string.status_lock)}: $lockStr
-                    ${getString(R.string.status_ignition)}: $ignStr · ${getString(R.string.status_odometer_km)}: $odomStr
-                """.trimIndent()
+                odometerTv.text = data.odometerKm?.let { "$it km" } ?: "—"
 
-                val pdcStr = if (data.pdcFl != null || data.pdcFr != null)
-                    "FL ${data.pdcFl ?: "—"} FR ${data.pdcFr ?: "—"} RL ${data.pdcRl ?: "—"} RR ${data.pdcRr ?: "—"} cm"
-                else "—"
-                pdcMfl.text = """
-                    ${getString(R.string.pdc)}: $pdcStr
-                    ${getString(R.string.mfl)}: ${data.mflAction}
-                """.trimIndent()
+                coolantTv.text = data.coolantC?.let { "$it °C" } ?: "—"
+                oilTv.text = data.oilC?.let { "$it °C" } ?: "—"
+                rpmTv.text = data.rpm?.toString() ?: "—"
+
+                pdcFlTv.text = data.pdcFl?.let { "$it cm" } ?: "—"
+                pdcFrTv.text = data.pdcFr?.let { "$it cm" } ?: "—"
+                pdcRlTv.text = data.pdcRl?.let { "$it cm" } ?: "—"
+                pdcRrTv.text = data.pdcRr?.let { "$it cm" } ?: "—"
+
+                mflTv.text = data.mflAction
             }
         }
     }

@@ -1,20 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Stylized car silhouette (BMW-inspired) -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,28 L72,28 L78,38 L78,72 L30,72 L30,38 L36,28 Z"/>
-    <path
-        android:fillColor="#1A1C1E"
-        android:pathData="M38,42 L70,42 L70,66 L38,66 Z"/>
-    <path
-        android:fillColor="#1A1C1E"
-        android:pathData="M42,48 L46,48 L46,60 L42,60 Z"/>
-    <path
-        android:fillColor="#1A1C1E"
-        android:pathData="M62,48 L66,48 L66,60 L62,60 Z"/>
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="108dp"
+        android:height="108dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@drawable/ic_bmw_logo"
+            android:gravity="center" />
+    </item>
+</layer-list>
