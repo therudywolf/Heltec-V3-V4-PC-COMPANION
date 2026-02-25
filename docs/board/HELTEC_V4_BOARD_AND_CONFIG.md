@@ -59,6 +59,7 @@
 - **Экран:** размеры 128×64, отступы, шрифты, сцены (NOCT_SCENE_*), меню (размер бокса, строки).
 - **Алерты:** пороги CPU/GPU (температура, нагрузка), VRAM, RAM; должны совпадать с логикой в `server/monitor.py`.
 - **BMW:** `NOCT_IBUS_ENABLED` (1 = I-Bus включён, 0 = только BLE и список действий), пины I-Bus 38/39. `NOCT_IBUS_MONITOR_VERBOSE` (1 = логировать все пакеты I-Bus в Serial в hex; для отладки).
+  Полная схема подключения платы к I-Bus в машине: [HELTEC_V4_WIRING.md](../bmw/HELTEC_V4_WIRING.md).
 - **OBD (BMW):** `NOCT_OBD_ENABLED` (1 = опрос ELM327 по Serial2 для RPM и температур), `NOCT_OBD_TX_PIN` / `NOCT_OBD_RX_PIN` (по умолчанию 9 и 10). Скорость 38400 8N1.
 - **USB CDC:** `NOCT_USB_CDC_ENABLED` (0 = выкл.). При 1 устройство экспонирует виртуальный COM по встроенному USB (GPIO19/20 по даташиту V4.2.0). Подключение к Android по кабелю USB-OTG: приложение использует USB Host API и тот же протокол команд (один байт = команда 0x00–0x0B, 0x80, 0x81), см. [BMW_ANDROID_APP.md](../bmw/BMW_ANDROID_APP.md).
 - **Звук (A2DP Sink):** `NOCT_A2DP_SINK_ENABLED` (0 = выкл.). При 1 плата работает как A2DP Sink: приём аудио с телефона по Bluetooth, вывод по I2S на внешний DAC (пины NOCT_I2S_BCK_PIN, NOCT_I2S_WS_PIN, NOCT_I2S_DOUT_PIN — по умолчанию 45, 46, 40). Подключение DAC (например PCM5102A) и AUX — см. [BMW_E39_Assistant.md](../bmw/BMW_E39_Assistant.md) или гайд по звуку.

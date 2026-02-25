@@ -1055,7 +1055,7 @@ static int submenuCountForCategory(int cat)
   case 1:
     return 4; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
   case 2:
-    return 1; // BMW: BMW Assistant
+    return 3; // BMW: E39 Asst, E46, BMW Cfg
   case 3:
     return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
   case 4:
@@ -1123,8 +1123,12 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     }
     else if (menuCategory == 2)
     {
-      strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
+      strncpy(items[0], "E39 Asst", sizeof(items[0]) - 1);
+      strncpy(items[1], "E46", sizeof(items[1]) - 1);
+      strncpy(items[2], "BMW Cfg", sizeof(items[2]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
+      items[1][sizeof(items[1]) - 1] = '\0';
+      items[2][sizeof(items[2]) - 1] = '\0';
     }
     else if (menuCategory == 3)
     {
@@ -1492,14 +1496,14 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
   }
 
   u8g2.setDrawColor(1);
-  u8g2.drawXBMP(4, 16, 32, 32, wolfSprite);
-  u8g2.drawFrame(0, 10, 42, 44);
-  u8g2.drawBox(40, 20, 4, 2);
+  const int contentStartY = NOCT_CONTENT_TOP;
+  u8g2.drawXBMP(4, contentStartY + 2, 32, 32, wolfSprite);
+  u8g2.drawFrame(0, contentStartY, 42, 44);
+  u8g2.drawBox(40, contentStartY + 10, 4, 2);
 
   const int dataX = 48;
   const int barW = 70;
-  const int rowH = 14;
-  int y = 16;
+  int y = contentStartY;
 
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
@@ -1540,7 +1544,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
     }
   }
 
-  y += rowH;
+  y += NOCT_ROW_DY;
 
   // Статистика времени работы системы (если есть данные)
   if (hasData && bootTime > 0)
@@ -1550,7 +1554,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
     unsigned long minutes = (uptimeSec % 3600) / 60;
     u8g2.setCursor(dataX, y);
     u8g2.printf("UPTIME: %lu:%02lu", hours, minutes);
-    y += rowH;
+    y += NOCT_ROW_DY;
   }
 
   if (!hasData)
@@ -1558,7 +1562,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
     // Отображение сообщения об отсутствии данных
     u8g2.setCursor(dataX, y);
     u8g2.print("Waiting for");
-    y += rowH;
+    y += NOCT_ROW_DY;
     u8g2.setCursor(dataX, y);
     u8g2.print("telemetry...");
   }
@@ -1573,7 +1577,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
     {
       u8g2.drawBox(dataX + 1, y + 3, cpuBarWidth, 1);
     }
-    y += rowH;
+    y += NOCT_ROW_DY;
 
     u8g2.setCursor(dataX, y);
     u8g2.printf("GPU: %d C %d%%", gpuTemp, gpuLoad);
@@ -1583,7 +1587,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
     {
       u8g2.drawBox(dataX + 1, y + 3, gpuBarWidth, 1);
     }
-    y += rowH;
+    y += NOCT_ROW_DY;
 
     u8g2.setCursor(dataX, y);
     u8g2.printf("RAM: %0.1f%%", ramUsage);
@@ -1806,22 +1810,20 @@ void SceneManager::drawBleSpammer(int packetCount)
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(NOCT_MARGIN, 7);
-  u8g2.print("BLE SPAM");
-  u8g2.setDrawColor(1);
-
-  // Pulsing Bluetooth icon (center)
+  /* Content below global header: centered BT icon and packet count (NOCT_CONTENT_TOP layout). */
+  const int contentMidY = NOCT_CONTENT_TOP + (NOCT_DISP_H - NOCT_CONTENT_TOP) / 2;
+  int cy = contentMidY - 8;
+  if (cy < NOCT_CONTENT_TOP)
+    cy = NOCT_CONTENT_TOP;
   unsigned long t = millis() / 100;
   int pulse = (int)(t % 8) - 4;
   if (pulse < 0)
     pulse = -pulse;
-  drawBtIcon(u8g2, PHANTOM_BT_CX, PHANTOM_BT_CY, PHANTOM_BT_R, pulse);
+  drawBtIcon(u8g2, NOCT_DISP_W / 2, cy + 8, 12, pulse);
 
   static char pktBuf[20];
   snprintf(pktBuf, sizeof(pktBuf), "PKT: %lu", (unsigned long)packetCount);
-  u8g2.setCursor(NOCT_MARGIN, 46);
+  u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + NOCT_ROW_DY * 2);
   u8g2.print(pktBuf);
 
   drawBottomHint();
@@ -2355,12 +2357,10 @@ static const char *bmwActionNames[] = {
 void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 {
   U8G2 &u8g2 = disp_.u8g2();
-  u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "BMW E39");
   u8g2.setFont(LABEL_FONT);
   char line[32];
   bmw.getStatusLine(line, sizeof(line));
-  int y = NOCT_CONTENT_TOP + NOCT_ROW_DY;
+  int y = NOCT_CONTENT_TOP;
   u8g2.setCursor(NOCT_MARGIN, y);
   u8g2.print(line);
   y += NOCT_ROW_DY;

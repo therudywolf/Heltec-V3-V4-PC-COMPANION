@@ -61,10 +61,11 @@
 #define NOCT_HEADER_MARGIN 2
 #define NOCT_HEADER_BASELINE_Y 11
 #define NOCT_HEADER_SEP_Y 13
-/* Right edge of WOOF!/NET:-- status text; battery HUD sits to the right */
-#define NOCT_HEADER_STATUS_RIGHT_ANCHOR 76
+/* Right edge of WOOF!/NET:-- status text; battery HUD sits to the right. Keep
+ * status end <= 60 so battery percentage text (e.g. NO BAT) does not overlap. */
+#define NOCT_HEADER_STATUS_RIGHT_ANCHOR 60
 #define NOCT_CONTENT_START                                                     \
-  14 /* Content start just below header (NOCT_HEADER_H 14); was 17 (-3px)      \
+  17 /* Content start below header; 17 avoids ascent overlap (was 14)          \
       */
 #define NOCT_CONTENT_TOP NOCT_CONTENT_START
 #define NOCT_FOOTER_H 14
@@ -205,6 +206,10 @@
 
 /* BMW Assistant debug: when 1, log BLE init, connection changes, and each "run" action to Serial (115200). Use for debugging BLE OFF / reboot on run. */
 #define NOCT_BMW_DEBUG 1
+
+/* BMW Assistant demo mode: when 1, emulate I-Bus sync and inject fake status (coolant, oil, rpm, PDC, MFL, doors, ignition, odometer) so app shows live data without real I-Bus. Commands from phone/button still execute (ibus_.write is no-op if I-Bus disabled). */
+#define NOCT_BMW_DEMO_MODE 0
+#define NOCT_BMW_DEMO_INTERVAL_MS 4000
 
 /* USB CDC: 0 = off. When 1, device exposes virtual COM over built-in USB (GPIO19=D-, GPIO20=D+ per DataSheets/WiFi_LoRa_32_V4.2.0.pdf). */
 #define NOCT_USB_CDC_ENABLED 0
