@@ -98,7 +98,9 @@
                 <com.google.android.material.chip.ChipGroup
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:singleLine="true">
+                    app:singleLine="false"
+                    app:chipSpacingHorizontal="@dimen/chip_spacing"
+                    app:chipSpacingVertical="@dimen/chip_spacing">
 
                     <com.google.android.material.chip.Chip android:id="@+id/btnGoodbye" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/goodbye_lights" android:maxLines="1" android:ellipsize="end" style="@style/Widget.Material3.Chip.Assist" />
                     <com.google.android.material.chip.Chip android:id="@+id/btnFollowMe" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/follow_me_home" android:maxLines="1" android:ellipsize="end" style="@style/Widget.Material3.Chip.Assist" />
@@ -188,7 +190,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Doors / Cluster"
+                    android:text="@string/doors_cluster"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -218,16 +220,82 @@
                         android:maxLines="1"
                         android:ellipsize="end"
                         android:layout_marginEnd="8dp" />
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnDoorsLock"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="@string/doors_lock"
-                        android:maxLines="1"
-                        android:ellipsize="end" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDoorsLock"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/doors_lock"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
                 </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardCornerRadius="@dimen/card_corner_radius"
+            app:cardElevation="@dimen/card_elevation"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.App.Card"
+            android:layout_marginBottom="@dimen/screen_padding">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/screen_padding">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/extended_locks"
+                    android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:singleLine="false"
+                    app:chipSpacingHorizontal="@dimen/chip_spacing"
+                    app:chipSpacingVertical="@dimen/chip_spacing">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/btnHardLock"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/hard_lock"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        style="@style/Widget.Material3.Chip.Assist" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/btnAllExceptDriver"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/all_except_driver"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        style="@style/Widget.Material3.Chip.Assist" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/btnDriverDoorOnly"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/driver_door_only"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        style="@style/Widget.Material3.Chip.Assist" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/btnDoorsFuelTrunk"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/doors_fuel_trunk"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        style="@style/Widget.Material3.Chip.Assist" />
+                </com.google.android.material.chip.ChipGroup>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -257,7 +325,9 @@
                 <com.google.android.material.chip.ChipGroup
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:singleLine="true">
+                    app:singleLine="false"
+                    app:chipSpacingHorizontal="@dimen/chip_spacing"
+                    app:chipSpacingVertical="@dimen/chip_spacing">
 
                     <com.google.android.material.chip.Chip android:id="@+id/btnWinFrontLOpen" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/window_front_driver_open" android:maxLines="1" android:ellipsize="end" style="@style/Widget.Material3.Chip.Assist" />
                     <com.google.android.material.chip.Chip android:id="@+id/btnWinFrontLClose" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/window_front_driver_close" android:maxLines="1" android:ellipsize="end" style="@style/Widget.Material3.Chip.Assist" />

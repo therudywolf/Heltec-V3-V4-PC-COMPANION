@@ -87,6 +87,23 @@ class CommandsFragment : Fragment() {
         view.findViewById<View>(R.id.btnDoorsUnlock).setOnClickListener { host.sendCommand(0x0A) }
         view.findViewById<View>(R.id.btnDoorsLock).setOnClickListener { host.sendCommand(0x0B) }
 
+        view.findViewById<com.google.android.material.chip.Chip>(R.id.btnHardLock).setOnClickListener {
+            if (main != null) sendWithConfirmIfNeeded(main) { host.sendCommand(25) }
+            else host.sendCommand(25)
+        }
+        view.findViewById<com.google.android.material.chip.Chip>(R.id.btnAllExceptDriver).setOnClickListener {
+            if (main != null) sendWithConfirmIfNeeded(main) { host.sendCommand(26) }
+            else host.sendCommand(26)
+        }
+        view.findViewById<com.google.android.material.chip.Chip>(R.id.btnDriverDoorOnly).setOnClickListener {
+            if (main != null) sendWithConfirmIfNeeded(main) { host.sendCommand(27) }
+            else host.sendCommand(27)
+        }
+        view.findViewById<com.google.android.material.chip.Chip>(R.id.btnDoorsFuelTrunk).setOnClickListener {
+            if (main != null) sendWithConfirmIfNeeded(main) { host.sendCommand(28) }
+            else host.sendCommand(28)
+        }
+
         view.findViewById<Chip>(R.id.btnWinFrontLOpen).setOnClickListener { host.sendCommand(12) }
         view.findViewById<Chip>(R.id.btnWinFrontLClose).setOnClickListener { host.sendCommand(13) }
         view.findViewById<Chip>(R.id.btnWinFrontROpen).setOnClickListener { host.sendCommand(14) }

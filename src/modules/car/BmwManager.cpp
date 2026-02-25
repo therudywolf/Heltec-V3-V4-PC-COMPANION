@@ -24,7 +24,7 @@ BmwManager::BmwManager() {
 }
 
 void BmwManager::parseMflButton(uint8_t *packet) {
-  /* packet: [0]=src, [1]=len (bytes after len), [2]=dest, [3]=cmd, [4..]=data */
+  /* MFL 0x50, cmd 0x3B. Wilhelm mfl/3b.md: button+state bitfield (FORWARD 0x01, BACK 0x08, PRESS/HOLD/RELEASE, R/T 0x40, TEL 0x80). We use simplified byte mapping. */
   if (!packet || packet[0] != IBUS_MFL || packet[1] < 3)
     return;
   size_t totalLen = 2u + (size_t)packet[1];
@@ -44,6 +44,9 @@ void BmwManager::parseMflButton(uint8_t *packet) {
 }
 
 void BmwManager::setNowPlaying(const char *track, const char *artist) {
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW] setNowPlaying: \"%s\" - \"%s\"\n", track ? track : "", artist ? artist : "");
+#endif
   if (track) {
     strncpy(nowPlayingTrack_, track, kNowPlayingLen - 1);
     nowPlayingTrack_[kNowPlayingLen - 1] = '\0';
@@ -65,6 +68,7 @@ void BmwManager::getPdcDistances(int *dists, int maxCount) const {
 }
 
 void BmwManager::parsePdcPacket(uint8_t *packet) {
+  /* PDC 0x60: distance packet format not documented in wilhelm (model/reverse-engineered). We assume bytes 4..7 = sensor distances. */
   if (!packet || packet[0] != IBUS_PDC || packet[1] < 7)
     return;
   /* PDC: need at least dest, cmd, 4 distance bytes, checksum. Indices 4..7 = data. */
@@ -74,6 +78,10 @@ void BmwManager::parsePdcPacket(uint8_t *packet) {
 }
 
 void BmwManager::sendClusterText(const char *text) {
+  /* Cluster text: cmd 0x1A to IKE 0x80. Wilhelm lcm/1a.md describes CCM 0x30→IKE; we use DIA 0x3F as sender (diagnostic). */
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW] I-Bus sendClusterText: \"%s\"\n", text ? text : "");
+#endif
   if (!text || !ibus_.isSynced())
     return;
   uint8_t msg[24];
@@ -92,6 +100,9 @@ void BmwManager::sendClusterText(const char *text) {
 }
 
 void BmwManager::sendUpdateMid() {
+#if NOCT_BMW_DEBUG
+  Serial.println("[BMW] I-Bus sendUpdateMid (track/artist to MID)");
+#endif
   if (!ibus_.isSynced())
     return;
   char line[kMidDisplayChars + 1];
@@ -144,11 +155,11 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
   else if (packet[0] == IBUS_PDC)
     parsePdcPacket(packet);
   else if (packet[0] == IBUS_IKE && packet[1] >= 5 && packet[3] == IBUS_TEMP) {
-    /* IKE 0x19 temperature: byte0 = ambient °C, byte1 = coolant °C (wilhelm ike/19). */
+    /* IKE 0x19 temperature: byte0 = ambient °C, byte1 = coolant °C. Wilhelm ike/19.md. */
     lastIkeCoolantC_ = (int)packet[5];
   }
   else if (packet[0] == IBUS_GM && packet[1] >= 5 && packet[2] == 0xBF && packet[3] == IBUS_GM_STAT_RPLY) {
-    /* GM door/lid status 0x7a: byte1 = doors/lock/lamp, byte2 = windows/sunroof/trunk. */
+    /* GM door/lid status 0x7a: byte1 = doors/lock/lamp, byte2 = windows/sunroof/trunk. Wilhelm gm/7a.md. */
     lastDoorLidByte1_ = packet[4];
     lastDoorLidByte2_ = packet[5];
   }
@@ -157,7 +168,7 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
     lastIgnition_ = (int)packet[4];
   }
   else if (packet[0] == IBUS_IKE && packet[1] >= 6 && packet[3] == IBUS_ODMTR_STAT_RPLY) {
-    /* IKE odometer 0x17: 3 bytes km = b1 + b2*256 + b3*65536 (wilhelm ike/17). */
+    /* IKE odometer 0x17: 3 bytes km = b1 + b2*256 + b3*65536. Wilhelm ike/17.md. */
     lastOdometerKm_ = (int)packet[4] | ((int)packet[5] << 8) | ((int)packet[6] << 16);
   }
   /* CDC emulation: RAD requests CD status -> reply as CDC so head unit shows CD source. */
@@ -389,10 +400,51 @@ void BmwManager::tick() {
     return;
   ibus_.tick();
   bleKey_.tick();
+#if NOCT_BMW_DEMO_MODE
+  if (active_) {
+    ibusSynced_ = true;  /* In demo mode treat as synced so phone/button commands run. */
+  } else
+#endif
   ibusSynced_ = ibus_.isSynced();
   const bool wasConnected = phoneConnected_;
   if (bleKey_.isConnected() != phoneConnected_)
     phoneConnected_ = bleKey_.isConnected();
+  unsigned long now = millis();
+#if NOCT_BMW_DEMO_MODE
+  /* Inject fake status data every NOCT_BMW_DEMO_INTERVAL_MS so app shows live-looking values. */
+  {
+    static unsigned long lastDemoMs = 0;
+    static uint8_t demoMflCycle = 0;
+    if (now - lastDemoMs >= (unsigned long)NOCT_BMW_DEMO_INTERVAL_MS) {
+      lastDemoMs = now;
+      lastIkeCoolantC_ = 85;
+      obdCoolantTempC_ = 85;
+      obdOilTempC_ = 90;
+      obdRpm_ = 2000;
+      obdConnected_ = true;
+      pdcDists_[0] = 50;
+      pdcDists_[1] = 45;
+      pdcDists_[2] = 30;
+      pdcDists_[3] = 25;
+      pdcValid_ = true;
+      demoMflCycle = (demoMflCycle + 1) % 6;
+      lastMflAction_ = (MflAction)demoMflCycle;  /* 0=None, 1=Next, 2=Prev, 3=Play, 4=Vol+, 5=Vol- */
+      lastDoorLidByte1_ = 0x10;
+      lastDoorLidByte2_ = 0x00;
+      lastIgnition_ = 2;
+      lastOdometerKm_ = 123456;
+#if NOCT_BMW_DEBUG
+      const char *mflStr = "None";
+      if (lastMflAction_ == MFL_NEXT) mflStr = "Next";
+      else if (lastMflAction_ == MFL_PREV) mflStr = "Prev";
+      else if (lastMflAction_ == MFL_PLAY_PAUSE) mflStr = "Play";
+      else if (lastMflAction_ == MFL_VOL_UP) mflStr = "Vol+";
+      else if (lastMflAction_ == MFL_VOL_DOWN) mflStr = "Vol-";
+      Serial.printf("[BMW DEMO] status: coolant=85 oil=90 rpm=2000 PDC 50/45/30/25 MFL=%s doors=0x10 ign=2 odom=123456\n", mflStr);
+#endif
+    }
+  }
+#endif
 #if NOCT_BMW_DEBUG
   static bool lastLoggedConnected = false;
   if (phoneConnected_ != lastLoggedConnected) {
@@ -407,11 +459,10 @@ void BmwManager::tick() {
   }
   if (!phoneConnected_)
     welcomeSentOnConnect_ = false;
-  /* Periodic I-Bus poll: rotate IKE status, GM door/lid, IKE ignition. */
-  unsigned long now = millis();
+  /* Periodic I-Bus poll: rotate IKE ping, GM door/lid, IKE ignition. */
   if (ibusSynced_ && now - lastPollMs_ >= (unsigned long)NOCT_IBUS_POLL_INTERVAL_MS) {
     switch (pollAlternate_ % 3) {
-      case 0: ibus_.write(IKE_Status_Request, sizeof(IKE_Status_Request)); break;
+      case 0: ibus_.write(IKE_Ping, sizeof(IKE_Ping)); break;
       case 1: ibus_.write(GM_Status_Request, sizeof(GM_Status_Request)); break;
       case 2: ibus_.write(IKE_Ignition_Request, sizeof(IKE_Ignition_Request)); break;
       default: break;

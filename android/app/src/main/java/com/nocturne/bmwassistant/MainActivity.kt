@@ -84,7 +84,8 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
                 R.id.nav_commands -> pager.setCurrentItem(1, true)
                 R.id.nav_media -> pager.setCurrentItem(2, true)
                 R.id.nav_cluster -> pager.setCurrentItem(3, true)
-                R.id.nav_settings -> pager.setCurrentItem(4, true)
+                R.id.nav_bus -> pager.setCurrentItem(4, true)
+                R.id.nav_settings -> pager.setCurrentItem(5, true)
             }
             true
         }

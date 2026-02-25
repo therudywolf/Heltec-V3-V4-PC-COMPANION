@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- One UI 8: large rounded corners for cards and surfaces -->
+    <!-- OEM-style: moderate rounded corners -->
     <style name="ShapeAppearance.App.Card" parent="ShapeAppearance.Material3.MediumComponent">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/radius_card</item>

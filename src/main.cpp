@@ -112,6 +112,8 @@ static unsigned long toastUntil = 0;
 
 // BMW Assistant: selected action index (short = next, long = execute)
 static int bmwActionIndex = 0;
+// Cached header title (BMW E39 / BMW E46); cleared when model is changed in menu
+static char bmwModelHeader[12] = "";
 
 // Forza: splash "IP | PORT | WAITING" shown for 3s on enter
 static unsigned long forzaSplashUntil = 0;
@@ -431,11 +433,16 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
   // cat==1 (Hacker): handled in long-press branch via handleHackerItem
   if (cat == 2)
   {
-    // BMW: enter BMW Assistant mode
+    // BMW: E39 Asst (0), E46 (1), BMW Cfg (2)
+    quickMenuOpen = false;
+    rebootConfirmed = false;
+    Preferences prefs;
+    prefs.begin("nocturne", false);
     if (item == 0)
     {
-      quickMenuOpen = false;
-      rebootConfirmed = false;
+      prefs.putString("bmw_model", "e39");
+      prefs.end();
+      bmwModelHeader[0] = '\0'; // invalidate cache so next draw uses e39
       if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
@@ -443,6 +450,26 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
         return false;
       }
     }
+    else if (item == 1)
+    {
+      prefs.putString("bmw_model", "e46");
+      prefs.end();
+      bmwModelHeader[0] = '\0';
+      if (!appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+    }
+    else if (item == 2)
+    {
+      prefs.end();
+      snprintf(toastMsg, sizeof(toastMsg), "Cfg soon");
+      toastUntil = now + 1200;
+    }
+    else
+      prefs.end();
     return true;
   }
   if (cat == 3)
@@ -1278,6 +1305,10 @@ void loop()
       static int lastPhantomPayloadIndex = -1;
       if (bleManager.isActive())
         bleManager.tick();
+      display.drawGlobalHeader("BLE Spam", nullptr, netManager.rssi(),
+                               netManager.isWifiConnected());
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
+                                   state.batteryVoltage);
       sceneManager.drawBleSpammer(bleManager.getPacketCount());
       if (lastPhantomPayloadIndex >= 0 &&
           bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
@@ -1314,6 +1345,20 @@ void loop()
       if (obdClient.isEnabled())
         obdClient.tick();
 #endif
+      if (bmwModelHeader[0] == '\0')
+      {
+        Preferences prefs;
+        prefs.begin("nocturne", true);
+        String m = prefs.getString("bmw_model", "e39");
+        prefs.end();
+        strncpy(bmwModelHeader, (m == "e46") ? "BMW E46" : "BMW E39",
+                sizeof(bmwModelHeader) - 1);
+        bmwModelHeader[sizeof(bmwModelHeader) - 1] = '\0';
+      }
+      display.drawGlobalHeader(bmwModelHeader, nullptr, netManager.rssi(),
+                               netManager.isWifiConnected());
+      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
+                                   state.batteryVoltage);
       sceneManager.drawBmwAssistant(bmwManager, bmwActionIndex);
       break;
     default:

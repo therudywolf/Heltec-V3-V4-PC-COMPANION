@@ -87,6 +87,9 @@ void BleKeyService::onDisconnect() {
 }
 
 void BleKeyService::onLightCommandReceived(uint8_t cmd) {
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW BLE] cmd from phone: 0x%02X\n", cmd);
+#endif
   if (lightCommandCb_)
     lightCommandCb_(cmd);
 }
@@ -242,6 +245,9 @@ void BleKeyService::onClusterTextReceived(const uint8_t *data, size_t len) {
   size_t n = len < 20 ? len : 20;
   memcpy(textBuf, data, n);
   textBuf[n] = '\0';
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW BLE] Cluster text from phone: \"%s\"\n", textBuf);
+#endif
   clusterTextCb_(textBuf);
 }
 
@@ -268,6 +274,9 @@ void BleKeyService::onNowPlayingReceived(const uint8_t *data, size_t len) {
   trackBuf[trackLen] = '\0';
   memcpy(artistBuf, artist, artistLen);
   artistBuf[artistLen] = '\0';
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW BLE] Now Playing from phone: \"%s\" - \"%s\"\n", trackBuf, artistBuf);
+#endif
   nowPlayingCb_(trackBuf, artistBuf);
 }
 

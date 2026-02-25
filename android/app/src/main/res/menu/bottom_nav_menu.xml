@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:id="@+id/nav_dashboard" android:icon="@android:drawable/ic_menu_info_details" android:title="@string/tab_dashboard" />
-    <item android:id="@+id/nav_commands" android:icon="@android:drawable/ic_menu_edit" android:title="@string/tab_commands" />
-    <item android:id="@+id/nav_media" android:icon="@android:drawable/ic_media_play" android:title="@string/tab_media" />
-    <item android:id="@+id/nav_cluster" android:icon="@android:drawable/ic_menu_my_calendar" android:title="@string/tab_cluster" />
-    <item android:id="@+id/nav_settings" android:icon="@android:drawable/ic_menu_preferences" android:title="@string/tab_settings" />
+    <item android:id="@+id/nav_dashboard" android:icon="@drawable/ic_nav_dashboard" android:title="@string/tab_dashboard" />
+    <item android:id="@+id/nav_commands" android:icon="@drawable/ic_nav_commands" android:title="@string/tab_commands" />
+    <item android:id="@+id/nav_media" android:icon="@drawable/ic_nav_media" android:title="@string/tab_media" />
+    <item android:id="@+id/nav_cluster" android:icon="@drawable/ic_nav_cluster" android:title="@string/tab_cluster" />
+    <item android:id="@+id/nav_bus" android:icon="@drawable/ic_nav_bus" android:title="@string/tab_bus" />
+    <item android:id="@+id/nav_settings" android:icon="@drawable/ic_nav_settings" android:title="@string/tab_settings" />
 </menu>

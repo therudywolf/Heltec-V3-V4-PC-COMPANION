@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">BMW Companion by rudywolf</string>
+    <string name="app_name">BMW Assistant</string>
     <string name="scan">Scan</string>
     <string name="disconnect">Disconnect</string>
     <string name="status_disconnected">Disconnected</string>
@@ -35,6 +35,7 @@
     <string name="tab_commands">Commands</string>
     <string name="tab_media">Media</string>
     <string name="tab_cluster">Cluster</string>
+    <string name="tab_bus">Bus</string>
     <string name="hint_connect_first">Connect to BMW E39 Key first</string>
     <string name="ibus">I-Bus</string>
     <string name="obd">OBD</string>
@@ -105,4 +106,28 @@
     <string name="confirm_dangerous_message">Send this command?</string>
     <string name="confirm">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="connection">Connection</string>
+    <string name="bus_sensors">Bus &amp; sensors</string>
+    <string name="vehicle">Vehicle</string>
+    <string name="pdc_steering">PDC &amp; steering</string>
+    <string name="doors_cluster">Doors / Cluster</string>
+    <string name="about">About</string>
+    <string name="welcome_cluster_hint">e.g. Hello</string>
+    <string name="shift_rpm_hint">5500</string>
+    <string name="about_developed_by">Developed by rudywolf</string>
+    <string name="extended_locks">Extended locks</string>
+    <string name="hard_lock">Hard lock</string>
+    <string name="all_except_driver">All except driver</string>
+    <string name="driver_door_only">Driver door only</string>
+    <string name="doors_fuel_trunk">Doors / fuel / trunk</string>
+    <string name="bus_flags">Flags</string>
+    <string name="bus_ibus_synced">I-Bus synced</string>
+    <string name="bus_phone_connected">Phone connected</string>
+    <string name="bus_pdc_valid">PDC valid</string>
+    <string name="bus_obd_connected">OBD connected</string>
+    <string name="bus_temperatures">Temperatures</string>
+    <string name="bus_pdc_distances">PDC distances (cm)</string>
+    <string name="bus_mfl_action">MFL last action</string>
+    <string name="bus_doors_lock_ign">Doors · Lock · Ignition</string>
+    <string name="bus_raw">Raw (hex)</string>
 </resources>

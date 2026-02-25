@@ -6,8 +6,8 @@
 
 #include <stdint.h>
 
-extern const uint8_t REMOTE_UNLOCK[6];
-extern const uint8_t REMOTE_LOCK[6];
+extern const uint8_t REMOTE_UNLOCK[5];
+extern const uint8_t REMOTE_LOCK[5];
 
 extern const uint8_t GoodbyeLights[13];
 extern const uint8_t FollowMeHome[13];
@@ -41,9 +41,9 @@ extern const uint8_t AllExceptDriver_Lock[7];
 extern const uint8_t DriverDoor_Lock[7];
 extern const uint8_t Doors_Fuel_Trunk[7];
 
-/** Request IKE (cluster) status — for periodic I-Bus poll. */
-extern const uint8_t IKE_Status_Request[4];
-/** Request door/lid status 0x7a from GM. */
+/** IKE Ping (keep-alive) for periodic I-Bus poll. Wilhelm 02.md. */
+extern const uint8_t IKE_Ping[4];
+/** Request door/lid status 0x7a from GM. Wilhelm gm/79.md; we use DIA as sender. */
 extern const uint8_t GM_Status_Request[4];
 /** Request ignition status 0x11 from IKE. */
 extern const uint8_t IKE_Ignition_Request[4];

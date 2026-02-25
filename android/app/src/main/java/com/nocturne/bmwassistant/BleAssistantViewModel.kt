@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 data class BmwStatusData(
     val ibusOk: Boolean,
+    val phoneConnected: Boolean,
+    val pdcValid: Boolean,
     val obdOk: Boolean,
     val coolantC: Int?,
     val oilC: Int?,
@@ -26,6 +28,9 @@ class BleAssistantViewModel : ViewModel() {
 
     private val _statusData = MutableStateFlow<BmwStatusData?>(null)
     val statusData: StateFlow<BmwStatusData?> = _statusData.asStateFlow()
+
+    private val _rawStatusHex = MutableStateFlow<String?>(null)
+    val rawStatusHex: StateFlow<String?> = _rawStatusHex.asStateFlow()
 
     fun setConnectionState(state: String) {
         _connectionState.value = state
@@ -56,6 +61,11 @@ class BleAssistantViewModel : ViewModel() {
         var ignition: Int? = null
         var odometerKm: Int? = null
         if (value.size >= 16) {
+            _rawStatusHex.value = value.take(16).joinToString(" ") { b -> "%02X".format(b.toInt() and 0xFF) }
+        } else {
+            _rawStatusHex.value = null
+        }
+        if (value.size >= 16) {
             val d1 = value[10].toInt() and 0xFF
             val d2 = value[11].toInt() and 0xFF
             val lock = value[12].toInt() and 0xFF
@@ -69,6 +79,8 @@ class BleAssistantViewModel : ViewModel() {
         }
         _statusData.value = BmwStatusData(
             ibusOk = (flags and 0x01) != 0,
+            phoneConnected = (flags and 0x02) != 0,
+            pdcValid = (flags and 0x04) != 0,
             obdOk = (flags and 0x08) != 0,
             coolantC = if (coolant == 0xFF) null else coolant,
             oilC = if (oil == 0xFF) null else oil,
@@ -85,5 +97,6 @@ class BleAssistantViewModel : ViewModel() {
 
     fun clearStatus() {
         _statusData.value = null
+        _rawStatusHex.value = null
     }
 }
