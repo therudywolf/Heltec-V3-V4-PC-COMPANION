@@ -17,6 +17,7 @@ extern const uint8_t TurnOffLights[17];
 extern const uint8_t HazardLights[13];
 
 extern const uint8_t Doors_Unlock_Interior[7];
+extern const uint8_t Doors_Unlock_GM[6];  /* Central unlock GM3: 3F 05 00 0C 34 00 */
 extern const uint8_t Doors_Lock_Key[7];
 extern const uint8_t Trunk_Open[7];
 

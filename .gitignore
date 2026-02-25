@@ -45,5 +45,8 @@ nocturne.log
 serverpars.txt
 CURSOR_UI_REFACTOR.md
 
-# ESP32 Marauder firmware (reference only, do not commit)
-esp32_marauder/
+# Flutter (local SDK and build)
+flutter_sdk/
+app/build/
+app/.dart_tool/
+

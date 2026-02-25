@@ -49,6 +49,9 @@ class BleKeyService {
   void onConnect();
   void onDisconnect();
 
+  /** Call from onConnect so next updateStatus() will notify (phone gets current status immediately). */
+  void requestStatusNotifyOnNextUpdate() { lastStatusPacketValid_ = false; }
+
  private:
   bool active_ = false;
   bool connected_ = false;

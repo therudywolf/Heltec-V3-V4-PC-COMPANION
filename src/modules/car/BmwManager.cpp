@@ -24,23 +24,29 @@ BmwManager::BmwManager() {
 }
 
 void BmwManager::parseMflButton(uint8_t *packet) {
-  /* MFL 0x50, cmd 0x3B. Wilhelm mfl/3b.md: button+state bitfield (FORWARD 0x01, BACK 0x08, PRESS/HOLD/RELEASE, R/T 0x40, TEL 0x80). We use simplified byte mapping. */
+  /* MFL 0x50 → Radio 0x68. Wilhelm mfl/3b.md: cmd 0x3B button byte: 0x01=Forward (next), 0x08=Back (prev); 0x32 volume: 0x11=up, 0x10=down. */
   if (!packet || packet[0] != IBUS_MFL || packet[1] < 3)
     return;
   size_t totalLen = 2u + (size_t)packet[1];
-  if (totalLen < 5 || packet[3] != IBUS_MFL_BUTTON)
+  if (totalLen < 5)
     return;
+  uint8_t cmd = packet[3];
   uint8_t b = packet[4];
-  if (b == 0x3B || b == 0x02)   /* next / R/T */
+  if (cmd == 0x32) {
+    if (b == 0x11)
+      lastMflAction_ = MFL_VOL_UP;
+    else if (b == 0x10)
+      lastMflAction_ = MFL_VOL_DOWN;
+    return;
+  }
+  if (cmd != IBUS_MFL_BUTTON)
+    return;
+  if (b == 0x01)
     lastMflAction_ = MFL_NEXT;
-  else if (b == 0x3A || b == 0x01)
+  else if (b == 0x08)
     lastMflAction_ = MFL_PREV;
   else if (b == 0x80 || b == 0x00)
     lastMflAction_ = MFL_PLAY_PAUSE;
-  else if (b == 0x11)
-    lastMflAction_ = MFL_VOL_UP;
-  else if (b == 0x10)
-    lastMflAction_ = MFL_VOL_DOWN;
 }
 
 void BmwManager::setNowPlaying(const char *track, const char *artist) {
@@ -171,7 +177,12 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
     /* IKE odometer 0x17: 3 bytes km = b1 + b2*256 + b3*65536. Wilhelm ike/17.md. */
     lastOdometerKm_ = (int)packet[4] | ((int)packet[5] << 8) | ((int)packet[6] << 16);
   }
-  /* CDC emulation: RAD requests CD status -> reply as CDC so head unit shows CD source. */
+  /* CDC emulation: Radio polls with 68 03 18 01 (status request 0x01); reply 18 04 68 02 00 within ~20 ms to keep CD mode. E46_Codes CDC_STATUS_REQUEST. */
+  else if (packet[0] == IBUS_RAD && packet[1] == 3 && packet[2] == IBUS_CDC && packet[3] == 0x01) {
+    uint8_t cdcPong[] = { IBUS_CDC, 0x04, IBUS_RAD, 0x02, 0x00 };
+    ibus_.write(cdcPong, sizeof(cdcPong));
+  }
+  /* CDC emulation: RAD requests CD control 0x38 -> reply 0x39 (CDC Status). */
   else if (packet[0] == IBUS_RAD && packet[1] >= 3 && packet[2] == IBUS_CDC && packet[3] == IBUS_CD_CTRL_REQ) {
     uint8_t reply[] = { IBUS_CDC, 3, IBUS_RAD, IBUS_CD_STAT_RPLY, 0x01 };
     ibus_.write(reply, sizeof(reply));
@@ -228,6 +239,10 @@ void BmwManager::sendDoorsUnlockInterior() {
   ibus_.write(Doors_Unlock_Interior, sizeof(Doors_Unlock_Interior));
 }
 
+void BmwManager::sendDoorsUnlockGM() {
+  ibus_.write(Doors_Unlock_GM, sizeof(Doors_Unlock_GM));
+}
+
 void BmwManager::sendDoorsLockKey() {
   ibus_.write(Doors_Lock_Key, sizeof(Doors_Lock_Key));
 }
@@ -247,6 +262,16 @@ void BmwManager::sendDoorsFuelTrunk() {
 
 void BmwManager::sendWindowFrontDriverOpen() {
   ibus_.write(Window_FrontDriver_Open, sizeof(Window_FrontDriver_Open));
+}
+void BmwManager::sendLCMDiagnostic(const uint8_t *payload, uint8_t len) {
+  if (!payload || len == 0 || len > 32)
+    return;
+  uint8_t buf[34];
+  buf[0] = IBUS_LCM;
+  buf[1] = len + 1;
+  buf[2] = 0x00;
+  memcpy(buf + 3, payload, len);
+  ibus_.write(buf, 3 + len);
 }
 void BmwManager::sendWindowFrontDriverClose() {
   ibus_.write(Window_FrontDriver_Close, sizeof(Window_FrontDriver_Close));
@@ -344,6 +369,7 @@ void BmwManager::begin() {
       case 26: s_bmwForIbus->sendAllExceptDriverLock(); break;
       case 27: s_bmwForIbus->sendDriverDoorLock(); break;
       case 28: s_bmwForIbus->sendDoorsFuelTrunk(); break;
+      case 29: s_bmwForIbus->sendDoorsUnlockGM(); break;
       case 0x80: s_bmwForIbus->startLightShow(); break;
       case 0x81: s_bmwForIbus->stopLightShow(); break;
       default: break;
@@ -413,6 +439,25 @@ void BmwManager::tick() {
     /* Inject fake status data so app shows live-looking values (interval from config). */
     static unsigned long lastDemoMs = 0;
     static uint8_t demoMflCycle = 0;
+    /* First tick in demo: set all values immediately so phone gets valid data without waiting 4s. */
+    if (lastDemoMs == 0) {
+      lastIkeCoolantC_ = 85;
+      obdCoolantTempC_ = 85;
+      obdOilTempC_ = 90;
+      obdRpm_ = 2000;
+      obdConnected_ = true;
+      pdcDists_[0] = 50;
+      pdcDists_[1] = 45;
+      pdcDists_[2] = 30;
+      pdcDists_[3] = 25;
+      pdcValid_ = true;
+      lastMflAction_ = (MflAction)0;
+      lastDoorLidByte1_ = 0x10;
+      lastDoorLidByte2_ = 0x00;
+      lastIgnition_ = 2;
+      lastOdometerKm_ = 123456;
+      lastDemoMs = now;
+    }
     if (now - lastDemoMs >= (unsigned long)NOCT_BMW_DEMO_INTERVAL_MS) {
       lastDemoMs = now;
       lastIkeCoolantC_ = 85;

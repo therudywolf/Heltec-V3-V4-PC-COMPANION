@@ -1,5 +1,7 @@
 /*
- * I-Bus serial parser 9600 8E1 (ESP32-compatible).
+ * I-Bus serial layer: 9600 8E1, frame [Source][Length][Destination][Data...][XOR].
+ * Pins: NOCT_IBUS_TX_PIN 39, NOCT_IBUS_RX_PIN 38 (config.h, single source of truth for Heltec V4).
+ * TX only when RX line silent >= 5 ms; abort TX if Serial.available() > 0 before send; send packet in one block.
  */
 #ifndef IBUSSERIAL_H
 #define IBUSSERIAL_H
@@ -12,6 +14,10 @@ class IbusSerial {
   IbusSerial();
   void setIbusSerial(HardwareSerial &serial);
   void run();
+  /** Called from Task_IBus_Read when using FreeRTOS. */
+  void runRead() { readIbus(); }
+  /** Called from Task_IBus_Write when using FreeRTOS (one packet send attempt). */
+  void runSendNext() { sendNextPacket(); }
   void write(const uint8_t *message, uint8_t size);
   void setPacketHandler(void (*handler)(uint8_t *packet));
   uint8_t calculateChecksum(const uint8_t *data, uint8_t length);
@@ -39,7 +45,7 @@ class IbusSerial {
   uint8_t ibusByte_[40];
   void (*packetHandler_)(uint8_t *packet);
 
-  static const unsigned long kPacketGapMs = 10;
+  static const unsigned long kPacketGapMs = 5;  /* Min 5 ms RX silence before TX (I-Bus collision avoidance). */
   unsigned long lastRxMs_;
   unsigned long lastTxMs_;
   bool clearToSend_;
