@@ -41,11 +41,15 @@ class BmwManager {
   void sendUnlock();
   void sendTrunkOpen();
   void sendDoorsUnlockInterior();
+  void sendDoorsUnlockGM();  /* Central unlock: 3F 05 00 0C 34 00 */
   void sendDoorsLockKey();
   void sendDoorsHardLock();
   void sendAllExceptDriverLock();
   void sendDriverDoorLock();
   void sendDoorsFuelTrunk();
+
+  /** Placeholder: LCM diagnostic (e.g. blink high beams/indicators, welcome light). Payload per LCM ID 0xD0. */
+  void sendLCMDiagnostic(const uint8_t *payload, uint8_t len);
 
   void sendWindowFrontDriverOpen();
   void sendWindowFrontDriverClose();

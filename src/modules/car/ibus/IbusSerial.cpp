@@ -30,8 +30,10 @@ void IbusSerial::setPacketHandler(void (*handler)(uint8_t *packet)) {
 void IbusSerial::readIbus() {
   if (!ibusSerial_ || !rxBuffer_)
     return;
-  while (ibusSerial_->available())
+  while (ibusSerial_->available()) {
     rxBuffer_->write(ibusSerial_->read());
+    lastRxMs_ = millis();  /* Track last RX time for 5 ms clear-to-send. */
+  }
 
   switch (state_) {
     case FIND_SOURCE:
@@ -96,19 +98,26 @@ void IbusSerial::write(const uint8_t *message, uint8_t size) {
 void IbusSerial::sendNextPacket() {
   if (!ibusSerial_ || !txBuffer_ || txBuffer_->available() < 2)
     return;
-  unsigned long now = millis();
-  if (!clearToSend_ && (now - lastRxMs_ < kPacketGapMs || now - lastTxMs_ < kPacketGapMs))
+  const unsigned long now = millis();
+  /* Strict: minimum 5 ms silence on RX before any TX. */
+  if ((now - lastRxMs_) < kPacketGapMs)
     return;
-  clearToSend_ = true;
-  int len = txBuffer_->read();
-  if (len <= 0 || len > 32)
+  /* Abort TX if any data on RX line right before sending (bus not silent). */
+  if (ibusSerial_->available() > 0)
     return;
-  for (int i = 0; i < len; i++) {
-    int b = txBuffer_->read();
+
+  const int lenByte = txBuffer_->read();
+  if (lenByte <= 0 || lenByte > 32)
+    return;
+  uint8_t buf[40];
+  for (int i = 0; i < lenByte; i++) {
+    const int b = txBuffer_->read();
     if (b < 0)
-      break;
-    ibusSerial_->write((uint8_t)b);
+      return;
+    buf[i] = (uint8_t)b;
   }
+  /* Send entire packet in one block (no byte-by-byte; UART FIFO). */
+  ibusSerial_->write(buf, (size_t)lenByte);
   lastTxMs_ = now;
 }
 
@@ -121,9 +130,8 @@ uint8_t IbusSerial::calculateChecksum(const uint8_t *data, uint8_t length) {
 
 void IbusSerial::run() {
   readIbus();
-  unsigned long now = millis();
-  if (now - lastRxMs_ >= kPacketGapMs && now - lastTxMs_ >= kPacketGapMs)
-    clearToSend_ = true;
+  const unsigned long now = millis();
+  clearToSend_ = (now - lastRxMs_ >= kPacketGapMs);
   if (clearToSend_ && txBuffer_ && txBuffer_->available() > 0)
     sendNextPacket();
 }

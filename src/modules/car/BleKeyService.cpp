@@ -70,6 +70,7 @@ void BleKeyService::onConnect() {
   connected_ = true;
   disconnectPending_ = false;
   disconnectReportedAt_ = 0;
+  requestStatusNotifyOnNextUpdate();  /* Next updateStatus() will notify so phone gets data immediately. */
 #if NOCT_BMW_DEBUG
   Serial.println("[BMW BLE] Phone connected");
 #endif
