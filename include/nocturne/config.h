@@ -207,7 +207,7 @@
 /* BMW Assistant debug: when 1, log BLE init, connection changes, and each "run" action to Serial (115200). Use for debugging BLE OFF / reboot on run. */
 #define NOCT_BMW_DEBUG 1
 
-/* BMW Assistant demo mode: when 1, emulate I-Bus sync and inject fake status (coolant, oil, rpm, PDC, MFL, doors, ignition, odometer) so app shows live data without real I-Bus. Commands from phone/button still execute (ibus_.write is no-op if I-Bus disabled). */
+/* BMW Assistant demo mode: when enabled from menu (prefs bmw_demo), BmwManager injects fake status so app can be tested without real I-Bus. Compile-time flag NOCT_BMW_DEMO_MODE no longer used for logic; interval below still used for demo injection. */
 #define NOCT_BMW_DEMO_MODE 0
 #define NOCT_BMW_DEMO_INTERVAL_MS 4000
 
