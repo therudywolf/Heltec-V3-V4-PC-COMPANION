@@ -58,12 +58,6 @@ public:
   /** Cyberdeck: Daemon mode (Wolf Soul). */
   void drawDaemon(unsigned long bootTime = 0, bool wifiConnected = false,
                   bool tcpConnected = false, int rssi = 0);
-  /** Cyberdeck: Netrunner WiFi Scanner — list view with RSSI and security.
-   * footerOverride: if non-null, used instead of "LINK: ONLINE" (e.g. DEAUTH).
-   */
-  void drawWiFiScanner(int selectedIndex, int pageOffset,
-                       int *sortedIndices = nullptr, int filteredCount = 0,
-                       const char *footerOverride = nullptr);
 
   /** Battery HUD: icon + percent (or CHG when charging) in header, right of
    * WOOF!. pct: 0-100, isCharging: true if charging, batteryVoltage: voltage in
@@ -72,26 +66,6 @@ public:
    * white). */
   void drawPowerStatus(int pct, bool isCharging, float batteryVoltage = 0.0f,
                        bool onWhiteHeader = true);
-
-  /** BLE Phantom Spammer UI: status bar, pulsing BT icon, packet count. */
-  void drawBleSpammer(int packetCount);
-
-  /** BLE Clone: scan list, selected device, long-press to clone. */
-  void drawBleClone(class BleManager &ble, int selectedIndex);
-
-  /** TRAP: Evil twin / captive portal — clients, logs, last bite. cloneApPassword: AP password when cloning encrypted (for display). */
-  void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
-                    unsigned long passwordShowUntil,
-                    const char *clonedSSID = nullptr,
-                    const char *cloneApPassword = nullptr,
-                    bool apFailed = false);
-
-  void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
-
-  /** Forza Horizon/Motorsport telemetry dashboard. showSplash: IP|PORT|WAITING
-   * for 3s on enter. localIp: WiFi.localIP() as uint32_t. */
-  void drawForzaDash(class ForzaManager &forza, bool showSplash,
-                     uint32_t localIp);
 
   /** BMW E39 Assistant: I-Bus status, BLE, selected action (1x next, 2s run). */
   void drawBmwAssistant(class BmwManager &bmw, int selectedActionIndex);

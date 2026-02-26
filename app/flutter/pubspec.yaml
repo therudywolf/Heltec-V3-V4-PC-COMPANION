@@ -1,0 +1,40 @@
+name: bmw_assistant
+description: My E39 — parody of My BMW App for 2000 BMW E39 (523i). BLE companion.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  flutter_blue_plus: ^1.35.5
+  permission_handler: ^11.3.0
+  shared_preferences: ^2.2.2
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  riverpod_generator: ^2.3.9
+  build_runner: ^2.4.8
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/images/bmw_logo.webp
+    - assets/images/car_hero.png
+
+flutter_launcher_icons:
+  android: true
+  android_package_name: com.nocturne.bmw_assistant
+  image_path: assets/images/bmw_logo.webp
+  adaptive_icon_background: "#121212"
+  adaptive_icon_foreground: assets/images/bmw_logo.webp
+  adaptive_icon_foreground_inset: 15

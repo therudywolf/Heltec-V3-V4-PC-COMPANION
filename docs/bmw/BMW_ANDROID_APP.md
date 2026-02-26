@@ -2,6 +2,8 @@
 
 Описание BLE GATT-сервисов и команд для управления модулем **BMW E39 Assistant** (Nocturne OS) с Android-телефона.
 
+**Приложение:** тема в стиле старых BMW — чёрный фон, янтарный акцент (primary), красный для ошибок и опасных действий. Навигация по вкладкам: Status, Commands, Media, Cluster, Settings, Bus. При отказе в разрешениях BLE сканирование отключено; при ошибке записи команды показывается «Failed to send command». При включённом Auto-connect после отключения приложение пытается снова подключиться к последнему устройству.
+
 ---
 
 ## Подключение
@@ -104,4 +106,4 @@
 ## Ссылки
 
 - [BMW E39 Assistant — подключение и настройка](BMW_E39_Assistant.md)
-- Прошивка: [BleKeyService](../src/modules/car/BleKeyService.cpp), [BmwManager](../src/modules/car/BmwManager.cpp)
+- Прошивка: [BleKeyService](../../src/modules/car/BleKeyService.cpp), [BmwManager](../../src/modules/car/BmwManager.cpp)

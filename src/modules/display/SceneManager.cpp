@@ -7,8 +7,6 @@
 #include "nocturne/config.h"
 #include "BleManager.h"
 #include "BmwManager.h"
-#include "ForzaManager.h"
-#include "WifiSniffManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
@@ -1051,15 +1049,11 @@ static int submenuCountForCategory(int cat)
   switch (cat)
   {
   case 0:
-    return 2; // Monitoring: PC, Forza
-  case 1:
-    return 4; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
-  case 2:
     return 2; // BMW: BMW Assistant, BMW Demo
-  case 3:
+  case 1:
     return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
-  case 4:
-    return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
+  case 2:
+    return 5; // System: Demo, REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
     return 2;
   }
@@ -1083,18 +1077,17 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
-  // 0=Monitoring, 1=Hacker, 2=BMW, 3=Config, 4=System
-  static const char *categoryNames[] = {"Monitoring", "Hacker", "BMW",
-                                        "Config", "System"};
+  // 0=BMW, 1=Config, 2=System (BMW-only)
+  static const char *categoryNames[] = {"BMW", "Config", "System"};
   static char items[25][20];
   int count;
   const char *headerStr;
 
   if (menuLevel == 0)
   {
-    count = 5;
+    count = 3;
     headerStr = "// MENU";
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 3; i++)
     {
       strncpy(items[i], categoryNames[i], sizeof(items[i]) - 1);
       items[i][sizeof(items[i]) - 1] = '\0';
@@ -1106,29 +1099,12 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     headerStr = categoryNames[menuCategory];
     if (menuCategory == 0)
     {
-      strncpy(items[0], "PC", sizeof(items[0]) - 1);
-      strncpy(items[1], "Forza", sizeof(items[1]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
-      items[1][sizeof(items[1]) - 1] = '\0';
-    }
-    else if (menuCategory == 1)
-    {
-      static const char *hackerItems[] = {"WiFi Clone", "BLE Clone",
-        "BLE Spam", "EAPOL Capture"};
-      for (int i = 0; i < count && i < 4; i++)
-      {
-        strncpy(items[i], hackerItems[i], sizeof(items[i]) - 1);
-        items[i][sizeof(items[i]) - 1] = '\0';
-      }
-    }
-    else if (menuCategory == 2)
-    {
       strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
       strncpy(items[1], "BMW Demo", sizeof(items[1]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
     }
-    else if (menuCategory == 3)
+    else if (menuCategory == 1)
     {
       if (!carouselOn)
         snprintf(items[0], sizeof(items[0]), "AUTO: OFF");
@@ -1149,19 +1125,21 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
         snprintf(items[6], sizeof(items[6]), "TIMEOUT:%ds", displayTimeoutSec);
       items[6][sizeof(items[6]) - 1] = '\0';
     }
-    else if (menuCategory == 4)
+    else if (menuCategory == 2)
     {
-      if (rebootConfirmed)
-        snprintf(items[0], sizeof(items[0]), "REBOOT [OK]");
-      else
-        strncpy(items[0], "REBOOT", sizeof(items[0]) - 1);
+      strncpy(items[0], "Demo", sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
-      strncpy(items[1], "Charge only", sizeof(items[1]) - 1);
-      strncpy(items[2], "Power off", sizeof(items[2]) - 1);
-      strncpy(items[3], "Version", sizeof(items[3]) - 1);
+      if (rebootConfirmed)
+        snprintf(items[1], sizeof(items[1]), "REBOOT [OK]");
+      else
+        strncpy(items[1], "REBOOT", sizeof(items[1]) - 1);
       items[1][sizeof(items[1]) - 1] = '\0';
+      strncpy(items[2], "Charge only", sizeof(items[2]) - 1);
+      strncpy(items[3], "Power off", sizeof(items[3]) - 1);
+      strncpy(items[4], "Version", sizeof(items[4]) - 1);
       items[2][sizeof(items[2]) - 1] = '\0';
       items[3][sizeof(items[3]) - 1] = '\0';
+      items[4][sizeof(items[4]) - 1] = '\0';
     }
   }
   if (count <= 0)
@@ -1598,814 +1576,132 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
   }
 }
 
-// ===========================================================================
-// NETRUNNER MODE: WiFi Scanner — more networks, fast scroll, JAMMER status
-// ===========================================================================
-void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
-                                   int *sortedIndices, int filteredCount,
-                                   const char *footerOverride)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
-
-  // If footerOverride is provided and no WiFi scan data, show simple status
-  if (footerOverride && filteredCount == 0 && sortedIndices == nullptr)
-  {
-    u8g2.setDrawColor(1);
-    u8g2.setFont(FONT_HEADER);
-    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
-    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-    u8g2.setFont(TINY_FONT);
-    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 6);
-    char footer[48];
-    strncpy(footer, footerOverride, sizeof(footer) - 1);
-    footer[sizeof(footer) - 1] = '\0';
-    u8g2.print(footer);
-    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 16);
-    u8g2.print("2x BACK to exit");
-    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 26);
-    u8g2.print("Mode running...");
-    drawBottomHint();
-    disp_.drawGreebles();
-    return;
-  }
-
-  int n = WiFi.scanComplete();
-  bool useFiltered = (sortedIndices != nullptr && filteredCount > 0);
-  int displayCount = useFiltered ? filteredCount : n;
-
-  // If no WiFi scan data and no footer, show a default message
-  if (n == 0 && displayCount == 0 && !footerOverride)
-  {
-    u8g2.setFont(FONT_HEADER);
-    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
-    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-    u8g2.setFont(TINY_FONT);
-    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("NO DATA")) / 2, 32);
-    u8g2.print("NO DATA");
-    drawBottomHint();
-    disp_.drawGreebles();
-    return;
-  }
-
-  if (n == -2)
-  {
-    u8g2.setFont(FONT_HEADER);
-    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
-    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-    u8g2.setFont(TINY_FONT);
-    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("INIT RADAR...")) / 2, 32);
-    u8g2.print("INIT RADAR...");
-    drawBottomHint();
-    disp_.drawGreebles();
-    return;
-  }
-  if (n == -1)
-  {
-    u8g2.setFont(FONT_HEADER);
-    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
-    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-    u8g2.setFont(TINY_FONT);
-    int tw = u8g2.getUTF8Width("SCANNING...");
-    u8g2.setCursor((NOCT_DISP_W - tw) / 2, NOCT_CONTENT_TOP + 8);
-    u8g2.print("SCANNING...");
-    u8g2.drawFrame(34, 35, 60, 4);
-    int w = (millis() / 10) % 60;
-    u8g2.drawBox(34, 35, w, 4);
-    drawBottomHint();
-    disp_.drawGreebles();
-    return;
-  }
-  if (displayCount == 0 && !footerOverride)
-  {
-    u8g2.setFont(FONT_HEADER);
-    u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
-    u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-    u8g2.setFont(TINY_FONT);
-    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("NO SIGNALS")) / 2, 28);
-    u8g2.print("NO SIGNALS");
-    u8g2.setCursor((NOCT_DISP_W - (int)u8g2.getUTF8Width("[PRESS TO RESCAN]")) / 2, 42);
-    u8g2.print("[PRESS TO RESCAN]");
-    drawBottomHint();
-    disp_.drawGreebles();
-    return;
-  }
-
-  // If we have footer but no scan data, skip WiFi scan display logic
-  if (displayCount == 0 && footerOverride)
-  {
-    // Already handled above
-    return;
-  }
-
-  // --- LIST RENDER (unified header + content to NOCT_FOOTER_Y) ---
-  u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "WiFi Clone");
-  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-  u8g2.setFont(TINY_FONT);
-
-  int yStart = NOCT_CONTENT_TOP;
-  int h = 10;
-  const int maxVisibleRows = 4;  // keep list above NOCT_FOOTER_Y (50)
-  int endIdx = pageOffset + maxVisibleRows < displayCount
-                   ? pageOffset + maxVisibleRows
-                   : displayCount;
-
-  for (int i = pageOffset; i < endIdx; i++)
-  {
-    int actualIndex = useFiltered ? sortedIndices[i] : i;
-    int y = yStart + ((i - pageOffset) * h);
-
-    if (i == selectedIndex)
-    {
-      u8g2.setDrawColor(1);
-      u8g2.drawBox(0, y - 8, NOCT_DISP_W, h);
-      u8g2.setDrawColor(0);
-    }
-    else
-    {
-      u8g2.setDrawColor(1);
-    }
-
-    // Copy SSID to local String so c_str() remains valid; then to buffer
-    String ssidStr = WiFi.SSID(actualIndex);
-    const char *ssid = ssidStr.c_str();
-    char ssidBuf[12]; // Max 10 chars + "." + null terminator
-    if (!ssid || ssidStr.length() == 0)
-    {
-      strncpy(ssidBuf, "[HIDDEN]", sizeof(ssidBuf) - 1);
-    }
-    else
-    {
-      size_t len = ssidStr.length();
-      if (len > 10)
-      {
-        strncpy(ssidBuf, ssid, 9);
-        ssidBuf[9] = '.';
-        ssidBuf[10] = '\0';
-      }
-      else
-      {
-        strncpy(ssidBuf, ssid, sizeof(ssidBuf) - 1);
-        ssidBuf[sizeof(ssidBuf) - 1] = '\0';
-      }
-    }
-    u8g2.setCursor(2, y);
-    u8g2.print(ssidBuf);
-
-    // RSSI и канал
-    int rssi = WiFi.RSSI(actualIndex);
-    int channel = WiFi.channel(actualIndex);
-    u8g2.setCursor(70, y);
-    u8g2.printf("%d CH%d", rssi, channel);
-
-    // Индикация шифрования
-    wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
-    if (auth != WIFI_AUTH_OPEN)
-    {
-      u8g2.setCursor(120, y);
-      if (auth == WIFI_AUTH_WPA3_PSK || auth == WIFI_AUTH_WPA2_WPA3_PSK)
-      {
-        u8g2.print("3"); // WPA3
-      }
-      else
-      {
-        u8g2.print("*"); // WPA/WPA2
-      }
-    }
-    u8g2.setDrawColor(1);
-  }
-
-  drawBottomHint();
-  disp_.drawGreebles();
-}
-
-// ---------------------------------------------------------------------------
-// BLE PHANTOM SPAMMER: status bar, pulsing BT icon, packet count
-// ---------------------------------------------------------------------------
-#define PHANTOM_BT_CX (NOCT_DISP_W / 2)
-#define PHANTOM_BT_CY 32
-#define PHANTOM_BT_R 12
-
-static void drawBtIcon(U8G2 &u8g2, int cx, int cy, int r, int pulse)
-{
-  int R = r + (pulse / 2);
-  if (R < 4)
-    R = 4;
-  u8g2.drawCircle(cx, cy, R);
-  u8g2.drawCircle(cx, cy, R - 2);
-  int tip = 4;
-  u8g2.drawTriangle(cx - tip, cy - R + 2, cx - tip, cy + R - 2, cx + tip, cy);
-  u8g2.drawLine(cx - tip, cy - R + 2, cx + R - 2, cy - 4);
-  u8g2.drawLine(cx - tip, cy + R - 2, cx + R - 2, cy + 4);
-}
-
-void SceneManager::drawBleSpammer(int packetCount)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
-  u8g2.setDrawColor(1);
-
-  /* Content below global header: centered BT icon and packet count (NOCT_CONTENT_TOP layout). */
-  const int contentMidY = NOCT_CONTENT_TOP + (NOCT_DISP_H - NOCT_CONTENT_TOP) / 2;
-  int cy = contentMidY - 8;
-  if (cy < NOCT_CONTENT_TOP)
-    cy = NOCT_CONTENT_TOP;
-  unsigned long t = millis() / 100;
-  int pulse = (int)(t % 8) - 4;
-  if (pulse < 0)
-    pulse = -pulse;
-  drawBtIcon(u8g2, NOCT_DISP_W / 2, cy + 8, 12, pulse);
-
-  static char pktBuf[20];
-  snprintf(pktBuf, sizeof(pktBuf), "PKT: %lu", (unsigned long)packetCount);
-  u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + NOCT_ROW_DY * 2);
-  u8g2.print(pktBuf);
-
-  drawBottomHint();
-  disp_.drawGreebles();
-}
-
-// --- BLE Clone: scan list (MAIN/menu layout), select device, long-press to clone ---
-#define BLE_CLONE_MAX_VISIBLE 4
-#define BLE_CLONE_NAME_CHARS 11
-
-void SceneManager::drawBleClone(BleManager &ble, int selectedIndex)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setDrawColor(1);
-
-  /* Header: same as MAIN/menu */
-  u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "BLE Clone");
-  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-
-  u8g2.setFont(LABEL_FONT);
-  int contentY = NOCT_CONTENT_TOP;
-  int rowH = NOCT_ROW_DY;
-
-  if (ble.isCloning())
-  {
-    int tw = u8g2.getUTF8Width("Cloning...");
-    u8g2.setCursor((NOCT_DISP_W - tw) / 2, contentY + rowH + 4);
-    u8g2.print("Cloning...");
-    drawBottomHint("2s: back");
-    disp_.drawGreebles();
-    return;
-  }
-
-  int n = ble.getScanCount();
-  if (n <= 0)
-  {
-    int tw = u8g2.getUTF8Width("Scanning...");
-    u8g2.setCursor((NOCT_DISP_W - tw) / 2, contentY + rowH + 4);
-    u8g2.print("Scanning...");
-    drawBottomHint("1x next  2s clone  2x menu");
-    disp_.drawGreebles();
-    return;
-  }
-
-  if (selectedIndex < 0)
-    selectedIndex = 0;
-  if (selectedIndex >= n)
-    selectedIndex = n - 1;
-
-  /* Sort by RSSI (strongest first) for display */
-  int sortedIndices[32];
-  if (n > 32)
-    n = 32;
-  for (int i = 0; i < n; i++)
-    sortedIndices[i] = i;
-  for (int i = 0; i < n - 1; i++)
-  {
-    for (int j = i + 1; j < n; j++)
-    {
-      const BleScanDevice *a = ble.getScanDevice(sortedIndices[i]);
-      const BleScanDevice *b = ble.getScanDevice(sortedIndices[j]);
-      if (a && b && a->rssi < b->rssi)
-      {
-        int t = sortedIndices[i];
-        sortedIndices[i] = sortedIndices[j];
-        sortedIndices[j] = t;
-      }
-    }
-  }
-
-  /* selectedIndex is raw index; find its position in sorted list */
-  int selectedSortedRow = 0;
-  for (int i = 0; i < n; i++)
-    if (sortedIndices[i] == selectedIndex)
-    {
-      selectedSortedRow = i;
-      break;
-    }
-
-  int pageOffset = selectedSortedRow;
-  if (selectedSortedRow >= BLE_CLONE_MAX_VISIBLE)
-    pageOffset = selectedSortedRow - (BLE_CLONE_MAX_VISIBLE - 1);
-  if (pageOffset + BLE_CLONE_MAX_VISIBLE > n)
-    pageOffset = n - BLE_CLONE_MAX_VISIBLE;
-  if (pageOffset < 0)
-    pageOffset = 0;
-
-  int endIdx = pageOffset + BLE_CLONE_MAX_VISIBLE <= n ? pageOffset + BLE_CLONE_MAX_VISIBLE : n;
-  for (int i = pageOffset; i < endIdx; i++)
-  {
-    int devIdx = sortedIndices[i];
-    const BleScanDevice *dev = ble.getScanDevice(devIdx);
-    if (!dev)
-      continue;
-    int y = contentY + (i - pageOffset) * rowH;
-    bool selected = (i == selectedSortedRow);
-
-    if (selected)
-    {
-      u8g2.setDrawColor(1);
-      u8g2.drawBox(0, y - 8, NOCT_DISP_W, rowH);
-      u8g2.setDrawColor(0);
-    }
-    u8g2.setCursor(NOCT_MARGIN, y);
-    if (selected)
-      u8g2.setDrawColor(0);
-    u8g2.print(selected ? ">" : " ");
-    char nameBuf[BLE_CLONE_NAME_CHARS + 2];
-    const char *src = dev->name[0] ? dev->name : "-";
-    size_t slen = strlen(src);
-    if (slen > BLE_CLONE_NAME_CHARS)
-    {
-      strncpy(nameBuf, src, BLE_CLONE_NAME_CHARS - 1);
-      nameBuf[BLE_CLONE_NAME_CHARS - 1] = '.';
-      nameBuf[BLE_CLONE_NAME_CHARS] = '\0';
-    }
-    else
-    {
-      strncpy(nameBuf, src, sizeof(nameBuf) - 1);
-      nameBuf[sizeof(nameBuf) - 1] = '\0';
-    }
-    u8g2.print(nameBuf);
-    u8g2.print(" ");
-    u8g2.print(dev->rssi);
-    if (selected)
-      u8g2.setDrawColor(1);
-  }
-
-  u8g2.setDrawColor(1);
-  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_Y - rowH - 2);
-  u8g2.print(selectedSortedRow + 1);
-  u8g2.print("/");
-  u8g2.print(n);
-
-  drawBottomHint("1x next  2s clone  2x menu");
-  disp_.drawGreebles();
-}
-
-// --- TRAP (Evil Twin / Captive Portal) ---
-#define TRAP_WEB_CX (NOCT_DISP_W / 2)
-#define TRAP_WEB_CY 28
-
-void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
-                                const char *lastPassword,
-                                unsigned long passwordShowUntil,
-                                const char *clonedSSID,
-                                const char *cloneApPassword,
-                                bool apFailed)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
-  u8g2.setDrawColor(1);
-
-  u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "PORTAL");
-  if (clonedSSID && clonedSSID[0] != '\0')
-  {
-    u8g2.setCursor(60, NOCT_HEADER_BASELINE_Y);
-    u8g2.setFont(TINY_FONT);
-    u8g2.print("[CLONE]");
-    u8g2.setFont(FONT_HEADER);
-  }
-  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-  u8g2.setFont(TINY_FONT);
-
-  if (apFailed)
-  {
-    u8g2.setCursor(NOCT_MARGIN, NOCT_CONTENT_TOP + 8);
-    u8g2.print("AP failed");
-    drawBottomHint();
-    disp_.drawGreebles();
-    return;
-  }
-
-  unsigned long now = millis();
-  bool showBite =
-      lastPassword && lastPassword[0] != '\0' && now < passwordShowUntil;
-
-  if (showBite)
-  {
-    u8g2.setDrawColor(0);
-    u8g2.drawBox(0, NOCT_CONTENT_TOP, NOCT_DISP_W,
-                 NOCT_DISP_H - NOCT_CONTENT_TOP);
-    u8g2.setDrawColor(1);
-    u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
-    u8g2.setCursor(NOCT_MARGIN, 42);
-    u8g2.print("BITE:");
-    static char pwdBuf[22];
-    size_t len = strlen(lastPassword);
-    if (len >= sizeof(pwdBuf))
-      len = sizeof(pwdBuf) - 1;
-    strncpy(pwdBuf, lastPassword, len);
-    pwdBuf[len] = '\0';
-    int maxW = NOCT_DISP_W - NOCT_MARGIN * 2;
-    while (len > 0 && (int)u8g2.getUTF8Width(pwdBuf) > maxW)
-    {
-      pwdBuf[--len] = '\0';
-      if (len >= 3)
-      {
-        pwdBuf[len - 3] = '.';
-        pwdBuf[len - 2] = '.';
-        pwdBuf[len - 1] = '.';
-      }
-      else
-        break;
-    }
-    u8g2.setCursor(NOCT_MARGIN, 46);
-    u8g2.print(pwdBuf);
-  }
-  else
-  {
-    int cx = TRAP_WEB_CX;
-    int cy = TRAP_WEB_CY;
-    for (int i = 0; i < 8; i++)
-    {
-      double a = (i * 2.0 * 3.14159265359) / 8.0;
-      int x2 = cx + (int)(24 * cos(a));
-      int y2 = cy + (int)(24 * sin(a));
-      u8g2.drawLine(cx, cy, x2, y2);
-    }
-    u8g2.drawCircle(cx, cy, 8);
-    u8g2.drawCircle(cx, cy, 16);
-    u8g2.drawCircle(cx, cy, 24);
-
-    static char buf[24];
-    snprintf(buf, sizeof(buf), "CLIENTS: %d", clientCount);
-    u8g2.setCursor(NOCT_MARGIN, 22);
-    u8g2.print(buf);
-    snprintf(buf, sizeof(buf), "LOGS: %d", logsCaptured);
-    u8g2.setCursor(NOCT_MARGIN, 32);
-    u8g2.print(buf);
-    if (cloneApPassword && cloneApPassword[0] != '\0')
-    {
-      u8g2.setCursor(NOCT_MARGIN, 42);
-      u8g2.print("AP Pass: ");
-      char passBuf[14];
-      strncpy(passBuf, cloneApPassword, sizeof(passBuf) - 1);
-      passBuf[sizeof(passBuf) - 1] = '\0';
-      if (strlen(cloneApPassword) > sizeof(passBuf) - 1)
-        passBuf[sizeof(passBuf) - 2] = '.';
-      u8g2.print(passBuf);
-    }
-  }
-
-  drawBottomHint();
-  disp_.drawGreebles();
-}
-
-// --- WIFI SNIFF ---
-void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setDrawColor(1);
-
-  // Show mode name in header (unified layout)
-  const char *modeName = "SNIFF";
-  SniffMode mode = mgr.getMode();
-  switch (mode)
-  {
-  case SNIFF_MODE_PROBE_SCAN:
-    modeName = "PROBE";
-    break;
-  case SNIFF_MODE_EAPOL_CAPTURE:
-    modeName = "EAPOL";
-    break;
-  case SNIFF_MODE_STATION_SCAN:
-    modeName = "STATION";
-    break;
-  case SNIFF_MODE_PACKET_MONITOR:
-    modeName = "PKT MON";
-    break;
-  case SNIFF_MODE_CHANNEL_ANALYZER:
-    modeName = "CH ANALYZ";
-    break;
-  case SNIFF_MODE_CHANNEL_ACTIVITY:
-    modeName = "CH ACT";
-    break;
-  case SNIFF_MODE_PACKET_RATE:
-    modeName = "PKT RATE";
-    break;
-  case SNIFF_MODE_PINESCAN:
-    modeName = "PINESCAN";
-    break;
-  case SNIFF_MODE_MULTISSID:
-    modeName = "MULTISSID";
-    break;
-  case SNIFF_MODE_SIGNAL_STRENGTH:
-    modeName = "SIG STR";
-    break;
-  case SNIFF_MODE_RAW_CAPTURE:
-    modeName = "RAW CAP";
-    break;
-  case SNIFF_MODE_AP_STA:
-    modeName = "AP+STA";
-    break;
-  default:
-    break;
-  }
-
-  u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, modeName);
-  u8g2.drawLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W, NOCT_HEADER_SEP_Y);
-  u8g2.setFont(TINY_FONT);
-
-  int n = mgr.getApCount();
-  int pkts = mgr.getPacketCount();
-  int eapol = mgr.getEapolCount();
-
-  // Show different stats based on mode
-  if (mode == SNIFF_MODE_PROBE_SCAN)
-  {
-    int probeCount = mgr.getProbeCount();
-    u8g2.setCursor(2, 18);
-    u8g2.print("Probes: ");
-    u8g2.print(probeCount);
-  }
-  else if (mode == SNIFF_MODE_PACKET_RATE)
-  {
-    uint32_t pps = mgr.getPacketsPerSecond();
-    u8g2.setCursor(2, 18);
-    u8g2.print("PPS: ");
-    u8g2.print(pps);
-  }
-  else if (mode == SNIFF_MODE_CHANNEL_ACTIVITY ||
-           mode == SNIFF_MODE_CHANNEL_ANALYZER)
-  {
-    uint32_t channels[14];
-    mgr.getChannelActivity(channels, 14);
-    u8g2.setCursor(2, 18);
-    u8g2.print("Ch Activity");
-  }
-  else if (mode == SNIFF_MODE_EAPOL_CAPTURE)
-  {
-    u8g2.setCursor(2, 18);
-    u8g2.print("WPA handshake capture");
-    u8g2.setCursor(2, 26);
-    u8g2.print("PKTS:");
-    u8g2.print(pkts);
-    u8g2.print(" EAPOL:");
-    u8g2.print(eapol);
-  }
-  else
-  {
-    u8g2.setCursor(2, 18);
-    u8g2.print("PKTS:");
-    u8g2.print(pkts);
-    u8g2.print(" EAPOL:");
-    u8g2.print(eapol);
-  }
-
-  if (n > 0 && selected < n)
-  {
-    const WifiSniffAp *ap = mgr.getAp(selected);
-    if (ap)
-    {
-      int apY = (mode == SNIFF_MODE_EAPOL_CAPTURE) ? 28 : 28;
-      u8g2.setCursor(2, apY);
-      char line[22];
-      strncpy(line, ap->ssid, 18);
-      line[18] = '\0';
-      if (strlen(ap->ssid) > 18)
-        line[16] = '.';
-      u8g2.print(line);
-      u8g2.setCursor(2, apY + 10);
-      u8g2.print(ap->bssidStr);
-      u8g2.setCursor(2, apY + 20);
-      u8g2.print("CH:");
-      u8g2.print((int)ap->channel);
-      u8g2.print(" RSSI:");
-      u8g2.print(ap->rssi);
-      if (ap->hasEapol)
-        u8g2.print(" [EAPOL]");
-    }
-  }
-  drawBottomHint();
-  disp_.drawGreebles();
-}
-
-// --- FORZA DASHBOARD (NFS Unbound Final: jitter, speed lines, no collisions) ---
-
-void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
-                                 uint32_t localIp)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  unsigned long now = millis();
-  u8g2.setDrawColor(1);
-  u8g2.setFontMode(1);
-  u8g2.setBitmapMode(0);
-
-  // --- SPLASH SCREEN ---
-  if (showSplash)
-  {
-    u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawUTF8(10, 20, ">> LINKING ECU >>");
-    char ipBuf[32];
-    snprintf(ipBuf, sizeof(ipBuf), "IP: %d.%d.%d.%d",
-             (int)((localIp >> 24) & 0xFF), (int)((localIp >> 16) & 0xFF),
-             (int)((localIp >> 8) & 0xFF), (int)(localIp & 0xFF));
-    u8g2.drawUTF8(10, 35, ipBuf);
-    u8g2.drawUTF8(10, 50, "PORT: 5300 UDP");
-    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, NOCT_DISP_H, 5);
-    return;
-  }
-
-  // --- TELEMETRY ---
-  float currentRpm = forza.getCurrentRpm();
-  float maxRpm = forza.getMaxRpm();
-  int speed = forza.getSpeedKmh();
-  bool isRedline = (maxRpm > 0 && currentRpm > 0.92f * maxRpm);
-  float rpmPct = (maxRpm > 0) ? (currentRpm / maxRpm) : 0;
-  if (rpmPct > 1.0f)
-    rpmPct = 1.0f;
-
-  // --- JUICE (Jitter/Shake at high RPM) ---
-  int shakeX = 0;
-  int shakeY = 0;
-  if (rpmPct > 0.7f)
-  {
-    int intensity = (int)((rpmPct - 0.7f) * 10);
-    if (intensity > 0)
-    {
-      shakeX = random(-intensity, intensity + 1);
-      shakeY = random(-intensity, intensity + 1);
-    }
-  }
-
-  // --- 1. BACKGROUND (Speed Lines) ---
-  for (int i = 0; i < 5; i++)
-  {
-    int y = ((int)(now / (10 + i * 5)) + i * 15) % NOCT_DISP_H;
-    int w = 10 + (i * 8);
-    int x = NOCT_DISP_W - ((int)(now / 2) % (NOCT_DISP_W + w));
-    if (y > 14 && y < 50)
-      continue;
-    u8g2.drawHLine(x, y, w);
-  }
-
-  // --- 2. RPM BAR (with "RPM" label) ---
-  const int barH = 14;
-  disp_.drawTechFrame(0, 0, NOCT_DISP_W, barH);
-  int fillW = (int)(rpmPct * 126);
-  if (fillW > 0)
-  {
-    if (isRedline)
-      u8g2.drawBox(1, 1, fillW, barH - 2);
-    else
-      disp_.drawDiagonalStriped(1, 1, fillW, barH - 2, 3);
-  }
-  u8g2.setFont(u8g2_font_profont10_tf);
-  char rpmBuf[16];
-  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f", currentRpm);
-  int rpmW = u8g2.getUTF8Width(rpmBuf);
-  u8g2.setDrawColor(2);
-  u8g2.drawUTF8((NOCT_DISP_W / 2) - (rpmW / 2) + shakeX, 9 + shakeY, rpmBuf);
-  u8g2.setDrawColor(1);
-  u8g2.drawUTF8(2, 9 + shakeY, "RPM");
-
-  // --- 3. CONTENT ZONES (Gear left, Speed right) with frames ---
-  const int contentTop = 16;
-  const int contentH = NOCT_DISP_H - contentTop;
-  const int gearZoneW = 52;
-  const int sepX = 54;
-  const int speedZoneX = 56;
-
-  disp_.drawTechFrame(0, contentTop - 1, gearZoneW + 1, contentH + 1);
-  disp_.drawTechFrame(speedZoneX - 1, contentTop - 1,
-                      NOCT_DISP_W - speedZoneX + 1, contentH + 1);
-  u8g2.drawVLine(sepX + shakeX, contentTop, contentH - 1);
-
-  // --- 4. GEAR (left zone): top of digit so bottom <= 64 (logisoso42 ~42px) ---
-  u8g2.setFont(u8g2_font_profont10_tf);
-  u8g2.drawUTF8(2 + shakeX, contentTop + 4 + shakeY, "GEAR");
-  char gearBuf[4];
-  forza.getGearString(gearBuf, sizeof(gearBuf));
-  int gearX = 2 + shakeX;
-  const int gearY = 20 + shakeY;  /* top of digit: 20+42 <= 64 */
-  if (rpmPct > 0.1f)
-  {
-    u8g2.drawLine(gearX, gearY + 42, gearX + 36, gearY + 6);
-    u8g2.drawLine(gearX + 4, gearY + 42, gearX + 40, gearY + 6);
-  }
-  u8g2.setFont(u8g2_font_logisoso42_tf);
-  u8g2.drawUTF8(gearX, gearY, gearBuf);
-
-  // --- 5. SPEED (right zone): keep speed and km/h within 64 ---
-  u8g2.setFont(u8g2_font_profont10_tf);
-  int speedLabelW = u8g2.getUTF8Width("SPEED");
-  u8g2.drawUTF8(NOCT_DISP_W - 2 - speedLabelW + shakeX,
-                contentTop + 4 + shakeY, "SPEED");
-  char spdBuf[8];
-  snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
-  u8g2.setFont(u8g2_font_logisoso32_tn);
-  int spdW = u8g2.getUTF8Width(spdBuf);
-  int spdX = NOCT_DISP_W - 2 - spdW + shakeX;
-  int spdY = 54 + shakeY;
-  u8g2.setDrawColor(0);
-  u8g2.drawUTF8(spdX - 2, spdY - 2, spdBuf);
-  u8g2.setDrawColor(1);
-  u8g2.drawUTF8(spdX, spdY, spdBuf);
-  if (rpmPct > 0.5f)
-    u8g2.drawHLine(spdX, spdY + 2, spdW);
-  u8g2.setFont(u8g2_font_profont12_tf);
-  int unitW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, NOCT_FOOTER_TEXT_Y + shakeY,
-                "km/h");
-
-  drawBottomHint();
-
-  // --- 5. REDLINE STROBE ---
-  if (isRedline)
-  {
-    if ((now / 50) % 2 == 0)
-    {
-      u8g2.setDrawColor(2);
-      u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-      u8g2.setDrawColor(1);
-    }
-  }
-}
-
 static const char *bmwActionNames[] = {
   "Goodbye", "FollowMe", "Park", "Hazard", "LowBeam",
   "LightsOff", "Unlock", "Lock", "Trunk", "Cluster",
   "DoorUnlk", "DoorLock"
 };
 
+/* BMW Assistant: full screen 128x64, no header. Layout fits exactly. */
+#define BMW_BRACKET_Y 0
+#define BMW_BRACKET_H 32
+#define BMW_LEFT_X 0
+#define BMW_LEFT_W 63
+#define BMW_RIGHT_X 65
+#define BMW_RIGHT_W 63
+#define BMW_BAR_Y 50
+#define BMW_BAR_H 14
+#define BMW_BAR_TEXT_Y 54
+#define BMW_INSET 4
+#define BMW_ROW1_Y 2
+#define BMW_ROW2_Y 12
+#define BMW_ROW3_Y 22
+
 void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 {
-  U8G2 &u8g2 = disp_.u8g2();
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  static char buf[40];
+  const int maxLeftW = BMW_LEFT_W - BMW_INSET * 2;
+  const int maxRightW = BMW_RIGHT_W - BMW_INSET * 2;
+  const int maxBarW = NOCT_DISP_W - 10;
+
+  /* Left bracket: STATUS + BAT (full 128x64, Y=0) */
+  disp_.drawTechBrackets(BMW_LEFT_X, BMW_BRACKET_Y, BMW_LEFT_W, BMW_BRACKET_H,
+                         MAIN_BRACKET_LEN);
   u8g2.setFont(LABEL_FONT);
-  char line[32];
-  bmw.getStatusLine(line, sizeof(line));
-  int y = NOCT_CONTENT_TOP;
-  u8g2.setCursor(NOCT_MARGIN, y);
-  u8g2.print(line);
-  y += NOCT_ROW_DY;
-  int actIdx = selectedActionIndex;
-  if (actIdx < 0)
-    actIdx = 0;
-  if (actIdx >= 12)
-    actIdx = 11;
-  u8g2.setCursor(NOCT_MARGIN, y);
-  u8g2.print("> ");
-  u8g2.print(bmwActionNames[actIdx]);
-  y += NOCT_ROW_DY;
-  if (bmw.isObdConnected() && y <= NOCT_FOOTER_Y - NOCT_ROW_DY)
-  {
-    char obdBuf[32];
-    int oil = bmw.getObdOilTempC();
-    int cool = bmw.getObdCoolantTempC();
-    if (oil >= 0 || cool >= 0)
-      snprintf(obdBuf, sizeof(obdBuf), "OBD OIL %d COOL %d", oil >= 0 ? oil : 0, cool >= 0 ? cool : 0);
+  u8g2.drawUTF8(BMW_LEFT_X + BMW_INSET, BMW_BRACKET_Y + BMW_ROW1_Y, "STATUS");
+  bmw.getStatusLine(buf, sizeof(buf));
+  u8g2.setFont(VALUE_FONT);
+  size_t len = strlen(buf);
+  while (len > 0 && (unsigned)u8g2.getUTF8Width(buf) > (unsigned)maxLeftW) {
+    buf[--len] = '\0';
+  }
+  u8g2.drawUTF8(BMW_LEFT_X + BMW_INSET, BMW_BRACKET_Y + BMW_ROW2_Y, buf);
+  float v = state_.batteryVoltage;
+  bool batOk = (v >= 3.5f && v <= 5.0f);
+  u8g2.setFont(LABEL_FONT);
+  if (batOk) {
+    if (state_.isCharging)
+      snprintf(buf, sizeof(buf), "BAT %d%% CHG", state_.batteryPct);
     else
-      snprintf(obdBuf, sizeof(obdBuf), "OBD RPM %d", bmw.getObdRpm());
-    u8g2.setCursor(NOCT_MARGIN, y);
-    u8g2.print(obdBuf);
-    y += NOCT_ROW_DY;
+      snprintf(buf, sizeof(buf), "BAT %d%%", state_.batteryPct);
+  } else {
+    snprintf(buf, sizeof(buf), "BAT --");
   }
-  if (!bmw.isIbusSynced() && y <= NOCT_FOOTER_Y - NOCT_ROW_DY)
-  {
-    u8g2.setCursor(NOCT_MARGIN, y);
-    u8g2.print("I-Bus: connect to send");
-    y += NOCT_ROW_DY;
+  len = strlen(buf);
+  while (len > 0 && (unsigned)u8g2.getUTF8Width(buf) > (unsigned)maxLeftW) {
+    buf[--len] = '\0';
   }
-  if (y <= NOCT_FOOTER_Y - NOCT_ROW_DY && bmw.getNowPlayingTrack()[0])
-  {
-    u8g2.setCursor(NOCT_MARGIN, y);
-    u8g2.print(bmw.getNowPlayingTrack());
-    y += NOCT_ROW_DY;
+  u8g2.drawUTF8(BMW_LEFT_X + BMW_INSET, BMW_BRACKET_Y + BMW_ROW3_Y, buf);
+
+  /* Right bracket: ACTION + selected */
+  disp_.drawTechBrackets(BMW_RIGHT_X, BMW_BRACKET_Y, BMW_RIGHT_W, BMW_BRACKET_H,
+                         MAIN_BRACKET_LEN);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(BMW_RIGHT_X + BMW_INSET, BMW_BRACKET_Y + BMW_ROW1_Y, "ACTION");
+  int actIdx = selectedActionIndex;
+  if (actIdx < 0) actIdx = 0;
+  if (actIdx >= 12) actIdx = 11;
+  snprintf(buf, sizeof(buf), "> %s", bmwActionNames[actIdx]);
+  u8g2.setFont(VALUE_FONT);
+  len = strlen(buf);
+  while (len > 0 && (unsigned)u8g2.getUTF8Width(buf) > (unsigned)maxRightW) {
+    buf[--len] = '\0';
   }
-  if (y <= NOCT_FOOTER_Y - NOCT_ROW_DY && bmw.hasPdcData())
-  {
-    int dists[4];
-    bmw.getPdcDistances(dists, 4);
-    char pdcBuf[24];
-    snprintf(pdcBuf, sizeof(pdcBuf), "PDC:%d %d %d %d",
-             dists[0], dists[1], dists[2], dists[3]);
-    u8g2.setCursor(NOCT_MARGIN, y);
-    u8g2.print(pdcBuf);
+  int aw = u8g2.getUTF8Width(buf);
+  int ax = BMW_RIGHT_X + (BMW_RIGHT_W - aw) / 2;
+  u8g2.drawUTF8(ax, BMW_BRACKET_Y + BMW_ROW2_Y + 2, buf);
+
+  /* Bottom bar: feedback or status, one line */
+  disp_.drawChamferBox(0, BMW_BAR_Y, NOCT_DISP_W, BMW_BAR_H,
+                       MAIN_SCENE_RAM_CHAMFER);
+  const char *feedback = bmw.getLastActionFeedback();
+  if (feedback && feedback[0]) {
+    strncpy(buf, feedback, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+  } else {
+    buf[0] = '\0';
+    if (!bmw.isIbusSynced()) {
+      strncpy(buf, "I-Bus: connect", sizeof(buf) - 1);
+      buf[sizeof(buf) - 1] = '\0';
+    } else if (bmw.isObdConnected()) {
+      int oil = bmw.getObdOilTempC();
+      int cool = bmw.getObdCoolantTempC();
+      if (oil >= 0 || cool >= 0)
+        snprintf(buf, sizeof(buf), "OBD OIL %d COOL %d", oil >= 0 ? oil : 0, cool >= 0 ? cool : 0);
+      else
+        snprintf(buf, sizeof(buf), "OBD RPM %d", bmw.getObdRpm());
+    } else if (bmw.getIgnitionState() >= 0) {
+      snprintf(buf, sizeof(buf), "IGN %d", bmw.getIgnitionState());
+    } else if (bmw.hasPdcData()) {
+      int d[4];
+      bmw.getPdcDistances(d, 4);
+      snprintf(buf, sizeof(buf), "PDC %d %d %d %d", d[0], d[1], d[2], d[3]);
+    } else if (bmw.getNowPlayingTrack()[0]) {
+      const char *t = bmw.getNowPlayingTrack();
+      size_t n = strlen(t);
+      if (n > 18) {
+        strncpy(buf, t, 15);
+        buf[15] = '\0';
+        strcat(buf, "...");
+      } else {
+        strncpy(buf, t, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+      }
+    }
   }
-  drawBottomHint("1x next  2s run  2x menu");
+  if (buf[0]) {
+    u8g2.setFont(LABEL_FONT);
+    len = strlen(buf);
+    while (len > 0 && (unsigned)u8g2.getUTF8Width(buf) > (unsigned)maxBarW) {
+      buf[--len] = '\0';
+    }
+    u8g2.drawUTF8(NOCT_MARGIN + 4, BMW_BAR_TEXT_Y, buf);
+  }
+
   disp_.drawGreebles();
 }

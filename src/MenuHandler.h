@@ -7,9 +7,8 @@
 
 #include "AppModeManager.h"
 
-// Categories: 0=Monitoring, 1=Hacker, 2=BMW, 3=Config, 4=System
-#define MENU_CATEGORIES 5
-// Hacker: flat list of 5 items (no WiFi/BLE subgroups)
+// Categories: 0=BMW, 1=Config, 2=System (BMW-only firmware)
+#define MENU_CATEGORIES 3
 
 /** Number of items in a category (level 1 submenu). */
 int submenuCount(int category);

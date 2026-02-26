@@ -6,6 +6,8 @@
 #include "BleManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #if __has_include("NimBLEDevice.h")
 #include "NimBLEDevice.h"
 #include <esp_bt.h>
@@ -183,7 +185,7 @@ void BleManager::begin() {
     }
   }
 
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(100));
 
 #if __has_include("NimBLEDevice.h")
   if (active_) {
@@ -494,7 +496,7 @@ void BleManager::beginScan(BleScanType scanType) {
     WiFi.disconnect(true);
     yield();
     WiFi.mode(WIFI_OFF);
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
   if (scanning_ || active_) {
     if (active_ && !scanning_)
@@ -842,7 +844,7 @@ void BleManager::startAttack(BleAttackType attackType) {
     WiFi.disconnect(true);
     yield();
     WiFi.mode(WIFI_OFF);
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 
   if (active_ && attackType == currentAttackType_) {
@@ -879,7 +881,7 @@ void BleManager::startAirTagMonitor() {
     WiFi.disconnect(true);
     yield();
     WiFi.mode(WIFI_OFF);
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 
   if (airTagMonitoring_)
