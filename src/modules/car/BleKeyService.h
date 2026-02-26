@@ -7,6 +7,10 @@
 
 #include <Arduino.h>
 #include <cstdint>
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#endif
 
 class BleKeyService {
  public:
@@ -42,6 +46,8 @@ class BleKeyService {
 
   /** Called from NimBLE when control characteristic is written (internal). */
   void onLightCommandReceived(uint8_t cmd);
+  /** Drain command queue and invoke lightCommandCb_ (call from main loop/tick, not from BLE callback). */
+  void processCommandQueue();
   /** Called from NimBLE when Now Playing characteristic is written (internal). */
   void onNowPlayingReceived(const uint8_t *data, size_t len);
 
@@ -52,9 +58,16 @@ class BleKeyService {
   /** Call from onConnect so next updateStatus() will notify (phone gets current status immediately). */
   void requestStatusNotifyOnNextUpdate() { lastStatusPacketValid_ = false; }
 
+  /** Enable periodic status notify when connected (e.g. every 1s in DEMO) so app gets data even if first notify was lost. */
+  void setDemoMode(bool enable) { demoMode_ = enable; }
+
  private:
   bool active_ = false;
   bool connected_ = false;
+  bool forceNotifyOnce_ = false;
+  bool demoMode_ = false;
+  unsigned long lastDemoNotifyMs_ = 0;
+  static const unsigned long kDemoNotifyIntervalMs = 1000;
   void (*connectionCb_)(bool) = nullptr;
   void (*lightCommandCb_)(uint8_t) = nullptr;
   void (*nowPlayingCb_)(const char *track, const char *artist) = nullptr;
@@ -68,6 +81,11 @@ class BleKeyService {
   static const unsigned long kDisconnectDebounceMs = 2500;
   unsigned long disconnectReportedAt_ = 0;
   bool disconnectPending_ = false;
+
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+  static const size_t kCommandQueueLen = 16;
+  QueueHandle_t commandQueue_ = nullptr;
+#endif
 };
 
 #endif

@@ -6,6 +6,8 @@
 #include "nocturne/config.h"
 #include "DisplayEngine.h"
 #include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *biosLines[] = {
     "INIT MEMORY...",
@@ -115,19 +117,19 @@ void drawBootSequence(DisplayEngine &display) {
 
   while (millis() - phaseStart < phase1Ms) {
     phaseBiosPost(display, phaseStart);
-    delay(80);
+    vTaskDelay(pdMS_TO_TICKS(80));
   }
 
   phaseStart = millis();
   while (millis() - phaseStart < phase2Ms) {
     phaseLogo(display, phaseStart);
-    delay(80);
+    vTaskDelay(pdMS_TO_TICKS(80));
   }
 
   phaseStart = millis();
   while (millis() - phaseStart < phase3Ms) {
     phaseLoadingBar(display, phaseStart);
-    delay(60);
+    vTaskDelay(pdMS_TO_TICKS(60));
   }
 
   display.u8g2().setFlipMode(0);

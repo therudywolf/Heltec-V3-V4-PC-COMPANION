@@ -2,6 +2,7 @@
  * I-Bus serial parser 9600 8E1 (ESP32-compatible).
  */
 #include "IbusSerial.h"
+#include "nocturne/config.h"
 
 IbusSerial::IbusSerial()
     : ibusSerial_(nullptr),
@@ -73,15 +74,36 @@ void IbusSerial::readIbus() {
     case GOOD_CHECKSUM:
       for (int i = 0; i <= length_ + 1; i++)
         ibusByte_[i] = (uint8_t)rxBuffer_->read();
+      rxCount_++;
       if (packetHandler_)
         packetHandler_(ibusByte_);
       state_ = FIND_SOURCE;
       break;
 
     case BAD_CHECKSUM:
+      errorCount_++;
       rxBuffer_->remove(1);
       state_ = FIND_SOURCE;
       break;
+  }
+}
+
+void IbusSerial::clearTxQueue() {
+  if (!txBuffer_)
+    return;
+  int av = txBuffer_->available();
+  while (av >= 2) {
+    int lenByte = txBuffer_->peek(0);
+    if (lenByte <= 0 || lenByte > 32) {
+      txBuffer_->remove(1);
+      av--;
+      continue;
+    }
+    int need = 1 + lenByte;
+    if (av < need)
+      break;
+    txBuffer_->remove(need);
+    av -= need;
   }
 }
 
@@ -99,12 +121,15 @@ void IbusSerial::sendNextPacket() {
   if (!ibusSerial_ || !txBuffer_ || txBuffer_->available() < 2)
     return;
   const unsigned long now = millis();
-  /* Strict: minimum 5 ms silence on RX before any TX. */
+  /* Strict RTOS: only TX when bus silent >= 5 ms. */
   if ((now - lastRxMs_) < kPacketGapMs)
     return;
-  /* Abort TX if any data on RX line right before sending (bus not silent). */
-  if (ibusSerial_->available() > 0)
+  /* Abort TX queue immediately if any RX data (bus not silent). */
+  if (ibusSerial_->available() > 0) {
+    collisionCount_++;
+    clearTxQueue();
     return;
+  }
 
   const int lenByte = txBuffer_->read();
   if (lenByte <= 0 || lenByte > 32)
@@ -116,8 +141,15 @@ void IbusSerial::sendNextPacket() {
       return;
     buf[i] = (uint8_t)b;
   }
+#if (NOCT_IBUS_MONITOR_VERBOSE || NOCT_BMW_DEBUG)
+  Serial.print("[IBus TX] ");
+  for (int i = 0; i < lenByte; i++)
+    Serial.printf("%02X ", buf[i]);
+  Serial.println();
+#endif
   /* Send entire packet in one block (no byte-by-byte; UART FIFO). */
   ibusSerial_->write(buf, (size_t)lenByte);
+  txCount_++;
   lastTxMs_ = now;
 }
 

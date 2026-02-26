@@ -1,6 +1,6 @@
 # Плата Heltec WiFi LoRa 32 V4 и настройка прошивки
 
-Краткий гайд по плате **Heltec WiFi LoRa 32 V4** (ESP32-S3), распиновке, конфигурации прошивки Nocturne и сборке. Источник пинов и схем: **DataSheets/WiFi_LoRa_32_V4.2.0.pdf** (разделы 2.2.1–2.2.3 — J2, J3, Additional Pins).
+Краткий гайд по плате **Heltec WiFi LoRa 32 V4** (ESP32-S3), распиновке, конфигурации прошивки Nocturne и сборке. Источник пинов и схем: см. [shared/DataSheets/README.md](../../shared/DataSheets/README.md) или официальный сайт Heltec (даташит WiFi_LoRa_32_V4.2.0, разделы 2.2.1–2.2.3 — J2, J3, Additional Pins).
 
 ---
 
@@ -11,7 +11,7 @@
 - **Интерфейсы:** Wi‑Fi b/g/n, BLE / Bluetooth 5 / mesh; **2×I2S**, 3×UART, 2×I2C, 4×SPI (табл. 3.1 даташита).
 - **USB Type-C:** встроенный, защита по напряжению, ESD, КЗ. **GPIO20 = USB_D+**, **GPIO19 = USB_D-** (J2 п.17–18). При включённом USB CDC прошивка может экспонировать виртуальный COM по USB (подключение к ПК или Android по кабелю).
 - **Питание:** 5 V (USB или вывод 5V), 3.3 V (Ve), батарея 3.3–4.2 V; потребление BT ~115 mA, Sleep на батарее &lt;20 µA (табл. 3.4).
-- **Документация:** даташит и схемы в папке `DataSheets/` — **WiFi_LoRa_32_V4.2.0.pdf**.
+- **Документация:** даташит и схемы — см. [shared/DataSheets/README.md](../../shared/DataSheets/README.md) или сайт Heltec.
 
 ---
 
@@ -58,7 +58,7 @@
 - **Таймауты:** подключение TCP, реконнект Wi‑Fi, сигнал, кнопка (короткое/долгое/predator), скролл, затемнение дисплея.
 - **Экран:** размеры 128×64, отступы, шрифты, сцены (NOCT_SCENE_*), меню (размер бокса, строки).
 - **Алерты:** пороги CPU/GPU (температура, нагрузка), VRAM, RAM; должны совпадать с логикой в `server/monitor.py`.
-- **BMW:** `NOCT_IBUS_ENABLED` (1 = I-Bus включён, 0 = только BLE и список действий), пины I-Bus 38/39. `NOCT_IBUS_MONITOR_VERBOSE` (1 = логировать все пакеты I-Bus в Serial в hex; для отладки).
+- **BMW:** `NOCT_IBUS_ENABLED` (1 = I-Bus включён, 0 = только BLE и список действий), пины I-Bus 38/39. `NOCT_IBUS_MONITOR_VERBOSE` (1 = логировать все принятые пакеты I-Bus в Serial в hex). При `NOCT_BMW_DEBUG` или `NOCT_IBUS_MONITOR_VERBOSE` отправляемые пакеты тоже выводятся как `[IBus TX]` для сверки с референсами.
   Полная схема подключения платы к I-Bus в машине: [HELTEC_V4_WIRING.md](../bmw/HELTEC_V4_WIRING.md).
 - **OBD (BMW):** `NOCT_OBD_ENABLED` (1 = опрос ELM327 по Serial2 для RPM и температур), `NOCT_OBD_TX_PIN` / `NOCT_OBD_RX_PIN` (по умолчанию 9 и 10). Скорость 38400 8N1.
 - **USB CDC:** `NOCT_USB_CDC_ENABLED` (0 = выкл.). При 1 устройство экспонирует виртуальный COM по встроенному USB (GPIO19/20 по даташиту V4.2.0). Подключение к Android по кабелю USB-OTG: приложение использует USB Host API и тот же протокол команд (один байт = команда 0x00–0x0B, 0x80, 0x81), см. [BMW_ANDROID_APP.md](../bmw/BMW_ANDROID_APP.md).
@@ -78,6 +78,7 @@
 - **Окружение:** `heltec_wifi_lora_32_V4` (в `platformio.ini` используется плата `heltec_wifi_lora_32_V3` — тот же MCU/Flash для V4).
 - **Сборка:** из корня проекта выполнить `pio run` (или Build в IDE).
 - **Загрузка:** подключить плату по USB, выбрать порт, выполнить Upload. Serial-монитор: 115200 бод (для отладки и логов).
+- **Подключение и терминал:** как найти COM-порт, открыть монитор, устранить проблемы — см. [CONNECTING_AND_TERMINAL.md](CONNECTING_AND_TERMINAL.md).
 - **Разделы:** таблица разделов задаётся в `platformio.ini` как `board_build.partitions = huge_app.csv` (файл в корне). Не удалять и не перемещать `huge_app.csv` без правки platformio.ini.
 - **Файловая система:** LittleFS (опционально для данных); см. `data/` и загрузку через PlatformIO.
 
@@ -100,7 +101,7 @@
 
 ## Опционально: LoRa
 
-Радиомодуль SX1262 (LoRa/FSK) вынесен из основной сборки. Инструкция по возврату режимов LoRa, пины и зависимости — в [optional/radio/README.md](../../optional/radio/README.md).
+Радиомодуль SX1262 (LoRa/FSK) не входит в текущую сборку Nocturne. При необходимости восстановления режимов LoRa — отдельная задача (пины и зависимости см. в даташите платы).
 
 ---
 
