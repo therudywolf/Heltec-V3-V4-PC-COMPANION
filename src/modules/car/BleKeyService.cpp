@@ -70,6 +70,7 @@ void BleKeyService::onConnect() {
   connected_ = true;
   disconnectPending_ = false;
   disconnectReportedAt_ = 0;
+  forceNotifyOnce_ = true;
   requestStatusNotifyOnNextUpdate();  /* Next updateStatus() will notify so phone gets data immediately. */
 #if NOCT_BMW_DEBUG
   Serial.println("[BMW BLE] Phone connected");
@@ -91,8 +92,23 @@ void BleKeyService::onLightCommandReceived(uint8_t cmd) {
 #if NOCT_BMW_DEBUG
   Serial.printf("[BMW BLE] cmd from phone: 0x%02X\n", cmd);
 #endif
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+  if (commandQueue_ != nullptr)
+    xQueueSend(commandQueue_, &cmd, 0);
+#else
   if (lightCommandCb_)
     lightCommandCb_(cmd);
+#endif
+}
+
+void BleKeyService::processCommandQueue() {
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+  if (commandQueue_ == nullptr || lightCommandCb_ == nullptr)
+    return;
+  uint8_t cmd;
+  while (xQueueReceive(commandQueue_, &cmd, 0) == pdPASS)
+    lightCommandCb_(cmd);
+#endif
 }
 
 void BleKeyService::begin() {
@@ -104,6 +120,10 @@ void BleKeyService::begin() {
     return;
   }
   s_keyService = this;
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+  if (commandQueue_ == nullptr)
+    commandQueue_ = xQueueCreate(kCommandQueueLen, sizeof(uint8_t));
+#endif
 #if NOCT_BMW_DEBUG
   Serial.printf("[BMW BLE] NimBLE initialized=%d, calling init...\n", NimBLEDevice::getInitialized() ? 1 : 0);
 #endif
@@ -171,6 +191,12 @@ void BleKeyService::end() {
 #if __has_include("NimBLEDevice.h")
   if (!active_)
     return;
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+  if (commandQueue_ != nullptr) {
+    vQueueDelete(commandQueue_);
+    commandQueue_ = nullptr;
+  }
+#endif
   s_pStatusChar = nullptr;
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   if (pAdvertising)
@@ -184,6 +210,8 @@ void BleKeyService::end() {
   connected_ = false;
   disconnectPending_ = false;
   lastStatusPacketValid_ = false;
+  forceNotifyOnce_ = false;
+  lastDemoNotifyMs_ = 0;
 #endif
 }
 
@@ -221,6 +249,15 @@ void BleKeyService::updateStatus(bool ibusSynced, bool phoneConnected, bool pdcV
   } else
     buf[14] = 0xFF, buf[15] = 0xFF;
 
+  const unsigned long now = millis();
+  const bool forceOnce = forceNotifyOnce_;
+  const bool demoPeriodic = demoMode_ && connected_ &&
+      (now - lastDemoNotifyMs_ >= kDemoNotifyIntervalMs);
+  if (forceOnce)
+    forceNotifyOnce_ = false;
+  if (demoPeriodic)
+    lastDemoNotifyMs_ = now;
+
   bool changed = !lastStatusPacketValid_;
   if (!changed) {
     for (size_t i = 0; i < kStatusPacketLen; i++)
@@ -229,7 +266,7 @@ void BleKeyService::updateStatus(bool ibusSynced, bool phoneConnected, bool pdcV
         break;
       }
   }
-  if (changed) {
+  if (changed || forceOnce || demoPeriodic) {
     for (size_t i = 0; i < kStatusPacketLen; i++)
       lastStatusPacket_[i] = buf[i];
     lastStatusPacketValid_ = true;
@@ -283,6 +320,7 @@ void BleKeyService::onNowPlayingReceived(const uint8_t *data, size_t len) {
 
 void BleKeyService::tick() {
 #if __has_include("NimBLEDevice.h")
+  processCommandQueue();
   if (!active_ || !disconnectPending_)
     return;
   unsigned long now = millis();

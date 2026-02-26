@@ -6,9 +6,14 @@
 #define NOCTURNE_BMW_MANAGER_H
 
 #include <Arduino.h>
+#include <atomic>
 #include "ibus/IbusDriver.h"
 #include "BleKeyService.h"
-#include "A2dpSink.h"
+#include "DemoManager.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+
+/** Demo state and queue live in DemoManager (Task_DemoMode on Core 1). */
 
 /** Number of I-Bus actions in the assistant menu (lights, locks, trunk, cluster, doors). */
 #define BMW_ACTION_COUNT 12
@@ -21,8 +26,13 @@ class BmwManager {
   void tick();
 
   /** Enable demo mode from menu: inject fake I-Bus/status so app can be tested without real bus. */
-  void setDemoMode(bool enable) { demoMode_ = enable; }
+  void setDemoMode(bool enable) {
+    demoMode_ = enable;
+    isDemoModeActive.store(enable);
+  }
   bool isDemoMode() const { return demoMode_; }
+  /** E39 variant: true = facelift (e39_fl), false = pre-facelift (e39). Set from prefs in begin(). */
+  bool isE39Facelift() const { return e39Facelift_; }
   bool isIbusSynced() const { return ibusSynced_; }
   bool isPhoneConnected() const { return phoneConnected_; }
   void setPhoneConnected(bool connected) { phoneConnected_ = connected; }
@@ -69,8 +79,11 @@ class BmwManager {
   void startLightShow();
   void stopLightShow();
   bool isLightShowActive() const { return lightShowActive_; }
+  /** For demo/OLED: current light show step name ("Hazard","Park",...) or "" if inactive. */
+  const char *getLightShowStepName() const;
 
-  /** MFL: last button from steering wheel (for AVRCP/media). */
+  /** Demo only: last cluster text sent (for OLED display when no real cluster). Empty if none. */
+  const char *getDemoClusterText() const { return lastClusterTextDemo_; }
   enum MflAction { MFL_NONE = 0, MFL_NEXT, MFL_PREV, MFL_PLAY_PAUSE, MFL_VOL_UP, MFL_VOL_DOWN };
   MflAction getLastMflAction() const { return lastMflAction_; }
   void clearLastMflAction() { lastMflAction_ = MFL_NONE; }
@@ -85,6 +98,12 @@ class BmwManager {
   bool hasPdcData() const { return pdcValid_; }
 
   void sendClusterText(const char *text);
+  /** IKE text (Radio mode): C8 [LEN] 80 23 42 32 [20 chars pad 0x20] [XOR]. Pads string to exactly 20 characters. */
+  void sendIkeRadioText(const char *text);
+  /** MFL → Radio: Next track / Previous track (I-Bus 0x3B 0x01 and 0x08). */
+  void sendMflNext();
+  void sendMflPrev();
+
   /** Send Now Playing to head unit display (MID) via I-Bus UPDATE_MID. Max 12 chars. */
   void sendUpdateMid();
 
@@ -108,13 +127,35 @@ class BmwManager {
   void onIbusPacket(uint8_t *packet);
   void onPhoneConnectionChanged(bool connected);
 
+  /** Last action feedback for dashboard (e.g. "Lock sent"). Cleared after timeout. */
+  void setLastActionFeedback(const char *msg);
+  /** Returns non-empty if feedback is set and not expired (e.g. 3s). */
+  const char *getLastActionFeedback() const;
+
+  /** Flex: next cluster text write from app is stored as startup greeting (after BLE cmd 0x98). */
+  bool isNextClusterTextGreeting() const { return nextClusterTextIsGreeting_; }
+  void storeStartupGreeting(const char *text);
+
+  void setWigWagActive(bool v) { wigWagActive_ = v; if (!v) wigWagStep_ = 0; }
+  bool isWigWagActive() const { return wigWagActive_; }
+  void setSensoryDark(bool v) { sensoryDark_ = v; }
+  void setComfortBlink(bool v) { comfortBlinkEnabled_ = v; }
+  void triggerPanic() { panicActive_ = true; wigWagActive_ = true; }
+  void setMirrorFoldOnLock(bool v) { mirrorFoldOnLock_ = v; }
+  void setNextClusterTextIsGreeting(bool v) { nextClusterTextIsGreeting_ = v; }
+
  private:
   void parseMflButton(uint8_t *packet);
   void parsePdcPacket(uint8_t *packet);
+  void tickWigWag(unsigned long now);
+  void tickGreetingOnIgnition(unsigned long now);
+  /** Send LCM diagnostic for panel dim 0% (sensory dark). Placeholder payload until LCM dim bytes confirmed. */
+  void sendSensoryDarkLcm();
   static const int kMidDisplayChars = 12;
 
   bool active_ = false;
   bool demoMode_ = false;
+  bool e39Facelift_ = false;  /* From prefs bmw_model: e39_fl = true, e39 = false. For future I-Bus variants if needed. */
   bool ibusSynced_ = false;
   bool phoneConnected_ = false;
   MflAction lastMflAction_ = MFL_NONE;
@@ -140,12 +181,34 @@ class BmwManager {
   uint8_t lightShowStep_ = 0;
   unsigned long lastLightShowMs_ = 0;
   static const unsigned long kLightShowIntervalMs = 800;
+  /** Demo: last cluster text sent (shown on OLED when in demo mode). */
+  static const int kDemoClusterTextLen = 21;
+  char lastClusterTextDemo_[kDemoClusterTextLen];
   unsigned long lastShiftClusterMs_ = 0;
   static const unsigned long kShiftClusterIntervalMs = 1000;
   static const int kShiftRpmThreshold = 5500;
   IbusDriver ibus_;
   BleKeyService bleKey_;
-  A2dpSink a2dpSink_;
+  static const int kLastActionFeedbackLen = 32;
+  static const unsigned long kLastActionFeedbackTimeoutMs = 3000;
+  char lastActionFeedback_[kLastActionFeedbackLen];
+  unsigned long lastActionFeedbackTime_ = 0;
+
+  /* Flex / Instincts: BLE command state (non-blocking) */
+  bool wigWagActive_ = false;
+  uint8_t wigWagStep_ = 0;
+  unsigned long lastWigWagMs_ = 0;
+  static const unsigned long kWigWagIntervalMs = 300;
+  bool sensoryDark_ = false;
+  bool comfortBlinkEnabled_ = false;
+  bool mirrorFoldOnLock_ = false;
+  bool panicActive_ = false;
+  bool nextClusterTextIsGreeting_ = false;
+  static const int kStartupGreetingLen = 21;
+  char startupGreeting_[kStartupGreetingLen];
+  bool greetingPendingSend_ = false;
+  unsigned long greetingSendAtMs_ = 0;
+  int lastIgnitionForGreeting_ = -1;
 };
 
 #endif

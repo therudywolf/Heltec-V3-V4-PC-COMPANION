@@ -1,25 +1,20 @@
 /*
- * NOCTURNE_OS — Menu structure: submenu counts and mode mapping.
- * Hacker: 4 items — WiFi Clone, BLE Clone, BLE Spam, Infosec (EAPOL).
+ * NOCTURNE_OS — Menu structure: submenu counts. BMW-only: 3 categories (BMW, Config, System).
  */
 #include "MenuHandler.h"
 
-#define HACKER_ITEM_COUNT 4
+#define MENU_CATEGORIES 3
 
 int submenuCount(int category)
 {
   switch (category)
   {
   case 0:
-    return 2; // Monitoring: PC, Forza
-  case 1:
-    return HACKER_ITEM_COUNT; // Hacker: WiFi Clone, BLE Clone, BLE Spam, Infosec
-  case 2:
     return 2; // BMW: BMW Assistant, BMW Demo
-  case 3:
+  case 1:
     return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
-  case 4:
-    return 4; // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
+  case 2:
+    return 5; // System: Demo, REBOOT, CHARGE ONLY, POWER OFF, VERSION
   default:
     return 2;
   }
@@ -28,19 +23,12 @@ int submenuCount(int category)
 int submenuCountForHackerGroup(int group)
 {
   (void)group;
-  return HACKER_ITEM_COUNT;
+  return 0;
 }
 
-/** Map Hacker menu item (0..3) to AppMode. */
 AppMode getModeForHackerItem(int group, int item)
 {
   (void)group;
-  switch (item)
-  {
-  case 0: return MODE_RADAR;        // WiFi Clone: scan & select, long-press in RADAR starts Trap
-  case 1: return MODE_BLE_CLONE;
-  case 2: return MODE_BLE_SPAM;
-  case 3: return MODE_WIFI_EAPOL;   // Infosec: EAPOL handshake capture
-  default: return MODE_NORMAL;
-  }
+  (void)item;
+  return MODE_BMW_ASSISTANT;
 }

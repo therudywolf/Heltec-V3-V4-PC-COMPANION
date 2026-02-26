@@ -10,6 +10,8 @@
 #include <WiFi.h>
 #include <esp_sleep.h>
 #include <Wire.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <NimBLEDevice.h>
 
@@ -21,13 +23,11 @@
 #include "modules/ble/BleManager.h"
 #include "modules/display/BootAnim.h"
 #include "modules/display/DisplayEngine.h"
+#include "modules/display/DisplayManager.h"
 #include "modules/network/NetManager.h"
 #include "modules/display/SceneManager.h"
-#include "modules/network/TrapManager.h"
 #include "modules/car/BmwManager.h"
 #include "modules/car/ObdClient.h"
-#include "modules/car/ForzaManager.h"
-#include "modules/network/WifiSniffManager.h"
 #include "modules/system/BatteryManager.h"
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
@@ -40,8 +40,7 @@
 #define NOCT_BAT_READ_INTERVAL_MS 5000
 #define NOCT_BAT_SAMPLES 20
 #define NOCT_BAT_CALIBRATION 1.1f
-#define WOLF_MENU_ITEMS 12
-static int menuHackerGroup = 0; // when menuLevel==2 and menuCategory==2
+static int menuHackerGroup = 0;
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -49,15 +48,12 @@ static int menuHackerGroup = 0; // when menuLevel==2 and menuCategory==2
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
 NetManager netManager;
 BleManager bleManager;
-TrapManager trapManager;
-WifiSniffManager wifiSniffManager;
-ForzaManager forzaManager;
 BmwManager bmwManager;
 ObdClient obdClient;
 AppState state;
 SceneManager sceneManager(display, state);
-AppModeManager appModeManager(netManager, trapManager, wifiSniffManager,
-                              bleManager, forzaManager, bmwManager);
+DisplayManager displayManager(display, bmwManager);
+AppModeManager appModeManager(netManager, bleManager, bmwManager);
 BatteryManager batteryManager;
 
 InputSystem input(NOCT_BUTTON_PIN);
@@ -112,143 +108,8 @@ static unsigned long toastUntil = 0;
 
 // BMW Assistant: selected action index (short = next, long = execute)
 static int bmwActionIndex = 0;
-// Cached header title (BMW E39 / BMW E46); cleared when model is changed in menu
-static char bmwModelHeader[12] = "";
-
-// Forza: splash "IP | PORT | WAITING" shown for 3s on enter
-static unsigned long forzaSplashUntil = 0;
-#define FORZA_SPLASH_MS 3000
 
 AppMode currentMode = MODE_NORMAL;
-
-// --- Netrunner WiFi Scanner ---
-int wifiScanSelected = 0;
-int wifiListPage = 0;
-int wifiSortMode = 0;      // 0=RSSI desc, 1=alphabetical, 2=RSSI asc
-int wifiRssiFilter = -100; // Минимальный RSSI для отображения (-100 = все)
-int wifiSortedIndices[32]; // Индексы отсортированных сетей
-int wifiFilteredCount = 0; // Количество отфильтрованных сетей
-static int wifiSniffSelected = 0;
-static int bleCloneSelected = 0;
-
-// Функция сортировки и фильтрации WiFi сетей
-static void sortAndFilterWiFiNetworks()
-{
-  // Статические переменные для кэширования
-  static int lastScanCount = -1;
-  static int lastSortMode = -1;
-  static int lastRssiFilter = -101;
-
-  int n = WiFi.scanComplete();
-  if (n <= 0 || n > 32)
-  {
-    wifiFilteredCount = 0;
-    lastScanCount = -1;
-    return;
-  }
-
-  // Optimized caching: пересчитываем только если изменились данные
-  // Also check if scan is still valid (not expired)
-  static unsigned long lastScanTime = 0;
-  unsigned long now = millis();
-  const unsigned long SCAN_CACHE_TIMEOUT_MS =
-      30000; // Cache valid for 30 seconds
-
-  if (n == lastScanCount && wifiSortMode == lastSortMode &&
-      wifiRssiFilter == lastRssiFilter && wifiFilteredCount > 0 &&
-      (now - lastScanTime < SCAN_CACHE_TIMEOUT_MS))
-  {
-    return; // Данные не изменились и cache is still valid, используем кэш
-  }
-
-  lastScanTime = now;
-
-  lastScanCount = n;
-  lastSortMode = wifiSortMode;
-  lastRssiFilter = wifiRssiFilter;
-
-  // Инициализация индексов
-  for (int i = 0; i < n; i++)
-  {
-    wifiSortedIndices[i] = i;
-  }
-
-  // Фильтрация по RSSI
-  int filtered = 0;
-  for (int i = 0; i < n; i++)
-  {
-    if (WiFi.RSSI(i) >= wifiRssiFilter)
-    {
-      wifiSortedIndices[filtered++] = i;
-    }
-  }
-  wifiFilteredCount = filtered;
-
-  // Optimized sorting: Insertion sort for small arrays (<32 items), more
-  // efficient than bubble sort
-  if (wifiSortMode == 0)
-  {
-    // По RSSI (убывание) - Insertion sort
-    for (int i = 1; i < filtered; i++)
-    {
-      int key = wifiSortedIndices[i];
-      int keyRssi = WiFi.RSSI(key);
-      int j = i - 1;
-      while (j >= 0 && WiFi.RSSI(wifiSortedIndices[j]) < keyRssi)
-      {
-        wifiSortedIndices[j + 1] = wifiSortedIndices[j];
-        j--;
-      }
-      wifiSortedIndices[j + 1] = key;
-    }
-  }
-  else if (wifiSortMode == 1)
-  {
-    // По алфавиту - Insertion sort with cached SSID comparisons (optimized: use
-    // c_str())
-    static char ssidBuf1[33],
-        ssidBuf2[33]; // Max SSID length is 32 + null terminator
-    for (int i = 1; i < filtered; i++)
-    {
-      int key = wifiSortedIndices[i];
-      strncpy(ssidBuf1, WiFi.SSID(key).c_str(), sizeof(ssidBuf1) - 1);
-      ssidBuf1[sizeof(ssidBuf1) - 1] = '\0';
-      int j = i - 1;
-      while (j >= 0)
-      {
-        strncpy(ssidBuf2, WiFi.SSID(wifiSortedIndices[j]).c_str(),
-                sizeof(ssidBuf2) - 1);
-        ssidBuf2[sizeof(ssidBuf2) - 1] = '\0';
-        if (strcmp(ssidBuf2, ssidBuf1) > 0)
-        {
-          wifiSortedIndices[j + 1] = wifiSortedIndices[j];
-          j--;
-        }
-        else
-        {
-          break;
-        }
-      }
-      wifiSortedIndices[j + 1] = key;
-    }
-  }
-  else if (wifiSortMode == 2)
-  {
-    // По RSSI (возрастание) - Insertion sort
-    for (int i = 1; i < filtered; i++)
-    {
-      int key = wifiSortedIndices[i];
-      int keyRssi = WiFi.RSSI(key);
-      int j = i - 1;
-      while (j >= 0 && WiFi.RSSI(wifiSortedIndices[j]) > keyRssi)
-      {
-        wifiSortedIndices[j + 1] = wifiSortedIndices[j];
-        j--;
-      }
-      wifiSortedIndices[j + 1] = key;
-    }
-  }
-}
 
 static bool needRedraw = true;
 
@@ -256,10 +117,9 @@ static bool vextPinState = false; // Track Vext pin (never drive HIGH)
 
 static void VextON()
 {
-  // Vext (NOCT_VEXT_PIN): LOW = OLED powered, HIGH = off. Never drive HIGH.
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(100));
 }
 
 // ---------------------------------------------------------------------------
@@ -279,29 +139,58 @@ void setup()
   pinMode(NOCT_VEXT_PIN, OUTPUT);
   digitalWrite(NOCT_VEXT_PIN, LOW);
   vextPinState = true;
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(100));
 
   pinMode(NOCT_RST_PIN, OUTPUT);
   digitalWrite(NOCT_RST_PIN, LOW);
-  delay(50);
+  vTaskDelay(pdMS_TO_TICKS(50));
   digitalWrite(NOCT_RST_PIN, HIGH);
-  delay(50);
+  vTaskDelay(pdMS_TO_TICKS(50));
 
   display.begin();
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(100));
 
   if (digitalRead(NOCT_VEXT_PIN) != LOW)
     digitalWrite(NOCT_VEXT_PIN, LOW);
-  delay(50);
+  vTaskDelay(pdMS_TO_TICKS(50));
   drawBootSequence(display);
   splashDone = true;
-  quickMenuOpen = true;
+  /* Check for demo-mode boot: hold PRG for NOCT_DEMO_BOOT_HOLD_MS */
+  pinMode(NOCT_BUTTON_PIN, INPUT_PULLUP);
+  bool bootDemoRequested = false;
+  {
+    const unsigned long holdMs = NOCT_DEMO_BOOT_HOLD_MS;
+    const unsigned long stepMs = 50;
+    unsigned long t = 0;
+    while (t < holdMs)
+    {
+      if (digitalRead(NOCT_BUTTON_PIN) != LOW)
+        break;
+      vTaskDelay(pdMS_TO_TICKS(stepMs));
+      t += stepMs;
+    }
+    if (t >= holdMs && digitalRead(NOCT_BUTTON_PIN) == LOW)
+    {
+      bootDemoRequested = true;
+      Preferences prefsDemo;
+      prefsDemo.begin("nocturne", false);
+      prefsDemo.putBool("bmw_demo", true);
+      prefsDemo.end();
+      display.u8g2().setDrawColor(1);
+      display.u8g2().setFont(u8g2_font_6x10_tf);
+      display.u8g2().drawStr(2, 32, "Demo mode");
+      display.sendBuffer();
+      vTaskDelay(pdMS_TO_TICKS(1200));
+    }
+  }
+  /* Boot directly into BMW Assistant — no menu. */
+  quickMenuOpen = false;
   menuLevel = 0;
   menuCategory = 0;
   quickMenuItem = 0;
   pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
   digitalWrite(NOCT_LED_ALERT_PIN, HIGH);
-  delay(200);
+  vTaskDelay(pdMS_TO_TICKS(200));
   digitalWrite(NOCT_LED_ALERT_PIN, LOW);
 
   // Настройка ADC для чтения батареи (GPIO 1 на ESP32-S3)
@@ -320,11 +209,9 @@ void setup()
 #endif
 
   // Первое чтение для инициализации ADC
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(100));
   analogRead(NOCT_BAT_PIN);
-  delay(50);
-
-  pinMode(NOCT_BUTTON_PIN, INPUT_PULLUP);
+  vTaskDelay(pdMS_TO_TICKS(50));
 
   Preferences prefs;
   prefs.begin("nocturne", true);
@@ -368,70 +255,24 @@ void setup()
 #endif
 
   batteryManager.update(state);
+
+  /* Enter BMW Assistant mode (WiFi off, BmwManager begun). */
+  appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT);
+  /* Apply saved demo state (or boot-time hold: already written to NVS). */
+  {
+    Preferences prefs;
+    prefs.begin("nocturne", true);
+    bool demo = prefs.getBool("bmw_demo", false);
+    prefs.end();
+    if (bootDemoRequested)
+      demo = true;
+    bmwManager.setDemoMode(demo);
+  }
 }
 
-static bool handleHackerItem(int group, int item, unsigned long now)
-{
-  quickMenuOpen = false;
-  rebootConfirmed = false;
-  AppMode mode = getModeForHackerItem(group, item);
-  if (mode == MODE_RADAR)
-  {
-    wifiScanSelected = 0;
-    wifiListPage = 0;
-    wifiFilteredCount = 0;
-  }
-  if (mode == MODE_BLE_CLONE)
-    bleCloneSelected = 0;
-  bool ok = (mode == MODE_WIFI_TRAP)
-                ? (sortAndFilterWiFiNetworks(),
-                   appModeManager.switchToMode(currentMode, mode,
-                                              wifiScanSelected, wifiFilteredCount,
-                                              wifiSortedIndices))
-                : appModeManager.switchToMode(currentMode, mode);
-  if (!ok)
-  {
-    snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-    toastUntil = now + 1500;
-    return false;
-  }
-  if (mode == MODE_GAME_FORZA)
-    forzaSplashUntil = now + FORZA_SPLASH_MS;
-  return true;
-}
-
-/** Execute action for (category, item). Called when menuLevel==1 and user
- * Long-press. Categories: 0=Monitoring, 1=Hacker, 2=BMW, 3=Config, 4=System. */
 static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
 {
   if (cat == 0)
-  {
-    // Monitoring: PC (NORMAL), Forza
-    quickMenuOpen = false;
-    rebootConfirmed = false;
-    if (item == 0)
-    {
-      if (!appModeManager.switchToMode(currentMode, MODE_NORMAL))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-    }
-    else if (item == 1)
-    {
-      if (!appModeManager.switchToMode(currentMode, MODE_GAME_FORZA))
-      {
-        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
-        toastUntil = now + 1500;
-        return false;
-      }
-      forzaSplashUntil = now + FORZA_SPLASH_MS;
-    }
-    return true;
-  }
-  // cat==1 (Hacker): handled in long-press branch via handleHackerItem
-  if (cat == 2)
   {
     // BMW: BMW Assistant (0), BMW Demo (1)
     quickMenuOpen = false;
@@ -464,7 +305,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       prefs.end();
     return true;
   }
-  if (cat == 3)
+  if (cat == 1)
   {
     // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
     if (item == 0)
@@ -576,10 +417,23 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     }
     return true;
   }
-  if (cat == 4)
+  if (cat == 2)
   {
-    // System: REBOOT, CHARGE ONLY, POWER OFF, VERSION
+    // System: Demo, REBOOT, CHARGE ONLY, POWER OFF, VERSION
     if (item == 0)
+    { // Demo toggle
+      Preferences prefs;
+      prefs.begin("nocturne", false);
+      bool demo = prefs.getBool("bmw_demo", false);
+      demo = !demo;
+      prefs.putBool("bmw_demo", demo);
+      prefs.end();
+      bmwManager.setDemoMode(demo);
+      snprintf(toastMsg, sizeof(toastMsg), demo ? "Demo ON" : "Demo OFF");
+      toastUntil = now + 1200;
+      return true;
+    }
+    if (item == 1)
     { // REBOOT
       if (!rebootConfirmed)
       {
@@ -593,7 +447,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       }
       return true;
     }
-    if (item == 1)
+    if (item == 2)
     { // CHARGE ONLY
       quickMenuOpen = false;
       rebootConfirmed = false;
@@ -605,7 +459,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       }
       return true;
     }
-    if (item == 2)
+    if (item == 3)
     { // POWER OFF (deep sleep; GPIO0 wake)
       quickMenuOpen = false;
       rebootConfirmed = false;
@@ -614,7 +468,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       esp_deep_sleep_start();
       return true;
     }
-    if (item == 3)
+    if (item == 4)
     { // VERSION
       snprintf(toastMsg, sizeof(toastMsg), "v" NOCTURNE_VERSION);
       toastUntil = now + 2000;
@@ -628,17 +482,13 @@ void loop()
 {
   unsigned long now = millis();
 
-  // 1. Critical background tasks — only when actually in that mode
-  // PC monitoring: connect/tick only when user is viewing PC (not in menu/splash)
+  // 1. Critical background tasks — only when in NORMAL (PC monitoring). BMW-only boots to BMW_ASSISTANT.
   bool pcMonitoringActive =
       (currentMode == MODE_NORMAL && splashDone && !quickMenuOpen);
   if (pcMonitoringActive)
     netManager.tick(now);
   else if (netManager.isTcpConnected())
     netManager.disconnectTcp();
-
-  if (currentMode == MODE_GAME_FORZA)
-    forzaManager.tick();
 
   if (netManager.isTcpConnected())
   {
@@ -684,17 +534,28 @@ void loop()
     lastInputTime = now;
 
   // 3. Global: DOUBLE = open menu when closed; when menu already open, leave
-  // EV_DOUBLE for menu block (back / close). Menu is available regardless of
-  // WiFi or TCP connection state.
+  // EV_DOUBLE for menu block (back / close). In BMW mode open System-only menu.
   if (event == EV_DOUBLE && !quickMenuOpen)
   {
-    if (currentMode != MODE_NORMAL)
-      appModeManager.exitToNormal(currentMode);
-    quickMenuOpen = true;
-    menuState = MENU_MAIN;
-    menuLevel = 0;
-    menuCategory = 0;
-    quickMenuItem = 0;
+    if (currentMode == MODE_BMW_ASSISTANT)
+    {
+      /* BMW-only firmware: open minimal System menu (Charge only, Power off, Version). */
+      quickMenuOpen = true;
+      menuState = MENU_MAIN;
+      menuLevel = 1;
+      menuCategory = 2; /* System */
+      quickMenuItem = 0;
+    }
+    else
+    {
+      if (currentMode != MODE_NORMAL)
+        appModeManager.exitToNormal(currentMode);
+      quickMenuOpen = true;
+      menuState = MENU_MAIN;
+      menuLevel = 0;
+      menuCategory = 0;
+      quickMenuItem = 0;
+    }
     lastMenuEventTime = now;
     needRedraw = true;
     event = EV_NONE;
@@ -774,30 +635,6 @@ void loop()
       analogWrite(NOCT_LED_ALERT_PIN, breath);
     else
       digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-  }
-  else if (currentMode == MODE_GAME_FORZA)
-  {
-    const ForzaState &fs = forzaManager.getState();
-    if (fs.connected && fs.maxRpm > 0)
-    {
-      float pct = fs.currentRpm / fs.maxRpm;
-      if (pct >= FORZA_SHIFT_THRESHOLD)
-      {
-        bool flash = (now / 80) % 2 == 0;
-        if (settings.ledEnabled)
-          digitalWrite(NOCT_LED_ALERT_PIN, flash ? HIGH : LOW);
-      }
-      else
-      {
-        if (settings.ledEnabled)
-          digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-      }
-    }
-    else
-    {
-      if (settings.ledEnabled)
-        digitalWrite(NOCT_LED_ALERT_PIN, LOW);
-    }
   }
   else if (currentMode == MODE_BMW_ASSISTANT)
   {
@@ -889,11 +726,17 @@ void loop()
       event = EV_NONE; // Игнорируем событие, если прошло слишком мало времени
     }
 
-    // --- MENU LOGIC: level 0 = 5 categories, level 1 = submenu, level 2 = Hacker group items
+    // --- MENU LOGIC: level 0 = 3 categories (BMW, Config, System), level 1 = submenu
     if (event == EV_DOUBLE)
     {
       lastMenuEventTime = now;
-      if (menuLevel == 2)
+      if (currentMode == MODE_BMW_ASSISTANT && menuLevel == 1 && menuCategory == 2)
+      {
+        /* BMW minimal menu: one double-press closes. */
+        quickMenuOpen = false;
+        rebootConfirmed = false;
+      }
+      else if (menuLevel == 2)
       {
         menuLevel = 1;
         quickMenuItem = 0;
@@ -902,7 +745,7 @@ void loop()
       else if (menuLevel == 1)
       {
         menuLevel = 0;
-        quickMenuItem = menuCategory; // Categories 0..4 in order
+        quickMenuItem = menuCategory; // Categories 0..2 in order
         rebootConfirmed = false;
       }
       else
@@ -921,13 +764,13 @@ void loop()
       {
         int count = submenuCount(menuCategory);
         quickMenuItem = (quickMenuItem + 1) % count;
-        if (menuCategory == 4 && quickMenuItem != 0)
+        if (menuCategory == 2 && quickMenuItem != 1)
           rebootConfirmed = false;
       }
       else
       {
         int count = submenuCountForHackerGroup(menuHackerGroup);
-        quickMenuItem = (quickMenuItem + 1) % count;
+        quickMenuItem = (quickMenuItem + 1) % (count > 0 ? count : 1);
       }
       needRedraw = true;
     }
@@ -939,16 +782,6 @@ void loop()
         menuLevel = 1;
         menuCategory = quickMenuItem;
         quickMenuItem = 0;
-      }
-      else if (menuLevel == 1 && menuCategory == 1)
-      {
-        // Hacker: flat list — execute selected tool (no level 2)
-        bool ok = handleHackerItem(0, quickMenuItem, now);
-        if (ok)
-        {
-          quickMenuOpen = false;
-          needRedraw = true;
-        }
       }
       else if (menuLevel == 1)
       {
@@ -977,106 +810,6 @@ void loop()
         needRedraw = true;
       }
       break;
-    case MODE_RADAR:
-      if (event == EV_SHORT)
-      {
-        int n = WiFi.scanComplete();
-        if (n > 0)
-        {
-          sortAndFilterWiFiNetworks();
-          int count = wifiFilteredCount > 0 ? wifiFilteredCount : n;
-          if (count > 0)
-          {
-            wifiScanSelected = (wifiScanSelected + 1) % count;
-            if (wifiScanSelected >= wifiListPage + 4)
-              wifiListPage = wifiScanSelected - 3;
-            else if (wifiScanSelected < wifiListPage)
-              wifiListPage = wifiScanSelected;
-          }
-        }
-        needRedraw = true;
-      }
-      else if (event == EV_LONG)
-      {
-        int n = WiFi.scanComplete();
-        if (n > 0)
-        {
-          sortAndFilterWiFiNetworks();
-          if (wifiFilteredCount > 0 &&
-              wifiScanSelected >= 0 && wifiScanSelected < wifiFilteredCount)
-          {
-            // Start WiFi clone (Trap) with selected network
-            appModeManager.switchToMode(currentMode, MODE_WIFI_TRAP,
-                                        wifiScanSelected, wifiFilteredCount,
-                                        wifiSortedIndices);
-            needRedraw = true;
-            break;
-          }
-          if (wifiFilteredCount > 0 &&
-              (wifiScanSelected < 0 || wifiScanSelected >= wifiFilteredCount))
-          {
-            snprintf(toastMsg, sizeof(toastMsg), "Select network");
-            toastUntil = now + 1500;
-          }
-          else if (wifiFilteredCount == 0)
-          {
-            // No selection: cycle sort mode
-            wifiSortMode = (wifiSortMode + 1) % 3;
-            sortAndFilterWiFiNetworks();
-            wifiScanSelected = 0;
-            wifiListPage = 0;
-            Serial.printf("[RADAR] Sort mode: %d\n", wifiSortMode);
-          }
-        }
-        else
-        {
-          snprintf(toastMsg, sizeof(toastMsg), "Scan...");
-          toastUntil = now + 1500;
-          Serial.println("[RADAR] INITIATING DISCONNECT...");
-          WiFi.disconnect(true);
-          WiFi.mode(WIFI_OFF);
-          delay(100);
-          WiFi.mode(WIFI_STA);
-          Serial.println("[RADAR] RADIO RESET.");
-          WiFi.scanNetworks(true, true);
-          wifiFilteredCount = 0;
-        }
-        needRedraw = true;
-      }
-      break;
-    case MODE_WIFI_EAPOL:
-      if (event == EV_SHORT)
-      {
-        int n = wifiSniffManager.getApCount();
-        if (n > 0)
-        {
-          wifiSniffSelected = (wifiSniffSelected + 1) % n;
-          needRedraw = true;
-        }
-      }
-      break;
-    case MODE_BLE_CLONE:
-      if (event == EV_SHORT)
-      {
-        int n = bleManager.getScanCount();
-        if (n > 0)
-        {
-          int pos = bleManager.getSortedPositionForIndex(bleCloneSelected);
-          pos = (pos + 1) % n;
-          bleCloneSelected = bleManager.getDeviceIndexAtSortedPosition(pos);
-          needRedraw = true;
-        }
-      }
-      else if (event == EV_LONG)
-      {
-        int n = bleManager.getScanCount();
-        if (n > 0 && bleCloneSelected >= 0 && bleCloneSelected < n)
-        {
-          bleManager.cloneDevice(bleCloneSelected);
-          needRedraw = true;
-        }
-      }
-      break;
     case MODE_BMW_ASSISTANT:
       if (event == EV_SHORT)
       {
@@ -1100,25 +833,23 @@ void loop()
 #endif
           switch (bmwActionIndex)
           {
-          case 0: bmwManager.sendGoodbyeLights(); break;
-          case 1: bmwManager.sendFollowMeHome(); break;
-          case 2: bmwManager.sendParkLights(); break;
-          case 3: bmwManager.sendHazardLights(); break;
-          case 4: bmwManager.sendLowBeams(); break;
-          case 5: bmwManager.sendLightsOff(); break;
-          case 6: bmwManager.sendUnlock(); break;
-          case 7: bmwManager.sendLock(); break;
-          case 8: bmwManager.sendTrunkOpen(); break;
-          case 9: bmwManager.sendClusterText("NOCT"); break;
-          case 10: bmwManager.sendDoorsUnlockInterior(); break;
-          case 11: bmwManager.sendDoorsLockKey(); break;
+          case 0: bmwManager.sendGoodbyeLights(); bmwManager.setLastActionFeedback("Goodbye"); break;
+          case 1: bmwManager.sendFollowMeHome(); bmwManager.setLastActionFeedback("FollowMe"); break;
+          case 2: bmwManager.sendParkLights(); bmwManager.setLastActionFeedback("Park"); break;
+          case 3: bmwManager.sendHazardLights(); bmwManager.setLastActionFeedback("Hazard"); break;
+          case 4: bmwManager.sendLowBeams(); bmwManager.setLastActionFeedback("LowBeam"); break;
+          case 5: bmwManager.sendLightsOff(); bmwManager.setLastActionFeedback("Lights off"); break;
+          case 6: bmwManager.sendUnlock(); bmwManager.setLastActionFeedback("Unlock sent"); break;
+          case 7: bmwManager.sendLock(); bmwManager.setLastActionFeedback("Lock sent"); break;
+          case 8: bmwManager.sendTrunkOpen(); bmwManager.setLastActionFeedback("Trunk open"); break;
+          case 9: bmwManager.sendClusterText("NOCT"); bmwManager.setLastActionFeedback("Cluster"); break;
+          case 10: bmwManager.sendDoorsUnlockInterior(); bmwManager.setLastActionFeedback("Door unlock"); break;
+          case 11: bmwManager.sendDoorsLockKey(); bmwManager.setLastActionFeedback("Door lock"); break;
           default: break;
           }
 #if NOCT_BMW_DEBUG
           Serial.println("[BMW] Run done");
 #endif
-          snprintf(toastMsg, sizeof(toastMsg), "OK");
-          toastUntil = now + 600;
         }
         needRedraw = true;
       }
@@ -1167,7 +898,9 @@ void loop()
   else
     display.u8g2().setContrast(settings.displayContrast);
 
-  display.clearBuffer();
+  bool displayManagerSent = false;
+  if (!(currentMode == MODE_BMW_ASSISTANT && !quickMenuOpen))
+    display.clearBuffer();
   bool signalLost = splashDone && netManager.isSignalLost(now);
   if (signalLost && netManager.isTcpConnected() && netManager.hasReceivedData())
     netManager.disconnectTcp();
@@ -1275,91 +1008,13 @@ void loop()
       sceneManager.drawChargeOnlyScreen(state.batteryPct, state.isCharging,
                                         state.batteryVoltage);
       break;
-    case MODE_RADAR:
-    {
-      int n = WiFi.scanComplete();
-      if (n > 0 && wifiFilteredCount == 0)
-      {
-        sortAndFilterWiFiNetworks();
-      }
-      sceneManager.drawWiFiScanner(wifiScanSelected, wifiListPage,
-                                   wifiFilteredCount > 0 ? wifiSortedIndices
-                                                         : nullptr,
-                                   wifiFilteredCount);
-      break;
-    }
-    case MODE_WIFI_EAPOL:
-      wifiSniffManager.tick();
-      sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
-      break;
-    case MODE_BLE_SPAM:
-    {
-      static int lastPhantomPayloadIndex = -1;
-      if (bleManager.isActive())
-        bleManager.tick();
-      display.drawGlobalHeader("BLE Spam", nullptr, netManager.rssi(),
-                               netManager.isWifiConnected());
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
-      sceneManager.drawBleSpammer(bleManager.getPacketCount());
-      if (lastPhantomPayloadIndex >= 0 &&
-          bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
-        display.applyGlitch();
-      lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
-      break;
-    }
-    case MODE_BLE_CLONE:
-      if (bleManager.isScanning())
-        bleManager.tick();
-      sceneManager.drawBleClone(bleManager, bleCloneSelected);
-      break;
-    case MODE_WIFI_TRAP:
-      if (trapManager.isActive())
-      {
-        trapManager.tick();
-      }
-      sceneManager.drawTrapMode(
-          trapManager.getClientCount(), trapManager.getLogsCaptured(),
-          trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
-          trapManager.getClonedSSID(), trapManager.getCloneApPassword(),
-          trapManager.isApFailed());
-      break;
-    case MODE_GAME_FORZA:
-    {
-      bool showSplash = (now < forzaSplashUntil);
-      sceneManager.drawForzaDash(forzaManager, showSplash,
-                                 (uint32_t)WiFi.localIP());
-      break;
-    }
     case MODE_BMW_ASSISTANT:
       bmwManager.tick();
 #if NOCT_OBD_ENABLED
       if (obdClient.isEnabled())
         obdClient.tick();
 #endif
-      {
-        Preferences prefs;
-        prefs.begin("nocturne", true);
-        bool demo = prefs.getBool("bmw_demo", false);
-        const char *headerTitle;
-        if (demo) {
-          headerTitle = "BMW Demo";
-        } else {
-          if (bmwModelHeader[0] == '\0') {
-            String m = prefs.getString("bmw_model", "e39");
-            strncpy(bmwModelHeader, (m == "e46") ? "BMW E46" : "BMW E39",
-                    sizeof(bmwModelHeader) - 1);
-            bmwModelHeader[sizeof(bmwModelHeader) - 1] = '\0';
-          }
-          headerTitle = bmwModelHeader;
-        }
-        prefs.end();
-        display.drawGlobalHeader(headerTitle, nullptr, netManager.rssi(),
-                                 netManager.isWifiConnected());
-      }
-      sceneManager.drawPowerStatus(state.batteryPct, state.isCharging,
-                                   state.batteryVoltage);
-      sceneManager.drawBmwAssistant(bmwManager, bmwActionIndex);
+      displayManagerSent = displayManager.update(now);
       break;
     default:
       break;
@@ -1375,7 +1030,8 @@ void loop()
   }
   if (toastUntil && now < toastUntil && toastMsg[0])
     sceneManager.drawToast(toastMsg);
-  display.sendBuffer();
+  if (!displayManagerSent || (toastUntil && now < toastUntil && toastMsg[0]))
+    display.sendBuffer();
 
   // Оптимизированная задержка - yield только при необходимости
   static unsigned long lastMainYield = 0;

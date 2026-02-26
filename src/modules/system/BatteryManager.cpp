@@ -4,6 +4,8 @@
 #include "BatteryManager.h"
 #include "nocturne/Types.h"
 #include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 BatteryManager::BatteryManager()
 {
@@ -18,7 +20,7 @@ float BatteryManager::readVoltage()
     pinMode(NOCT_BAT_CTRL_PIN, OUTPUT);
     digitalWrite(NOCT_BAT_CTRL_PIN, HIGH);
     batCtrlPinState_ = true;
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 
   uint32_t mvSum = 0;
@@ -27,7 +29,7 @@ float BatteryManager::readVoltage()
   {
     mvSum += analogReadMilliVolts(NOCT_BAT_PIN);
     if (i < readCount - 1)
-      delay(2);
+      vTaskDelay(pdMS_TO_TICKS(2));
   }
   uint32_t mv = mvSum / readCount;
 

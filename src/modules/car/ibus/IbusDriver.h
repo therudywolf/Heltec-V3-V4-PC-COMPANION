@@ -45,6 +45,12 @@ class IbusDriver {
   void setPacketHandler(void (*handler)(uint8_t *packet));
   bool isSynced() const { return synced_; }
 
+  /** I-Bus stats for OLED (from IbusSerial). */
+  uint32_t getRxCount() const { return ibus_.getRxCount(); }
+  uint32_t getTxCount() const { return ibus_.getTxCount(); }
+  uint32_t getErrorCount() const { return ibus_.getErrorCount(); }
+  uint32_t getCollisionCount() const { return ibus_.getCollisionCount(); }
+
 #if NOCT_IBUS_ENABLED
   /** Called from packet handler to enqueue received packet (used by tasks). */
   void pushToRxQueue(uint8_t *packet);

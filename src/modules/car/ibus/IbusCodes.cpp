@@ -1,11 +1,12 @@
 /*
- * I-Bus message codes for E39 (checksum not included; driver adds it if required).
- * References: wilhelm-docs (README, address.md, guide.md, ike/, gm/, mfl/3b.md, lcm/1a.md, radio/23.md).
+ * I-Bus message codes for E39 (checksum not included; driver adds it).
+ * Aligned with BMW datasheet/Ibus 1 (E46_Codes.h) and wilhelm-docs (gm/79, 7a, 02).
+ * E39 pre-facelift (dorest) and facelift (rest) use the same codes; NTWM (ZKE/GM) variants can be added if needed.
  */
 #include "IbusCodes.h"
 #include "IbusDefines.h"
 
-/* Remote keyless: 0x72 to broadcast 0xBF. Wilhelm README lists 0x71 request / 0x72 reply; payload layout not documented. */
+/* Remote keyless: 0x72 to broadcast 0xBF. E46_Codes.h Remote_OpenButton/Remote_CloseButton. */
 const uint8_t REMOTE_UNLOCK[5] = {0x00, 0x04, 0xBF, 0x72, 0x22};
 const uint8_t REMOTE_LOCK[5]   = {0x00, 0x04, 0xBF, 0x72, 0x12};
 
@@ -48,6 +49,12 @@ const uint8_t Doors_Fuel_Trunk[7]      = {0x3F, 0x05, 0x00, 0x0C, 0x46, 0x01};
 
 /* IKE Ping (keep-alive): GM 0x00 → IKE 0x80, cmd 0x01. Wilhelm 02.md: Ping 0x01 / Pong 0x02. */
 const uint8_t IKE_Ping[4] = {0x00, 0x02, 0x80, 0x01};
-/* Door/lid status request 0x79: we use DIA 0x3F → GM 0x00 (wilhelm gm/79.md shows CCM/BMBT as senders). */
-const uint8_t GM_Status_Request[4] = {0x3F, 0x03, 0x00, IBUS_GM_STAT_REQ};
-const uint8_t IKE_Ignition_Request[4] = {0x3F, 0x03, 0x80, IBUS_IGN_STAT_REQ};
+/* MFL 0x50 → Radio 0x68, cmd 0x3B: 0x01 = Next, 0x08 = Prev. Wilhelm mfl/3b. */
+const uint8_t MflNext[5] = {0x50, 0x04, 0x68, IBUS_MFL_BUTTON, 0x01};
+const uint8_t MflPrev[5] = {0x50, 0x04, 0x68, IBUS_MFL_BUTTON, 0x08};
+/* Door/lid status request 0x79: DIA 0x3F → GM 0x00. Wilhelm gm/79.md; length 2 = dest + 0x79. */
+const uint8_t GM_Status_Request[4] = {0x3F, 0x02, 0x00, IBUS_GM_STAT_REQ};
+/* Ignition status request 0x10: DIA 0x3F → IKE 0x80. Wilhelm; length 2 = dest + 0x10. */
+const uint8_t IKE_Ignition_Request[4] = {0x3F, 0x02, 0x80, IBUS_IGN_STAT_REQ};
+/* Odometer request 0x16: DIA 0x3F → IKE 0x80. Wilhelm ike/16.md; length 2 = dest + 0x16. */
+const uint8_t IKE_Odometer_Request[4] = {0x3F, 0x02, 0x80, IBUS_ODMTR_STAT_REQ};

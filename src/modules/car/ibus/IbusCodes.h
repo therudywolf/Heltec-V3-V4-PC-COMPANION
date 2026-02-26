@@ -44,9 +44,14 @@ extern const uint8_t Doors_Fuel_Trunk[7];
 
 /** IKE Ping (keep-alive) for periodic I-Bus poll. Wilhelm 02.md. */
 extern const uint8_t IKE_Ping[4];
+/** MFL → Radio: Next track 0x3B 0x01, Prev 0x3B 0x08. Wilhelm mfl/3b. */
+extern const uint8_t MflNext[5];
+extern const uint8_t MflPrev[5];
 /** Request door/lid status 0x7a from GM. Wilhelm gm/79.md; we use DIA as sender. */
 extern const uint8_t GM_Status_Request[4];
 /** Request ignition status 0x11 from IKE. */
 extern const uint8_t IKE_Ignition_Request[4];
+/** Request odometer 0x17 from IKE. Wilhelm ike/16.md. */
+extern const uint8_t IKE_Odometer_Request[4];
 
 #endif

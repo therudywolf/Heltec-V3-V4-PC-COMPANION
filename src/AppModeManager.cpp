@@ -1,23 +1,18 @@
 /*
  * NOCTURNE_OS — AppModeManager: cleanup, manage WiFi, initialize, switch.
+ * BMW-only: NORMAL, BMW_ASSISTANT, CHARGE_ONLY.
  */
 #include "AppModeManager.h"
 #include "modules/network/NetManager.h"
-#include "modules/network/TrapManager.h"
-#include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
-#include "modules/car/ForzaManager.h"
 #include "modules/car/BmwManager.h"
 #include "nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
 
-AppModeManager::AppModeManager(NetManager &net, TrapManager &trap,
-                               WifiSniffManager &wifiSniff, BleManager &ble,
-                               ForzaManager &forza, BmwManager &bmw)
-    : net_(net), trap_(trap), wifiSniff_(wifiSniff), ble_(ble), forza_(forza),
-      bmw_(bmw)
+AppModeManager::AppModeManager(NetManager &net, BleManager &ble, BmwManager &bmw)
+    : net_(net), ble_(ble), bmw_(bmw)
 {
 }
 
@@ -25,25 +20,6 @@ void AppModeManager::cleanupMode(AppMode mode)
 {
   switch (mode)
   {
-  case MODE_RADAR:
-    WiFi.scanDelete();
-    break;
-  case MODE_WIFI_EAPOL:
-    wifiSniff_.stop();
-    WiFi.scanDelete();
-    break;
-  case MODE_WIFI_TRAP:
-    trap_.stop();
-    WiFi.mode(WIFI_STA);
-    break;
-  case MODE_BLE_SPAM:
-  case MODE_BLE_CLONE:
-    ble_.stop();
-    WiFi.mode(WIFI_STA);
-    break;
-  case MODE_GAME_FORZA:
-    forza_.stop();
-    break;
   case MODE_BMW_ASSISTANT:
     bmw_.end();
     break;
@@ -58,35 +34,6 @@ void AppModeManager::manageWiFiState(AppMode mode)
 {
   switch (mode)
   {
-  case MODE_BLE_SPAM:
-  case MODE_BLE_CLONE:
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for BLE");
-    }
-    net_.setSuspend(true);
-    break;
-  case MODE_RADAR:
-  case MODE_WIFI_EAPOL:
-  case MODE_WIFI_TRAP:
-    if (WiFi.getMode() != WIFI_STA)
-    {
-      WiFi.mode(WIFI_STA);
-      Serial.println("[SYS] WiFi STA for WiFi mode");
-    }
-    net_.setSuspend(true);
-    break;
-  case MODE_GAME_FORZA:
-    if (WiFi.getMode() != WIFI_STA)
-    {
-      WiFi.mode(WIFI_STA);
-      Serial.println("[SYS] WiFi STA for Forza");
-    }
-    net_.setSuspend(true);
-    break;
   case MODE_BMW_ASSISTANT:
   case MODE_CHARGE_ONLY:
     if (WiFi.getMode() != WIFI_OFF)
@@ -94,7 +41,7 @@ void AppModeManager::manageWiFiState(AppMode mode)
       WiFi.disconnect(true);
       yield();
       WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for BMW Assistant (BLE key) / Charge only");
+      Serial.println("[SYS] WiFi OFF for BMW Assistant / Charge only");
     }
     net_.setSuspend(true);
     break;
@@ -107,81 +54,10 @@ void AppModeManager::manageWiFiState(AppMode mode)
   }
 }
 
-bool AppModeManager::initializeMode(AppMode mode, int trapWifiSelected,
-                                    int trapFilteredCount,
-                                    const int *trapSortedIndices)
+bool AppModeManager::initializeMode(AppMode mode)
 {
   switch (mode)
   {
-  case MODE_BLE_SPAM:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    ble_.begin();
-    if (!ble_.isActive())
-    {
-      Serial.println("[SYS] BLE init failed");
-      return false;
-    }
-    ble_.startAttack(BLE_ATTACK_SPAM);
-    Serial.println("[SYS] BLE SPAM mode initialized");
-    return true;
-
-  case MODE_BLE_CLONE:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    ble_.begin();
-    if (!ble_.isActive())
-    {
-      Serial.println("[SYS] BLE init failed");
-      return false;
-    }
-    ble_.beginScan();
-    Serial.println("[SYS] BLE CLONE mode initialized (scan)");
-    return true;
-
-  case MODE_RADAR:
-    manageWiFiState(mode);
-    WiFi.scanNetworks(true, true);
-    Serial.println("[SYS] RADAR mode initialized");
-    return true;
-
-  case MODE_WIFI_EAPOL:
-    manageWiFiState(mode);
-    wifiSniff_.begin(SNIFF_MODE_EAPOL_CAPTURE);
-    Serial.println("[SYS] EAPOL (Infosec) mode initialized");
-    return true;
-
-  case MODE_WIFI_TRAP:
-  {
-    manageWiFiState(mode);
-    /* Clone SSID already set in switchToMode (before cleanup) when coming from RADAR. */
-    trap_.start();
-    yield();
-    if (!trap_.isActive())
-    {
-      Serial.println("[SYS] TRAP init failed - AP not started");
-      return false;
-    }
-    Serial.println("[SYS] TRAP mode initialized");
-    return true;
-  }
-
-  case MODE_GAME_FORZA:
-    manageWiFiState(mode);
-    forza_.begin();
-    Serial.println("[SYS] FORZA mode initialized");
-    return true;
-
   case MODE_BMW_ASSISTANT:
     manageWiFiState(mode);
     {
@@ -213,9 +89,7 @@ bool AppModeManager::initializeMode(AppMode mode, int trapWifiSelected,
   }
 }
 
-bool AppModeManager::switchToMode(AppMode &current, AppMode next,
-                                  int trapWifiSelected, int trapFilteredCount,
-                                  const int *trapSortedIndices)
+bool AppModeManager::switchToMode(AppMode &current, AppMode next)
 {
   if (next == current)
     return true;
@@ -223,26 +97,14 @@ bool AppModeManager::switchToMode(AppMode &current, AppMode next,
   Serial.printf("[SYS] Switching from MODE_%d to MODE_%d\n", (int)current,
                 (int)next);
 
-  /* When switching to TRAP, read clone SSID from scan before cleanup (cleanup deletes scan). */
-  if (next == MODE_WIFI_TRAP && trapFilteredCount > 0 && trapWifiSelected >= 0 &&
-      trapWifiSelected < trapFilteredCount && trapSortedIndices &&
-      WiFi.scanComplete() > 0) {
-    int actualIndex = trapSortedIndices[trapWifiSelected];
-    String ssid = WiFi.SSID(actualIndex);
-    wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
-    trap_.setClonedSSIDFromStrings(ssid.c_str(), auth != WIFI_AUTH_OPEN);
-  }
-
-  /* Always cleanup current mode first, then init next — avoids double init and leftover peripherals. */
   cleanupMode(current);
 
-  if (!initializeMode(next, trapWifiSelected, trapFilteredCount,
-                     trapSortedIndices))
+  if (!initializeMode(next))
   {
     Serial.println("[SYS] Mode initialization failed, falling back to NORMAL");
     cleanupMode(current);
     current = MODE_NORMAL;
-    initializeMode(MODE_NORMAL, -1, 0, nullptr);
+    initializeMode(MODE_NORMAL);
     return false;
   }
 

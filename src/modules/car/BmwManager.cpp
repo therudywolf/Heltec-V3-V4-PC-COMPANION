@@ -2,13 +2,19 @@
  * NOCTURNE_OS — BmwManager: BMW E39 Assistant (I-Bus + BLE key).
  */
 #include "BmwManager.h"
+#include "DemoManager.h"
 #include "ibus/IbusDriver.h"
 #include "ibus/IbusCodes.h"
 #include "ibus/IbusDefines.h"
 #include "nocturne/config.h"
+#include <Arduino.h>
+#include <Preferences.h>
 #include <stdio.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
+/* Demo task and queue are in DemoManager (Core 1, non-blocking). */
 static BmwManager *s_bmwForIbus = nullptr;
 
 static void ibusPacketForward(uint8_t *packet) {
@@ -19,6 +25,9 @@ static void ibusPacketForward(uint8_t *packet) {
 BmwManager::BmwManager() {
   nowPlayingTrack_[0] = '\0';
   nowPlayingArtist_[0] = '\0';
+  lastClusterTextDemo_[0] = '\0';
+  lastActionFeedback_[0] = '\0';
+  startupGreeting_[0] = '\0';
   for (int i = 0; i < kPdcSensors; i++)
     pdcDists_[i] = -1;
 }
@@ -84,11 +93,20 @@ void BmwManager::parsePdcPacket(uint8_t *packet) {
 }
 
 void BmwManager::sendClusterText(const char *text) {
-  /* Cluster text: cmd 0x1A to IKE 0x80. Wilhelm lcm/1a.md describes CCM 0x30→IKE; we use DIA 0x3F as sender (diagnostic). */
+  /* Cluster text: cmd 0x1A to IKE 0x80. Wilhelm lcm/1a.md; we use DIA 0x3F as sender. */
 #if NOCT_BMW_DEBUG
   Serial.printf("[BMW] I-Bus sendClusterText: \"%s\"\n", text ? text : "");
 #endif
+  if (demoMode_ && text) {
+    size_t n = 0;
+    while (text[n] && n < (size_t)(kDemoClusterTextLen - 1))
+      n++;
+    memcpy(lastClusterTextDemo_, text, n);
+    lastClusterTextDemo_[n] = '\0';
+  }
   if (!text || !ibus_.isSynced())
+    return;
+  if (demoMode_)
     return;
   uint8_t msg[24];
   int len = 0;
@@ -103,6 +121,38 @@ void BmwManager::sendClusterText(const char *text) {
   for (int i = 0; i < len; i++)
     msg[4 + i] = (uint8_t)text[i];
   ibus_.write(msg, 4 + len);
+}
+
+void BmwManager::sendIkeRadioText(const char *text) {
+  /* IKE Text (Radio mode): C8 [LEN] 80 23 42 32 [Text_Hex] [XOR]. Pad to exactly 20 chars with 0x20. */
+#if NOCT_BMW_DEBUG
+  Serial.printf("[BMW] I-Bus sendIkeRadioText: \"%s\"\n", text ? text : "");
+#endif
+  if (!ibus_.isSynced())
+    return;
+  uint8_t msg[32];
+  msg[0] = IBUS_TEL;   /* 0xC8 */
+  msg[1] = 0x18;       /* length: dest(1) + 23 42 32(3) + 20 data = 24 */
+  msg[2] = IBUS_IKE;   /* 0x80 */
+  msg[3] = 0x23;
+  msg[4] = 0x42;
+  msg[5] = 0x32;
+  int n = 0;
+  if (text) {
+    while (text[n] && n < 20)
+      n++;
+  }
+  for (int i = 0; i < 20; i++)
+    msg[6 + i] = (i < n) ? (uint8_t)(text[i] & 0x7F) : 0x20;
+  ibus_.write(msg, 6 + 20);
+}
+
+void BmwManager::sendMflNext() {
+  ibus_.write(MflNext, sizeof(MflNext));
+}
+
+void BmwManager::sendMflPrev() {
+  ibus_.write(MflPrev, sizeof(MflPrev));
 }
 
 void BmwManager::sendUpdateMid() {
@@ -171,7 +221,13 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
   }
   else if (packet[0] == IBUS_IKE && packet[1] >= 4 && packet[3] == IBUS_IGN_STAT_RPLY) {
     /* IKE ignition status 0x11: 0=off, 1=pos1, 2=pos2 (run), etc. */
+    int prev = lastIgnition_;
     lastIgnition_ = (int)packet[4];
+    if ((prev == 0 || prev == -1) && lastIgnition_ == 2) {
+      greetingPendingSend_ = true;
+      greetingSendAtMs_ = millis() + 2000;
+    }
+    lastIgnitionForGreeting_ = lastIgnition_;
   }
   else if (packet[0] == IBUS_IKE && packet[1] >= 6 && packet[3] == IBUS_ODMTR_STAT_RPLY) {
     /* IKE odometer 0x17: 3 bytes km = b1 + b2*256 + b3*65536. Wilhelm ike/17.md. */
@@ -191,7 +247,7 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
 
 void BmwManager::onPhoneConnectionChanged(bool connected) {
   phoneConnected_ = connected;
-  if (!ibus_.isSynced())
+  if (demoMode_ || !ibus_.isSynced())
     return;
   if (connected)
     ibus_.write(REMOTE_UNLOCK, sizeof(REMOTE_UNLOCK));
@@ -273,6 +329,51 @@ void BmwManager::sendLCMDiagnostic(const uint8_t *payload, uint8_t len) {
   memcpy(buf + 3, payload, len);
   ibus_.write(buf, 3 + len);
 }
+
+void BmwManager::storeStartupGreeting(const char *text) {
+  if (!text) {
+    startupGreeting_[0] = '\0';
+    return;
+  }
+  size_t i = 0;
+  while (i < (size_t)(kStartupGreetingLen - 1) && text[i] != '\0') {
+    startupGreeting_[i] = text[i];
+    i++;
+  }
+  startupGreeting_[i] = '\0';
+}
+
+void BmwManager::tickWigWag(unsigned long now) {
+  if (!wigWagActive_ || !ibusSynced_)
+    return;
+  if (now - lastWigWagMs_ < kWigWagIntervalMs)
+    return;
+  lastWigWagMs_ = now;
+  wigWagStep_ = (wigWagStep_ % 3) + 1;
+  if (wigWagStep_ == 1) {
+    uint8_t pl[] = {0x0C, 0x01, 0x00, 0x00};
+    sendLCMDiagnostic(pl, sizeof(pl));
+  } else if (wigWagStep_ == 2) {
+    uint8_t pl[] = {0x0C, 0x02, 0x00, 0x00};
+    sendLCMDiagnostic(pl, sizeof(pl));
+  } else {
+    sendLightsOff();
+  }
+}
+
+void BmwManager::tickGreetingOnIgnition(unsigned long now) {
+  if (greetingPendingSend_ && now >= greetingSendAtMs_ && startupGreeting_[0] != '\0' && ibusSynced_) {
+    sendIkeRadioText(startupGreeting_);
+    greetingPendingSend_ = false;
+  }
+}
+
+void BmwManager::sendSensoryDarkLcm() {
+  /* Placeholder: LCM dim 0% payload. Replace with actual bytes from E39 LCM dimming reverse. */
+  uint8_t pl[] = {0x0C, 0x00, 0x00, 0x00};
+  sendLCMDiagnostic(pl, sizeof(pl));
+}
+
 void BmwManager::sendWindowFrontDriverClose() {
   ibus_.write(Window_FrontDriver_Close, sizeof(Window_FrontDriver_Close));
 }
@@ -321,23 +422,46 @@ void BmwManager::stopLightShow() {
   ibus_.write(TurnOffLights, sizeof(TurnOffLights));
 }
 
+const char *BmwManager::getLightShowStepName() const {
+  if (!lightShowActive_)
+    return "";
+  static const uint8_t kLightShowSequence[] = { 0, 1, 2, 3, 4 };
+  const size_t kSteps = sizeof(kLightShowSequence) / sizeof(kLightShowSequence[0]);
+  size_t idx = (size_t)(lightShowStep_ % (int)kSteps);
+  switch (kLightShowSequence[idx]) {
+    case 0: return "Hazard";
+    case 1: return "Park";
+    case 2: return "Goodbye";
+    case 3: return "LowBeam";
+    case 4: return "Off";
+    default: return "";
+  }
+}
+
 void BmwManager::begin() {
   active_ = true;
   ibusSynced_ = false;
   s_bmwForIbus = this;
+  {
+    Preferences prefs;
+    prefs.begin("nocturne", true);
+    String m = prefs.getString("bmw_model", "e39");
+    e39Facelift_ = (m == "e39_fl");
+    prefs.end();
+  }
 #if NOCT_BMW_DEBUG
-  Serial.println("[BMW] begin: I-Bus + BLE key");
+  Serial.println("[BMW] begin: BLE first, then I-Bus");
 #endif
-#if NOCT_IBUS_ENABLED
-  ibus_.setPacketHandler(ibusPacketForward);
-  ibus_.begin(NOCT_IBUS_TX_PIN, NOCT_IBUS_RX_PIN);
-#endif
+  /* BLE GATT server and advertising MUST be fully up before I-Bus or heavy work. */
   bleKey_.setConnectionCallback([](bool connected) {
     if (s_bmwForIbus)
       s_bmwForIbus->onPhoneConnectionChanged(connected);
   });
   bleKey_.setLightCommandCallback([](uint8_t cmd) {
-    if (!s_bmwForIbus || !s_bmwForIbus->isIbusSynced())
+    if (!s_bmwForIbus)
+      return;
+    bool needIbus = (cmd <= 31 || cmd == 0x80 || cmd == 0x81);
+    if (needIbus && !s_bmwForIbus->isIbusSynced())
       return;
     switch (cmd) {
       case 0: s_bmwForIbus->sendGoodbyeLights(); break;
@@ -370,9 +494,25 @@ void BmwManager::begin() {
       case 27: s_bmwForIbus->sendDriverDoorLock(); break;
       case 28: s_bmwForIbus->sendDoorsFuelTrunk(); break;
       case 29: s_bmwForIbus->sendDoorsUnlockGM(); break;
+      case 30: s_bmwForIbus->sendMflNext(); break;
+      case 31: s_bmwForIbus->sendMflPrev(); break;
       case 0x80: s_bmwForIbus->startLightShow(); break;
       case 0x81: s_bmwForIbus->stopLightShow(); break;
+      case 0x90: s_bmwForIbus->setWigWagActive(!s_bmwForIbus->isWigWagActive()); break;
+      case 0x91: s_bmwForIbus->setSensoryDark(true); s_bmwForIbus->sendSensoryDarkLcm(); break;
+      case 0x92: s_bmwForIbus->setSensoryDark(false); break;
+      case 0x93: s_bmwForIbus->setComfortBlink(true); break;
+      case 0x94: s_bmwForIbus->setComfortBlink(false); break;
+      case 0x95: s_bmwForIbus->triggerPanic(); break;
+      case 0x96: s_bmwForIbus->setMirrorFoldOnLock(true); break;
+      case 0x97: s_bmwForIbus->setMirrorFoldOnLock(false); break;
+      case 0x98: s_bmwForIbus->setNextClusterTextIsGreeting(true); break;
       default: break;
+    }
+    if (s_bmwForIbus && s_bmwForIbus->isDemoMode()) {
+      char buf[12];
+      snprintf(buf, sizeof(buf), "Cmd %u", (unsigned)cmd);
+      s_bmwForIbus->sendClusterText(buf);
     }
   });
   bleKey_.setNowPlayingCallback([](const char *track, const char *artist) {
@@ -401,19 +541,31 @@ void BmwManager::begin() {
     }
   });
   bleKey_.setClusterTextCallback([](const char *text) {
-    if (s_bmwForIbus)
-      s_bmwForIbus->sendClusterText(text);
+    if (!s_bmwForIbus)
+      return;
+    if (s_bmwForIbus->isNextClusterTextGreeting()) {
+      s_bmwForIbus->storeStartupGreeting(text);
+      s_bmwForIbus->setNextClusterTextIsGreeting(false);
+      return;
+    }
+    s_bmwForIbus->sendIkeRadioText(text);
   });
+  bleKey_.setDemoMode(demoMode_);
+  demoManagerSetActive(demoMode_);
+  demoManagerInit();
+  demoManagerEnsureTaskCreated();
+
   bleKey_.begin();
-#if NOCT_A2DP_SINK_ENABLED
-  a2dpSink_.begin();
+  /* Allow BLE stack to start advertising before launching I-Bus tasks. */
+  vTaskDelay(pdMS_TO_TICKS(250));
+#if NOCT_IBUS_ENABLED
+  ibus_.setPacketHandler(ibusPacketForward);
+  ibus_.begin(NOCT_IBUS_TX_PIN, NOCT_IBUS_RX_PIN);
 #endif
 }
 
 void BmwManager::end() {
-#if NOCT_A2DP_SINK_ENABLED
-  a2dpSink_.end();
-#endif
+  demoManagerSetActive(false);
   bleKey_.end();
   ibus_.end();
   s_bmwForIbus = nullptr;
@@ -433,60 +585,44 @@ void BmwManager::tick() {
   const bool wasConnected = phoneConnected_;
   if (bleKey_.isConnected() != phoneConnected_)
     phoneConnected_ = bleKey_.isConnected();
-  unsigned long now = millis();
-  if (demoMode_)
-  {
-    /* Inject fake status data so app shows live-looking values (interval from config). */
-    static unsigned long lastDemoMs = 0;
-    static uint8_t demoMflCycle = 0;
-    /* First tick in demo: set all values immediately so phone gets valid data without waiting 4s. */
-    if (lastDemoMs == 0) {
-      lastIkeCoolantC_ = 85;
-      obdCoolantTempC_ = 85;
-      obdOilTempC_ = 90;
-      obdRpm_ = 2000;
+
+  /* Demo mode: drain telemetry queue from Task_DemoMode (Core 1); never block. */
+  static bool demoHadPacket = false;
+  if (demoMode_) {
+    phoneConnected_ = true;
+    TelemetryData data;
+    while (demoManagerDrain(&data)) {
+      obdRpm_ = data.rpm;
+      obdCoolantTempC_ = data.coolantTempC;
+      obdOilTempC_ = data.coolantTempC + 10;
+      lastIkeCoolantC_ = data.coolantTempC;
       obdConnected_ = true;
-      pdcDists_[0] = 50;
-      pdcDists_[1] = 45;
-      pdcDists_[2] = 30;
-      pdcDists_[3] = 25;
+      demoHadPacket = true;
+    }
+    if (!demoHadPacket) {
+      obdRpm_ = 800;
+      obdCoolantTempC_ = 88;
+      obdOilTempC_ = 90;
+      lastIkeCoolantC_ = 88;
+      obdConnected_ = true;
+      pdcDists_[0] = pdcDists_[1] = pdcDists_[2] = pdcDists_[3] = 120;
       pdcValid_ = true;
-      lastMflAction_ = (MflAction)0;
       lastDoorLidByte1_ = 0x10;
       lastDoorLidByte2_ = 0x00;
-      lastIgnition_ = 2;
+      lastIgnition_ = 0;
       lastOdometerKm_ = 123456;
-      lastDemoMs = now;
+      strncpy(nowPlayingTrack_, "Demo", kNowPlayingLen - 1);
+      nowPlayingTrack_[kNowPlayingLen - 1] = '\0';
+      strncpy(nowPlayingArtist_, "Nocturne", kNowPlayingLen - 1);
+      nowPlayingArtist_[kNowPlayingLen - 1] = '\0';
     }
-    if (now - lastDemoMs >= (unsigned long)NOCT_BMW_DEMO_INTERVAL_MS) {
-      lastDemoMs = now;
-      lastIkeCoolantC_ = 85;
-      obdCoolantTempC_ = 85;
-      obdOilTempC_ = 90;
-      obdRpm_ = 2000;
-      obdConnected_ = true;
-      pdcDists_[0] = 50;
-      pdcDists_[1] = 45;
-      pdcDists_[2] = 30;
-      pdcDists_[3] = 25;
-      pdcValid_ = true;
-      demoMflCycle = (demoMflCycle + 1) % 6;
-      lastMflAction_ = (MflAction)demoMflCycle;  /* 0=None, 1=Next, 2=Prev, 3=Play, 4=Vol+, 5=Vol- */
-      lastDoorLidByte1_ = 0x10;
-      lastDoorLidByte2_ = 0x00;
-      lastIgnition_ = 2;
-      lastOdometerKm_ = 123456;
-#if NOCT_BMW_DEBUG
-      const char *mflStr = "None";
-      if (lastMflAction_ == MFL_NEXT) mflStr = "Next";
-      else if (lastMflAction_ == MFL_PREV) mflStr = "Prev";
-      else if (lastMflAction_ == MFL_PLAY_PAUSE) mflStr = "Play";
-      else if (lastMflAction_ == MFL_VOL_UP) mflStr = "Vol+";
-      else if (lastMflAction_ == MFL_VOL_DOWN) mflStr = "Vol-";
-      Serial.printf("[BMW DEMO] status: coolant=85 oil=90 rpm=2000 PDC 50/45/30/25 MFL=%s doors=0x10 ign=2 odom=123456\n", mflStr);
-#endif
-    }
+  } else {
+    demoHadPacket = false;
   }
+
+  unsigned long now = millis();
+  tickWigWag(now);
+  tickGreetingOnIgnition(now);
 #if NOCT_BMW_DEBUG
   static bool lastLoggedConnected = false;
   if (phoneConnected_ != lastLoggedConnected) {
@@ -501,12 +637,13 @@ void BmwManager::tick() {
   }
   if (!phoneConnected_)
     welcomeSentOnConnect_ = false;
-  /* Periodic I-Bus poll: rotate IKE ping, GM door/lid, IKE ignition. */
+  /* Periodic I-Bus poll: rotate IKE ping, GM door/lid, IKE ignition, IKE odometer. */
   if (ibusSynced_ && now - lastPollMs_ >= (unsigned long)NOCT_IBUS_POLL_INTERVAL_MS) {
-    switch (pollAlternate_ % 3) {
+    switch (pollAlternate_ % 4) {
       case 0: ibus_.write(IKE_Ping, sizeof(IKE_Ping)); break;
       case 1: ibus_.write(GM_Status_Request, sizeof(GM_Status_Request)); break;
       case 2: ibus_.write(IKE_Ignition_Request, sizeof(IKE_Ignition_Request)); break;
+      case 3: ibus_.write(IKE_Odometer_Request, sizeof(IKE_Odometer_Request)); break;
       default: break;
     }
     pollAlternate_++;
@@ -519,13 +656,15 @@ void BmwManager::tick() {
   if (lightShowActive_ && ibusSynced_ && now - lastLightShowMs_ >= kLightShowDelayMs) {
     lastLightShowMs_ = now;
     size_t idx = (size_t)(lightShowStep_ % (int)kLightShowSteps);
-    switch (kLightShowSequence[idx]) {
-      case 0: ibus_.write(HazardLights, sizeof(HazardLights)); break;
-      case 1: ibus_.write(ParkLights_And_Signals, sizeof(ParkLights_And_Signals)); break;
-      case 2: ibus_.write(GoodbyeLights, sizeof(GoodbyeLights)); break;
-      case 3: ibus_.write(Low_Beams, sizeof(Low_Beams)); break;
-      case 4: ibus_.write(TurnOffLights, sizeof(TurnOffLights)); break;
-      default: break;
+    if (!demoMode_) {
+      switch (kLightShowSequence[idx]) {
+        case 0: ibus_.write(HazardLights, sizeof(HazardLights)); break;
+        case 1: ibus_.write(ParkLights_And_Signals, sizeof(ParkLights_And_Signals)); break;
+        case 2: ibus_.write(GoodbyeLights, sizeof(GoodbyeLights)); break;
+        case 3: ibus_.write(Low_Beams, sizeof(Low_Beams)); break;
+        case 4: ibus_.write(TurnOffLights, sizeof(TurnOffLights)); break;
+        default: break;
+      }
     }
     lightShowStep_++;
   }
@@ -576,4 +715,24 @@ void BmwManager::getStatusLine(char *buf, size_t len) const {
   snprintf(buf, len, "IBUS %s | BLE %s",
           ibusSynced_ ? "OK" : "--",
           phoneConnected_ ? "ON" : "OFF");
+}
+
+void BmwManager::setLastActionFeedback(const char *msg) {
+  if (!msg) {
+    lastActionFeedback_[0] = '\0';
+    return;
+  }
+  strncpy(lastActionFeedback_, msg, kLastActionFeedbackLen - 1);
+  lastActionFeedback_[kLastActionFeedbackLen - 1] = '\0';
+  lastActionFeedbackTime_ = millis();
+}
+
+const char *BmwManager::getLastActionFeedback() const {
+  if (lastActionFeedback_[0] == '\0')
+    return "";
+  unsigned long elapsed = millis() - lastActionFeedbackTime_;
+  if (elapsed > kLastActionFeedbackTimeoutMs) {
+    return "";
+  }
+  return lastActionFeedback_;
 }

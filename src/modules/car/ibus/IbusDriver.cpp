@@ -56,7 +56,8 @@ void IbusDriver::taskWriteEntry(void *pv) {
 
 void IbusDriver::taskReadLoop() {
   for (;;) {
-    if (mutex_ != nullptr && xSemaphoreTake(mutex_, portMAX_DELAY) == pdTRUE) {
+    /* Bounded timeout to avoid TWDT: do not use portMAX_DELAY. */
+    if (mutex_ != nullptr && xSemaphoreTake(mutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
       ibus_.runRead();
       xSemaphoreGive(mutex_);
     }
@@ -67,6 +68,7 @@ void IbusDriver::taskReadLoop() {
 void IbusDriver::taskWriteLoop() {
   IbusTxItem item;
   for (;;) {
+    /* Wait for next TX packet (blocking OK here); mutex take is bounded. */
     if (txQueue_ != nullptr && xQueueReceive(txQueue_, &item, portMAX_DELAY) == pdTRUE) {
       if (item.len > 0 && item.len <= IBUS_PACKET_MAX && mutex_ != nullptr &&
           xSemaphoreTake(mutex_, pdMS_TO_TICKS(20)) == pdTRUE) {

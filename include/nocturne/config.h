@@ -188,7 +188,8 @@
 #define NOCT_ALERT_GV 4
 #define NOCT_ALERT_RAM 5
 
-/* BMW E39 Assistant: I-Bus UART (9600 8E1). 0 = off (no UART, BLE key + list only). Set to 1 when I-Bus transceiver is connected. */
+/* BMW E39 Assistant: I-Bus UART 9600 8E1 on pins 38 (RX) and 39 (TX) only.
+ * Do NOT use GPIO 17/18 — reserved for OLED (SDA/SCL). Single source of truth for Heltec V4. */
 #define NOCT_IBUS_ENABLED 0
 #define NOCT_IBUS_TX_PIN 39
 #define NOCT_IBUS_RX_PIN 38
@@ -210,6 +211,8 @@
 /* BMW Assistant demo mode: when enabled from menu (prefs bmw_demo), BmwManager injects fake status so app can be tested without real I-Bus. Compile-time flag NOCT_BMW_DEMO_MODE no longer used for logic; interval below still used for demo injection. */
 #define NOCT_BMW_DEMO_MODE 0
 #define NOCT_BMW_DEMO_INTERVAL_MS 4000
+/* Hold PRG button at boot for this many ms to enable demo for this session and save to NVS. */
+#define NOCT_DEMO_BOOT_HOLD_MS 2500
 
 /* USB CDC: 0 = off. When 1, device exposes virtual COM over built-in USB (GPIO19=D-, GPIO20=D+ per DataSheets/WiFi_LoRa_32_V4.2.0.pdf). */
 #define NOCT_USB_CDC_ENABLED 0
