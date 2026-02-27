@@ -14,7 +14,7 @@
 std::atomic<bool> isDemoModeActive{false};
 QueueHandle_t bleTelemetryQueue = nullptr;
 
-static const unsigned int kDemoQueueLen = 8;
+static const unsigned int kDemoQueueLen = 32;
 static bool s_demoTaskCreated = false;
 
 #if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)

@@ -1,6 +1,6 @@
 /*
- * NOCTURNE_OS — Config: pins (SDA/SCL/RST), display 128x64, timeouts,
- * NOCT_SCENE_* indices, NOCT_GRAPH_SAMPLES. WiFi/PC IP in secrets.h.
+ * NOCTURNE_OS — Config: pins, display, timeouts. BMW-only firmware.
+ * NOCT_SCENE_* / NOCT_TOTAL_SCENES kept for SceneManager (drawMenu, drawChargeOnlyScreen, drawToast).
  */
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
@@ -190,7 +190,7 @@
 
 /* BMW E39 Assistant: I-Bus UART 9600 8E1 on pins 38 (RX) and 39 (TX) only.
  * Do NOT use GPIO 17/18 — reserved for OLED (SDA/SCL). Single source of truth for Heltec V4. */
-#define NOCT_IBUS_ENABLED 0
+#define NOCT_IBUS_ENABLED 1
 #define NOCT_IBUS_TX_PIN 39
 #define NOCT_IBUS_RX_PIN 38
 

@@ -31,9 +31,17 @@ void IbusSerial::setPacketHandler(void (*handler)(uint8_t *packet)) {
 void IbusSerial::readIbus() {
   if (!ibusSerial_ || !rxBuffer_)
     return;
+  const unsigned long now = millis();
+  /* If there is a gap of >=8 ms between bytes while buffer has data, discard partial frame. */
+  if (rxBuffer_->available() > 0 && (now - lastRxMs_) >= 8) {
+    int av = rxBuffer_->available();
+    if (av > 0)
+      rxBuffer_->remove(av);
+    state_ = FIND_SOURCE;
+  }
   while (ibusSerial_->available()) {
     rxBuffer_->write(ibusSerial_->read());
-    lastRxMs_ = millis();  /* Track last RX time for 5 ms clear-to-send. */
+    lastRxMs_ = now;  /* Track last RX time for clear-to-send / frame timeout. */
   }
 
   switch (state_) {
@@ -94,7 +102,7 @@ void IbusSerial::clearTxQueue() {
   int av = txBuffer_->available();
   while (av >= 2) {
     int lenByte = txBuffer_->peek(0);
-    if (lenByte <= 0 || lenByte > 32) {
+    if (lenByte <= 0 || lenByte > 40) {
       txBuffer_->remove(1);
       av--;
       continue;
@@ -132,7 +140,7 @@ void IbusSerial::sendNextPacket() {
   }
 
   const int lenByte = txBuffer_->read();
-  if (lenByte <= 0 || lenByte > 32)
+  if (lenByte <= 0 || lenByte > 40)
     return;
   uint8_t buf[40];
   for (int i = 0; i < lenByte; i++) {

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'bmw_ble_constants.dart';
+import '../debug_log.dart';
 
 /// Parsed status packet from ESP32 (16 bytes).
 class BmwStatus {
@@ -97,7 +99,12 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
       if (event.device.remoteId != state.device?.remoteId) return;
       final connected = event.connectionState == BluetoothConnectionState.connected;
       if (connected) {
-        await _discoverAndSubscribe(event.device);
+        try {
+          await _discoverAndSubscribe(event.device);
+        } catch (e) {
+          state = state.copyWith(isConnecting: false, isConnected: false, error: e.toString());
+          return;
+        }
       } else {
         _controlChar = null;
         _statusChar = null;
@@ -111,8 +118,14 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
   }
 
   Future<void> _discoverAndSubscribe(BluetoothDevice device) async {
+    // #region agent log
+    debugLog('bmw_ble_provider.dart:_discoverAndSubscribe', 'entry', data: {'deviceId': device.remoteId.toString()}, hypothesisId: 'H3');
+    // #endregion
     try {
       final services = await device.discoverServices();
+      // #region agent log
+      debugLog('bmw_ble_provider.dart:_discoverAndSubscribe', 'services discovered', data: {'count': services.length, 'uuids': services.map((s) => s.uuid.toString()).toList()}, hypothesisId: 'H3');
+      // #endregion
       for (final s in services) {
         if (s.uuid.toString().toLowerCase() != BmwBleUuids.service) continue;
         for (final c in s.characteristics) {
@@ -120,9 +133,21 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
           if (uuid == BmwBleUuids.control) _controlChar = c;
           if (uuid == BmwBleUuids.status) {
             _statusChar = c;
-            await c.setNotifyValue(true);
+            try {
+              await c.setNotifyValue(true);
+              // #region agent log
+              debugLog('bmw_ble_provider.dart:_discoverAndSubscribe', 'status notify enabled', hypothesisId: 'H4');
+              // #endregion
+            } catch (e) {
+              // #region agent log
+              debugLog('bmw_ble_provider.dart:_discoverAndSubscribe', 'setNotifyValue failed', data: {'error': e.toString()}, hypothesisId: 'H4');
+              // #endregion
+            }
             _statusSub?.cancel();
             _statusSub = c.lastValueStream.listen((value) {
+              // #region agent log
+              if (value.isNotEmpty) debugLog('bmw_ble_provider.dart:statusStream', 'status received', data: {'len': value.length, 'flags': value[0], 'ibusSynced': (value[0] & 0x01) != 0}, hypothesisId: 'H5');
+              // #endregion
               if (value.length >= 16) {
                 state = state.copyWith(
                   status: BmwStatus.fromBytes(value),
@@ -132,6 +157,9 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
             });
             final last = await c.read();
             if (last.length >= 16) {
+              // #region agent log
+              debugLog('bmw_ble_provider.dart:_discoverAndSubscribe', 'initial status read', data: {'len': last.length, 'flags': last[0], 'ibusSynced': (last[0] & 0x01) != 0}, hypothesisId: 'H5');
+              // #endregion
               state = state.copyWith(status: BmwStatus.fromBytes(last));
             }
           }
@@ -141,12 +169,18 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
         break;
       }
     } catch (e) {
+      // #region agent log
+      debugLog('bmw_ble_provider.dart:_discoverAndSubscribe', 'error', data: {'error': e.toString()}, hypothesisId: 'H3');
+      // #endregion
       state = state.copyWith(error: e.toString());
     }
   }
 
   Future<void> scanAndConnect() async {
     state = state.copyWith(isConnecting: true, error: null);
+    // #region agent log
+    debugLog('bmw_ble_provider.dart:scanAndConnect', 'start', hypothesisId: 'H1');
+    // #endregion
     try {
       if (await Permission.bluetoothScan.request().isDenied ||
           await Permission.bluetoothConnect.request().isDenied) {
@@ -172,12 +206,17 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
     try {
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
       await for (final list in FlutterBluePlus.scanResults.timeout(const Duration(seconds: 11))) {
+        // #region agent log
+        if (list.isNotEmpty) debugLog('bmw_ble_provider.dart:scanAndConnect', 'scan results', data: {'count': list.length, 'names': list.map((r) => r.advertisementData.advName).toList()}, hypothesisId: 'H1');
+        // #endregion
         for (final r in list) {
           final name = r.advertisementData.advName;
           final hasService = r.advertisementData.serviceUuids.any(
             (u) => u.toString().toLowerCase().contains('1a2b0001'),
           );
-          if (name.contains('My BMW') || name.contains('BMW E39 Key') || name.contains('E39') || hasService) {
+          final nameStr = name ?? '';
+          final nameMatch = nameStr.isNotEmpty && (nameStr.contains('My BMW') || nameStr.contains('BMW E39 Key') || nameStr.contains('E39'));
+          if (nameMatch || hasService) {
             found = r.device;
             break;
           }
@@ -191,13 +230,25 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
       await FlutterBluePlus.stopScan();
     }
     if (found == null) {
+      // #region agent log
+      debugLog('bmw_ble_provider.dart:scanAndConnect', 'device not found', hypothesisId: 'H1');
+      // #endregion
       state = state.copyWith(isConnecting: false, error: 'My BMW / BMW Key не найден');
       return;
     }
     try {
+      // #region agent log
+      debugLog('bmw_ble_provider.dart:scanAndConnect', 'connecting', data: {'deviceId': found.remoteId.toString()}, hypothesisId: 'H2');
+      // #endregion
       await found.connect();
+      // #region agent log
+      debugLog('bmw_ble_provider.dart:scanAndConnect', 'connect success', hypothesisId: 'H2');
+      // #endregion
       state = state.copyWith(device: found, isConnecting: false);
     } catch (e) {
+      // #region agent log
+      debugLog('bmw_ble_provider.dart:scanAndConnect', 'connect failed', data: {'error': e.toString()}, hypothesisId: 'H2');
+      // #endregion
       state = state.copyWith(isConnecting: false, error: e.toString());
     }
   }
@@ -226,8 +277,20 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
   Future<void> sendNowPlaying(String track, String artist) async {
     final c = _nowPlayingChar;
     if (c == null || !state.isConnected) return;
-    final bytes = [...track.codeUnits, 0, ...artist.codeUnits];
-    if (bytes.length > 200) return;
+    final trackBytes = utf8.encode(track);
+    final artistBytes = utf8.encode(artist);
+    const maxTotal = 200;
+    var t = trackBytes;
+    var a = artistBytes;
+    if (t.length + 1 + a.length > maxTotal) {
+      if (t.length + 1 > maxTotal) {
+        t = t.length > maxTotal - 1 ? t.sublist(0, maxTotal - 1) : t;
+        a = <int>[];
+      } else {
+        a = a.sublist(0, maxTotal - 1 - t.length);
+      }
+    }
+    final bytes = [...t, 0, ...a];
     try {
       await c.write(bytes, withoutResponse: false);
     } catch (e) {
@@ -238,9 +301,10 @@ class BmwBleNotifier extends StateNotifier<BmwBleState> {
   Future<void> sendClusterText(String text) async {
     final c = _clusterTextChar;
     if (c == null || !state.isConnected) return;
-    final bytes = text.length > 20 ? text.substring(0, 20) : text;
+    final encoded = utf8.encode(text);
+    final toSend = encoded.length > 20 ? encoded.sublist(0, 20) : encoded;
     try {
-      await c.write(bytes.codeUnits, withoutResponse: false);
+      await c.write(toSend, withoutResponse: false);
     } catch (e) {
       state = state.copyWith(error: e.toString());
     }
