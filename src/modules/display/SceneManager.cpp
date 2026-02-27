@@ -5,7 +5,6 @@
  */
 #include "SceneManager.h"
 #include "nocturne/config.h"
-#include "BleManager.h"
 #include "BmwManager.h"
 #include <Arduino.h>
 #include <WiFi.h>

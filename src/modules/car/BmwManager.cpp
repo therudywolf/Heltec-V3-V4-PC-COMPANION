@@ -115,7 +115,7 @@ void BmwManager::sendClusterText(const char *text) {
   if (len == 0)
     return;
   msg[0] = IBUS_DIA;
-  msg[1] = (uint8_t)(3 + len);
+  msg[1] = (uint8_t)(2 + len);
   msg[2] = IBUS_IKE;
   msg[3] = IBUS_IKE_TXT_GONG;
   for (int i = 0; i < len; i++)

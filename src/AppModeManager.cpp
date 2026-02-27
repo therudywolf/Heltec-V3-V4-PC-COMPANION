@@ -1,18 +1,16 @@
 /*
- * NOCTURNE_OS — AppModeManager: cleanup, manage WiFi, initialize, switch.
- * BMW-only: NORMAL, BMW_ASSISTANT, CHARGE_ONLY.
+ * NOCTURNE_OS — AppModeManager: cleanup, WiFi off, initialize, switch.
+ * BMW-only: BMW_ASSISTANT, CHARGE_ONLY.
  */
 #include "AppModeManager.h"
-#include "modules/network/NetManager.h"
-#include "modules/ble/BleManager.h"
 #include "modules/car/BmwManager.h"
 #include "nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
 
-AppModeManager::AppModeManager(NetManager &net, BleManager &ble, BmwManager &bmw)
-    : net_(net), ble_(ble), bmw_(bmw)
+AppModeManager::AppModeManager(BmwManager &bmw)
+    : bmw_(bmw)
 {
 }
 
@@ -24,7 +22,6 @@ void AppModeManager::cleanupMode(AppMode mode)
     bmw_.end();
     break;
   case MODE_CHARGE_ONLY:
-  case MODE_NORMAL:
   default:
     break;
   }
@@ -32,25 +29,13 @@ void AppModeManager::cleanupMode(AppMode mode)
 
 void AppModeManager::manageWiFiState(AppMode mode)
 {
-  switch (mode)
+  (void)mode;
+  if (WiFi.getMode() != WIFI_OFF)
   {
-  case MODE_BMW_ASSISTANT:
-  case MODE_CHARGE_ONLY:
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-      Serial.println("[SYS] WiFi OFF for BMW Assistant / Charge only");
-    }
-    net_.setSuspend(true);
-    break;
-  case MODE_NORMAL:
-  default:
-    if (WiFi.getMode() != WIFI_STA)
-      WiFi.mode(WIFI_STA);
-    net_.setSuspend(false);
-    break;
+    WiFi.disconnect(true);
+    yield();
+    WiFi.mode(WIFI_OFF);
+    Serial.println("[SYS] WiFi OFF");
   }
 }
 
@@ -69,12 +54,6 @@ bool AppModeManager::initializeMode(AppMode mode)
     }
     bmw_.begin();
     Serial.println("[SYS] BMW Assistant mode initialized");
-    return true;
-
-  case MODE_NORMAL:
-    manageWiFiState(mode);
-    WiFi.scanDelete();
-    Serial.println("[SYS] NORMAL mode initialized");
     return true;
 
   case MODE_CHARGE_ONLY:
@@ -101,20 +80,11 @@ bool AppModeManager::switchToMode(AppMode &current, AppMode next)
 
   if (!initializeMode(next))
   {
-    Serial.println("[SYS] Mode initialization failed, falling back to NORMAL");
-    cleanupMode(current);
-    current = MODE_NORMAL;
-    initializeMode(MODE_NORMAL);
+    Serial.println("[SYS] Mode init failed, staying in current");
     return false;
   }
 
   current = next;
-  Serial.printf("[SYS] Successfully switched to MODE_%d\n", (int)current);
+  Serial.printf("[SYS] Switched to MODE_%d\n", (int)current);
   return true;
-}
-
-void AppModeManager::exitToNormal(AppMode &current)
-{
-  switchToMode(current, MODE_NORMAL);
-  Serial.println("[SYS] NETMANAGER RESUMED.");
 }

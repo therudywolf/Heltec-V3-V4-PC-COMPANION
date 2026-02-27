@@ -80,7 +80,7 @@ void IbusDriver::taskWriteLoop() {
   }
 }
 
-static void onPacketToRxQueue(uint8_t *packet) {
+void onPacketToRxQueue(uint8_t *packet) {
   if (IbusDriver::instance_)
     IbusDriver::instance_->pushToRxQueue(packet);
   if (IbusDriver::instance_)
