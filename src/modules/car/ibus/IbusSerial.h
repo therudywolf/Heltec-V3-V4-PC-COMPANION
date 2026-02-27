@@ -53,7 +53,7 @@ class IbusSerial {
   uint8_t ibusByte_[40];
   void (*packetHandler_)(uint8_t *packet);
 
-  static const unsigned long kPacketGapMs = 5;  /* Min 5 ms RX silence before TX (I-Bus collision avoidance). */
+  static const unsigned long kPacketGapMs = 10;  /* Min 10 ms RX silence before TX (I-Bus collision avoidance). */
   unsigned long lastRxMs_;
   unsigned long lastTxMs_;
   bool clearToSend_;

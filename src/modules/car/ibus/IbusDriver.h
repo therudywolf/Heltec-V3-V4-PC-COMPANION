@@ -6,6 +6,7 @@
 #define NOCTURNE_IBUS_DRIVER_H
 
 #include <Arduino.h>
+#include "nocturne/config.h"
 #include "IbusSerial.h"
 #include "IbusDefines.h"
 
@@ -62,6 +63,7 @@ class IbusDriver {
 
  private:
   static void onPacket(uint8_t *packet);
+  friend void onPacketToRxQueue(uint8_t *packet);
 #if defined(NOCT_IBUS_ENABLED) && (NOCT_IBUS_ENABLED) == 1
   static void taskReadEntry(void *pv);
   static void taskWriteEntry(void *pv);
