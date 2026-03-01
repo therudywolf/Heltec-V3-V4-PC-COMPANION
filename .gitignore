@@ -54,6 +54,10 @@ app/.dart_tool/
 
 # JDK (local tooling; use system JDK or set JAVA_HOME)
 jdk-*/
+jdk17.zip
+
+# Flutter SDK archive (local; do not commit)
+flutter_windows.zip
 
 # Built APK output folder
 release apk/
