@@ -1,79 +1,175 @@
-# BMW E39 I-Bus Assistant — Heltec V4
+# Nocturne OS — Heltec WiFi LoRa 32 V4 Firmware
 
-**Платформа:** Heltec WiFi LoRa 32 V4 (ESP32-S3) · **Лицензия:** [MIT](LICENSE)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+![Platform](https://img.shields.io/badge/platform-ESP32--S3-green)
+![PlatformIO](https://img.shields.io/badge/build-PlatformIO-orange)
 
-![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
-
-Прошивка и приложение для **BMW E39 I-Bus Assistant**: BLE-ключ (подход/отход), команды по I-Bus (свет, замки, PDC, текст на приборку), опциональный OBD. Устройство загружается сразу в режим BMW Assistant; двойной тап открывает системное меню (Demo, Reboot, Charge only, Power off, Version).
+Multi-profile firmware for **Heltec WiFi LoRa 32 V4 (ESP32-S3)** with BMW E39 I-Bus integration, PC hardware monitoring, Forza Horizon telemetry, and WiFi/BLE research tools.
 
 ---
 
-## Структура репозитория
+## Features
+
+| Profile | Build Flag | Description |
+|---------|-----------|-------------|
+| `bmw_only` (default) | `pio run -e bmw_only` | BMW E39 I-Bus assistant, BLE proximity key, demo mode. WiFi off. |
+| `pc_companion` | `pio run -e pc_companion` | PC monitoring (WiFi+TCP), Forza telemetry (UDP) + BMW. |
+| `full` | `pio run -e full` | All above + WiFi scanner/sniffer/trap + BLE spam/clone. |
+
+### BMW I-Bus Assistant
+- BLE proximity key (auto lock/unlock)
+- Lights control (goodbye, follow-me, park, hazard, low beam)
+- Locks (lock/unlock/trunk)
+- Cluster text display
+- PDC activation
+- Demo mode for testing without vehicle
+
+### PC Companion
+- 9 OLED display scenes (CPU, GPU, RAM, Disks, Media, Fans, Motherboard, Weather, Main)
+- Rolling graphs on 128x64 OLED
+- TCP connection to PC monitoring server
+
+### Forza Telemetry
+- Real-time RPM/speed dashboard
+- Shift light indicator
+- UDP data stream from Forza Horizon
+
+---
+
+## Repository Structure
 
 ```
-├── platformio.ini       # PlatformIO (env heltec_wifi_lora_32_V4)
-├── huge_app.csv
+├── platformio.ini          # PlatformIO project config (3 environments)
+├── huge_app.csv            # Custom partition table
 ├── include/
-│   ├── nocturne/        # config.h, Types.h
-│   └── secrets.h.example
-├── src/                 # main.cpp, AppModeManager, MenuHandler, modules/
-├── data/                # LittleFS (см. data/README.txt)
+│   ├── nocturne/           # config.h, Types.h
+│   └── secrets.h.example   # Template for local secrets
+├── src/                    # Firmware source
+│   ├── main.cpp
+│   ├── AppModeManager.*
+│   ├── MenuHandler.*
+│   └── modules/
+│       ├── ble/            # BLE manager
+│       ├── car/            # BMW, I-Bus, BLE key, Forza, OBD
+│       ├── display/        # OLED scenes, boot animation
+│       ├── network/        # WiFi, sniffer, trap
+│       └── system/         # Battery manager
 ├── app/
-│   ├── android/         # Нативное Android-приложение (Kotlin)
-│   └── flutter/         # Flutter MD3 приложение (Dart)
-├── docs/
-│   ├── USER_GUIDE.md
-│   ├── GIT.md
-│   ├── bmw/             # BMW E39 Assistant, проводка, Android-приложение
-│   └── board/           # Плата, подключение, конфиг
-├── shared/
-│   ├── .vscode/         # Настройки IDE
-│   └── DataSheets/      # Даташит платы (см. shared/DataSheets/README.md)
-├── BMW datasheet/       # Справочные материалы I-Bus
-├── LICENSE
-├── README.md
+│   ├── android/            # Native Android companion (Kotlin)
+│   └── flutter/            # Flutter MD3 companion (Dart)
+├── docs/                   # User guide, wiring, board docs
+├── BMW datasheet/          # I-Bus reference materials
+├── shared/DataSheets/      # Board datasheets
+├── data/                   # LittleFS filesystem data
+├── LICENSE                 # GNU AGPL-3.0
 └── .gitignore
 ```
 
 ---
 
-## Установка прошивки
+## Getting Started
 
-1. Клонировать репозиторий, открыть **корень репозитория** в VS Code / PlatformIO.
-2. Скопировать **`include/secrets.h.example`** в **`include/secrets.h`**, при необходимости прописать Wi‑Fi (для будущего OTA; в режиме BMW WiFi выключен).
-3. Подключить Heltec V4 по USB-C, выполнить **PlatformIO: Upload**. Серийный монитор 115200 — см. [Подключение и терминал](docs/board/CONNECTING_AND_TERMINAL.md).
+### Prerequisites
 
-Конфигурация пинов, I-Bus, OBD, демо-режим — в **`include/nocturne/config.h`**.
+- [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
+- Heltec WiFi LoRa 32 V4 board
+- USB-C cable
+
+### Build & Upload
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION.git
+   cd Heltec-V3-V4-PC-COMPANION
+   ```
+
+2. Copy secrets template:
+   ```bash
+   cp include/secrets.h.example include/secrets.h
+   ```
+   Edit `include/secrets.h` with your WiFi credentials (only needed for `pc_companion` / `full` profiles).
+
+3. Build and upload:
+   ```bash
+   pio run -e bmw_only -t upload
+   ```
+
+4. Serial monitor (115200 baud):
+   ```bash
+   pio device monitor
+   ```
+
+### Configuration
+
+All hardware pins, I-Bus settings, OBD, and demo mode options are in `include/nocturne/config.h`.
 
 ---
 
-## Деморежим
+## Demo Mode
 
-Для тестирования без машины: **меню** (двойной тап) → BMW → «BMW Demo» (долгое нажатие) или System → «Demo» (переключатель). Либо **удерживать кнопку PRG при загрузке** ~2,5 с — демо включится и сохранится в NVS (после перезагрузки остаётся включённым). Подробнее — [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md), [Руководство пользователя](docs/USER_GUIDE.md).
+For testing without a vehicle:
+- **Menu** (double tap) → BMW → "BMW Demo" (long press)
+- **Or** hold PRG button during boot (~2.5s) — saved to NVS
 
----
-
-## Приложение (Android)
-
-- **Нативное (Kotlin):** `app/android/` — см. [BMW Android App](docs/bmw/BMW_ANDROID_APP.md) и `app/android/README.md`.
-- **Flutter:** `app/flutter/` — см. `app/flutter/README.md`.
+See [User Guide](docs/USER_GUIDE.md) and [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) for details.
 
 ---
 
-## Документация
+## Companion Apps
 
-| Раздел | Описание |
-|--------|----------|
-| [Руководство пользователя](docs/USER_GUIDE.md) | Кнопка, жесты, режимы, настройки |
-| [Плата и настройки](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md) | Распиновка Heltec V4, config.h, сборка |
-| [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE-ключ, I-Bus, свет, замки, PDC, приборка |
-| [Проводка платы к машине](docs/bmw/HELTEC_V4_WIRING.md) | Подключение Heltec V4 → трансивер I-Bus → автомобиль |
+| App | Path | Description |
+|-----|------|-------------|
+| Android (Kotlin) | `app/android/` | Native BLE companion for BMW assistant |
+| Flutter (Dart) | `app/flutter/` | Material Design 3 companion app |
+
+See [BMW Android App docs](docs/bmw/BMW_ANDROID_APP.md) for build instructions.
 
 ---
 
-## Авторы и лицензия
+## Documentation
 
-- **Концепция и код:** RudyWolf  
-- **Библиотеки:** U8g2 (Olikraus), ArduinoJson (Bblanchon), NimBLE-Arduino (h2zero)  
+| Document | Description |
+|----------|-------------|
+| [User Guide](docs/USER_GUIDE.md) | Button gestures, modes, settings |
+| [Board & Config](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md) | Pinout, config.h, build |
+| [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE key, I-Bus, lights, locks, PDC |
+| [Wiring](docs/bmw/HELTEC_V4_WIRING.md) | Board → I-Bus transceiver → vehicle |
+| [Connecting & Terminal](docs/board/CONNECTING_AND_TERMINAL.md) | USB, serial monitor |
 
-**Лицензия:** [MIT](LICENSE).
+---
+
+## Contributing
+
+Contributions are welcome. Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
+
+Make sure not to commit any secrets or personal configuration files.
+
+---
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
+
+```
+Copyright (C) 2024-2026 RudyWolf
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+```
+
+---
+
+## Acknowledgments
+
+- [U8g2](https://github.com/olikraus/U8g2) — OLED graphics library (Olikraus)
+- [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) — BLE stack (h2zero)
+- [ArduinoJson](https://github.com/bblanchon/ArduinoJson) — JSON library (Bblanchon)
+- BMW I-Bus community documentation

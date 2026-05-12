@@ -1,22 +1,41 @@
 /*
- * NOCTURNE_OS — Menu structure helpers: category/submenu counts,
- * map hacker item to AppMode. Actions (handleMenuActionByCategory etc.) stay in main.
+ * NOCTURNE_OS — Menu structure: conditional categories based on features.
+ *
+ * BMW-only:      BMW | Config | System          (3 categories)
+ * PC Companion:  Monitoring | BMW | Config | System  (4 categories)
+ * Full:          Monitoring | Hacker | BMW | Config | System  (5 categories)
  */
 #ifndef NOCTURNE_MENU_HANDLER_H
 #define NOCTURNE_MENU_HANDLER_H
 
 #include "AppModeManager.h"
 
-// Categories: 0=BMW, 1=Config, 2=System (BMW-only firmware)
-#define MENU_CATEGORIES 3
+/*
+ * Category indices are computed at compile time so that menu navigation
+ * code uses a single numbering scheme regardless of build profile.
+ */
+enum MenuCategory
+{
+#if NOCT_FEATURE_MONITORING
+  MCAT_MONITORING,
+#endif
+#if NOCT_FEATURE_HACKER
+  MCAT_HACKER,
+#endif
+  MCAT_BMW,
+  MCAT_CONFIG,
+  MCAT_SYSTEM,
+  MENU_CATEGORIES
+};
 
-/** Number of items in a category (level 1 submenu). */
+#if NOCT_FEATURE_HACKER
+#define HACKER_GROUP_WIFI 0
+#define HACKER_GROUP_BLE 1
+#define HACKER_GROUP_COUNT 2
+#endif
+
 int submenuCount(int category);
-
-/** Number of items in a hacker group (level 2). */
 int submenuCountForHackerGroup(int group);
-
-/** Map (hacker group, item index) to AppMode. Used when menuLevel==2. */
 AppMode getModeForHackerItem(int group, int item);
 
 #endif

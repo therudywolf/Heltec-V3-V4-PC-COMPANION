@@ -5,11 +5,20 @@
  */
 #include "SceneManager.h"
 #include "nocturne/config.h"
+#include "MenuHandler.h"
 #include "BmwManager.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
 #include <string.h>
+
+#if NOCT_FEATURE_HACKER
+#include "WifiSniffManager.h"
+#endif
+
+#if NOCT_FEATURE_FORZA
+#include "ForzaManager.h"
+#endif
 
 // ===========================================================================
 // ASSETS: 32x32 PIXEL PERFECT WOLF (High contrast for OLED)
@@ -1043,19 +1052,18 @@ void SceneManager::drawSearchMode(int scanPhase)
 // Flipper-style two-level menu: level 0 = categories, level 1 = submenu.
 // Short = scroll, Long = enter/execute, Double = back/close.
 // ---------------------------------------------------------------------------
-static int submenuCountForCategory(int cat)
+static const char *getCategoryName(int cat)
 {
-  switch (cat)
-  {
-  case 0:
-    return 2; // BMW: BMW Assistant, BMW Demo
-  case 1:
-    return 7; // Config: AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
-  case 2:
-    return 5; // System: Demo, REBOOT, CHARGE ONLY, POWER OFF, VERSION
-  default:
-    return 2;
-  }
+#if NOCT_FEATURE_MONITORING
+  if (cat == MCAT_MONITORING) return "Monitor";
+#endif
+#if NOCT_FEATURE_HACKER
+  if (cat == MCAT_HACKER) return "Hacker";
+#endif
+  if (cat == MCAT_BMW) return "BMW";
+  if (cat == MCAT_CONFIG) return "Config";
+  if (cat == MCAT_SYSTEM) return "System";
+  return "???";
 }
 
 void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
@@ -1076,34 +1084,76 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(boxX, boxY, boxW, boxH);
 
-  // 0=BMW, 1=Config, 2=System (BMW-only)
-  static const char *categoryNames[] = {"BMW", "Config", "System"};
   static char items[25][20];
   int count;
   const char *headerStr;
 
   if (menuLevel == 0)
   {
-    count = 3;
+    count = MENU_CATEGORIES;
     headerStr = "// MENU";
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < count && i < 25; i++)
     {
-      strncpy(items[i], categoryNames[i], sizeof(items[i]) - 1);
+      strncpy(items[i], getCategoryName(i), sizeof(items[i]) - 1);
       items[i][sizeof(items[i]) - 1] = '\0';
     }
   }
+#if NOCT_FEATURE_HACKER
+  else if (menuLevel == 2)
+  {
+    static const char *wifiNames[] = {
+      "Radar", "Probe", "EAPOL", "Station", "PktMon",
+      "ChAnalyz", "ChActiv", "PktRate", "Pine",
+      "MultiSSID", "Signal", "RawCap", "AP+STA", "Trap"
+    };
+    static const char *bleNames[] = {
+      "BLE Spam", "SourApple", "SwiftMS", "SwiftGG", "SwiftSam", "Flipper"
+    };
+    count = submenuCountForHackerGroup(menuHackerGroup);
+    headerStr = (menuHackerGroup == HACKER_GROUP_WIFI) ? "WiFi" : "BLE";
+    const char **names = (menuHackerGroup == HACKER_GROUP_WIFI) ? wifiNames : bleNames;
+    for (int i = 0; i < count && i < 25; i++)
+    {
+      strncpy(items[i], names[i], sizeof(items[i]) - 1);
+      items[i][sizeof(items[i]) - 1] = '\0';
+    }
+  }
+#endif
   else
   {
-    count = submenuCountForCategory(menuCategory);
-    headerStr = categoryNames[menuCategory];
-    if (menuCategory == 0)
+    count = submenuCount(menuCategory);
+    headerStr = getCategoryName(menuCategory);
+
+#if NOCT_FEATURE_MONITORING
+    if (menuCategory == MCAT_MONITORING)
+    {
+      strncpy(items[0], "PC Monitor", sizeof(items[0]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+#if NOCT_FEATURE_FORZA
+      strncpy(items[1], "Forza", sizeof(items[1]) - 1);
+      items[1][sizeof(items[1]) - 1] = '\0';
+#endif
+    }
+    else
+#endif
+#if NOCT_FEATURE_HACKER
+    if (menuCategory == MCAT_HACKER)
+    {
+      strncpy(items[0], "WiFi", sizeof(items[0]) - 1);
+      strncpy(items[1], "BLE", sizeof(items[1]) - 1);
+      items[0][sizeof(items[0]) - 1] = '\0';
+      items[1][sizeof(items[1]) - 1] = '\0';
+    }
+    else
+#endif
+    if (menuCategory == MCAT_BMW)
     {
       strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
       strncpy(items[1], "BMW Demo", sizeof(items[1]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
     }
-    else if (menuCategory == 1)
+    else if (menuCategory == MCAT_CONFIG)
     {
       if (!carouselOn)
         snprintf(items[0], sizeof(items[0]), "AUTO: OFF");
@@ -1124,7 +1174,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
         snprintf(items[6], sizeof(items[6]), "TIMEOUT:%ds", displayTimeoutSec);
       items[6][sizeof(items[6]) - 1] = '\0';
     }
-    else if (menuCategory == 2)
+    else if (menuCategory == MCAT_SYSTEM)
     {
       strncpy(items[0], "Demo", sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
@@ -1704,3 +1754,574 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 
   disp_.drawGreebles();
 }
+
+// ===========================================================================
+// CONDITIONAL FEATURE METHODS (extracted from WolfPet branch)
+// ===========================================================================
+
+#if NOCT_FEATURE_HACKER
+
+void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
+                                   int *sortedIndices, int filteredCount,
+                                   const char *footerOverride)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+
+  // If footerOverride is provided and no WiFi scan data, show simple status
+  if (footerOverride && filteredCount == 0 && sortedIndices == nullptr)
+  {
+    u8g2.setDrawColor(1);
+    u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+    u8g2.setDrawColor(0);
+    u8g2.setCursor(NOCT_MARGIN, 7);
+    u8g2.print("ACTIVE");
+    u8g2.setDrawColor(1);
+    u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+    u8g2.setCursor(2, 20);
+    char footer[48];
+    strncpy(footer, footerOverride, sizeof(footer) - 1);
+    footer[sizeof(footer) - 1] = '\0';
+    u8g2.print(footer);
+    u8g2.setCursor(2, 30);
+    u8g2.print("2x BACK to exit");
+    u8g2.setCursor(2, 40);
+    u8g2.print("Mode running...");
+    return;
+  }
+
+  int n = WiFi.scanComplete();
+  bool useFiltered = (sortedIndices != nullptr && filteredCount > 0);
+  int displayCount = useFiltered ? filteredCount : n;
+
+  // If no WiFi scan data and no footer, show a default message
+  if (n == 0 && displayCount == 0 && !footerOverride)
+  {
+    disp_.drawCentered(32, "NO DATA");
+    return;
+  }
+
+  if (n == -2)
+  {
+    disp_.drawCentered(32, "INIT RADAR...");
+    return;
+  }
+  if (n == -1)
+  {
+    disp_.drawCentered(25, "SCANNING...");
+    u8g2.drawFrame(34, 35, 60, 4);
+    int w = (millis() / 10) % 60;
+    u8g2.drawBox(34, 35, w, 4);
+    return;
+  }
+  if (displayCount == 0 && !footerOverride)
+  {
+    disp_.drawCentered(32, "NO SIGNALS");
+    disp_.drawCentered(45, "[PRESS TO RESCAN]");
+    return;
+  }
+
+  // If we have footer but no scan data, skip WiFi scan display logic
+  if (displayCount == 0 && footerOverride)
+  {
+    // Already handled above
+    return;
+  }
+
+  // --- LIST RENDER (full screen, no header) ---
+  u8g2.setCursor(2, 2);
+  if (useFiltered && filteredCount < n)
+  {
+    u8g2.printf("TARGETS: %d/%d", filteredCount, n);
+  }
+  else
+  {
+    u8g2.printf("TARGETS: %d", displayCount);
+  }
+  u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+
+  int yStart = 12;
+  int h = 10;
+  const int maxVisibleRows = 4;  // keep list above NOCT_FOOTER_Y (50)
+  int endIdx = pageOffset + maxVisibleRows < displayCount
+                   ? pageOffset + maxVisibleRows
+                   : displayCount;
+
+  for (int i = pageOffset; i < endIdx; i++)
+  {
+    int actualIndex = useFiltered ? sortedIndices[i] : i;
+    int y = yStart + ((i - pageOffset) * h);
+
+    if (i == selectedIndex)
+    {
+      u8g2.setDrawColor(1);
+      u8g2.drawBox(0, y - 8, NOCT_DISP_W, h);
+      u8g2.setDrawColor(0);
+    }
+    else
+    {
+      u8g2.setDrawColor(1);
+    }
+
+    // Copy SSID to local String so c_str() remains valid; then to buffer
+    String ssidStr = WiFi.SSID(actualIndex);
+    const char *ssid = ssidStr.c_str();
+    char ssidBuf[12]; // Max 10 chars + "." + null terminator
+    if (!ssid || ssidStr.length() == 0)
+    {
+      strncpy(ssidBuf, "[HIDDEN]", sizeof(ssidBuf) - 1);
+    }
+    else
+    {
+      size_t len = ssidStr.length();
+      if (len > 10)
+      {
+        strncpy(ssidBuf, ssid, 9);
+        ssidBuf[9] = '.';
+        ssidBuf[10] = '\0';
+      }
+      else
+      {
+        strncpy(ssidBuf, ssid, sizeof(ssidBuf) - 1);
+        ssidBuf[sizeof(ssidBuf) - 1] = '\0';
+      }
+    }
+    u8g2.setCursor(2, y);
+    u8g2.print(ssidBuf);
+
+    // RSSI ╨╕ ╨║╨░╨╜╨░╨╗
+    int rssi = WiFi.RSSI(actualIndex);
+    int channel = WiFi.channel(actualIndex);
+    u8g2.setCursor(70, y);
+    u8g2.printf("%d CH%d", rssi, channel);
+
+    // ╨Ш╨╜╨┤╨╕╨║╨░╤Ж╨╕╤П ╤И╨╕╤Д╤А╨╛╨▓╨░╨╜╨╕╤П
+    wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
+    if (auth != WIFI_AUTH_OPEN)
+    {
+      u8g2.setCursor(120, y);
+      if (auth == WIFI_AUTH_WPA3_PSK || auth == WIFI_AUTH_WPA2_WPA3_PSK)
+      {
+        u8g2.print("3"); // WPA3
+      }
+      else
+      {
+        u8g2.print("*"); // WPA/WPA2
+      }
+    }
+    u8g2.setDrawColor(1);
+  }
+
+  drawBottomHint();
+}
+
+// ---------------------------------------------------------------------------
+// BLE PHANTOM SPAMMER: status bar, pulsing BT icon, packet count
+// ---------------------------------------------------------------------------
+#define PHANTOM_BT_CX (NOCT_DISP_W / 2)
+#define PHANTOM_BT_CY 32
+#define PHANTOM_BT_R 12
+
+static void drawBtIcon(U8G2 &u8g2, int cx, int cy, int r, int pulse)
+{
+  int R = r + (pulse / 2);
+  if (R < 4)
+    R = 4;
+  u8g2.drawCircle(cx, cy, R);
+  u8g2.drawCircle(cx, cy, R - 2);
+  int tip = 4;
+  u8g2.drawTriangle(cx - tip, cy - R + 2, cx - tip, cy + R - 2, cx + tip, cy);
+  u8g2.drawLine(cx - tip, cy - R + 2, cx + R - 2, cy - 4);
+  u8g2.drawLine(cx - tip, cy + R - 2, cx + R - 2, cy + 4);
+}
+
+void SceneManager::drawBleSpammer(int packetCount)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(NOCT_MARGIN, 7);
+  u8g2.print("BLE SPAM");
+  u8g2.setDrawColor(1);
+
+  // Pulsing Bluetooth icon (center)
+  unsigned long t = millis() / 100;
+  int pulse = (int)(t % 8) - 4;
+  if (pulse < 0)
+    pulse = -pulse;
+  drawBtIcon(u8g2, PHANTOM_BT_CX, PHANTOM_BT_CY, PHANTOM_BT_R, pulse);
+
+  static char pktBuf[20];
+  snprintf(pktBuf, sizeof(pktBuf), "PKT: %lu", (unsigned long)packetCount);
+  u8g2.setCursor(NOCT_MARGIN, 46);
+  u8g2.print(pktBuf);
+
+  drawBottomHint();
+  disp_.drawGreebles();
+}
+
+// --- TRAP (Evil Twin / Captive Portal) ---
+#define TRAP_WEB_CX (NOCT_DISP_W / 2)
+#define TRAP_WEB_CY 28
+
+void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
+                                const char *lastPassword,
+                                unsigned long passwordShowUntil,
+                                const char *clonedSSID)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setCursor(NOCT_MARGIN, 7);
+  u8g2.print("PORTAL");
+  if (clonedSSID && clonedSSID[0] != '\0')
+  {
+    u8g2.setCursor(60, 7);
+    u8g2.print("[CLONE]");
+  }
+  u8g2.setDrawColor(1);
+
+  unsigned long now = millis();
+  bool showBite =
+      lastPassword && lastPassword[0] != '\0' && now < passwordShowUntil;
+
+  if (showBite)
+  {
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(0, NOCT_MODE_HEADER_H, NOCT_DISP_W,
+                 NOCT_DISP_H - NOCT_MODE_HEADER_H);
+    u8g2.setDrawColor(1);
+    u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
+    u8g2.setCursor(NOCT_MARGIN, 44);
+    u8g2.print("BITE:");
+    static char pwdBuf[22];
+    size_t len = strlen(lastPassword);
+    if (len >= sizeof(pwdBuf))
+      len = sizeof(pwdBuf) - 1;
+    strncpy(pwdBuf, lastPassword, len);
+    pwdBuf[len] = '\0';
+    int maxW = NOCT_DISP_W - NOCT_MARGIN * 2;
+    while (len > 0 && (int)u8g2.getUTF8Width(pwdBuf) > maxW)
+    {
+      pwdBuf[--len] = '\0';
+      if (len >= 3)
+      {
+        pwdBuf[len - 3] = '.';
+        pwdBuf[len - 2] = '.';
+        pwdBuf[len - 1] = '.';
+      }
+      else
+        break;
+    }
+    u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+    u8g2.print(pwdBuf);
+  }
+  else
+  {
+    int cx = TRAP_WEB_CX;
+    int cy = TRAP_WEB_CY;
+    for (int i = 0; i < 8; i++)
+    {
+      double a = (i * 2.0 * 3.14159265359) / 8.0;
+      int x2 = cx + (int)(24 * cos(a));
+      int y2 = cy + (int)(24 * sin(a));
+      u8g2.drawLine(cx, cy, x2, y2);
+    }
+    u8g2.drawCircle(cx, cy, 8);
+    u8g2.drawCircle(cx, cy, 16);
+    u8g2.drawCircle(cx, cy, 24);
+
+    static char buf[24];
+    snprintf(buf, sizeof(buf), "CLIENTS: %d", clientCount);
+    u8g2.setCursor(NOCT_MARGIN, 22);
+    u8g2.print(buf);
+    snprintf(buf, sizeof(buf), "LOGS: %d", logsCaptured);
+    u8g2.setCursor(NOCT_MARGIN, 32);
+    u8g2.print(buf);
+  }
+
+  drawBottomHint();
+  disp_.drawGreebles();
+}
+
+// --- WIFI SNIFF ---
+void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setFont(TINY_FONT);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
+  u8g2.setDrawColor(0);
+
+  // Show mode name in header
+  const char *modeName = "SNIFF";
+  SniffMode mode = mgr.getMode();
+  switch (mode)
+  {
+  case SNIFF_MODE_PROBE_SCAN:
+    modeName = "PROBE";
+    break;
+  case SNIFF_MODE_EAPOL_CAPTURE:
+    modeName = "EAPOL";
+    break;
+  case SNIFF_MODE_STATION_SCAN:
+    modeName = "STATION";
+    break;
+  case SNIFF_MODE_PACKET_MONITOR:
+    modeName = "PKT MON";
+    break;
+  case SNIFF_MODE_CHANNEL_ANALYZER:
+    modeName = "CH ANALYZ";
+    break;
+  case SNIFF_MODE_CHANNEL_ACTIVITY:
+    modeName = "CH ACT";
+    break;
+  case SNIFF_MODE_PACKET_RATE:
+    modeName = "PKT RATE";
+    break;
+  case SNIFF_MODE_PINESCAN:
+    modeName = "PINESCAN";
+    break;
+  case SNIFF_MODE_MULTISSID:
+    modeName = "MULTISSID";
+    break;
+  case SNIFF_MODE_SIGNAL_STRENGTH:
+    modeName = "SIG STR";
+    break;
+  case SNIFF_MODE_RAW_CAPTURE:
+    modeName = "RAW CAP";
+    break;
+  case SNIFF_MODE_AP_STA:
+    modeName = "AP+STA";
+    break;
+  default:
+    break;
+  }
+
+  u8g2.setCursor(2, 7);
+  u8g2.print(modeName);
+  u8g2.setDrawColor(1);
+  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+
+  int n = mgr.getApCount();
+  int pkts = mgr.getPacketCount();
+  int eapol = mgr.getEapolCount();
+
+  // Show different stats based on mode
+  if (mode == SNIFF_MODE_PROBE_SCAN)
+  {
+    int probeCount = mgr.getProbeCount();
+    u8g2.setCursor(2, 18);
+    u8g2.print("Probes: ");
+    u8g2.print(probeCount);
+  }
+  else if (mode == SNIFF_MODE_PACKET_RATE)
+  {
+    uint32_t pps = mgr.getPacketsPerSecond();
+    u8g2.setCursor(2, 18);
+    u8g2.print("PPS: ");
+    u8g2.print(pps);
+  }
+  else if (mode == SNIFF_MODE_CHANNEL_ACTIVITY ||
+           mode == SNIFF_MODE_CHANNEL_ANALYZER)
+  {
+    uint32_t channels[14];
+    mgr.getChannelActivity(channels, 14);
+    u8g2.setCursor(2, 18);
+    u8g2.print("Ch Activity");
+  }
+  else
+  {
+    u8g2.setCursor(2, 18);
+    u8g2.print("PKTS:");
+    u8g2.print(pkts);
+    u8g2.print(" EAPOL:");
+    u8g2.print(eapol);
+  }
+
+  if (n > 0 && selected < n)
+  {
+    const WifiSniffAp *ap = mgr.getAp(selected);
+    if (ap)
+    {
+      u8g2.setCursor(2, 28);
+      char line[22];
+      strncpy(line, ap->ssid, 18);
+      line[18] = '\0';
+      if (strlen(ap->ssid) > 18)
+        line[16] = '.';
+      u8g2.print(line);
+      u8g2.setCursor(2, 38);
+      u8g2.print(ap->bssidStr);
+      u8g2.setCursor(2, 48);
+      u8g2.print("CH:");
+      u8g2.print((int)ap->channel);
+      u8g2.print(" RSSI:");
+      u8g2.print(ap->rssi);
+      if (ap->hasEapol)
+        u8g2.print(" [EAPOL]");
+    }
+  }
+  drawBottomHint();
+  disp_.drawGreebles();
+}
+
+// --- FORZA DASHBOARD (NFS Unbound Final: jitter, speed lines, no collisions) ---
+
+
+#endif // NOCT_FEATURE_HACKER
+
+#if NOCT_FEATURE_FORZA
+
+void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
+                                 uint32_t localIp)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  unsigned long now = millis();
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  // --- SPLASH SCREEN ---
+  if (showSplash)
+  {
+    u8g2.setFont(u8g2_font_profont12_tf);
+    u8g2.drawUTF8(10, 20, ">> LINKING ECU >>");
+    char ipBuf[32];
+    snprintf(ipBuf, sizeof(ipBuf), "IP: %d.%d.%d.%d",
+             (int)((localIp >> 24) & 0xFF), (int)((localIp >> 16) & 0xFF),
+             (int)((localIp >> 8) & 0xFF), (int)(localIp & 0xFF));
+    u8g2.drawUTF8(10, 35, ipBuf);
+    u8g2.drawUTF8(10, 50, "PORT: 5300 UDP");
+    disp_.drawTechBrackets(0, 0, NOCT_DISP_W, NOCT_DISP_H, 5);
+    return;
+  }
+
+  // --- TELEMETRY ---
+  float currentRpm = forza.getCurrentRpm();
+  float maxRpm = forza.getMaxRpm();
+  int speed = forza.getSpeedKmh();
+  bool isRedline = (maxRpm > 0 && currentRpm > 0.92f * maxRpm);
+  float rpmPct = (maxRpm > 0) ? (currentRpm / maxRpm) : 0;
+  if (rpmPct > 1.0f)
+    rpmPct = 1.0f;
+
+  // --- JUICE (Jitter/Shake at high RPM) ---
+  int shakeX = 0;
+  int shakeY = 0;
+  if (rpmPct > 0.7f)
+  {
+    int intensity = (int)((rpmPct - 0.7f) * 10);
+    if (intensity > 0)
+    {
+      shakeX = random(-intensity, intensity + 1);
+      shakeY = random(-intensity, intensity + 1);
+    }
+  }
+
+  // --- 1. BACKGROUND (Speed Lines) ---
+  for (int i = 0; i < 5; i++)
+  {
+    int y = ((int)(now / (10 + i * 5)) + i * 15) % NOCT_DISP_H;
+    int w = 10 + (i * 8);
+    int x = NOCT_DISP_W - ((int)(now / 2) % (NOCT_DISP_W + w));
+    if (y > 14 && y < 50)
+      continue;
+    u8g2.drawHLine(x, y, w);
+  }
+
+  // --- 2. RPM BAR (with "RPM" label) ---
+  const int barH = 14;
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, barH);
+  int fillW = (int)(rpmPct * 126);
+  if (fillW > 0)
+  {
+    if (isRedline)
+      u8g2.drawBox(1, 1, fillW, barH - 2);
+    else
+      disp_.drawDiagonalStriped(1, 1, fillW, barH - 2, 3);
+  }
+  u8g2.setFont(u8g2_font_profont10_tf);
+  char rpmBuf[16];
+  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f", currentRpm);
+  int rpmW = u8g2.getUTF8Width(rpmBuf);
+  u8g2.setDrawColor(2);
+  u8g2.drawUTF8((NOCT_DISP_W / 2) - (rpmW / 2) + shakeX, 9 + shakeY, rpmBuf);
+  u8g2.setDrawColor(1);
+  u8g2.drawUTF8(2, 9 + shakeY, "RPM");
+
+  // --- 3. CONTENT ZONES (Gear left, Speed right) with frames ---
+  const int contentTop = 16;
+  const int contentH = NOCT_DISP_H - contentTop;
+  const int gearZoneW = 52;
+  const int sepX = 54;
+  const int speedZoneX = 56;
+
+  disp_.drawTechFrame(0, contentTop - 1, gearZoneW + 1, contentH + 1);
+  disp_.drawTechFrame(speedZoneX - 1, contentTop - 1,
+                      NOCT_DISP_W - speedZoneX + 1, contentH + 1);
+  u8g2.drawVLine(sepX + shakeX, contentTop, contentH - 1);
+
+  // --- 4. GEAR (left zone): top of digit so bottom <= 64 (logisoso42 ~42px) ---
+  u8g2.setFont(u8g2_font_profont10_tf);
+  u8g2.drawUTF8(2 + shakeX, contentTop + 4 + shakeY, "GEAR");
+  char gearBuf[4];
+  forza.getGearString(gearBuf, sizeof(gearBuf));
+  int gearX = 2 + shakeX;
+  const int gearY = 20 + shakeY;  /* top of digit: 20+42 <= 64 */
+  if (rpmPct > 0.1f)
+  {
+    u8g2.drawLine(gearX, gearY + 42, gearX + 36, gearY + 6);
+    u8g2.drawLine(gearX + 4, gearY + 42, gearX + 40, gearY + 6);
+  }
+  u8g2.setFont(u8g2_font_logisoso42_tf);
+  u8g2.drawUTF8(gearX, gearY, gearBuf);
+
+  // --- 5. SPEED (right zone): keep speed and km/h within 64 ---
+  u8g2.setFont(u8g2_font_profont10_tf);
+  int speedLabelW = u8g2.getUTF8Width("SPEED");
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - speedLabelW + shakeX,
+                contentTop + 4 + shakeY, "SPEED");
+  char spdBuf[8];
+  snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
+  u8g2.setFont(u8g2_font_logisoso32_tn);
+  int spdW = u8g2.getUTF8Width(spdBuf);
+  int spdX = NOCT_DISP_W - 2 - spdW + shakeX;
+  int spdY = 54 + shakeY;
+  u8g2.setDrawColor(0);
+  u8g2.drawUTF8(spdX - 2, spdY - 2, spdBuf);
+  u8g2.setDrawColor(1);
+  u8g2.drawUTF8(spdX, spdY, spdBuf);
+  if (rpmPct > 0.5f)
+    u8g2.drawHLine(spdX, spdY + 2, spdW);
+  u8g2.setFont(u8g2_font_profont12_tf);
+  int unitW = u8g2.getUTF8Width("km/h");
+  u8g2.drawUTF8(NOCT_DISP_W - 2 - unitW + shakeX, NOCT_FOOTER_TEXT_Y + shakeY,
+                "km/h");
+
+  drawBottomHint();
+
+  // --- 5. REDLINE STROBE ---
+  if (isRedline)
+  {
+    if ((now / 50) % 2 == 0)
+    {
+      u8g2.setDrawColor(2);
+      u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+      u8g2.setDrawColor(1);
+    }
+  }
+}
+
+
+#endif // NOCT_FEATURE_FORZA

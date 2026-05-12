@@ -132,5 +132,5 @@ void drawBootSequence(DisplayEngine &display) {
     vTaskDelay(pdMS_TO_TICKS(60));
   }
 
-  display.u8g2().setFlipMode(0);
+  display.u8g2().setFlipMode(display.isScreenFlipped() ? 1 : 0);
 }
