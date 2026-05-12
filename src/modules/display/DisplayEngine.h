@@ -190,10 +190,12 @@ public:
   /** Edge artifacts: lines/noise only in borderPx perimeter (e.g. 4px). */
   void drawEdgeArtifacts(int borderPx);
 
+#if NOCT_FEATURE_MONITORING
   RollingGraph cpuGraph;
   RollingGraph gpuGraph;
   RollingGraph netDownGraph;
   RollingGraph netUpGraph;
+#endif
 
 private:
   bool drawXBMArtFromBase64(int x, int y, int w, int h, const String &base64);

@@ -2,17 +2,35 @@ name: CI
 
 on:
   push:
-    branches: [main, WolfPet]
+    branches: [main, IBUS_CleanFrim]
   pull_request:
-    branches: [main, WolfPet]
+    branches: [main]
 
 jobs:
   firmware:
-    name: Build firmware
+    name: Build firmware (${{ matrix.env }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [bmw_only, pc_companion, full]
     steps:
       - uses: actions/checkout@v4
+
       - name: Install PlatformIO
         run: pip install platformio
-      - name: Build
-        run: cd firmware && pio run
+
+      - name: Create secrets.h stub for CI
+        run: |
+          cat > include/secrets.h << 'EOF'
+          #ifndef NOCTURNE_SECRETS_H
+          #define NOCTURNE_SECRETS_H
+          #define WIFI_SSID "CI_TEST"
+          #define WIFI_PASS "CI_TEST"
+          #define PC_IP     "127.0.0.1"
+          #define TCP_PORT  8888
+          #endif
+          EOF
+
+      - name: Build ${{ matrix.env }}
+        run: pio run -e ${{ matrix.env }}

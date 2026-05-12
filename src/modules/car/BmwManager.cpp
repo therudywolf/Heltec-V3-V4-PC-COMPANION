@@ -320,9 +320,9 @@ void BmwManager::sendWindowFrontDriverOpen() {
   ibus_.write(Window_FrontDriver_Open, sizeof(Window_FrontDriver_Open));
 }
 void BmwManager::sendLCMDiagnostic(const uint8_t *payload, uint8_t len) {
-  if (!payload || len == 0 || len > 32)
+  if (!payload || len == 0 || (size_t)len + 3 > IBUS_PACKET_MAX)
     return;
-  uint8_t buf[34];
+  uint8_t buf[IBUS_PACKET_MAX];
   buf[0] = IBUS_LCM;
   buf[1] = len + 1;
   buf[2] = 0x00;
@@ -527,7 +527,7 @@ void BmwManager::begin() {
           clusterLine[n] = track[n];
       }
       if (n < 20 && artist && *artist) {
-        if (n > 0) {
+        if (n > 0 && n + 3 <= 20) {
           clusterLine[n++] = ' ';
           clusterLine[n++] = '-';
           clusterLine[n++] = ' ';
@@ -684,7 +684,7 @@ void BmwManager::tick() {
   /* Lock state from 0x7a byte1: 0x10=unlocked, 0x20=locked, 0x30=double. */
   uint8_t lockState = 0xFF;
   if (lastDoorLidByte1_ != 0xFF) {
-    uint8_t cl = (lastDoorLidByte1_ >> 4) & 0x30;
+    uint8_t cl = lastDoorLidByte1_ & 0x30;
     if (cl == 0x10) lockState = 0;
     else if (cl == 0x20) lockState = 1;
     else if (cl == 0x30) lockState = 2;

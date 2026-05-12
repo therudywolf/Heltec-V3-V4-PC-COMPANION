@@ -22,9 +22,11 @@ IbusDriver::IbusDriver()
 }
 
 void IbusDriver::onPacket(uint8_t *packet) {
-  if (instance_ && instance_->userHandler_)
-    instance_->userHandler_(packet);
-  instance_->synced_ = true;
+  if (instance_) {
+    if (instance_->userHandler_)
+      instance_->userHandler_(packet);
+    instance_->synced_ = true;
+  }
 }
 
 #if NOCT_IBUS_ENABLED
