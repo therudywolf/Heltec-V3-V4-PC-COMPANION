@@ -1,10 +1,14 @@
-# Secrets and local config (do not commit)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Secrets and local config (NEVER commit)
+# ═══════════════════════════════════════════════════════════════════════════════
 .env
 secrets.h
 include/secrets.h
 firmware/include/secrets.h
 
+# ═══════════════════════════════════════════════════════════════════════════════
 # Python
+# ═══════════════════════════════════════════════════════════════════════════════
 .venv/
 venv/
 __pycache__/
@@ -15,50 +19,84 @@ __pycache__/
 *.egg-info/
 .eggs/
 
+# ═══════════════════════════════════════════════════════════════════════════════
 # PyInstaller / build
+# ═══════════════════════════════════════════════════════════════════════════════
 dist/
 server/dist/
 server/build/
 build/
 *.exe
 
+# ═══════════════════════════════════════════════════════════════════════════════
 # PlatformIO / Arduino
+# ═══════════════════════════════════════════════════════════════════════════════
 .pio/
 firmware/.pio/
 
-# Meshtastic / other firmware packs (do not commit)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Meshtastic / other firmware packs
+# ═══════════════════════════════════════════════════════════════════════════════
 firmware-*/
 data/meshtastic.bin
 
+# ═══════════════════════════════════════════════════════════════════════════════
 # IDE / OS
+# ═══════════════════════════════════════════════════════════════════════════════
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+desktop.ini
 
+# ═══════════════════════════════════════════════════════════════════════════════
 # Logs
+# ═══════════════════════════════════════════════════════════════════════════════
 *.log
 monitor.log
 nocturne.log
 
-# Local dev / scratch (do not commit)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Local dev / scratch
+# ═══════════════════════════════════════════════════════════════════════════════
 serverpars.txt
 CURSOR_UI_REFACTOR.md
 
-# Flutter (local SDK and build)
-flutter_sdk/
-app/build/
-app/.dart_tool/
+# ═══════════════════════════════════════════════════════════════════════════════
+# Android — Gradle cache, local properties
+# ═══════════════════════════════════════════════════════════════════════════════
+.gradle/
+**/local.properties
+app/android/.gradle/
+app/android/build/
+app/android/app/build/
+app/android/local.properties
 
-# JDK (local tooling; use system JDK or set JAVA_HOME)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Flutter — SDK, build artifacts, tooling cache
+# ═══════════════════════════════════════════════════════════════════════════════
+flutter_sdk/
+flutter_windows.zip
+app/flutter/.dart_tool/
+app/flutter/.flutter-plugins
+app/flutter/.flutter-plugins-dependencies
+app/flutter/build/
+app/flutter/android/.gradle/
+app/flutter/android/local.properties
+app/flutter/android/app/build/
+app/flutter/.packages
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JDK (local tooling)
+# ═══════════════════════════════════════════════════════════════════════════════
 jdk-*/
 jdk17.zip
 
-# Flutter SDK archive (local; do not commit)
-flutter_windows.zip
-
-# Built APK output folder
+# ═══════════════════════════════════════════════════════════════════════════════
+# Built APK output
+# ═══════════════════════════════════════════════════════════════════════════════
 release apk/
-
+*.apk
