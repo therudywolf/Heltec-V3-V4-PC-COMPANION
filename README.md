@@ -68,6 +68,17 @@ Multi-profile firmware for **Heltec WiFi LoRa 32 V4 (ESP32-S3)** with BMW E39 I-
 ---
 
 ## Getting Started
+## Quick Start (3 Steps)
+
+1. **Install**: PlatformIO (VS Code or CLI) + board drivers (CH340)
+2. **Clone**: `git clone https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION.git`
+3. **Build**: Choose profile:
+   - `pio run -e bmw_only -t upload` — BMW I-Bus assistant
+   - `pio run -e pc_companion -t upload` — PC monitoring + BMW + Forza
+   - `pio run -e full -t upload` — All features + WiFi research
+
+📖 See [INSTALLATION.md](INSTALLATION.md) for complete setup guide.
+
 
 ### Prerequisites
 
@@ -131,6 +142,8 @@ See [BMW Android App docs](docs/bmw/BMW_ANDROID_APP.md) for build instructions.
 | Document | Description |
 |----------|-------------|
 | [User Guide](docs/USER_GUIDE.md) | Button gestures, modes, settings |
+| [Installation Guide](INSTALLATION.md) | Step-by-step setup for all three profiles |
+| [Contributing](CONTRIBUTING.md) | Development guidelines and PR process |
 | [Board & Config](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md) | Pinout, config.h, build |
 | [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE key, I-Bus, lights, locks, PDC |
 | [Wiring](docs/bmw/HELTEC_V4_WIRING.md) | Board → I-Bus transceiver → vehicle |
@@ -140,15 +153,21 @@ See [BMW Android App docs](docs/bmw/BMW_ANDROID_APP.md) for build instructions.
 
 ## Contributing
 
-Contributions are welcome. Please:
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+- Development setup and workflow
+- Code style guidelines  
+- Pull request process
+- License compliance (AGPL v3.0)
 
-Make sure not to commit any secrets or personal configuration files.
+**Quick checklist:**
+- ✅ Test all three profiles compile cleanly
+- ✅ Use conventional commits (feat:, fix:, docs:)
+- ✅ No secrets or personal data committed
+- ✅ Update docs for user-visible changes
+- ✅ AGPL v3.0 license compliance
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
