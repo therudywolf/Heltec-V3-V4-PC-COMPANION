@@ -1,193 +1,194 @@
-# NOCTURNE OS (v4.2.0) — ветка main
+# Nocturne OS — Heltec WiFi LoRa 32 V4 Firmware
 
-**Высокопроизводительная прошивка-кибердек для Heltec WiFi LoRa 32 V4**
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+![Platform](https://img.shields.io/badge/platform-ESP32--S3-green)
+![PlatformIO](https://img.shields.io/badge/build-PlatformIO-orange)
 
-![Лицензия](https://img.shields.io/badge/license-MIT-green) ![Платформа](https://img.shields.io/badge/platform-ESP32--S3-blue) ![Статус](https://img.shields.io/badge/status-STABLE-brightgreen)
-
-> _«В тишине сети волк охотится один.»_
-
-**Nocturne OS** — прошивка для платы **Heltec V4**. Устройство работает как монитор телеметрии ПК: получает данные по TCP, выводит их на OLED 128×64, показывает сцены (CPU, GPU, RAM, диски, медиа, вентиляторы, матплата, погода), тактическое меню и систему алертов.
-
-Ориентир на **внешний вид**, **низкую задержку** и **надёжность связи**.
+Multi-profile firmware for **Heltec WiFi LoRa 32 V4 (ESP32-S3)** with BMW E39 I-Bus integration, PC hardware monitoring, Forza Horizon telemetry, and WiFi/BLE research tools.
 
 ---
 
-## Содержание
+## Features
 
-- [Основные возможности](#-основные-возможности)
-- [Железо](#-железо)
-- [Экраны (сцены)](#-экраны-сцены)
-- [Управление](#-управление)
-- [Меню](#-меню)
-- [Алерты](#-алерты)
-- [Установка](#-установка)
-- [Структура проекта](#-структура-проекта)
-- [Авторы и лицензия](#-авторы-и-лицензия)
+| Profile | Build Flag | Description |
+|---------|-----------|-------------|
+| `bmw_only` (default) | `pio run -e bmw_only` | BMW E39 I-Bus assistant, BLE proximity key, demo mode. WiFi off. |
+| `pc_companion` | `pio run -e pc_companion` | PC monitoring (WiFi+TCP), Forza telemetry (UDP) + BMW. |
+| `full` | `pio run -e full` | All above + WiFi scanner/sniffer/trap + BLE spam/clone. |
 
----
+### BMW I-Bus Assistant
+- BLE proximity key (auto lock/unlock)
+- Lights control (goodbye, follow-me, park, hazard, low beam)
+- Locks (lock/unlock/trunk)
+- Cluster text display
+- PDC activation
+- Demo mode for testing without vehicle
 
-## Основные возможности
+### PC Companion
+- 9 OLED display scenes (CPU, GPU, RAM, Disks, Media, Fans, Motherboard, Weather, Main)
+- Rolling graphs on 128x64 OLED
+- TCP connection to PC monitoring server
 
-### 1. Единая сетка (Unified Grid)
-
-Единый пиксель-перфектный сеточный макет для сцен CPU, GPU и материнской платы.
-
-- **Tech Brackets** — примитивы в виде рамок под данные (как HUD).
-- **Chamfered Boxes** — скруглённые блоки для меню и заголовков.
-- **Шрифты** — ProFont10 (данные) и HelvB10 (заголовки) для читаемости на 0.96" OLED.
-
-### 2. Связь (Iron Grip)
-
-WiFi без перехода в режим энергосбережения, быстрый реконнект.
-
-- **Режим радио:** `esp_wifi_set_ps(WIFI_PS_NONE)` — максимальная отзывчивость.
-- **Задержка:** обновления за доли секунды, плавные графики.
-- **Реконнект:** автоматическое переподключение при обрыве, настраиваемые таймауты.
-
-### 3. Алерты (Stealth Hunter)
-
-Сервер при превышении порогов отправляет состояние `CRITICAL`. Устройство:
-
-- мигает белым LED **ровно 2 раза**;
-- переключает экран на нужную сцену и подсвечивает метрику;
-- после этого LED не мигает бесконечно — только визуальная подсветка на экране.
-
-### 4. Тактическое меню
-
-Меню поверх сцен: карусель экранов, поворот дисплея, выход. Настройки сохраняются в NVS.
-
-- **AUTO** — автопереключение сцен (5 s → 10 s → 15 s → выкл).
-- **FLIP** — поворот экрана на 180° (удобно по расположению кабеля).
-- **EXIT** — выход из меню.
+### Forza Telemetry
+- Real-time RPM/speed dashboard
+- Shift light indicator
+- UDP data stream from Forza Horizon
 
 ---
 
-## Железо
-
-| Компонент    | Параметр                     | Примечание              |
-| ------------ | ---------------------------- | ----------------------- |
-| **Плата**    | Heltec WiFi LoRa 32 V4       | MCU ESP32-S3R2          |
-| **Дисплей**  | 0.96" OLED SSD1306           | I2C: SDA 17, SCL 18     |
-| **Тактовая** | 240 MHz (CPU), 800 kHz (I2C) | I2C разогнан под 60 FPS |
-| **LED**      | GPIO 25 (белый)              | Алерты                  |
-| **Кнопка**   | GPIO 0 (PRG)                 | Ввод (pull-up)          |
-
----
-
-## Экраны (сцены)
-
-| №   | Сцена       | Содержимое                                          |
-| --- | ----------- | --------------------------------------------------- |
-| 1   | **MAIN**    | Сводка: температуры CPU/GPU, полоски загрузки, RAM. |
-| 2   | **CPU**     | Температура ядра, частота, нагрузка, мощность.      |
-| 3   | **GPU**     | Температура, частота, нагрузка, использование VRAM. |
-| 4   | **RAM**     | Топ процессов по памяти, общее использование.       |
-| 5   | **DISKS**   | Сетка 2×2: буква диска и температура.               |
-| 6   | **MEDIA**   | Текущий трек и исполнитель (с прокруткой).          |
-| 7   | **FANS**    | Обороты и % для CPU, помпы, GPU, корпуса.           |
-| 8   | **MB**      | Датчики матплаты (VRM, чипсет и т.д.).              |
-| 9   | **WEATHER** | Иконка погоды (XBM) и крупная температура.          |
-
----
-
-## Управление
-
-Одна кнопка (GPIO 0):
-
-| Действие               | В обычном режиме | В меню               |
-| ---------------------- | ---------------- | -------------------- |
-| **Короткое** (<1 s) | Следующая сцена  | Следующий пункт меню |
-| **Долгое** (>1 s)   | Открыть меню     | Выбор / изменение    |
-
-Переключение сцен сбрасывает таймер карусели (если AUTO включён).
-
----
-
-## Меню
-
-- **Открытие:** долгое нажатие в обычном режиме.
-- **Пункты:** AUTO (цикл 5 / 10 / 15 с или выкл), FLIP (поворот 180°), EXIT (закрыть меню).
-- **Навигация:** короткое нажатие — следующий пункт.
-- **Выбор:** долгое нажатие — применить (AUTO/FLIP) или выход (EXIT).
-
-Настройки сохраняются в энергонезависимую память (NVS).
-
----
-
-## Алерты
-
-Пороги задаются на стороне сервера (`monitor.py`) и в `config.h` (для согласованности). При превышении сервер отправляет `CRITICAL` и идентификатор метрики; устройство мигает LED два раза и подсвечивает соответствующую сцену и значение.
-
-Типичные пороги (в коде): температура CPU 87 °C, GPU 68 °C, загрузка CPU/GPU 99 %, VRAM 95 %, RAM 90 %.
-
----
-
-## Установка
-
-### Что нужно
-
-- **Прошивка:** VS Code с PlatformIO.
-- **Сервер на ПК:** Python 3.x.
-- **Телеметрия:** [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) — запуск **от имени администратора**, в настройках включён **Remote Web Server** (порт 8085 по умолчанию).
-
-### Прошивка устройства
-
-1. Клонировать репозиторий и открыть его в VS Code.
-2. Скопировать `include/secrets.h.example` в `include/secrets.h` и указать Wi‑Fi и IP ПК:
-   ```cpp
-   #define WIFI_SSID "ВашаСеть"
-   #define WIFI_PASS "Пароль"
-   #define PC_IP     "192.168.1.100"
-   #define TCP_PORT  8888
-   ```
-3. Подключить Heltec V4 по USB-C.
-4. Выполнить **PlatformIO: Upload**.
-
-### Запуск монитора на ПК
-
-```bash
-pip install -r requirements.txt
-```
-
-При необходимости отредактировать `config.json` (хост, порт, URL LHM, город для погоды). Запуск:
-
-```bash
-python src/monitor.py
-```
-
-Сервер отдаёт по TCP JSON с телеметрией (LHM, погода, медиа). Порт в `config.json` должен совпадать с `TCP_PORT` в `secrets.h`.
-
----
-
-## Структура проекта
+## Repository Structure
 
 ```
+├── platformio.ini          # PlatformIO project config (3 environments)
+├── huge_app.csv            # Custom partition table
 ├── include/
-│   ├── nocturne/         # config.h, Types.h
-│   └── secrets.h.example # шаблон → копировать в secrets.h (не коммитить)
-├── src/
-│   ├── main.cpp          # точка входа прошивки
-│   ├── monitor.py        # TCP-сервер на ПК (LHM, погода, медиа)
-│   └── modules/          # DisplayEngine, SceneManager, NetManager,
-│                         # BootAnim, RollingGraph
-├── config.json           # хост, порт, lhm_url, погода
-├── platformio.ini        # сборка под ESP32 (Heltec V3 profile для платы V4)
-├── requirements.txt      # зависимости Python для монитора
-└── NocturneServer.spec   # PyInstaller для сборки exe
+│   ├── nocturne/           # config.h, Types.h
+│   └── secrets.h.example   # Template for local secrets
+├── src/                    # Firmware source
+│   ├── main.cpp
+│   ├── AppModeManager.*
+│   ├── MenuHandler.*
+│   └── modules/
+│       ├── ble/            # BLE manager
+│       ├── car/            # BMW, I-Bus, BLE key, Forza, OBD
+│       ├── display/        # OLED scenes, boot animation
+│       ├── network/        # WiFi, sniffer, trap
+│       └── system/         # Battery manager
+├── app/
+│   ├── android/            # Native Android companion (Kotlin)
+│   └── flutter/            # Flutter MD3 companion (Dart)
+├── docs/                   # User guide, wiring, board docs
+├── BMW datasheet/          # I-Bus reference materials
+├── shared/DataSheets/      # Board datasheets
+├── data/                   # LittleFS filesystem data
+├── LICENSE                 # GNU AGPL-3.0
+└── .gitignore
 ```
 
-В репозитории нет: `secrets.h`, `.env`, `.pio/`, артефактов сборки и логов.
+---
+
+## Getting Started
+## Quick Start (3 Steps)
+
+1. **Install**: PlatformIO (VS Code or CLI) + board drivers (CH340)
+2. **Clone**: `git clone https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION.git`
+3. **Build**: Choose profile:
+   - `pio run -e bmw_only -t upload` — BMW I-Bus assistant
+   - `pio run -e pc_companion -t upload` — PC monitoring + BMW + Forza
+   - `pio run -e full -t upload` — All features + WiFi research
+
+📖 See [INSTALLATION.md](INSTALLATION.md) for complete setup guide.
+
+
+### Prerequisites
+
+- [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
+- Heltec WiFi LoRa 32 V4 board
+- USB-C cable
+
+### Build & Upload
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION.git
+   cd Heltec-V3-V4-PC-COMPANION
+   ```
+
+2. Copy secrets template:
+   ```bash
+   cp include/secrets.h.example include/secrets.h
+   ```
+   Edit `include/secrets.h` with your WiFi credentials (only needed for `pc_companion` / `full` profiles).
+
+3. Build and upload:
+   ```bash
+   pio run -e bmw_only -t upload
+   ```
+
+4. Serial monitor (115200 baud):
+   ```bash
+   pio device monitor
+   ```
+
+### Configuration
+
+All hardware pins, I-Bus settings, OBD, and demo mode options are in `include/nocturne/config.h`.
 
 ---
 
-## Авторы и лицензия
+## Demo Mode
 
-- **Концепция и код:** RudyWolf
-- **Оформление:** Nocturne Cyberpunk System
-- **Библиотеки:** U8g2 (Olikraus), ArduinoJson (Bblanchon)
+For testing without a vehicle:
+- **Menu** (double tap) → BMW → "BMW Demo" (long press)
+- **Or** hold PRG button during boot (~2.5s) — saved to NVS
 
-**Лицензия:** [MIT](LICENSE)
+See [User Guide](docs/USER_GUIDE.md) and [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) for details.
 
 ---
 
-_Конец передачи._
+## Companion Apps
+
+| App | Path | Description |
+|-----|------|-------------|
+| Android (Kotlin) | `app/android/` | Native BLE companion for BMW assistant |
+| Flutter (Dart) | `app/flutter/` | Material Design 3 companion app |
+
+See [BMW Android App docs](docs/bmw/BMW_ANDROID_APP.md) for build instructions.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [User Guide](docs/USER_GUIDE.md) | Button gestures, modes, settings |
+| [Installation Guide](INSTALLATION.md) | Step-by-step setup for all three profiles |
+| [Contributing](CONTRIBUTING.md) | Development guidelines and PR process |
+| [Board & Config](docs/board/HELTEC_V4_BOARD_AND_CONFIG.md) | Pinout, config.h, build |
+| [BMW E39 Assistant](docs/bmw/BMW_E39_Assistant.md) | BLE key, I-Bus, lights, locks, PDC |
+| [Wiring](docs/bmw/HELTEC_V4_WIRING.md) | Board → I-Bus transceiver → vehicle |
+| [Connecting & Terminal](docs/board/CONNECTING_AND_TERMINAL.md) | USB, serial monitor |
+
+---
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
+- Development setup and workflow
+- Code style guidelines  
+- Pull request process
+- License compliance (AGPL v3.0)
+
+**Quick checklist:**
+- ✅ Test all three profiles compile cleanly
+- ✅ Use conventional commits (feat:, fix:, docs:)
+- ✅ No secrets or personal data committed
+- ✅ Update docs for user-visible changes
+- ✅ AGPL v3.0 license compliance
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+---
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
+
+```
+Copyright (C) 2024-2026 RudyWolf
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+```
+
+---
+
+## Acknowledgments
+
+- [U8g2](https://github.com/olikraus/U8g2) — OLED graphics library (Olikraus)
+- [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) — BLE stack (h2zero)
+- [ArduinoJson](https://github.com/bblanchon/ArduinoJson) — JSON library (Bblanchon)
+- BMW I-Bus community documentation
