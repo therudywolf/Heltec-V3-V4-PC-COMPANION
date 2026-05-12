@@ -61,7 +61,11 @@ struct Settings {
   bool carouselEnabled = false;
   int carouselIntervalSec = 10;
   int displayContrast = 128;
+  int displayTimeoutSec = 0;   /* 0=off, 30/60 = dim after sec of no input */
   bool displayInverted = false;
+  bool glitchEnabled = false;
+  bool lowBrightnessDefault =
+      false; /* NVS "lowBright": start with dim display */
 };
 
 /** Single app state: hardware, weather, media, process, alerts (filled by
@@ -76,6 +80,10 @@ struct AppState {
   bool alertActive = false;
   int alertTargetScene = 0; /* NOCT_SCENE_MAIN/CPU/GPU/RAM/DISKS/MEDIA */
   int alertMetric = -1;     /* 0=ct, 1=gt, 2=cl, 3=gl, 4=gv, 5=ram; -1=none */
+  /* Battery HUD: 0..100%, voltage, charging (visible in header) */
+  int batteryPct = 0;
+  float batteryVoltage = 0.0f;
+  bool isCharging = false;
 };
 
 #endif
