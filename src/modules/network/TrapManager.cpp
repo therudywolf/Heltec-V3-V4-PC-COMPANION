@@ -10,7 +10,7 @@
 #include <WiFi.h>
 
 static const char *TRAP_SSID_DEFAULT = "MT_FREE";
-static const char *TRAP_AP_PASSWORD = "YourAPPassword";  // used when cloning encrypted network
+static const char *TRAP_AP_PASSWORD = "YourAPPassword";  // Change to your secure password  // used when cloning encrypted network
 static const byte DNS_PORT = 53;
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_NETMASK(255, 255, 255, 0);
