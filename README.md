@@ -1,10 +1,25 @@
-# Nocturne OS — Heltec WiFi LoRa 32 V4 Firmware
+# 🐺 Nocturne OS — Heltec WiFi LoRa 32 V4 Firmware
+
+> `D34D1N$1D3` :: BMW • Racing • Dead inside wolf :: embedded companion stack
+
+My resources:
+- [Gravatar](https://gravatar.com/therudywolf)
+- [OneToThree](https://onetothree.ru)
+- [Forest blog](https://t.me/theforestserver)
+- [X](https://x.com/therudywolf)
+- [GitHub](https://github.com/therudywolf)
+- [Twitch](https://twitch.tv/therudywolf)
+- [Reddit](https://reddit.com/user/Most-Watercress-6718)
+- [Telegram](https://t.me/rudy_wolf)
+- [YouTube](https://youtube.com/channel/UCXHkoSlaY5QaNmN_l4t0djQ)
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![Platform](https://img.shields.io/badge/platform-ESP32--S3-green)
 ![PlatformIO](https://img.shields.io/badge/build-PlatformIO-orange)
 
 Multi-profile firmware for **Heltec WiFi LoRa 32 V4 (ESP32-S3)** with BMW E39 I-Bus integration, PC hardware monitoring, Forza Horizon telemetry, and WiFi/BLE research tools.
+
+AGPL v3 Copyleft applies to reuse, modification, and network deployment of derived versions.
 
 ---
 
