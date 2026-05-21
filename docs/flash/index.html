@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nocturne OS — Flash</title>
+  <script
+    type="module"
+    src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #0c0e14;
+      --card: #161922;
+      --line: #262b38;
+      --text: #e6e8ee;
+      --muted: #8b91a3;
+      --accent: #4c8bf5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 48px 20px 80px; }
+    h1 { font-size: 1.9rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 32px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 6px; font-size: 1.15rem; }
+    .card p { margin: 0 0 16px; color: var(--muted); font-size: 0.95rem; }
+    esp-web-install-button { --esp-tools-button-color: var(--accent); }
+    button.flash {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.flash:hover { filter: brightness(1.1); }
+    .note {
+      margin-top: 28px;
+      padding: 14px 18px;
+      border-left: 3px solid var(--accent);
+      background: #11141d;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .unsupported { color: #ef4444; font-size: 0.9rem; }
+    a { color: var(--accent); }
+    code { background: #11141d; padding: 1px 6px; border-radius: 4px; font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🐺 Nocturne OS — Flash your board</h1>
+    <p class="sub">
+      Heltec WiFi LoRa 32 V4 (ESP32-S3). Plug the board in over USB-C,
+      pick a profile, click Install. No tools to download.
+    </p>
+
+    <div class="card">
+      <h2>BMW Only</h2>
+      <p>BMW E39 I-Bus assistant + BLE proximity key. WiFi off. Smallest build.</p>
+      <esp-web-install-button
+        manifest="https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION/releases/latest/download/manifest-bmw_only.json">
+        <button class="flash" slot="activate">Install BMW Only</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on desktop.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over HTTPS.</span>
+      </esp-web-install-button>
+    </div>
+
+    <div class="card">
+      <h2>PC Companion</h2>
+      <p>PC hardware monitoring (WiFi/TCP) + Forza Horizon telemetry + BMW assistant.</p>
+      <esp-web-install-button
+        manifest="https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION/releases/latest/download/manifest-pc_companion.json">
+        <button class="flash" slot="activate">Install PC Companion</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on desktop.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over HTTPS.</span>
+      </esp-web-install-button>
+    </div>
+
+    <div class="card">
+      <h2>Full</h2>
+      <p>Everything: monitoring, Forza, BMW, plus WiFi/BLE research tools. Largest build.</p>
+      <esp-web-install-button
+        manifest="https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION/releases/latest/download/manifest-full.json">
+        <button class="flash" slot="activate">Install Full</button>
+        <span slot="unsupported" class="unsupported">Use Chrome or Edge on desktop.</span>
+        <span slot="not-allowed" class="unsupported">Open this page over HTTPS.</span>
+      </esp-web-install-button>
+    </div>
+
+    <div class="note">
+      <strong>Requirements:</strong> a Chromium-based browser (Chrome / Edge) on
+      desktop — flashing uses the Web Serial API. The buttons always flash the
+      <em>latest</em> published release.
+      Prefer the command line? Download <code>.bin</code> files from the
+      <a href="https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION/releases/latest">Releases page</a>.
+    </div>
+  </div>
+</body>
+</html>
