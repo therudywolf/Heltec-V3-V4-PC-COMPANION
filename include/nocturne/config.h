@@ -5,7 +5,12 @@
 #ifndef NOCTURNE_CONFIG_H
 #define NOCTURNE_CONFIG_H
 
-#define NOCTURNE_VERSION "2.0"
+/* Version is injected from the top-level VERSION file by tools/version.py
+   (platformio.ini extra_scripts). This fallback only applies to IDE indexing
+   or non-PlatformIO builds. */
+#ifndef NOCTURNE_VERSION
+#define NOCTURNE_VERSION "dev"
+#endif
 
 /* ── Feature flags (set by platformio.ini, defaults = BMW-only) ────────── */
 #ifndef NOCT_FEATURE_BMW

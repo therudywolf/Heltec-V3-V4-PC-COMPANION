@@ -1,0 +1,25 @@
+# Normalize line endings in the repo — checked in as LF, prevents CRLF/LF
+# churn between Windows and CI. Run `git add --renormalize .` after changes.
+* text=auto eol=lf
+
+# Windows scripts must keep CRLF or they break on cmd.exe
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary assets — never apply EOL conversion
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.JPG   binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.bin   binary
+*.apk   binary
+*.jar   binary
+*.docx  binary
+*.ttf   binary
+*.otf   binary
