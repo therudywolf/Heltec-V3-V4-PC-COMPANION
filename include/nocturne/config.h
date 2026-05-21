@@ -206,6 +206,9 @@
 #define NOCT_DEMO_BOOT_HOLD_MS 2500
 
 /* ── OBD-II / ELM327 ──────────────────────────────────────────────────── */
+/* Optional, incomplete: ObdClient is a stub for an ELM327 adapter (RPM,
+   coolant, oil over a second UART). Off by default — enable only with real
+   ELM327 hardware to test. */
 #define NOCT_OBD_ENABLED 0
 #define NOCT_OBD_TX_PIN 9
 #define NOCT_OBD_RX_PIN 10

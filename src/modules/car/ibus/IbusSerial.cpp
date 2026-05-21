@@ -55,6 +55,8 @@ void IbusSerial::readIbus() {
     case FIND_LENGTH:
       if (rxBuffer_->available() >= 2) {
         length_ = (uint8_t)rxBuffer_->peek(1);
+        /* Valid I-Bus length field: 0x03 (dest+cmd+checksum) up to 0x24,
+           the largest message a stock E39/E46 module emits. */
         if (length_ >= 0x03 && length_ <= 0x24) {
           state_ = FIND_MESSAGE;
         } else {

@@ -115,7 +115,7 @@ void BmwManager::sendClusterText(const char *text) {
   if (len == 0)
     return;
   msg[0] = IBUS_DIA;
-  msg[1] = (uint8_t)(2 + len);
+  msg[1] = (uint8_t)(3 + len);  /* LEN = dest + cmd + text + checksum */
   msg[2] = IBUS_IKE;
   msg[3] = IBUS_IKE_TXT_GONG;
   for (int i = 0; i < len; i++)
@@ -132,7 +132,7 @@ void BmwManager::sendIkeRadioText(const char *text) {
     return;
   uint8_t msg[32];
   msg[0] = IBUS_TEL;   /* 0xC8 */
-  msg[1] = 0x18;       /* length: dest(1) + 23 42 32(3) + 20 data = 24 */
+  msg[1] = 0x19;       /* LEN = 25: dest + 23 42 32 + 20 chars + checksum */
   msg[2] = IBUS_IKE;   /* 0x80 */
   msg[3] = 0x23;
   msg[4] = 0x42;
@@ -179,7 +179,7 @@ void BmwManager::sendUpdateMid() {
   line[n] = '\0';
   uint8_t msg[4 + kMidDisplayChars];
   msg[0] = IBUS_CDC;
-  msg[1] = (uint8_t)(2 + n);
+  msg[1] = (uint8_t)(3 + n);  /* LEN = dest + cmd + text + checksum */
   msg[2] = IBUS_MID;
   msg[3] = IBUS_UPDATE_MID;
   for (int i = 0; i < n; i++)
@@ -214,7 +214,7 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
     /* IKE 0x19 temperature: byte0 = ambient °C, byte1 = coolant °C. Wilhelm ike/19.md. */
     lastIkeCoolantC_ = (int)packet[5];
   }
-  else if (packet[0] == IBUS_GM && packet[1] >= 5 && packet[2] == 0xBF && packet[3] == IBUS_GM_STAT_RPLY) {
+  else if (packet[0] == IBUS_GM && packet[1] >= 5 && packet[2] == IBUS_GLO && packet[3] == IBUS_GM_STAT_RPLY) {
     /* GM door/lid status 0x7a: byte1 = doors/lock/lamp, byte2 = windows/sunroof/trunk. Wilhelm gm/7a.md. */
     lastDoorLidByte1_ = packet[4];
     lastDoorLidByte2_ = packet[5];
@@ -240,7 +240,7 @@ void BmwManager::onIbusPacket(uint8_t *packet) {
   }
   /* CDC emulation: RAD requests CD control 0x38 -> reply 0x39 (CDC Status). */
   else if (packet[0] == IBUS_RAD && packet[1] >= 3 && packet[2] == IBUS_CDC && packet[3] == IBUS_CD_CTRL_REQ) {
-    uint8_t reply[] = { IBUS_CDC, 3, IBUS_RAD, IBUS_CD_STAT_RPLY, 0x01 };
+    uint8_t reply[] = { IBUS_CDC, 4, IBUS_RAD, IBUS_CD_STAT_RPLY, 0x01 };
     ibus_.write(reply, sizeof(reply));
   }
 }
@@ -324,7 +324,7 @@ void BmwManager::sendLCMDiagnostic(const uint8_t *payload, uint8_t len) {
     return;
   uint8_t buf[IBUS_PACKET_MAX];
   buf[0] = IBUS_LCM;
-  buf[1] = len + 1;
+  buf[1] = len + 2;  /* LEN = dest + 0x00 + payload + checksum */
   buf[2] = 0x00;
   memcpy(buf + 3, payload, len);
   ibus_.write(buf, 3 + len);

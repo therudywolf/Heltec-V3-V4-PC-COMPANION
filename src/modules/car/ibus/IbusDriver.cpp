@@ -33,7 +33,9 @@ void IbusDriver::onPacket(uint8_t *packet) {
 void IbusDriver::pushToRxQueue(uint8_t *packet) {
   if (!packet || !rxQueue_)
     return;
-  uint8_t plen = packet[1] + 2;  /* source + length + (dest + data... + checksum) */
+  /* Full wire frame = source byte + length byte + LEN value (LEN counts the
+     bytes that follow it: dest .. checksum). So total = packet[1] + 2. */
+  uint8_t plen = packet[1] + 2;
   if (plen > IBUS_PACKET_MAX)
     return;
   IbusRxItem item;
@@ -73,7 +75,7 @@ void IbusDriver::taskWriteLoop() {
     /* Wait for next TX packet (blocking OK here); mutex take is bounded. */
     if (txQueue_ != nullptr && xQueueReceive(txQueue_, &item, portMAX_DELAY) == pdTRUE) {
       if (item.len > 0 && item.len <= IBUS_PACKET_MAX && mutex_ != nullptr &&
-          xSemaphoreTake(mutex_, pdMS_TO_TICKS(20)) == pdTRUE) {
+          xSemaphoreTake(mutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
         ibus_.write(item.data, item.len);
         ibus_.runSendNext();
         xSemaphoreGive(mutex_);
