@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, IBUS_CleanFrim]
+    branches: [main]
   pull_request:
     branches: [main]
 
