@@ -5,6 +5,7 @@
  */
 #include "SceneManager.h"
 #include "nocturne/config.h"
+#include "nocturne/strings.h"
 #include "MenuHandler.h"
 #include "BmwManager.h"
 #include <Arduino.h>
@@ -1055,14 +1056,14 @@ void SceneManager::drawSearchMode(int scanPhase)
 static const char *getCategoryName(int cat)
 {
 #if NOCT_FEATURE_MONITORING
-  if (cat == MCAT_MONITORING) return "Monitor";
+  if (cat == MCAT_MONITORING) return STR_CAT_MONITOR;
 #endif
 #if NOCT_FEATURE_HACKER
-  if (cat == MCAT_HACKER) return "Hacker";
+  if (cat == MCAT_HACKER) return STR_CAT_HACKER;
 #endif
-  if (cat == MCAT_BMW) return "BMW";
-  if (cat == MCAT_CONFIG) return "Config";
-  if (cat == MCAT_SYSTEM) return "System";
+  if (cat == MCAT_BMW) return STR_CAT_BMW;
+  if (cat == MCAT_CONFIG) return STR_CAT_CONFIG;
+  if (cat == MCAT_SYSTEM) return STR_CAT_SYSTEM;
   return "???";
 }
 
@@ -1101,17 +1102,10 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #if NOCT_FEATURE_HACKER
   else if (menuLevel == 2)
   {
-    static const char *wifiNames[] = {
-      "Radar", "Probe", "EAPOL", "Station", "PktMon",
-      "ChAnalyz", "ChActiv", "PktRate", "Pine",
-      "MultiSSID", "Signal", "RawCap", "AP+STA", "Trap"
-    };
-    static const char *bleNames[] = {
-      "BLE Spam", "SourApple", "SwiftMS", "SwiftGG", "SwiftSam", "Flipper"
-    };
     count = submenuCountForHackerGroup(menuHackerGroup);
-    headerStr = (menuHackerGroup == HACKER_GROUP_WIFI) ? "WiFi" : "BLE";
-    const char **names = (menuHackerGroup == HACKER_GROUP_WIFI) ? wifiNames : bleNames;
+    headerStr = (menuHackerGroup == HACKER_GROUP_WIFI) ? STR_MENU_WIFI : STR_MENU_BLE;
+    const char* const* names =
+        (menuHackerGroup == HACKER_GROUP_WIFI) ? kHackerWifiModes : kHackerBleModes;
     for (int i = 0; i < count && i < 25; i++)
     {
       strncpy(items[i], names[i], sizeof(items[i]) - 1);
@@ -1127,10 +1121,10 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #if NOCT_FEATURE_MONITORING
     if (menuCategory == MCAT_MONITORING)
     {
-      strncpy(items[0], "PC Monitor", sizeof(items[0]) - 1);
+      strncpy(items[0], STR_MENU_PC_MONITOR, sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
 #if NOCT_FEATURE_FORZA
-      strncpy(items[1], "Forza", sizeof(items[1]) - 1);
+      strncpy(items[1], STR_MENU_FORZA, sizeof(items[1]) - 1);
       items[1][sizeof(items[1]) - 1] = '\0';
 #endif
     }
@@ -1139,8 +1133,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #if NOCT_FEATURE_HACKER
     if (menuCategory == MCAT_HACKER)
     {
-      strncpy(items[0], "WiFi", sizeof(items[0]) - 1);
-      strncpy(items[1], "BLE", sizeof(items[1]) - 1);
+      strncpy(items[0], STR_MENU_WIFI, sizeof(items[0]) - 1);
+      strncpy(items[1], STR_MENU_BLE, sizeof(items[1]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
     }
@@ -1148,8 +1142,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #endif
     if (menuCategory == MCAT_BMW)
     {
-      strncpy(items[0], "BMW Assistant", sizeof(items[0]) - 1);
-      strncpy(items[1], "BMW Demo", sizeof(items[1]) - 1);
+      strncpy(items[0], STR_MENU_BMW_ASSIST, sizeof(items[0]) - 1);
+      strncpy(items[1], STR_MENU_BMW_DEMO, sizeof(items[1]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
     }
@@ -1176,16 +1170,16 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     }
     else if (menuCategory == MCAT_SYSTEM)
     {
-      strncpy(items[0], "Demo", sizeof(items[0]) - 1);
+      strncpy(items[0], STR_MENU_DEMO, sizeof(items[0]) - 1);
       items[0][sizeof(items[0]) - 1] = '\0';
       if (rebootConfirmed)
         snprintf(items[1], sizeof(items[1]), "REBOOT [OK]");
       else
-        strncpy(items[1], "REBOOT", sizeof(items[1]) - 1);
+        strncpy(items[1], STR_MENU_REBOOT, sizeof(items[1]) - 1);
       items[1][sizeof(items[1]) - 1] = '\0';
-      strncpy(items[2], "Charge only", sizeof(items[2]) - 1);
-      strncpy(items[3], "Power off", sizeof(items[3]) - 1);
-      strncpy(items[4], "Version", sizeof(items[4]) - 1);
+      strncpy(items[2], STR_MENU_CHARGE_ONLY, sizeof(items[2]) - 1);
+      strncpy(items[3], STR_MENU_POWER_OFF, sizeof(items[3]) - 1);
+      strncpy(items[4], STR_MENU_VERSION, sizeof(items[4]) - 1);
       items[2][sizeof(items[2]) - 1] = '\0';
       items[3][sizeof(items[3]) - 1] = '\0';
       items[4][sizeof(items[4]) - 1] = '\0';
@@ -1625,11 +1619,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
   }
 }
 
-static const char *bmwActionNames[] = {
-  "Goodbye", "FollowMe", "Park", "Hazard", "LowBeam",
-  "LightsOff", "Unlock", "Lock", "Trunk", "Cluster",
-  "DoorUnlk", "DoorLock"
-};
+/* BMW action names: see kBmwActionNames in nocturne/strings.h */
 
 /* BMW Assistant: full screen 128x64, no header. Layout fits exactly. */
 #define BMW_BRACKET_Y 0
@@ -1695,7 +1685,7 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
   int actIdx = selectedActionIndex;
   if (actIdx < 0) actIdx = 0;
   if (actIdx >= 12) actIdx = 11;
-  snprintf(buf, sizeof(buf), "> %s", bmwActionNames[actIdx]);
+  snprintf(buf, sizeof(buf), "> %s", kBmwActionNames[actIdx]);
   u8g2.setFont(VALUE_FONT);
   len = strlen(buf);
   while (len > 0 && (unsigned)u8g2.getUTF8Width(buf) > (unsigned)maxRightW) {
