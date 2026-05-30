@@ -5,14 +5,24 @@ The bmw/pc/hacker apps live in apps/<name>/ but compile the shared src/ tree
 by bare name across directories (e.g. SceneManager.cpp -> "BmwManager.h"), so
 every src/modules/* subdir must be on the include path. Computing these as
 absolute paths here is deterministic, unlike ${PROJECT_DIR}/../.. math inside
-build_flags -I (which PlatformIO resolves inconsistently on Windows).
+build_flags -I (which PlatformIO resolves against the platform dir).
+
+Note: SCons-exec'd scripts do NOT get a usable __file__, so derive the repo
+root from env["PROJECT_DIR"] (the app dir) by walking up to the dir that
+contains lib/nocturne-core.
 """
 import os
 
 Import("env")  # noqa: F821 — provided by PlatformIO/SCons
 
-# This script lives in <repo>/tools/, so the repo root is its parent dir.
-repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+repo_root = env["PROJECT_DIR"]  # noqa: F821
+for _ in range(6):
+    if os.path.isdir(os.path.join(repo_root, "lib", "nocturne-core")):
+        break
+    parent = os.path.dirname(repo_root)
+    if parent == repo_root:
+        break
+    repo_root = parent
 
 include_dirs = [
     os.path.join(repo_root, "include"),
@@ -27,9 +37,10 @@ include_dirs = [
     os.path.join(repo_root, "lib", "nocturne-core", "src"),
 ]
 
+added = 0
 for d in include_dirs:
     if os.path.isdir(d):
         env.Append(CPPPATH=[d])  # noqa: F821
+        added += 1
 
-print("[app_includes] added %d shared include dirs from %s"
-      % (len(include_dirs), repo_root))
+print("[app_includes] repo_root=%s, added %d shared include dirs" % (repo_root, added))
