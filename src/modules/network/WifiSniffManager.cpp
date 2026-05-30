@@ -69,18 +69,36 @@ void WifiSniffManager::promiscuousCb(void *buf,
     }
   }
 
+  // RAW_CAPTURE: keep a compact summary of every frame in a ring buffer.
+  if (s_instance->mode_ == SNIFF_MODE_RAW_CAPTURE) {
+    s_instance->recordRawFrame(payload, len, rssi, frameType, frameSubtype,
+                               currentChannel);
+  }
+
   // Process management frames (beacons, probes, etc.)
   if (frameType == 0) {
-    if (frameSubtype == 8) { // Beacon
-      s_instance->processBeaconFrame(payload, len, rssi);
-    } else if (frameSubtype == 4 &&
-               s_instance->mode_ == SNIFF_MODE_PROBE_SCAN) { // Probe Request
-      s_instance->processProbeRequestFrame(payload, len, rssi);
+    if (frameSubtype == 8) { // Beacon -> AP list (used by AP/MULTISSID/SIG/etc.)
+      s_instance->processBeaconFrame(payload, len, rssi, currentChannel);
+    } else if (frameSubtype == 4) { // Probe Request
+      // Probe requests carry the SSIDs that clients are looking for. Useful
+      // for PROBE_SCAN; PINESCAN also wants them as the "what is being asked".
+      if (s_instance->mode_ == SNIFF_MODE_PROBE_SCAN ||
+          s_instance->mode_ == SNIFF_MODE_PINESCAN) {
+        s_instance->processProbeRequestFrame(payload, len, rssi);
+      }
+    } else if (frameSubtype == 5) { // Probe Response
+      // A probe response advertises an SSID from a specific BSSID. An AP that
+      // answers for MANY different SSIDs is the karma/Pineapple tell.
+      if (s_instance->mode_ == SNIFF_MODE_PINESCAN) {
+        s_instance->processProbeResponseFrame(payload, len, rssi,
+                                              currentChannel);
+      }
     }
   }
 
-  // Process data frames for Station Scan
-  if (frameType == 2 && s_instance->mode_ == SNIFF_MODE_STATION_SCAN) {
+  // Process data frames for Station Scan and the combined AP+STA view.
+  if (frameType == 2 && (s_instance->mode_ == SNIFF_MODE_STATION_SCAN ||
+                         s_instance->mode_ == SNIFF_MODE_AP_STA)) {
     s_instance->processDataFrame(payload, len, rssi);
   }
 
@@ -94,7 +112,7 @@ void WifiSniffManager::promiscuousCb(void *buf,
 }
 
 void WifiSniffManager::processBeaconFrame(uint8_t *payload, size_t len,
-                                          int8_t rssi) {
+                                          int8_t rssi, uint8_t rxChannel) {
   if (len < 36)
     return;
   uint8_t *bssid = payload + 16;
@@ -117,11 +135,15 @@ void WifiSniffManager::processBeaconFrame(uint8_t *payload, size_t len,
     }
     pos += tagLen;
   }
+  // Fall back to the channel we received on if the DS Parameter Set tag is
+  // absent (common while channel hopping).
+  if (!channel)
+    channel = rxChannel ? rxChannel : 1;
   int apIdx = findApByBSSID(bssid);
   if (apIdx >= 0) {
     // Update existing AP
     apList_[apIdx].rssi = rssi;
-    apList_[apIdx].channel = channel ? channel : 1;
+    apList_[apIdx].channel = channel;
     if (ssid[0])
       strncpy(apList_[apIdx].ssid, ssid, WIFISNIFF_SSID_LEN - 1);
     apList_[apIdx].ssid[WIFISNIFF_SSID_LEN - 1] = '\0';
@@ -135,8 +157,9 @@ void WifiSniffManager::processBeaconFrame(uint8_t *payload, size_t len,
             WIFISNIFF_SSID_LEN - 1);
     apList_[apCount_].ssid[WIFISNIFF_SSID_LEN - 1] = '\0';
     apList_[apCount_].rssi = rssi;
-    apList_[apCount_].channel = channel ? channel : 1;
+    apList_[apCount_].channel = channel;
     apList_[apCount_].hasEapol = false;
+    apList_[apCount_].staCount = 0;
     apCount_++;
   }
 }
@@ -193,6 +216,9 @@ void WifiSniffManager::processDataFrame(uint8_t *payload, size_t len,
     stations_[stationCount_].rssi = rssi;
     stations_[stationCount_].lastSeen = millis();
     stationCount_++;
+    // For AP+STA: bump the per-AP associated-station tally (saturating).
+    if (apIdx >= 0 && apList_[apIdx].staCount < 255)
+      apList_[apIdx].staCount++;
   }
 }
 
@@ -253,6 +279,88 @@ void WifiSniffManager::processProbeRequestFrame(uint8_t *payload, size_t len,
   }
 }
 
+void WifiSniffManager::processProbeResponseFrame(uint8_t *payload, size_t len,
+                                                 int8_t rssi,
+                                                 uint8_t rxChannel) {
+  // Probe Response layout matches a beacon's fixed header: BSSID at offset 16,
+  // tagged params (incl. SSID, tag 0) start at offset 36 (after the 12-byte
+  // fixed body of timestamp/interval/capabilities).
+  if (len < 38)
+    return;
+  uint8_t *bssid = payload + 16;
+  uint8_t *body = payload + 24;
+  size_t pos = 12;
+  char ssid[WIFISNIFF_SSID_LEN];
+  ssid[0] = '\0';
+  uint8_t channel = 0;
+  while (pos + 2 <= len - 24) {
+    uint8_t tagId = body[pos];
+    uint8_t tagLen = body[pos + 1];
+    pos += 2;
+    if (pos + tagLen > len - 24)
+      break;
+    if (tagId == 0 && tagLen > 0 && tagLen < WIFISNIFF_SSID_LEN) {
+      memcpy(ssid, body + pos, tagLen);
+      ssid[tagLen] = '\0';
+    } else if (tagId == 3 && tagLen >= 1) {
+      channel = body[pos];
+    }
+    pos += tagLen;
+  }
+  if (!channel)
+    channel = rxChannel ? rxChannel : 1;
+  // A hidden/empty SSID in a probe response is not interesting for karma.
+  if (ssid[0] == '\0')
+    return;
+  recordKarma(bssid, ssid, rssi, channel);
+}
+
+void WifiSniffManager::recordKarma(uint8_t *bssid, const char *ssid,
+                                   int8_t rssi, uint8_t channel) {
+  int idx = findKarmaByBSSID(bssid);
+  if (idx < 0) {
+    if (karmaCount_ >= WIFISNIFF_AP_MAX)
+      return; // table full
+    idx = karmaCount_++;
+    memset(&karma_[idx], 0, sizeof(KarmaSuspect));
+    memcpy(karma_[idx].bssid, bssid, 6);
+    snprintf(karma_[idx].bssidStr, WIFISNIFF_MAC_LEN,
+             "%02X:%02X:%02X:%02X:%02X:%02X", bssid[0], bssid[1], bssid[2],
+             bssid[3], bssid[4], bssid[5]);
+  }
+  karma_[idx].rssi = rssi;
+  karma_[idx].channel = channel;
+  // Add this SSID to the suspect's distinct-SSID set if not already present.
+  for (int i = 0; i < karma_[idx].ssidCount; i++) {
+    if (strncmp(karma_[idx].ssids[i], ssid, WIFISNIFF_SSID_LEN - 1) == 0)
+      return; // already counted
+  }
+  if (karma_[idx].ssidCount < WIFISNIFF_KARMA_SSID_MAX) {
+    strncpy(karma_[idx].ssids[karma_[idx].ssidCount], ssid,
+            WIFISNIFF_SSID_LEN - 1);
+    karma_[idx].ssids[karma_[idx].ssidCount][WIFISNIFF_SSID_LEN - 1] = '\0';
+    karma_[idx].ssidCount++;
+  }
+}
+
+void WifiSniffManager::recordRawFrame(uint8_t *payload, size_t len, int8_t rssi,
+                                      uint8_t type, uint8_t subtype,
+                                      uint8_t channel) {
+  RawFrame &f = rawFrames_[rawHead_];
+  f.type = type;
+  f.subtype = subtype;
+  f.len = (uint16_t)len;
+  f.rssi = rssi;
+  f.channel = channel;
+  uint8_t copy = (len < WIFISNIFF_RAW_HEX_LEN) ? (uint8_t)len
+                                               : WIFISNIFF_RAW_HEX_LEN;
+  memcpy(f.hdr, payload, copy);
+  f.hdrLen = copy;
+  rawHead_ = (rawHead_ + 1) % WIFISNIFF_RAW_MAX;
+  if (rawCount_ < WIFISNIFF_RAW_MAX)
+    rawCount_++;
+}
+
 void WifiSniffManager::processEapolFrame(uint8_t *payload, size_t len) {
   eapolCount_++;
   // Check if EAPOL is from/to a known AP
@@ -278,6 +386,8 @@ WifiSniffManager::WifiSniffManager() {
   memset(probes_, 0, sizeof(probes_));
   memset(channelActivity_, 0, sizeof(channelActivity_));
   memset(&stats_, 0, sizeof(stats_));
+  memset(rawFrames_, 0, sizeof(rawFrames_));
+  memset(karma_, 0, sizeof(karma_));
   stats_.minRssi = 0;
   stats_.maxRssi = -128;
   mode_ = SNIFF_MODE_AP;
@@ -285,6 +395,12 @@ WifiSniffManager::WifiSniffManager() {
   packetsPerSecond_ = 0;
   lastPacketRateCalc_ = 0;
   packetCountAtLastCalc_ = 0;
+  rawCount_ = 0;
+  rawHead_ = 0;
+  karmaCount_ = 0;
+  channelHop_ = false;
+  currentHopChannel_ = WIFISNIFF_CH_MIN;
+  lastHopMs_ = 0;
 }
 
 void WifiSniffManager::begin() { begin(SNIFF_MODE_AP); }
@@ -299,8 +415,13 @@ void WifiSniffManager::begin(SniffMode mode) {
   probeCount_ = 0;
   packetCount_ = 0;
   eapolCount_ = 0;
+  rawCount_ = 0;
+  rawHead_ = 0;
+  karmaCount_ = 0;
   memset(&stats_, 0, sizeof(stats_));
   memset(channelActivity_, 0, sizeof(channelActivity_));
+  memset(rawFrames_, 0, sizeof(rawFrames_));
+  memset(karma_, 0, sizeof(karma_));
   stats_.minRssi = 0;
   stats_.maxRssi = -128;
   lastStatsReset_ = millis();
@@ -313,9 +434,51 @@ void WifiSniffManager::begin(SniffMode mode) {
   esp_wifi_set_promiscuous_rx_cb(&promiscuousCb);
   esp_wifi_set_promiscuous(true);
   active_ = true;
-  const char *modeNames[] = {"AP", "Packet Monitor", "EAPOL Capture",
-                             "Station Scan"};
-  Serial.printf("[SNIFF] Promiscuous ACTIVE (mode: %s).\n", modeNames[mode]);
+
+  // Channel hopping default: enabled for survey-style modes that benefit from
+  // seeing the whole band, off for modes that lock onto one channel/target.
+  // PASSIVE only -- this just retunes the listening radio, never transmits.
+  switch (mode) {
+  case SNIFF_MODE_AP:
+  case SNIFF_MODE_STATION_SCAN:
+  case SNIFF_MODE_PROBE_SCAN:
+  case SNIFF_MODE_PINESCAN:
+  case SNIFF_MODE_MULTISSID:
+  case SNIFF_MODE_SIGNAL_STRENGTH:
+  case SNIFF_MODE_RAW_CAPTURE:
+  case SNIFF_MODE_AP_STA:
+    channelHop_ = true;
+    break;
+  default:
+    // PACKET_MONITOR / CHANNEL_* / PACKET_RATE / EAPOL: stay put so per-channel
+    // counters and handshake capture remain coherent.
+    channelHop_ = false;
+    break;
+  }
+  currentHopChannel_ = WIFISNIFF_CH_MIN;
+  lastHopMs_ = millis();
+  esp_wifi_set_channel(currentHopChannel_, WIFI_SECOND_CHAN_NONE);
+
+  // Bounded, branch-free mode name lookup (avoids out-of-range indexing).
+  const char *modeName;
+  switch (mode) {
+  case SNIFF_MODE_AP: modeName = "AP"; break;
+  case SNIFF_MODE_PACKET_MONITOR: modeName = "Packet Monitor"; break;
+  case SNIFF_MODE_EAPOL_CAPTURE: modeName = "EAPOL Capture"; break;
+  case SNIFF_MODE_STATION_SCAN: modeName = "Station Scan"; break;
+  case SNIFF_MODE_PROBE_SCAN: modeName = "Probe Scan"; break;
+  case SNIFF_MODE_CHANNEL_ANALYZER: modeName = "Channel Analyzer"; break;
+  case SNIFF_MODE_CHANNEL_ACTIVITY: modeName = "Channel Activity"; break;
+  case SNIFF_MODE_PACKET_RATE: modeName = "Packet Rate"; break;
+  case SNIFF_MODE_PINESCAN: modeName = "Pinescan"; break;
+  case SNIFF_MODE_MULTISSID: modeName = "MultiSSID"; break;
+  case SNIFF_MODE_SIGNAL_STRENGTH: modeName = "Signal Strength"; break;
+  case SNIFF_MODE_RAW_CAPTURE: modeName = "Raw Capture"; break;
+  case SNIFF_MODE_AP_STA: modeName = "AP+STA"; break;
+  default: modeName = "?"; break;
+  }
+  Serial.printf("[SNIFF] Promiscuous ACTIVE (mode: %s, hop: %s).\n", modeName,
+                channelHop_ ? "on" : "off");
 }
 
 void WifiSniffManager::setMode(SniffMode mode) {
@@ -344,6 +507,20 @@ void WifiSniffManager::tick() {
   (void)lastSortMs_;
   unsigned long now = millis();
 
+  // --- Channel hopping (passive listen retune only, never transmits) ---
+  // Timer-driven cycle across channels 1..13 so a single radio surveys the
+  // whole 2.4 GHz band. Toggleable via setChannelHop(); when off we stay on
+  // whatever channel was last selected.
+  if (channelHop_ && active_) {
+    if (now - lastHopMs_ >= WIFISNIFF_CH_HOP_INTERVAL_MS) {
+      currentHopChannel_++;
+      if (currentHopChannel_ > WIFISNIFF_CH_MAX)
+        currentHopChannel_ = WIFISNIFF_CH_MIN;
+      esp_wifi_set_channel(currentHopChannel_, WIFI_SECOND_CHAN_NONE);
+      lastHopMs_ = now;
+    }
+  }
+
   // Reset packet stats every 10 seconds for Packet Monitor mode
   if (mode_ == SNIFF_MODE_PACKET_MONITOR ||
       mode_ == SNIFF_MODE_CHANNEL_ANALYZER) {
@@ -364,6 +541,15 @@ void WifiSniffManager::tick() {
       memset(channelActivity_, 0, sizeof(channelActivity_));
       lastStatsReset_ = now;
     }
+  }
+}
+
+void WifiSniffManager::setChannelHop(bool enabled) {
+  channelHop_ = enabled;
+  lastHopMs_ = millis();
+  if (enabled && active_) {
+    // Resume hopping from the current channel immediately on next tick.
+    esp_wifi_set_channel(currentHopChannel_, WIFI_SECOND_CHAN_NONE);
   }
 }
 
@@ -425,10 +611,32 @@ int WifiSniffManager::findProbeByMAC(uint8_t *mac) {
   return -1;
 }
 
+int WifiSniffManager::findKarmaByBSSID(uint8_t *bssid) {
+  for (int i = 0; i < karmaCount_; i++) {
+    if (memcmp(karma_[i].bssid, bssid, 6) == 0)
+      return i;
+  }
+  return -1;
+}
+
 const WifiSniffAp *WifiSniffManager::getAp(int index) const {
   if (index < 0 || index >= apCount_)
     return nullptr;
   return &apList_[index];
+}
+
+const RawFrame *WifiSniffManager::getRawFrame(int index) const {
+  // index 0 == most recent. rawHead_ points one past the newest entry.
+  if (index < 0 || index >= rawCount_)
+    return nullptr;
+  int slot = (rawHead_ - 1 - index + WIFISNIFF_RAW_MAX * 2) % WIFISNIFF_RAW_MAX;
+  return &rawFrames_[slot];
+}
+
+const KarmaSuspect *WifiSniffManager::getKarmaSuspect(int index) const {
+  if (index < 0 || index >= karmaCount_)
+    return nullptr;
+  return &karma_[index];
 }
 
 #endif // NOCT_FEATURE_HACKER

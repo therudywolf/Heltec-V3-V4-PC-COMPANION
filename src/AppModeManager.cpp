@@ -322,13 +322,29 @@ bool AppModeManager::initializeMode(AppMode mode
     Serial.println("[SYS] PACKET RATE mode initialized");
     return true;
   case MODE_WIFI_PINESCAN:
+    manageWiFiState(mode);
+    wifiSniff_.begin(SNIFF_MODE_PINESCAN);
+    Serial.println("[SYS] PINESCAN mode initialized");
+    return true;
   case MODE_WIFI_MULTISSID:
+    manageWiFiState(mode);
+    wifiSniff_.begin(SNIFF_MODE_MULTISSID);
+    Serial.println("[SYS] MULTISSID mode initialized");
+    return true;
   case MODE_WIFI_SIGNAL_STRENGTH:
+    manageWiFiState(mode);
+    wifiSniff_.begin(SNIFF_MODE_SIGNAL_STRENGTH);
+    Serial.println("[SYS] SIGNAL STRENGTH mode initialized");
+    return true;
   case MODE_WIFI_RAW_CAPTURE:
+    manageWiFiState(mode);
+    wifiSniff_.begin(SNIFF_MODE_RAW_CAPTURE);
+    Serial.println("[SYS] RAW CAPTURE mode initialized");
+    return true;
   case MODE_WIFI_AP_STA:
     manageWiFiState(mode);
-    wifiSniff_.begin(SNIFF_MODE_AP);
-    Serial.printf("[SYS] WiFi scan mode %d initialized\n", mode);
+    wifiSniff_.begin(SNIFF_MODE_AP_STA);
+    Serial.println("[SYS] AP+STA mode initialized");
     return true;
 
   case MODE_BLE_SOUR_APPLE:

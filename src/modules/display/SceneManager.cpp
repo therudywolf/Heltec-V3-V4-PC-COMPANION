@@ -2100,6 +2100,15 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 
   u8g2.setCursor(2, 7);
   u8g2.print(modeName);
+  // Header-right: show the live channel while hopping (passive survey).
+  if (mgr.isChannelHopping())
+  {
+    char chBuf[8];
+    snprintf(chBuf, sizeof(chBuf), "C%d>", (int)mgr.getCurrentChannel());
+    int w = u8g2.getUTF8Width(chBuf);
+    u8g2.setCursor(NOCT_DISP_W - 2 - w, 7);
+    u8g2.print(chBuf);
+  }
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
 
@@ -2107,13 +2116,283 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
   int pkts = mgr.getPacketCount();
   int eapol = mgr.getEapolCount();
 
-  // Show different stats based on mode
-  if (mode == SNIFF_MODE_PROBE_SCAN)
+  // ===================== Mode-specific content =========================
+  // Each of the five formerly-stubbed modes now renders a distinct view.
+  if (mode == SNIFF_MODE_SIGNAL_STRENGTH)
+  {
+    // RSSI / proximity view: pick the strongest AP currently known and draw a
+    // big proximity bar, plus a couple of runners-up. (No persistent sort to
+    // keep the callback lock-free; we scan the small AP list each frame.)
+    int best = -1, second = -1;
+    int8_t bestR = -127, secondR = -127;
+    for (int i = 0; i < n; i++)
+    {
+      const WifiSniffAp *a = mgr.getAp(i);
+      if (!a)
+        continue;
+      if (a->rssi > bestR)
+      {
+        second = best;
+        secondR = bestR;
+        best = i;
+        bestR = a->rssi;
+      }
+      else if (a->rssi > secondR)
+      {
+        second = i;
+        secondR = a->rssi;
+      }
+    }
+    if (best < 0)
+    {
+      u8g2.setCursor(2, 22);
+      u8g2.print("Listening...");
+    }
+    else
+    {
+      const WifiSniffAp *a = mgr.getAp(best);
+      char line[22];
+      strncpy(line, a->ssid, 20);
+      line[20] = '\0';
+      u8g2.setCursor(2, 20);
+      u8g2.print(line);
+      // Map RSSI (-90..-30) to a 0..124 bar.
+      int pct = (a->rssi + 90) * 100 / 60;
+      if (pct < 0) pct = 0;
+      if (pct > 100) pct = 100;
+      int barW = pct * 124 / 100;
+      u8g2.drawFrame(2, 24, 124, 12);
+      if (barW > 0)
+        u8g2.drawBox(2, 24, barW, 12);
+      u8g2.setDrawColor(2);
+      char rb[16];
+      snprintf(rb, sizeof(rb), "%ddBm C%d", a->rssi, (int)a->channel);
+      u8g2.setCursor(6, 33);
+      u8g2.print(rb);
+      u8g2.setDrawColor(1);
+      if (second >= 0)
+      {
+        const WifiSniffAp *b = mgr.getAp(second);
+        char l2[22];
+        strncpy(l2, b->ssid, 14);
+        l2[14] = '\0';
+        u8g2.setCursor(2, 47);
+        u8g2.print("2:");
+        u8g2.print(l2);
+        u8g2.print(" ");
+        u8g2.print(b->rssi);
+      }
+    }
+  }
+  else if (mode == SNIFF_MODE_RAW_CAPTURE)
+  {
+    // Recent raw frames: type/subtype, length, RSSI, and a short header hex.
+    int rc = mgr.getRawCount();
+    u8g2.setCursor(2, 18);
+    u8g2.print("Frames:");
+    u8g2.print(pkts);
+    u8g2.print(" buf:");
+    u8g2.print(rc);
+    static const char *typeAbbr[4] = {"M", "C", "D", "X"};
+    int rows = rc < 3 ? rc : 3; // show up to 3 newest
+    for (int r = 0; r < rows; r++)
+    {
+      const RawFrame *f = mgr.getRawFrame(r);
+      if (!f)
+        break;
+      int y = 28 + r * 8;
+      char head[24];
+      snprintf(head, sizeof(head), "%s%X l%u %d", typeAbbr[f->type & 3],
+               f->subtype & 0xF, (unsigned)f->len, f->rssi);
+      u8g2.setCursor(2, y);
+      u8g2.print(head);
+      // Append a few header hex bytes if room.
+      char hex[16];
+      int hb = f->hdrLen < 3 ? f->hdrLen : 3;
+      int off = 0;
+      for (int k = 0; k < hb && off < (int)sizeof(hex) - 3; k++)
+        off += snprintf(hex + off, sizeof(hex) - off, "%02X", f->hdr[k]);
+      u8g2.setCursor(92, y);
+      u8g2.print(hex);
+    }
+    if (rc == 0)
+    {
+      u8g2.setCursor(2, 32);
+      u8g2.print("Capturing...");
+    }
+  }
+  else if (mode == SNIFF_MODE_AP_STA)
+  {
+    // Combined AP + associated-station list. Selected AP on top with its
+    // station tally; then list a few stations belonging to it.
+    int sta = mgr.getStationCount();
+    u8g2.setCursor(2, 18);
+    u8g2.print("APs:");
+    u8g2.print(n);
+    u8g2.print(" STA:");
+    u8g2.print(sta);
+    if (n > 0 && selected < n)
+    {
+      const WifiSniffAp *ap = mgr.getAp(selected);
+      if (ap)
+      {
+        char line[22];
+        strncpy(line, ap->ssid, 16);
+        line[16] = '\0';
+        u8g2.setCursor(2, 28);
+        u8g2.print(line);
+        u8g2.print(" (");
+        u8g2.print((int)ap->staCount);
+        u8g2.print(")");
+        // List up to 2 stations whose AP BSSID matches the selected AP.
+        int shown = 0;
+        for (int i = 0; i < sta && shown < 2; i++)
+        {
+          const WifiStation *s = mgr.getStation(i);
+          if (!s)
+            continue;
+          if (memcmp(s->apBSSID, ap->bssid, 6) != 0)
+            continue;
+          int y = 38 + shown * 9;
+          u8g2.setCursor(2, y);
+          u8g2.print(s->macStr);
+          u8g2.print(" ");
+          u8g2.print(s->rssi);
+          shown++;
+        }
+        if (shown == 0)
+        {
+          u8g2.setCursor(2, 38);
+          u8g2.print("(no clients yet)");
+        }
+      }
+    }
+  }
+  else if (mode == SNIFF_MODE_MULTISSID)
+  {
+    // APs that share a BSSID OUI / cloned SSIDs. Practical heuristic on-device:
+    // count how many APs advertise the SAME ssid string but a DIFFERENT BSSID
+    // (classic for an SSID being broadcast by several radios -- or spoofed).
+    // We display, for the selected AP, how many OTHER BSSIDs use its SSID.
+    u8g2.setCursor(2, 18);
+    u8g2.print("APs:");
+    u8g2.print(n);
+    if (n > 0 && selected < n)
+    {
+      const WifiSniffAp *ap = mgr.getAp(selected);
+      if (ap)
+      {
+        int dup = 0;
+        for (int i = 0; i < n; i++)
+        {
+          const WifiSniffAp *b = mgr.getAp(i);
+          if (!b || i == selected)
+            continue;
+          if (strncmp(b->ssid, ap->ssid, WIFISNIFF_SSID_LEN - 1) == 0 &&
+              memcmp(b->bssid, ap->bssid, 6) != 0)
+            dup++;
+        }
+        char line[22];
+        strncpy(line, ap->ssid, 20);
+        line[20] = '\0';
+        u8g2.setCursor(2, 28);
+        u8g2.print(line);
+        u8g2.setCursor(2, 38);
+        u8g2.print(ap->bssidStr);
+        u8g2.setCursor(2, 48);
+        if (dup > 0)
+        {
+          u8g2.print("** ");
+          u8g2.print(dup + 1);
+          u8g2.print(" BSSIDs same SSID");
+        }
+        else
+        {
+          u8g2.print("unique SSID  C");
+          u8g2.print((int)ap->channel);
+        }
+      }
+    }
+  }
+  else if (mode == SNIFF_MODE_PINESCAN)
+  {
+    // Karma / WiFi-Pineapple heuristic: a single BSSID that answers probe
+    // requests for MANY different SSIDs is almost certainly a rogue AP.
+    int ks = mgr.getKarmaCount();
+    // Find the most suspicious suspect (highest distinct-SSID count).
+    int worst = -1, worstN = 0;
+    for (int i = 0; i < ks; i++)
+    {
+      const KarmaSuspect *s = mgr.getKarmaSuspect(i);
+      if (s && s->ssidCount > worstN)
+      {
+        worstN = s->ssidCount;
+        worst = i;
+      }
+    }
+    u8g2.setCursor(2, 18);
+    u8g2.print("Suspects:");
+    u8g2.print(ks);
+    if (worst < 0)
+    {
+      u8g2.setCursor(2, 30);
+      u8g2.print("Waiting for probe");
+      u8g2.setCursor(2, 40);
+      u8g2.print("responses...");
+    }
+    else
+    {
+      const KarmaSuspect *s = mgr.getKarmaSuspect(worst);
+      u8g2.setCursor(2, 28);
+      u8g2.print(s->bssidStr);
+      u8g2.setCursor(2, 38);
+      if (s->ssidCount >= 3)
+        u8g2.print("** KARMA AP **");
+      else
+        u8g2.print("answered SSIDs:");
+      u8g2.print(" ");
+      u8g2.print((int)s->ssidCount);
+      // Show the latest SSID it impersonated.
+      if (s->ssidCount > 0)
+      {
+        char line[22];
+        strncpy(line, s->ssids[s->ssidCount - 1], 20);
+        line[20] = '\0';
+        u8g2.setCursor(2, 48);
+        u8g2.print("\"");
+        u8g2.print(line);
+        u8g2.print("\"");
+      }
+    }
+  }
+  else if (mode == SNIFF_MODE_PROBE_SCAN)
   {
     int probeCount = mgr.getProbeCount();
     u8g2.setCursor(2, 18);
     u8g2.print("Probes: ");
     u8g2.print(probeCount);
+    // Show the most recently updated probe entry (selected index, clamped).
+    if (probeCount > 0)
+    {
+      int idx = selected < probeCount ? selected : 0;
+      const ProbeRequest *p = mgr.getProbe(idx);
+      if (p)
+      {
+        u8g2.setCursor(2, 30);
+        u8g2.print(p->macStr);
+        char line[22];
+        strncpy(line, p->ssid, 20);
+        line[20] = '\0';
+        u8g2.setCursor(2, 40);
+        u8g2.print(line);
+        u8g2.setCursor(2, 50);
+        u8g2.print("x");
+        u8g2.print((unsigned)p->count);
+        u8g2.print(" ");
+        u8g2.print(p->rssi);
+        u8g2.print("dBm");
+      }
+    }
   }
   else if (mode == SNIFF_MODE_PACKET_RATE)
   {
@@ -2129,37 +2408,51 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
     mgr.getChannelActivity(channels, 14);
     u8g2.setCursor(2, 18);
     u8g2.print("Ch Activity");
+    // Tiny per-channel bar graph for channels 1..13.
+    uint32_t maxv = 1;
+    for (int i = 0; i < 13; i++)
+      if (channels[i] > maxv)
+        maxv = channels[i];
+    for (int i = 0; i < 13; i++)
+    {
+      int h = (int)(channels[i] * 30 / maxv);
+      if (h < 0) h = 0;
+      if (h > 30) h = 30;
+      int x = 4 + i * 9;
+      u8g2.drawVLine(x, 52 - h, h);
+      u8g2.drawVLine(x + 1, 52 - h, h);
+    }
   }
   else
   {
+    // SNIFF_MODE_AP and any others: original AP-detail view.
     u8g2.setCursor(2, 18);
     u8g2.print("PKTS:");
     u8g2.print(pkts);
     u8g2.print(" EAPOL:");
     u8g2.print(eapol);
-  }
-
-  if (n > 0 && selected < n)
-  {
-    const WifiSniffAp *ap = mgr.getAp(selected);
-    if (ap)
+    if (n > 0 && selected < n)
     {
-      u8g2.setCursor(2, 28);
-      char line[22];
-      strncpy(line, ap->ssid, 18);
-      line[18] = '\0';
-      if (strlen(ap->ssid) > 18)
-        line[16] = '.';
-      u8g2.print(line);
-      u8g2.setCursor(2, 38);
-      u8g2.print(ap->bssidStr);
-      u8g2.setCursor(2, 48);
-      u8g2.print("CH:");
-      u8g2.print((int)ap->channel);
-      u8g2.print(" RSSI:");
-      u8g2.print(ap->rssi);
-      if (ap->hasEapol)
-        u8g2.print(" [EAPOL]");
+      const WifiSniffAp *ap = mgr.getAp(selected);
+      if (ap)
+      {
+        u8g2.setCursor(2, 28);
+        char line[22];
+        strncpy(line, ap->ssid, 18);
+        line[18] = '\0';
+        if (strlen(ap->ssid) > 18)
+          line[16] = '.';
+        u8g2.print(line);
+        u8g2.setCursor(2, 38);
+        u8g2.print(ap->bssidStr);
+        u8g2.setCursor(2, 48);
+        u8g2.print("CH:");
+        u8g2.print((int)ap->channel);
+        u8g2.print(" RSSI:");
+        u8g2.print(ap->rssi);
+        if (ap->hasEapol)
+          u8g2.print(" [EAPOL]");
+      }
     }
   }
   drawBottomHint();
