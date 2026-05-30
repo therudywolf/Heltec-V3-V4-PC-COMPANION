@@ -18,13 +18,13 @@
 #include "AppModeManager.h"
 #include "InputHandler.h"
 #include "MenuHandler.h"
-#include "modules/display/BootAnim.h"
-#include "modules/display/DisplayEngine.h"
+#include "BootAnim.h"        // nocturne-core (lib src root)
+#include "DisplayEngine.h"   // nocturne-core
 #include "modules/display/DisplayManager.h"
 #include "modules/display/SceneManager.h"
 #include "modules/car/BmwManager.h"
 #include "modules/car/ObdClient.h"
-#include "modules/system/BatteryManager.h"
+#include "BatteryManager.h"  // nocturne-core
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
 
