@@ -1,7 +1,7 @@
 {
   "name": "nocturne-core",
   "version": "0.1.0",
-  "description": "Shared core for Nocturne OS firmware: display engine, boot animation, rolling graph, battery, input, and the foundational config/Types/strings headers. Consumed by the bmw/pc/hacker apps.",
+  "description": "Shared core for Nocturne OS firmware: display engine, boot animation, rolling graph, battery, input, and the foundational config/Types/strings headers. Consumed by the bmw/pc/hacker apps. Sources are flat under src/ so the library's auto-added src root resolves all bare includes.",
   "keywords": "nocturne, esp32, heltec, display",
   "frameworks": "arduino",
   "platforms": "espressif32"
