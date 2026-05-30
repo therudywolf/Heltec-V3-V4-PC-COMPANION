@@ -328,6 +328,24 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
   state->media.mediaStatus =
       String(ms && strcmp(ms, "PLAYING") == 0 ? "PLAYING" : "PAUSED");
 
+  // Claude usage/limits block (compact keys from server _build_claude_block).
+  // Percentages are null until a real local source exists -> store -1 = n/a.
+  JsonObjectConst cl_obj = doc["claude"];
+  ClaudeData &cd = state->claude;
+  if (!cl_obj.isNull()) {
+    cd.available = cl_obj["ok"] | false;
+    const char *plan = cl_obj["plan"];
+    cd.plan = String(plan ? plan : "");
+    cd.windowPct = cl_obj["win"].isNull() ? -1 : (int)(cl_obj["win"] | -1);
+    cd.weeklyPct = cl_obj["wk"].isNull() ? -1 : (int)(cl_obj["wk"] | -1);
+    cd.resetsInMin = cl_obj["rst"].isNull() ? -1 : (int)(cl_obj["rst"] | -1);
+    cd.todayTokens = cl_obj["tok"] | 0L;
+    cd.todayMsgs = cl_obj["msg"] | 0;
+    cd.todayTools = cl_obj["tool"] | 0;
+  } else {
+    cd.available = false;
+  }
+
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];
   const char *metric = doc["alert_metric"];
