@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Clean product spacing; moderate radius for OEM look -->
+    <dimen name="spacing_screen">20dp</dimen>
+    <dimen name="spacing_card">16dp</dimen>
+    <dimen name="spacing_section">16dp</dimen>
+    <dimen name="radius_card">12dp</dimen>
+    <dimen name="radius_button">10dp</dimen>
+    <dimen name="card_corner_radius">12dp</dimen>
+    <dimen name="card_elevation">1dp</dimen>
+    <dimen name="screen_padding">16dp</dimen>
+    <dimen name="chip_spacing">8dp</dimen>
+</resources>
