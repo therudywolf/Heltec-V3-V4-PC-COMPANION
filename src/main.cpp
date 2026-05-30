@@ -611,6 +611,19 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
 // ---------------------------------------------------------------------------
 // Loop
 // ---------------------------------------------------------------------------
+// Apply OLED contrast only when it changes, to avoid a redundant I2C control
+// write on every frame. All contrast changes go through here so the cached
+// value stays coherent.
+static void applyContrast(uint8_t value)
+{
+  static int appliedContrast = -1;
+  if ((int)value != appliedContrast)
+  {
+    display.u8g2().setContrast(value);
+    appliedContrast = (int)value;
+  }
+}
+
 void loop()
 {
   unsigned long now = millis();
@@ -698,7 +711,7 @@ void loop()
   }
 
   // ── LED ─────────────────────────────────────────────────────────────
-  pinMode(NOCT_LED_ALERT_PIN, OUTPUT);
+  // (pinMode is configured once in setup(); no need to repeat every loop.)
   if (predatorMode)
   {
     unsigned long t = (now - predatorEnterTime) / 20;
@@ -895,8 +908,7 @@ void loop()
       else if (event == EV_LONG)
       {
         settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
-        uint8_t contrast = settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX;
-        display.u8g2().setContrast(contrast);
+        applyContrast(settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX);
         Preferences p; p.begin("nocturne", false);
         p.putBool("lowBright", settings.lowBrightnessDefault); p.end();
         needRedraw = true;
@@ -976,11 +988,12 @@ void loop()
   needRedraw = false;
 
   if (lastInputTime == 0) lastInputTime = now;
+  // applyContrast() skips redundant I2C writes when the value is unchanged.
   if (!quickMenuOpen && settings.displayTimeoutSec > 0 &&
       (now - lastInputTime > (unsigned long)settings.displayTimeoutSec * 1000))
-    display.u8g2().setContrast(NOCT_CONTRAST_MIN);
+    applyContrast(NOCT_CONTRAST_MIN);
   else
-    display.u8g2().setContrast(settings.displayContrast);
+    applyContrast(settings.displayContrast);
 
   bool displayManagerSent = false;
   if (!(currentMode == MODE_BMW_ASSISTANT && !quickMenuOpen))
