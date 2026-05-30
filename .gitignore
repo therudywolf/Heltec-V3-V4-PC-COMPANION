@@ -127,3 +127,6 @@ credentials.json
 *credentials*.json
 !*credentials*.example.json
 
+
+# Per-app PlatformIO build dirs
+apps/*/.pio/
