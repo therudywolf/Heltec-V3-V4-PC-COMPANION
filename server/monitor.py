@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 # Extracted submodules (kept in the same server/ dir; flat imports work both when
 # tests put server/ on sys.path and when monitor.py is run directly). monitor.py
 # remains the public entry point and re-exports the names tests rely on.
+import claude_usage as claude_mod
 import lhm_parse
 import netrates
 import payload as payload_mod
@@ -214,6 +215,7 @@ TOP_PROCS_CACHE_TTL = 2.5
 POLL_INTERVAL = 0.5
 HEARTBEAT_INTERVAL = 0.5  # Send at least every 0.5s so display updates twice per second
 MEDIA_UPDATE_INTERVAL = 1.0  # Update media info every 1 second (reduces CPU load)
+CLAUDE_UPDATE_INTERVAL = 30.0  # Claude usage changes slowly; poll its local files every 30s
 HYSTERESIS_TEMP = 2
 HYSTERESIS_LOAD = 5
 HYSTERESIS_NET_KB = 100
@@ -288,6 +290,7 @@ global_data_cache: Dict = {
     "hw": {}, "weather": {},
     "media": {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"},
     "top_procs": [], "top_procs_ram": [], "net": (0, 0), "disk": (0, 0), "ping": 0,
+    "claude": dict(claude_mod.EMPTY_USAGE),
 }
 # Guards multi-key access to global_data_cache so the poller's writes and a
 # connecting client's read can't interleave into an inconsistent snapshot.
@@ -572,6 +575,17 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
     return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
+def get_claude_usage_sync() -> Dict[str, Any]:
+    """Read local Claude Code usage/limits (~/.claude). Cheap file reads; runs in
+    the executor like the other blocking readers. Never raises (the contract lives
+    in :mod:`claude_usage`), so a failure just yields the graceful-empty dict."""
+    try:
+        return claude_mod.read_claude_usage()
+    except Exception as e:
+        log_debug(f"Claude usage: {e}")
+        return dict(claude_mod.EMPTY_USAGE)
+
+
 # Alert thresholds (RED ALERT when any is met; must match config.h)
 CPU_TEMP_ALERT = 87
 GPU_TEMP_ALERT = 68
@@ -612,8 +626,33 @@ def _alert_hysteresis() -> Dict[str, int]:
     }
 
 
+def _build_claude_block(claude: Optional[Dict]) -> Dict[str, Any]:
+    """Map the cached :func:`claude_usage.read_claude_usage` dict to the compact
+    wire shape sent to the device.
+
+    Uses short, stable keys in keeping with the rest of the payload (``wt``/``wd``
+    etc.). ``ok`` mirrors ``available``; the percentage / reset fields stay
+    ``None`` (JSON ``null``) when no real local source exists, so the firmware can
+    render "n/a". Defensive: a ``None`` / non-dict input degrades to the
+    graceful-empty block rather than raising.
+    """
+    c = claude if isinstance(claude, dict) else claude_mod.EMPTY_USAGE
+    return {
+        "ok": bool(c.get("available", False)),
+        "plan": c.get("plan"),
+        "win": c.get("window_pct"),     # 5-hour window usage %  (null until a runtime provides it)
+        "wk": c.get("weekly_pct"),      # weekly limit usage %   (null until a runtime provides it)
+        "rst": c.get("resets_in_min"),  # minutes to window reset (null until available)
+        "tok": c.get("today_tokens"),   # tokens used today (all models)
+        "msg": c.get("today_msgs"),     # messages today
+        "tool": c.get("today_tools"),   # tool calls today
+        "day": c.get("date"),           # date the today_* figures apply to
+    }
+
+
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
-                  net: tuple, disk: tuple, ping_ms: int, now: float) -> Dict:
+                  net: tuple, disk: tuple, ping_ms: int, now: float,
+                  claude: Optional[Dict] = None) -> Dict:
     global _last_alert
 
     w = weather  # (kept identical to prior weather-cache selection, which was a no-op)
@@ -659,6 +698,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "art": media.get("art", ""), "trk": media.get("trk", ""),
         "mp": media.get("play", False), "idle": media.get("idle", False),
         "media_status": media_status,
+        "claude": _build_claude_block(claude),
         "sv": SERVER_VERSION,
     }
 
@@ -727,7 +767,8 @@ async def handle_client(reader, writer):
                 snap["hw"], snap["media"],
                 snap["weather"], snap["top_procs"],
                 snap["top_procs_ram"], snap["net"],
-                snap["disk"], snap["ping"], time.time()
+                snap["disk"], snap["ping"], time.time(),
+                claude=snap.get("claude"),
             )
             await send_data_to_client(writer, payload)
         else:
@@ -798,6 +839,7 @@ async def run():
     last_weather_time = 0.0
     last_ping_time = 0.0
     last_media_time = 0.0
+    last_claude_time = 0.0
     session = aiohttp.ClientSession()
 
     try:
@@ -813,6 +855,8 @@ async def run():
         last_top_procs_time = time.time()
         ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
         await cache_set("ping", ping_latency_ms)
+        await cache_set("claude", await loop.run_in_executor(executor, get_claude_usage_sync))
+        last_claude_time = time.time()
     except Exception as e:
         log_err(f"Initial data: {e}")
 
@@ -862,12 +906,20 @@ async def run():
                 except Exception as e:
                     log_debug(f"Media: {e}")
 
+            if now - last_claude_time >= CLAUDE_UPDATE_INTERVAL:
+                last_claude_time = now
+                try:
+                    await cache_set("claude", await loop.run_in_executor(executor, get_claude_usage_sync))
+                except Exception as e:
+                    log_debug(f"Claude: {e}")
+
             snap = await cache_snapshot()
             payload = build_payload(
                 snap["hw"], snap["media"],
                 snap["weather"], snap["top_procs"],
                 snap["top_procs_ram"], snap["net"],
-                snap["disk"], snap["ping"], now
+                snap["disk"], snap["ping"], now,
+                claude=snap.get("claude"),
             )
 
             if should_send_payload(payload, now):
