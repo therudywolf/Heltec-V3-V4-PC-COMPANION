@@ -288,6 +288,84 @@ void DisplayEngine::drawProgressBar(int x, int y, int w, int h, int percent) {
 }
 
 // ---------------------------------------------------------------------------
+// drawProgressBarRounded: rounded 1px frame + flush inner fill (clean hero bar)
+// ---------------------------------------------------------------------------
+void DisplayEngine::drawProgressBarRounded(int x, int y, int w, int h,
+                                           int percent) {
+  if (w < 4 || h < 3)
+    return; // too small for a frame + fill
+  if (percent > 100)
+    percent = 100;
+  if (percent < 0)
+    percent = 0;
+  // Use a 1px corner radius only when the box is large enough for it.
+  int r = (w >= 6 && h >= 6) ? 1 : 0;
+  if (r > 0)
+    u8g2_.drawRFrame(x, y, w, h, r);
+  else
+    u8g2_.drawFrame(x, y, w, h);
+  // Inner fill area: 1px padding inside the frame on every side.
+  int innerX = x + 2;
+  int innerY = y + 2;
+  int innerW = w - 4;
+  int innerH = h - 4;
+  if (innerW < 1 || innerH < 1)
+    return;
+  int fillW = (innerW * percent) / 100; // 0..innerW, always inside the frame
+  if (fillW > 0)
+    u8g2_.drawBox(innerX, innerY, fillW, innerH);
+}
+
+// ---------------------------------------------------------------------------
+// drawTextClipped: left-aligned text, truncated with ".." if wider than maxW.
+// Walks the string one UTF-8 codepoint at a time so multi-byte glyphs are
+// never split. Output buffer is bounded; long strings stop well before it.
+// ---------------------------------------------------------------------------
+int DisplayEngine::drawTextClipped(int x, int y, int maxW, const char *text) {
+  if (!text || !text[0] || maxW <= 0)
+    return 0;
+  int full = u8g2_.getUTF8Width(text);
+  if (full <= maxW) {
+    u8g2_.drawUTF8(x, y, text);
+    return full;
+  }
+  static const char *kEllipsis = "..";
+  int ellW = u8g2_.getUTF8Width(kEllipsis);
+  char buf[40];
+  size_t bi = 0;
+  const char *p = text;
+  while (*p && bi < sizeof(buf) - 4) {
+    // Length of this UTF-8 codepoint from its lead byte.
+    unsigned char c0 = (unsigned char)*p;
+    size_t clen = 1;
+    if (c0 >= 0xF0)
+      clen = 4;
+    else if (c0 >= 0xE0)
+      clen = 3;
+    else if (c0 >= 0xC0)
+      clen = 2;
+    // Tentatively append this codepoint and measure with the ellipsis.
+    char tmp[44];
+    size_t tj = bi;
+    for (size_t k = 0; k < clen && p[k] && tj < sizeof(tmp) - 1; k++)
+      tmp[tj++] = p[k];
+    tmp[tj] = '\0';
+    if (u8g2_.getUTF8Width(tmp) + ellW > maxW)
+      break;
+    for (size_t k = bi; k < tj; k++)
+      buf[k] = tmp[k];
+    bi = tj;
+    p += clen;
+  }
+  // Append the ellipsis.
+  for (const char *e = kEllipsis; *e && bi < sizeof(buf) - 1; e++)
+    buf[bi++] = *e;
+  buf[bi] = '\0';
+  u8g2_.drawUTF8(x, y, buf);
+  return u8g2_.getUTF8Width(buf);
+}
+
+// ---------------------------------------------------------------------------
 // drawDottedHLine: dotted horizontal (pattern 0x55)
 // ---------------------------------------------------------------------------
 void DisplayEngine::drawDottedHLine(int x0, int x1, int y) {

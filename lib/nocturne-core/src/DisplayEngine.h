@@ -69,6 +69,10 @@ public:
   void drawScanlines(bool everyFourth = false);
   /** Center-aligned text at Y. Uses current font. */
   void drawCentered(int y, const char *text);
+  /** Left-aligned UTF-8 text at (x, baseline y) clipped to maxW pixels: if it
+   * would overflow, truncate on a UTF-8 boundary and append "..". Returns the
+   * pixel width actually drawn. Uses the current font. */
+  int drawTextClipped(int x, int y, int maxW, const char *text);
   /** Right-aligned text: draw at (x_anchor - width). font = TINY_FONT etc. */
   void drawRightAligned(int x_anchor, int y, const uint8_t *font,
                         const char *text);
@@ -80,6 +84,10 @@ public:
   void drawSegmentedBar(int x, int y, int w, int h, int percent) {
     drawProgressBar(x, y, w, h, percent);
   }
+  /** Solid progress bar with a rounded 1px frame and a flush inner fill.
+   * Cleaner look than the segmented bar for hero/boot contexts. percent
+   * 0..100; fully contained within the given rect. */
+  void drawProgressBarRounded(int x, int y, int w, int h, int percent);
 
   /** Chamfered box (cut corners). chamferPx = corner cut size. */
   void drawChamferBox(int x, int y, int w, int h, int chamferPx);
