@@ -1,25 +1,29 @@
 name: Release
 
-# Triggered by pushing a version tag (e.g. v0.4.0). Builds all three firmware
-# profiles, packages flashable images + ESP Web Tools manifests, optionally
-# builds the companion APK, and publishes a GitHub Release with the artifacts.
+# Per-product release tracks. Push a prefixed tag to release ONE product:
+#   bmw-v0.5.0     -> Nocturne BMW
+#   pc-v0.5.0      -> Nocturne PC
+#   hacker-v0.5.0  -> Nocturne Hacker
+# Builds that app, packages a flashable factory image + ESP Web Tools manifest
+# (and the Android APK for BMW), and publishes a GitHub Release.
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'bmw-v*'
+      - 'pc-v*'
+      - 'hacker-v*'
 
 permissions:
   contents: write
 
 jobs:
   firmware:
-    name: Firmware (${{ matrix.env }})
+    name: Build & package firmware
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env: [bmw_only, pc_companion, full]
+    outputs:
+      app: ${{ steps.id.outputs.app }}
+      ver: ${{ steps.id.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +33,17 @@ jobs:
 
       - name: Install PlatformIO and esptool
         run: pip install platformio "esptool~=4.8"
+
+      - name: Identify product from tag
+        id: id
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"          # e.g. pc-v0.5.0
+          APP="${TAG%%-v*}"                 # pc
+          VER="${TAG#${APP}-v}"             # 0.5.0
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "Releasing app=$APP version=$VER"
 
       - name: Create secrets.h stub
         run: |
@@ -42,42 +57,40 @@ jobs:
           #endif
           EOF
 
-      - name: Build ${{ matrix.env }}
-        run: pio run -e ${{ matrix.env }}
+      - name: Build apps/${{ steps.id.outputs.app }}
+        run: pio run -d "apps/${{ steps.id.outputs.app }}"
 
-      - name: Package release artifacts
+      - name: Package factory image + manifest
         run: |
           set -euo pipefail
-          VER="${GITHUB_REF_NAME#v}"
-          ENV="${{ matrix.env }}"
-          BUILD=".pio/build/$ENV"
+          APP="${{ steps.id.outputs.app }}"
+          VER="${{ steps.id.outputs.ver }}"
+          BUILD="apps/$APP/.pio/build/$APP"
           BOOT_APP0="$(find "$HOME/.platformio/packages" -name boot_app0.bin | head -n1)"
           mkdir -p dist
 
-          # Plain application image — for OTA / advanced users.
-          cp "$BUILD/firmware.bin" "dist/nocturne-$ENV-$VER.bin"
+          # Plain application image (OTA / advanced).
+          cp "$BUILD/firmware.bin" "dist/nocturne-$APP-$VER.bin"
 
-          # Merged factory image — single file flashed from offset 0
-          # (bootloader + partition table + otadata + app). Used by the web flasher.
+          # Merged factory image flashed from offset 0 (what the web flasher writes).
           python -m esptool --chip esp32s3 merge_bin \
-            -o "dist/nocturne-$ENV-factory.bin" \
+            -o "dist/nocturne-$APP-factory.bin" \
             --flash_mode qio --flash_freq 80m \
             0x0     "$BUILD/bootloader.bin" \
             0x8000  "$BUILD/partitions.bin" \
             0xe000  "$BOOT_APP0" \
             0x10000 "$BUILD/firmware.bin"
 
-          # ESP Web Tools manifest — points at the latest-release factory image.
-          cat > "dist/manifest-$ENV.json" << EOF
+          cat > "dist/manifest-$APP.json" << EOF
           {
-            "name": "Nocturne OS — $ENV",
+            "name": "Nocturne $APP",
             "version": "$VER",
             "new_install_prompt_erase": true,
             "builds": [
               {
                 "chipFamily": "ESP32-S3",
                 "parts": [
-                  { "path": "https://github.com/${{ github.repository }}/releases/latest/download/nocturne-$ENV-factory.bin", "offset": 0 }
+                  { "path": "https://github.com/${{ github.repository }}/releases/latest/download/nocturne-$APP-factory.bin", "offset": 0 }
                 ]
               }
             ]
@@ -86,60 +99,56 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ matrix.env }}
+          name: firmware
           path: dist/
 
   android:
-    name: Companion APK
+    name: Companion APK (BMW only)
+    needs: firmware
+    if: needs.firmware.outputs.app == 'bmw'
     runs-on: ubuntu-latest
-    # Best-effort: a broken Android build must not block the firmware release.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Build APK
-        working-directory: app/android
+        working-directory: apps/bmw/companion-app
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
-
       - name: Collect APK
         run: |
           set -euo pipefail
-          VER="${GITHUB_REF_NAME#v}"
+          VER="${{ needs.firmware.outputs.ver }}"
           mkdir -p dist
-          APK="$(find app/android -path '*release*' -name '*.apk' | head -n1)"
+          APK="$(find apps/bmw/companion-app -path '*release*' -name '*.apk' | head -n1)"
           cp "$APK" "dist/BMW-Assistant-$VER.apk"
-
       - uses: actions/upload-artifact@v4
         with:
-          name: companion-apk
+          name: apk
           path: dist/
 
   release:
     name: Publish GitHub Release
     needs: [firmware, android]
+    if: always() && needs.firmware.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - name: Flatten artifacts
         run: |
           mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
           ls -la release
-
       - uses: softprops/action-gh-release@v2
         with:
+          name: Nocturne ${{ needs.firmware.outputs.app }} ${{ needs.firmware.outputs.ver }}
           files: release/*
           generate_release_notes: true
           prerelease: false
-          make_latest: true
           fail_on_unmatched_files: false

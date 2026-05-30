@@ -89,10 +89,21 @@ entries in the env `build_flags` (these reach both app and library compilation).
 A clean build (`rm -rf .pio/build`) is required after moving files — stale
 incremental state gives misleading "header not found" errors.
 
-### Phase A — BMW app (first standalone; smallest, already audited)
-- `apps/bmw` on core: move `car/*`, `ibus/*`, BMW scenes/config/strings, Android
-  app. Clean `main.cpp` (no `#if`). Own `platformio.ini` + `VERSION`.
-- Build green → **hardware checkpoint (real E39)** for the I-Bus frame-length fix.
+### Phase A — BMW app (first standalone; smallest, already audited)  ✅ DONE
+- `apps/bmw` is a standalone PlatformIO project on the shared core: own
+  `platformio.ini` + `VERSION` (0.5.0) + README; native Android app moved to
+  `apps/bmw/companion-app`. Scoped via `build_src_filter` + `NOCT_FEATURE_*`.
+- The monorepo pattern (used by all 3 apps): app `platformio.ini` points
+  `src_dir`/`include_dir`/`lib_dir` at the shared root tree; shared include dirs
+  are added as absolute paths by `tools/app_includes.py` (a pre-script — NOT
+  `-I ${PROJECT_DIR}/../..`, which resolves wrong, and NOT `__file__`, which
+  SCons doesn't provide). `main.cpp` `#if` purge deferred (see below).
+- ✅ Builds green (local + CI). ⏳ **hardware checkpoint (real E39)** still owed
+  for the I-Bus frame-length fix.
+
+> Also done alongside A: **apps/pc** and **apps/hacker** were stood up the same
+> way (own platformio.ini/VERSION/README), so all three products build green on
+> CI now. Their *feature* work is still Phases B and C below.
 
 ### Phase B — PC app
 - `apps/pc` on core: `NetManager`, `ForzaManager`, monitoring scenes.
