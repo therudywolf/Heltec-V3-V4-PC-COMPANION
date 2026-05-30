@@ -31,6 +31,7 @@ public:
   void drawFans(int fanFrame, int xOff = 0);
   void drawMotherboard(int xOff = 0);
   void drawWeather(int xOff = 0);
+  void drawClaude(int xOff = 0);
 
   // --- Always available ---
   void drawSearchMode(int scanPhase);

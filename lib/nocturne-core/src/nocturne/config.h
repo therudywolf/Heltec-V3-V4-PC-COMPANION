@@ -174,7 +174,7 @@
 #define VRAM_LOAD_ALERT 95
 #define RAM_LOAD_ALERT 90
 
-/* ── Scene indices (9 PC monitoring screens) ───────────────────────────── */
+/* ── Scene indices (PC monitoring screens) ─────────────────────────────── */
 #define NOCT_SCENE_MAIN 0
 #define NOCT_SCENE_CPU 1
 #define NOCT_SCENE_GPU 2
@@ -184,7 +184,8 @@
 #define NOCT_SCENE_FANS 6
 #define NOCT_SCENE_MOTHERBOARD 7
 #define NOCT_SCENE_WEATHER 8
-#define NOCT_TOTAL_SCENES 9
+#define NOCT_SCENE_CLAUDE 9
+#define NOCT_TOTAL_SCENES 10
 
 /* alert_metric codes (match monitor.py) */
 #define NOCT_ALERT_CT 0

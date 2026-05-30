@@ -56,6 +56,19 @@ struct MediaData {
   String mediaStatus = "PAUSED"; // "PLAYING" | "PAUSED"
 };
 
+/** Claude Code usage/limits (from server "claude" block). pct fields are -1
+ * when the server has no real source for them (render "n/a"). */
+struct ClaudeData {
+  bool available = false;     // "ok"
+  String plan = "";           // "plan" (e.g. "max"); empty if unknown
+  int windowPct = -1;         // "win" 5h window usage %, -1 = n/a
+  int weeklyPct = -1;         // "wk" weekly usage %, -1 = n/a
+  int resetsInMin = -1;       // "rst" minutes to window reset, -1 = n/a
+  long todayTokens = 0;       // "tok" tokens today (all models)
+  int todayMsgs = 0;          // "msg" messages today
+  int todayTools = 0;         // "tool" tool calls today
+};
+
 struct Settings {
   bool ledEnabled = true;
   bool carouselEnabled = false;
@@ -75,6 +88,7 @@ struct AppState {
   WeatherData weather;
   MediaData media;
   ProcessData process;
+  ClaudeData claude;
   Settings settings;
   bool weatherReceived = false;
   bool alertActive = false;
