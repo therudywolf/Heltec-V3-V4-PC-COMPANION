@@ -27,6 +27,14 @@ import aiohttp
 import psutil
 from dotenv import load_dotenv
 
+# Extracted submodules (kept in the same server/ dir; flat imports work both when
+# tests put server/ on sys.path and when monitor.py is run directly). monitor.py
+# remains the public entry point and re-exports the names tests rely on.
+import lhm_parse
+import netrates
+import payload as payload_mod
+import weather as weather_mod
+
 try:
     from winsdk.windows.media.control import (
         GlobalSystemMediaTransportControlsSessionManager,
@@ -156,7 +164,8 @@ def is_autostart_enabled() -> bool:
             return False
         finally:
             winreg.CloseKey(key)
-    except Exception:
+    except Exception as e:
+        logging.warning("autostart check failed: %s", e)
         return False
 
 
@@ -189,13 +198,7 @@ TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
 WEATHER_LON = os.getenv("WEATHER_LON", "37.6173")
-WEATHER_URL = (
-    f"https://api.open-meteo.com/v1/forecast?"
-    f"latitude={WEATHER_LAT}&longitude={WEATHER_LON}"
-    "&current=temperature_2m,weather_code"
-    "&daily=temperature_2m_max,temperature_2m_min,weather_code"
-    "&timezone=auto&forecast_days=8"
-)
+WEATHER_URL = weather_mod.build_weather_url(WEATHER_LAT, WEATHER_LON)
 WEATHER_TIMEOUT = 10
 WEATHER_UPDATE_INTERVAL = 10 * 60
 PING_TARGET = "8.8.8.8"
@@ -273,7 +276,6 @@ _weather_first_ok = False
 tcp_clients: List = []
 client_screens: Dict = {}
 client_buffers: Dict = {}
-last_sent_track_key: str = ""
 top_procs_cache: List = []
 top_procs_ram_cache: List = []
 last_top_procs_time: float = 0.0
@@ -287,8 +289,35 @@ global_data_cache: Dict = {
     "media": {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"},
     "top_procs": [], "top_procs_ram": [], "net": (0, 0), "disk": (0, 0), "ping": 0,
 }
+# Guards multi-key access to global_data_cache so the poller's writes and a
+# connecting client's read can't interleave into an inconsistent snapshot.
+# Created lazily inside run() (a fresh Lock per asyncio.run, so Restart — which
+# spins a new event loop — never reuses a Lock bound to a dead loop).
+cache_lock: Optional[asyncio.Lock] = None
 _last_sent_snapshot: Optional[Tuple] = None
 _last_heartbeat_time: float = 0.0
+
+
+async def cache_set(key: str, value: Any) -> None:
+    """Atomically store one ``global_data_cache`` entry under ``cache_lock``."""
+    if cache_lock is None:
+        global_data_cache[key] = value
+        return
+    async with cache_lock:
+        global_data_cache[key] = value
+
+
+async def cache_snapshot() -> Dict[str, Any]:
+    """Return a shallow copy of ``global_data_cache`` taken under ``cache_lock``.
+
+    A shallow copy is enough: callers only read the top-level entries, and each
+    entry is replaced wholesale by the poller (never mutated in place), so the
+    snapshot is internally consistent for one ``build_payload`` call.
+    """
+    if cache_lock is None:
+        return dict(global_data_cache)
+    async with cache_lock:
+        return dict(global_data_cache)
 
 
 def log_err(msg: str, exc: Optional[BaseException] = None) -> None:
@@ -306,183 +335,47 @@ def log_debug(msg: str) -> None:
     logging.debug(msg)
 
 
-def clean_val(v: Any) -> float:
-    if v is None:
-        return 0.0
-    try:
-        s = str(v).strip().replace(",", ".")
-        if not s:
-            return 0.0
-        return float(s.split()[0] if s.split() else s)
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _get_any_key(node: Dict, keys: Tuple[str, ...]) -> Any:
-    """Get first non-None value for any of the given keys (case variations)."""
-    for k in keys:
-        v = node.get(k)
-        if v is not None and (not isinstance(v, str) or str(v).strip()):
-            return v
-    return None
+# clean_val / _get_any_key now live in lhm_parse (single source of truth);
+# re-exported here so existing references keep working.
+clean_val = lhm_parse.clean_val
+_get_any_key = lhm_parse.get_any_key
 
 
 def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
-    """Parse LHM JSON; returns dict with float values and 'hdd' / 'fans' arrays."""
-    results: Dict[str, Any] = {}
-    path_to_val: Dict[str, float] = {}
-    targets_set = set(TARGETS.values())
-    it8688e_fans: List[Tuple[str, float]] = []
-    it8688e_temps: List[Tuple[str, float]] = []
-    gpu_memory_sensors: List[Tuple[str, float, str]] = []  # (sid, val, name_lower)
-    fan_controls: List[int] = [0, 0, 0, 0]  # CPU, Pump/Sys#1, GPU, Case/Sys#2
+    """Parse LHM JSON; returns dict with float values and 'hdd' / 'fans' arrays.
 
-    SENSOR_ID_KEYS = ("SensorId", "SensorID", "sensor_id", "sensorId")
-    VALUE_KEYS = ("Value", "RawValue", "value", "raw_value", "rawValue")
-    TYPE_KEYS = ("Type", "type")
-    NAME_KEYS = ("Name", "Text", "name", "text")
+    Thin wrapper that wires the focused helpers in :mod:`lhm_parse` together,
+    passing the sensor-path constants defined in this module. Behaviour is
+    identical to the former in-line implementation, including the DEBUG-level
+    storage log.
+    """
+    walked = lhm_parse.walk_sensors(data, TARGETS, TARGETS_ALIAS, IT8688E_PREFIX)
+    results: Dict[str, Any] = walked["results"]
+    path_to_val: Dict[str, float] = walked["path_to_val"]
 
-    def walk(node: Any) -> None:
-        if isinstance(node, list):
-            for item in node:
-                walk(item)
-        elif isinstance(node, dict):
-            sid = _get_any_key(node, SENSOR_ID_KEYS)
-            raw = _get_any_key(node, VALUE_KEYS) or ""
-            val = clean_val(raw)
-            if sid:
-                path_to_val[sid] = val
-                if sid in targets_set:
-                    for k, v in TARGETS.items():
-                        if v == sid:
-                            results[k] = val
-                            break
-                elif sid in TARGETS_ALIAS:
-                    results[TARGETS_ALIAS[sid]] = val
-                elif sid.startswith(IT8688E_PREFIX):
-                    stype = str(_get_any_key(node, TYPE_KEYS) or "").lower()
-                    if "fan" in stype:
-                        it8688e_fans.append((sid, val))
-                    elif "temperature" in stype or "temp" in stype:
-                        it8688e_temps.append((sid, val))
-                    elif "control" in stype:
-                        # Fan control %: /lpc/it8688e/0/control/0=CPU, /1=Pump/Sys#1, /2=Case/Sys#2
-                        if "/control/0" in sid:
-                            fan_controls[0] = int(val)
-                        elif "/control/1" in sid:
-                            fan_controls[1] = int(val)
-                        elif "/control/2" in sid:
-                            fan_controls[3] = int(val)
-                # GPU fan control: /gpu-nvidia/0/control/1
-                if sid and "/gpu-nvidia/0/control/1" in sid:
-                    stype = str(_get_any_key(node, TYPE_KEYS) or "").lower()
-                    if "control" in stype:
-                        fan_controls[2] = int(val)
-                # Collect GPU memory sensors for name-based fallback (vu/vt)
-                if ("/nvidiagpu/" in sid or "/gpu-nvidia/" in sid) and val > 0:
-                    stype = str(_get_any_key(node, TYPE_KEYS) or "").lower()
-                    if "data" in stype or "smalldata" in stype:
-                        name = str(_get_any_key(node, NAME_KEYS) or "").lower()
-                        if "memory" in name or "used" in name or "total" in name or "limit" in name:
-                            gpu_memory_sensors.append((sid, val, name))
-            if "Children" in node:
-                walk(node["Children"])
-            if "children" in node:
-                walk(node["children"])
-    walk(data)
-    # VRAM fallback: if vu/vt not set by path, try to match by sensor name (values in MB; /1024 applied below)
-    if "vu" not in results or "vt" not in results:
-        for _sid, val, name in gpu_memory_sensors:
-            if "used" in name and "vu" not in results:
-                results["vu"] = val
-            if ("total" in name or "limit" in name) and "vt" not in results:
-                results["vt"] = val
-    it8688e_fans.sort(key=lambda x: x[0])
+    # VRAM used/total name-based fallback (values still in MB at this point).
+    lhm_parse.apply_vram_fallback(results, walked["gpu_memory_sensors"])
+
+    # Fans (CPU/Pump/GPU/Case) and their short keys.
+    results.update(lhm_parse.extract_fans(path_to_val, FAN_PATHS, FAN_CASE_PATH))
+    results["fan_controls"] = walked["fan_controls"]
+
+    # Chipset temp = lowest IT8688E temperature sensor (sorted by sensor id).
+    it8688e_temps = walked["it8688e_temps"]
     it8688e_temps.sort(key=lambda x: x[0])
-    # Fans: CPU, Pump, GPU (LHM gpu-nvidia uses fan/1 not fan/0), Case (optional)
-    fans: List[int] = []
-    for path in FAN_PATHS:
-        fans.append(int(path_to_val.get(path, 0)))
-    fans.append(int(path_to_val.get(FAN_CASE_PATH, 0)))
-    # GPU fan: serverpars has /gpu-nvidia/0/fan/1 for "GPU Fan" RPM (not fan/0)
-    gf_val = int(path_to_val.get("/gpu-nvidia/0/fan/1", 0)) or (fans[2] if len(fans) > 2 else 0)
-    if len(fans) > 2:
-        fans[2] = gf_val
-    results["fans"] = fans
-    results["cf"] = fans[0] if len(fans) > 0 else 0
-    results["s1"] = fans[1] if len(fans) > 1 else 0
-    results["gf"] = gf_val
-    results["s2"] = fans[3] if len(fans) > 3 else 0
-    results["fan_controls"] = fan_controls
     if it8688e_temps:
         results["ch"] = it8688e_temps[0][1]
-    # Motherboard temps: System, VSoC MOS, VRM MOS, Chipset
-    results["mb_sys"] = int(path_to_val.get("/lpc/it8688e/0/temperature/0", 0))
-    results["mb_vsoc"] = int(path_to_val.get("/lpc/it8688e/0/temperature/1", 0))
-    results["mb_vrm"] = int(path_to_val.get("/lpc/it8688e/0/temperature/4", 0))
-    results["mb_chipset"] = int(path_to_val.get("/lpc/it8688e/0/temperature/5", 0))
-    if "ru" in results and "ra" in results:
-        results["ra"] = results["ru"] + results["ra"]
-    if "vu" in results:
-        results["vu"] = round(results["vu"] / 1024.0, 1)
-    if "vt" in results:
-        results["vt"] = round(results["vt"] / 1024.0, 1)
-    # Storage: collect all /hdd/N, /nvme/N, /ssd/N, /storage/N, /drive/N
-    # Old LHM: data/31=Free GB, data/32=Total GB. New LHM: these moved/dropped; use load/0 (Used %), temperature/0.
-    # Include devices with temp even when capacity missing (merge with psutil in build_payload).
-    STORAGE_PREFIXES = ("hdd", "nvme", "ssd", "storage", "drive")
-    path_lower_to_val: Dict[str, float] = {k.strip("/").lower(): v for k, v in path_to_val.items()}
 
-    def _storage_val(prefix: str, num: int, subpath: str) -> float:
-        base = f"{prefix}/{num}/{subpath}".lower()
-        v = path_lower_to_val.get(base)
-        if v is not None:
-            return float(v)
-        return 0.0
+    # Motherboard temps + derived RAM total and VRAM MB->GB scaling.
+    results.update(lhm_parse.extract_mb_temps(path_to_val))
+    lhm_parse.finalize_units(results)
 
-    devices_seen: set = set()
-    storage_devices: List[Tuple[str, int, float, float, float]] = []  # (prefix, num, used_gb, total_gb, temp)
-    for sid, val in path_to_val.items():
-        parts = sid.strip("/").split("/")
-        if len(parts) >= 2 and parts[0].lower() in STORAGE_PREFIXES:
-            try:
-                num = int(parts[1])
-                prefix = parts[0].lower()
-                key = (prefix, num)
-                if key in devices_seen:
-                    continue
-                devices_seen.add(key)
-                pre = parts[0].lower()
-                free_gb = _storage_val(pre, num, "data/31")
-                total_gb = _storage_val(pre, num, "data/32")
-                temp = _storage_val(pre, num, "temperature/0")
-                load_0 = _storage_val(pre, num, "load/0")
-                if total_gb > 0 or free_gb > 0:
-                    used_gb = total_gb - free_gb if total_gb > 0 else 0.0
-                    if used_gb < 0:
-                        used_gb = 0.0
-                    storage_devices.append((prefix, num, used_gb, total_gb, temp))
-                elif temp > 0 or load_0 > 0:
-                    storage_devices.append((prefix, num, 0.0, 0.0, temp))
-            except (ValueError, IndexError):
-                pass
-    storage_devices.sort(key=lambda x: (x[0], x[1]))
+    # Storage devices -> 4-slot hdd list (psutil capacity merge happens later in
+    # build_payload).
+    storage_devices = lhm_parse.extract_storage_devices(path_to_val)
     if os.getenv("DEBUG", "0") == "1":
         log_debug(f"LHM storage: {len(storage_devices)} devices: {storage_devices}")
-    drive_letters = ("C", "D", "E", "F")
-    hdd: List[Dict[str, Any]] = []
-    for idx in range(4):
-        if idx < len(storage_devices):
-            _pre, _num, used_gb, total_gb, temp = storage_devices[idx]
-            hdd.append({
-                "n": drive_letters[idx] if idx < len(drive_letters) else "?",
-                "u": round(used_gb, 1),
-                "tot": round(total_gb, 1),
-                "t": int(temp),
-            })
-        else:
-            hdd.append({"n": drive_letters[idx] if idx < len(drive_letters) else "?", "u": 0.0, "tot": 0.0, "t": 0})
-    results["hdd"] = hdd
+    results["hdd"] = lhm_parse.build_hdd_list(storage_devices)
     return results
 
 
@@ -499,22 +392,8 @@ async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
     return {}
 
 
-def _weather_desc_from_code(code: int) -> str:
-    if code == 0:
-        return "Clear"
-    if 1 <= code <= 3:
-        return "Cloudy"
-    if 45 <= code <= 48:
-        return "Fog"
-    if 51 <= code <= 67:
-        return "Rain"
-    if 71 <= code <= 86:
-        return "Snow"
-    if 80 <= code <= 82:
-        return "Showers"
-    if 95 <= code <= 99:
-        return "Storm"
-    return "Cloudy"
+# Weather code -> short description now lives in weather.py; re-exported.
+_weather_desc_from_code = weather_mod.weather_desc_from_code
 
 
 async def get_weather_async(session: aiohttp.ClientSession) -> Dict:
@@ -538,20 +417,12 @@ async def get_weather_async(session: aiohttp.ClientSession) -> Dict:
 def get_network_speed_sync() -> tuple:
     try:
         c = psutil.net_io_counters()
-        now = time.time()
-        if last_net_bytes["time"] == 0:
-            last_net_bytes["sent"], last_net_bytes["recv"] = c.bytes_sent, c.bytes_recv
-            last_net_bytes["time"] = now
-            return 0, 0
-        dt = now - last_net_bytes["time"]
-        if dt < 0.1:
-            return 0, 0
-        up = int((c.bytes_sent - last_net_bytes["sent"]) / dt / 1024)
-        down = int((c.bytes_recv - last_net_bytes["recv"]) / dt / 1024)
-        last_net_bytes["sent"], last_net_bytes["recv"] = c.bytes_sent, c.bytes_recv
-        last_net_bytes["time"] = now
-        return max(0, up), max(0, down)
-    except Exception:
+        # Returns (up_kbps, down_kbps); shared delta-rate logic in netrates.
+        return netrates.compute_delta_rate(
+            c.bytes_sent, c.bytes_recv, last_net_bytes, time.time()
+        )
+    except Exception as e:
+        log_debug(f"Net speed: {e}")
         return 0, 0
 
 
@@ -581,8 +452,8 @@ def get_disks_psutil_fallback() -> List[Dict[str, Any]]:
                 pass
             if len(out) >= 4:
                 break
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning("psutil disk fallback failed: %s", e)
     while len(out) < 4:
         out.append({"n": drive_letters[len(out)], "u": 0.0, "tot": 0.0, "t": 0})
     return out[:4]
@@ -593,26 +464,23 @@ def get_disk_speed_sync() -> tuple:
         c = psutil.disk_io_counters()
         if c is None:
             return 0, 0
-        now = time.time()
-        if last_disk_bytes["time"] == 0:
-            last_disk_bytes["read"] = c.read_bytes
-            last_disk_bytes["write"] = c.write_bytes
-            last_disk_bytes["time"] = now
-            return 0, 0
-        dt = now - last_disk_bytes["time"]
-        if dt < 0.1:
-            return 0, 0
-        r = int((c.read_bytes - last_disk_bytes["read"]) / dt / 1024)
-        w = int((c.write_bytes - last_disk_bytes["write"]) / dt / 1024)
-        last_disk_bytes["read"] = c.read_bytes
-        last_disk_bytes["write"] = c.write_bytes
-        last_disk_bytes["time"] = now
-        return max(0, r), max(0, w)
-    except Exception:
+        # Returns (read_kbps, write_kbps); shared delta-rate logic in netrates.
+        return netrates.compute_delta_rate(
+            c.read_bytes, c.write_bytes, last_disk_bytes, time.time()
+        )
+    except Exception as e:
+        log_debug(f"Disk speed: {e}")
         return 0, 0
 
 
 def get_ping_latency_sync() -> int:
+    """Blocking single ping -> latency in ms (0 on failure).
+
+    This is intentionally synchronous and MUST stay off the event loop: callers
+    invoke it via ``loop.run_in_executor(...)`` so the ~1-3s ``subprocess.run``
+    never blocks the asyncio loop. Output parsing lives in
+    :func:`netrates.parse_ping_latency`.
+    """
     try:
         cmd = ["ping", "-n", "1", "-w", str(PING_TIMEOUT * 1000), PING_TARGET] if platform.system().lower() == "windows" else ["ping", "-c", "1", "-W", str(PING_TIMEOUT), PING_TARGET]
         kw: Dict[str, Any] = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "timeout": PING_TIMEOUT + 1, "text": True}
@@ -621,14 +489,11 @@ def get_ping_latency_sync() -> int:
         r = subprocess.run(cmd, **kw)
         if r.returncode != 0:
             return 0
-        out = r.stdout or ""
-        if "time=" in out.lower():
-            for part in out.split():
-                if "time=" in part.lower():
-                    return int(float(part.split("=")[1].replace("ms", "").strip()))
-    except Exception:
-        pass
-    return 0
+        rtt = netrates.parse_ping_latency(r.stdout or "")
+        return rtt if rtt is not None else 0
+    except Exception as e:
+        log_debug(f"Ping: {e}")
+        return 0
 
 
 def get_top_processes_cpu_sync(n: int = 3) -> List[Dict]:
@@ -643,7 +508,8 @@ def get_top_processes_cpu_sync(n: int = 3) -> List[Dict]:
                 continue
         procs.sort(key=lambda x: x["c"], reverse=True)
         return procs[:n]
-    except Exception:
+    except Exception as e:
+        logging.warning("top CPU processes failed: %s", e)
         return []
 
 
@@ -664,7 +530,8 @@ def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
                 continue
         procs.sort(key=lambda x: x["r"], reverse=True)
         return procs[:n]
-    except Exception:
+    except Exception as e:
+        logging.warning("top RAM processes failed: %s", e)
         return []
 
 
@@ -689,8 +556,9 @@ async def _get_media_info_async_impl() -> Dict:
         is_idle = bool(artist or track) and not is_playing
         media_status = "PLAYING" if is_playing else "PAUSED"
         return {"art": artist, "trk": track, "play": is_playing, "idle": is_idle, "media_status": media_status}
-    except Exception:
+    except Exception as e:
         # If manager becomes invalid, reset it so it will be recreated next time
+        logging.warning("media session read failed: %s", e)
         _media_manager = None
         return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
@@ -722,11 +590,33 @@ RAM_GB_HYST = 2      # clear RAM alert when used < 28 GB
 _last_alert: tuple = (None, None)  # ("CPU"|"GPU"|"RAM", "ct"|"gt"|"cl"|"gl"|"gv"|"ram")
 
 
+def _alert_thresholds() -> Dict[str, int]:
+    """Current RED-ALERT thresholds as the dict :func:`payload.evaluate_alert` wants."""
+    return {
+        "cpu_temp": CPU_TEMP_ALERT,
+        "gpu_temp": GPU_TEMP_ALERT,
+        "cpu_load": CPU_LOAD_ALERT,
+        "gpu_load": GPU_LOAD_ALERT,
+        "vram_load": VRAM_LOAD_ALERT,
+        "ram_gb": RAM_GB_ALERT,
+    }
+
+
+def _alert_hysteresis() -> Dict[str, int]:
+    """Current RED-ALERT hysteresis as the dict :func:`payload.evaluate_alert` wants."""
+    return {
+        "cpu_temp": CPU_TEMP_HYST,
+        "gpu_temp": GPU_TEMP_HYST,
+        "load": LOAD_HYST,
+        "ram_gb": RAM_GB_HYST,
+    }
+
+
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
                   net: tuple, disk: tuple, ping_ms: int, now: float) -> Dict:
-    global last_sent_track_key, _last_sent_snapshot, _last_heartbeat_time
+    global _last_alert
 
-    w = weather if _weather_first_ok else weather
+    w = weather  # (kept identical to prior weather-cache selection, which was a no-op)
     wt_val = w.get("temp", 0)
     wd_val = (w.get("desc") or "")[:20]
     ram_used_f = round(float(hw.get("ru", 0)), 1)
@@ -739,39 +629,12 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
     gl = int(hw.get("gl", 0))
     gv = int(hw.get("gv", 0))
 
-    raw_hdd = [dict(e) for e in (hw.get("hdd", [])[:4])]
-    while len(raw_hdd) < 4:
-        raw_hdd.append({"n": ("C", "D", "E", "F")[len(raw_hdd)], "u": 0.0, "tot": 0.0, "t": 0})
-    drive_letters = ("C", "D", "E", "F")
-    hdd_has_capacity = any(
-        (e.get("tot") or 0) > 0 or (e.get("u") or 0) > 0
-        for e in raw_hdd[:4]
+    # HDD slots + optional psutil capacity fallback (logic in payload.normalize_hdd).
+    hdd_list = payload_mod.normalize_hdd(
+        hw.get("hdd", []),
+        fallback_enabled=_config.get("lhm_storage_fallback") == "psutil",
+        get_fallback_disks=get_disks_psutil_fallback,
     )
-    hdd_has_temp = any((e.get("t") or 0) > 0 for e in raw_hdd[:4])
-    if not hdd_has_capacity and _config.get("lhm_storage_fallback") == "psutil":
-        if hdd_has_temp:
-            psutil_disks = get_disks_psutil_fallback()
-            for i in range(min(4, len(raw_hdd), len(psutil_disks))):
-                if (raw_hdd[i].get("tot") or 0) == 0 and (raw_hdd[i].get("u") or 0) == 0:
-                    raw_hdd[i] = {
-                        "n": raw_hdd[i].get("n") or psutil_disks[i]["n"],
-                        "u": psutil_disks[i]["u"],
-                        "tot": psutil_disks[i]["tot"],
-                        "t": raw_hdd[i].get("t", 0),
-                    }
-        else:
-            raw_hdd = get_disks_psutil_fallback()
-    hdd_list = []
-    for i in range(4):
-        if i < len(raw_hdd):
-            e = raw_hdd[i]
-            n = e.get("n") or drive_letters[i]
-            u = e.get("u", 0.0)
-            tot = e.get("tot", 0.0)
-            t = e.get("t", 0)
-            hdd_list.append({"n": n if isinstance(n, str) else drive_letters[i], "u": round(float(u), 1), "tot": round(float(tot), 1), "t": int(t)})
-        else:
-            hdd_list.append({"n": drive_letters[i], "u": 0.0, "tot": 0.0, "t": 0})
 
     payload = {
         "ct": ct, "gt": gt,
@@ -799,63 +662,21 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "sv": SERVER_VERSION,
     }
 
-    # RED ALERT: threshold with hysteresis; send alert_metric for value blink
-    global _last_alert
-    ram_pct = int((ram_used_f / ram_total_f * 100) if ram_total_f > 0 else 0)
-    new_alert = None
-    if ct >= CPU_TEMP_ALERT:
-        new_alert = ("CPU", "ct")
-    elif gt >= GPU_TEMP_ALERT:
-        new_alert = ("GPU", "gt")
-    elif cl >= CPU_LOAD_ALERT:
-        new_alert = ("CPU", "cl")
-    elif gl >= GPU_LOAD_ALERT:
-        new_alert = ("GPU", "gl")
-    elif gv >= VRAM_LOAD_ALERT:
-        new_alert = ("GPU", "gv")
-    elif ram_used_f >= RAM_GB_ALERT:
-        new_alert = ("RAM", "ram")
-
-    if new_alert:
-        _last_alert = new_alert
-        payload["alert"] = "CRITICAL"
-        payload["target_screen"] = new_alert[0]
-        payload["alert_metric"] = new_alert[1]
-    else:
-        # Clear only when current alert metric is below (threshold - hysteresis)
-        if _last_alert:
-            target, metric = _last_alert
-            clear = False
-            if metric == "ct":
-                clear = ct < CPU_TEMP_ALERT - CPU_TEMP_HYST
-            elif metric == "gt":
-                clear = gt < GPU_TEMP_ALERT - GPU_TEMP_HYST
-            elif metric == "cl":
-                clear = cl < CPU_LOAD_ALERT - LOAD_HYST
-            elif metric == "gl":
-                clear = gl < GPU_LOAD_ALERT - LOAD_HYST
-            elif metric == "gv":
-                clear = gv < VRAM_LOAD_ALERT - LOAD_HYST
-            elif metric == "ram":
-                clear = ram_used_f < RAM_GB_ALERT - RAM_GB_HYST
-            else:
-                clear = True
-            if clear:
-                _last_alert = (None, None)
-        if not _last_alert[0]:
-            payload["alert"] = ""
-            payload["target_screen"] = ""
-            payload["alert_metric"] = ""
-        else:
-            payload["alert"] = "CRITICAL"
-            payload["target_screen"] = _last_alert[0]
-            payload["alert_metric"] = _last_alert[1]
+    # RED ALERT: threshold with hysteresis; send alert_metric for value blink.
+    # State machine lives in payload.evaluate_alert; _last_alert holds the
+    # cross-call hysteresis state.
+    alert_fields, _last_alert = payload_mod.evaluate_alert(
+        {"ct": ct, "gt": gt, "cl": cl, "gl": gl, "gv": gv, "ram": ram_used_f},
+        _last_alert,
+        _alert_thresholds(),
+        _alert_hysteresis(),
+    )
+    payload.update(alert_fields)
     return payload
 
 
-def _payload_snapshot(p: Dict) -> Tuple:
-    return (p.get("ct", 0), p.get("gt", 0), p.get("cl", 0), p.get("gl", 0),
-            p.get("nd", 0), p.get("nu", 0), p.get("ru", 0), p.get("ra", 0))
+# Change-detection snapshot tuple now lives in payload.py; re-exported.
+_payload_snapshot = payload_mod.payload_snapshot
 
 
 def should_send_payload(payload: Dict, now: float) -> bool:
@@ -900,12 +721,13 @@ async def handle_client(reader, writer):
     client_screens[writer] = 0
     client_buffers[writer] = ""
     try:
-        if global_data_cache["hw"]:
+        snap = await cache_snapshot()
+        if snap["hw"]:
             payload = build_payload(
-                global_data_cache["hw"], global_data_cache["media"],
-                global_data_cache["weather"], global_data_cache["top_procs"],
-                global_data_cache["top_procs_ram"], global_data_cache["net"],
-                global_data_cache["disk"], global_data_cache["ping"], time.time()
+                snap["hw"], snap["media"],
+                snap["weather"], snap["top_procs"],
+                snap["top_procs_ram"], snap["net"],
+                snap["disk"], snap["ping"], time.time()
             )
             await send_data_to_client(writer, payload)
         else:
@@ -979,18 +801,18 @@ async def run():
     session = aiohttp.ClientSession()
 
     try:
-        global_data_cache["hw"] = await get_lhm_data_async(session)
-        global_data_cache["weather"] = await get_weather_async(session)
-        global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
-        global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
-        global_data_cache["media"] = await get_media_info(loop)
+        await cache_set("hw", await get_lhm_data_async(session))
+        await cache_set("weather", await get_weather_async(session))
+        await cache_set("net", await loop.run_in_executor(executor, get_network_speed_sync))
+        await cache_set("disk", await loop.run_in_executor(executor, get_disk_speed_sync))
+        await cache_set("media", await get_media_info(loop))
         top_procs_cache = await loop.run_in_executor(executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N))
         top_procs_ram_cache = await loop.run_in_executor(executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N))
-        global_data_cache["top_procs"] = top_procs_cache
-        global_data_cache["top_procs_ram"] = top_procs_ram_cache
+        await cache_set("top_procs", top_procs_cache)
+        await cache_set("top_procs_ram", top_procs_ram_cache)
         last_top_procs_time = time.time()
         ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
-        global_data_cache["ping"] = ping_latency_ms
+        await cache_set("ping", ping_latency_ms)
     except Exception as e:
         log_err(f"Initial data: {e}")
 
@@ -1002,9 +824,9 @@ async def run():
                 try:
                     hw_data = await get_lhm_data_async(session)
                     if hw_data:
-                        global_data_cache["hw"] = hw_data
-                    global_data_cache["net"] = await loop.run_in_executor(executor, get_network_speed_sync)
-                    global_data_cache["disk"] = await loop.run_in_executor(executor, get_disk_speed_sync)
+                        await cache_set("hw", hw_data)
+                    await cache_set("net", await loop.run_in_executor(executor, get_network_speed_sync))
+                    await cache_set("disk", await loop.run_in_executor(executor, get_disk_speed_sync))
                 except Exception as e:
                     log_debug(f"Poll: {e}")
 
@@ -1013,15 +835,15 @@ async def run():
                     top_procs_cache = await loop.run_in_executor(executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N))
                     top_procs_ram_cache = await loop.run_in_executor(executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N))
                     last_top_procs_time = now
-                    global_data_cache["top_procs"] = top_procs_cache
-                    global_data_cache["top_procs_ram"] = top_procs_ram_cache
+                    await cache_set("top_procs", top_procs_cache)
+                    await cache_set("top_procs_ram", top_procs_ram_cache)
                 except Exception as e:
                     log_debug(f"Procs: {e}")
 
             if now - last_weather_time >= WEATHER_UPDATE_INTERVAL:
                 last_weather_time = now
                 try:
-                    global_data_cache["weather"] = await get_weather_async(session)
+                    await cache_set("weather", await get_weather_async(session))
                 except Exception as e:
                     log_debug(f"Weather: {e}")
 
@@ -1029,22 +851,23 @@ async def run():
                 last_ping_time = now
                 try:
                     ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
-                    global_data_cache["ping"] = ping_latency_ms
+                    await cache_set("ping", ping_latency_ms)
                 except Exception as e:
                     log_debug(f"Ping: {e}")
 
             if now - last_media_time >= MEDIA_UPDATE_INTERVAL:
                 last_media_time = now
                 try:
-                    global_data_cache["media"] = await get_media_info(loop)
+                    await cache_set("media", await get_media_info(loop))
                 except Exception as e:
                     log_debug(f"Media: {e}")
 
+            snap = await cache_snapshot()
             payload = build_payload(
-                global_data_cache["hw"], global_data_cache["media"],
-                global_data_cache["weather"], global_data_cache["top_procs"],
-                global_data_cache["top_procs_ram"], global_data_cache["net"],
-                global_data_cache["disk"], global_data_cache["ping"], now
+                snap["hw"], snap["media"],
+                snap["weather"], snap["top_procs"],
+                snap["top_procs_ram"], snap["net"],
+                snap["disk"], snap["ping"], now
             )
 
             if should_send_payload(payload, now):
