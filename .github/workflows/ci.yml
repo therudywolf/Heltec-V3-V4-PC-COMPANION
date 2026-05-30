@@ -7,8 +7,38 @@ on:
     branches: [main]
 
 jobs:
-  firmware:
-    name: Build firmware (${{ matrix.env }})
+  # The three standalone products (the future of the repo).
+  apps:
+    name: Build app (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [bmw, pc, hacker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Create secrets.h stub for CI
+        run: |
+          cat > include/secrets.h << 'EOF'
+          #ifndef NOCTURNE_SECRETS_H
+          #define NOCTURNE_SECRETS_H
+          #define WIFI_SSID "CI_TEST"
+          #define WIFI_PASS "CI_TEST"
+          #define PC_IP     "127.0.0.1"
+          #define TCP_PORT  8888
+          #endif
+          EOF
+
+      - name: Build apps/${{ matrix.app }}
+        run: pio run -d apps/${{ matrix.app }}
+
+  # Legacy unified build — retired once the products ship (see RESTRUCTURE_PLAN).
+  legacy:
+    name: Build legacy profile (${{ matrix.env }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

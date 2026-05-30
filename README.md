@@ -1,54 +1,56 @@
-# 🐺 Nocturne OS — Heltec WiFi LoRa 32 V4 Firmware
+# 🐺 Nocturne OS — Heltec WiFi LoRa 32 V4
 
-> Embedded wolf companion stack for Heltec boards, telemetry, and BMW I-Bus work.
+> Embedded wolf companion stack for Heltec boards: BMW I-Bus, PC telemetry, WiFi/BLE research.
 
-![Version](https://img.shields.io/badge/version-0.4.0-4c8bf5)
-![Status](https://img.shields.io/badge/status-alpha-ef4444)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-22c55e)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-ESP32--S3-0ea5e9)
+![Status](https://img.shields.io/badge/status-alpha-ef4444)
 
-Multi-profile firmware for **Heltec WiFi LoRa 32 V4 (ESP32-S3)** with BMW E39 I-Bus integration, PC hardware monitoring, and telemetry features.
+Nocturne OS is being split into **three standalone products**, all built from
+this monorepo on a single shared core ([`lib/nocturne-core`](lib/nocturne-core))
+— one source tree, no duplication.
 
-## Download & Flash
+## The three products
 
-Easiest path — flash straight from your browser (Chrome / Edge on desktop):
+| Product | Dir | What it is |
+|---------|-----|-----------|
+| 🚗 **BMW** | [`apps/bmw`](apps/bmw) | BMW E39 I-Bus assistant + BLE proximity key (+ Android app) |
+| 🖥️ **PC** | [`apps/pc`](apps/pc) | PC hardware monitoring + Forza telemetry (+ Python data collector) |
+| 📡 **Hacker** | [`apps/hacker`](apps/hacker) | WiFi/BLE research toolkit — sniff, scan, honeypot, BLE |
 
-### → [Open the web flasher](https://therudywolf.github.io/Heltec-V3-V4-PC-COMPANION/flash/)
+Each product has its own README, version, and (soon) its own release track.
 
-Plug the board in over USB-C, pick a profile, click Install. Or grab the
-binaries from the [latest release](https://github.com/therudywolf/Heltec-V3-V4-PC-COMPANION/releases/latest).
-
-### Build profiles
-
-| Build | What you get | For |
-|-------|--------------|-----|
-| **bmw_only** | BMW E39 I-Bus assistant + BLE proximity key. WiFi off. | A BMW E39 — smallest, lowest-RAM build |
-| **pc_companion** | PC hardware monitoring + Forza Horizon telemetry + BMW | Desktop monitoring (pair with the PC server in `server/`) |
-| **full** | Everything above + WiFi/BLE research tools | Power users who want it all |
-
-Each release ships, per profile:
-
-- `nocturne-<profile>-factory.bin` — full image; what the web flasher writes
-- `nocturne-<profile>-<version>.bin` — application image only (OTA / advanced)
-
-### Flash manually
+## Build
 
 ```bash
-esptool --chip esp32s3 write_flash 0x0 nocturne-full-factory.bin
+pio run -d apps/bmw       # BMW product
+pio run -d apps/pc        # PC product
+pio run -d apps/hacker    # Hacker product
+# add -t upload to flash over USB-C
 ```
 
-Or build & flash from source — see [INSTALLATION.md](INSTALLATION.md).
+PC and Hacker need WiFi creds in `include/secrets.h` (copy `include/secrets.h.example`).
 
-## Components
+## Repository layout
 
-- **Firmware** — `src/`, `include/`; built with PlatformIO (`platformio.ini`).
-- **PC server** — `server/`; Python backend feeding the `pc_companion` profile
-  (hardware stats, weather, media) to the board over TCP.
-- **Companion app** — `app/android/`; native Android BMW Assistant (BLE).
+```
+lib/nocturne-core/    shared core: display engine, menu/input, battery, boot, config
+src/                  shared firmware sources (compiled per-product via build_src_filter)
+apps/{bmw,pc,hacker}/ one PlatformIO project per product (platformio.ini + VERSION + README)
+server/               PC-side data collector for the PC product (Python)
+BMW datasheet/        I-Bus protocol reference (wilhelm-docs, E46 codes, AVR-IBus)
+docs/                 guides + docs/RESTRUCTURE_PLAN.md (the 3-product roadmap)
+```
+
+> **Restructure in progress.** The unified `v0.4.0` build (root `platformio.ini`,
+> profiles `bmw_only`/`pc_companion`/`full`) is the legacy single-binary release;
+> it still builds and will be retired once the three products ship. Roadmap:
+> [docs/RESTRUCTURE_PLAN.md](docs/RESTRUCTURE_PLAN.md).
 
 ## Documentation
 
-- [INSTALLATION.md](INSTALLATION.md) — setup & flashing for all profiles
+- [docs/RESTRUCTURE_PLAN.md](docs/RESTRUCTURE_PLAN.md) — the 3-product roadmap
+- [INSTALLATION.md](INSTALLATION.md) — toolchain setup & flashing
 - [CONTRIBUTING.md](CONTRIBUTING.md) — development guidelines
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — using the device
 
