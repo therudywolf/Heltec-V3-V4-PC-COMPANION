@@ -55,10 +55,16 @@ Write-Host "  privilege: $mode"
 Write-Host "  bridge src: $BridgeSource (exists: $(Test-Path $BridgeSource))"
 
 # 1. Copy the bridge to a stable location (so the task survives repo moves).
+#    Skip if already there (running this from InstallDir => source == dest).
 $bridge = Join-Path $InstallDir "lhm_bridge.ps1"
-Copy-Item -Path $BridgeSource -Destination $bridge -Force
+$srcFull = (Resolve-Path -LiteralPath $BridgeSource -ErrorAction SilentlyContinue).Path
+if ($srcFull -and ($srcFull -ne (Join-Path $InstallDir "lhm_bridge.ps1"))) {
+    Copy-Item -Path $BridgeSource -Destination $bridge -Force
+    Write-Host "  bridge -> $bridge"
+} else {
+    Write-Host "  bridge already in place: $bridge"
+}
 $logFile = Join-Path $InstallDir "lhm_bridge.log"
-Write-Host "  bridge -> $bridge"
 
 # 2a. Stop any interim/old bridge instance so the task can bind the port.
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
