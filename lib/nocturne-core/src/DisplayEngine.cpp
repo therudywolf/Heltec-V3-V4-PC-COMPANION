@@ -809,15 +809,15 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   snprintf(titleBuf, sizeof(titleBuf), "%s", raw);
   u8g2_.drawUTF8(nameX, baselineY, titleBuf);
 
-  /* Blinking 3x3 pixel square next to scene name (heartbeat) */
+  /* Blinking 3x3 pixel square next to scene name (heartbeat = liveness).
+     Only when connected, so it doubles as the link indicator. */
   int titleW = u8g2_.getUTF8Width(titleBuf);
-  drawActiveIndicator(nameX + titleW + 2, baselineY - 2);
-
-  /* Right side: WOOF! (connected) or NET:-- (offline), anchored at X=124 */
-  const char *statusStr = wifiConnected ? "WOOF!" : "NET:--";
-  u8g2_.setFont(LABEL_FONT);
-  int statusW = u8g2_.getUTF8Width(statusStr);
-  u8g2_.drawUTF8(rightAnchor - statusW, baselineY, statusStr);
+  if (wifiConnected)
+    drawActiveIndicator(nameX + titleW + 2, baselineY - 2);
+  (void)rightAnchor;
+  /* (Removed the mid-screen "WOOF!"/"NET:--" status text — it overlapped long
+     scene names like CLAUDE/FOREST. Liveness is shown by the heartbeat dot;
+     battery % sits at the right edge via drawPowerStatus.) */
 
   /* Separator: black line for visible boundary below white header */
   u8g2_.setDrawColor(0);
