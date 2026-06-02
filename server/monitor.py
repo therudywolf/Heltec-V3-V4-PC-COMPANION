@@ -878,6 +878,20 @@ def get_claude_usage_sync() -> Dict[str, Any]:
         # Honest staleness: the data is stale if its date isn't today.
         usage["stale"] = bool(usage.get("date") and usage["date"] != today)
 
+        # Real 5-hour rolling window: tokens since the window opened + minutes to
+        # reset, both derived from transcript timestamps. This is the genuine
+        # "time to limit reset" (Anthropic's actual % isn't on disk; the bar is a
+        # budget proxy, but the reset countdown is real).
+        import time as _time
+        win = claude_sessions.window_summary(
+            claude_sessions.window_events(), _time.time())
+        if win:
+            usage["resets_in_min"] = win["resets_in_min"]
+            usage["window_tokens"] = win["window_tokens"]
+            if CLAUDE_DAILY_BUDGET > 0:
+                usage["window_pct"] = max(0, min(100, int(round(
+                    win["window_tokens"] * 100.0 / CLAUDE_DAILY_BUDGET))))
+
         usage = claude_budget.apply_budget(
             usage, stats,
             daily_budget=CLAUDE_DAILY_BUDGET,
