@@ -52,6 +52,21 @@ class TestApplyBudget:
         out = cb.apply_budget(u, _stats([0]), daily_budget=5_000_000)
         assert out["available"] is True
 
+    def test_weekly_override_bypasses_stats(self):
+        # stats series says 35M, but the fresh override (90M) must win.
+        u = {"today_tokens": 0, "window_pct": None, "weekly_pct": None}
+        out = cb.apply_budget(u, _stats([5_000_000] * 7),
+                              daily_budget=30_000_000, weekly_budget=100_000_000,
+                              weekly_tokens_override=90_000_000)
+        assert out["weekly_pct"] == 90      # 90M / 100M, not 35M-derived
+        assert out["weekly_tokens"] == 90_000_000
+
+    def test_weekly_override_zero_is_respected(self):
+        u = {"today_tokens": 0, "window_pct": None, "weekly_pct": None}
+        out = cb.apply_budget(u, _stats([5_000_000] * 7),
+                              weekly_budget=100_000_000, weekly_tokens_override=0)
+        assert out["weekly_pct"] == 0       # override 0 used, not the stats series
+
     def test_never_raises(self):
         cb.apply_budget({}, None)
         cb.apply_budget(None, {})

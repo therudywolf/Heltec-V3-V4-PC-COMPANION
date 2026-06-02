@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 # tests put server/ on sys.path and when monitor.py is run directly). monitor.py
 # remains the public entry point and re-exports the names tests rely on.
 import claude_usage as claude_mod
+import claude_sessions
 import lhm_parse
 import netrates
 import alert_events
@@ -850,14 +851,38 @@ def get_claude_usage_sync() -> Dict[str, Any]:
     raises: a failure yields the graceful-empty dict."""
     try:
         usage = claude_mod.read_claude_usage()
-        # Re-read stats for the weekly token series, then apply configured budgets.
         import os as _os
+        from datetime import date as _date
         stats = claude_mod._load_json(
             _os.path.join(claude_mod._default_base_dir(), "stats-cache.json"))
+
+        # Prefer FRESH usage from session transcripts (written live) over the
+        # lazily-refreshed, often-stale stats-cache.json. Sessions give today's
+        # real tokens + an accurate "as of" date; stats-cache is the fallback.
+        today = _date.today().isoformat()
+        fresh = claude_sessions.summarize(claude_sessions.tokens_by_date(), today)
+        weekly_override = None
+        if fresh:
+            usage["today_tokens"] = fresh["today_tokens"]
+            usage["today_msgs"] = fresh.get("today_msgs")
+            usage["today_tools"] = fresh.get("today_tools")
+            usage["date"] = fresh["date"]
+            usage["last_active"] = fresh.get("last_active")
+            usage["source"] = "sessions"
+            usage["available"] = True
+            weekly_override = fresh["weekly_tokens"]
+        else:
+            usage["source"] = "stats-cache"
+            usage["last_active"] = usage.get("date")
+
+        # Honest staleness: the data is stale if its date isn't today.
+        usage["stale"] = bool(usage.get("date") and usage["date"] != today)
+
         usage = claude_budget.apply_budget(
             usage, stats,
             daily_budget=CLAUDE_DAILY_BUDGET,
             weekly_budget=CLAUDE_WEEKLY_BUDGET,
+            weekly_tokens_override=weekly_override,
         )
         return usage
     except Exception as e:
@@ -934,6 +959,8 @@ def _build_claude_block(claude: Optional[Dict]) -> Dict[str, Any]:
         "msg": c.get("today_msgs"),     # messages today
         "tool": c.get("today_tools"),   # tool calls today
         "day": c.get("date"),           # date the today_* figures apply to
+        "stale": bool(c.get("stale", False)),  # True if "day" isn't today (data is old)
+        "act": c.get("last_active"),    # most recent date with activity (freshness)
     }
 
 
