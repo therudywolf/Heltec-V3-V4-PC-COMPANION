@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 import claude_usage as claude_mod
 import lhm_parse
 import netrates
+import alert_events
 import payload as payload_mod
 import prometheus_source
 import weather as weather_mod
@@ -116,6 +117,9 @@ def load_config() -> Dict:
         # fills load/ram/disk/net, LHM still provides temps/GPU/fans).
         "source": "lhm",
         "prometheus_url": "http://localhost:9182/metrics",
+        # Prometheus Alertmanager webhook receiver port (0 = disabled). POST the
+        # Alertmanager webhook JSON to http://<host>:<port>/alert.
+        "alert_webhook_port": 0,
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -136,6 +140,8 @@ def load_config() -> Dict:
             out["source"] = data["source"]
         if "prometheus_url" in data:
             out["prometheus_url"] = data["prometheus_url"]
+        if "alert_webhook_port" in data:
+            out["alert_webhook_port"] = int(data["alert_webhook_port"])
     except Exception:
         pass
     return out
@@ -206,6 +212,7 @@ _config = load_config()
 LHM_URL = os.getenv("LHM_URL", _config["lhm_url"])
 SOURCE = os.getenv("SOURCE", _config.get("source", "lhm"))
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", _config.get("prometheus_url", ""))
+ALERT_WEBHOOK_PORT = int(os.getenv("ALERT_WEBHOOK_PORT", str(_config.get("alert_webhook_port", 0))))
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
@@ -416,6 +423,39 @@ async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
         if overlay:
             hw = prometheus_source.merge_hw(hw, overlay)
     return hw
+
+
+async def _start_alert_webhook() -> None:
+    """Start the Prometheus Alertmanager webhook receiver, if configured.
+
+    Listens on ``alert_webhook_port`` (config / ALERT_WEBHOOK_PORT, default off).
+    POST the Alertmanager webhook JSON to ``/alert``; firing alerts then appear
+    in the device payload ``events`` block. Best-effort: any failure is logged and
+    the rest of the server runs normally. Uses aiohttp.web (aiohttp already a dep).
+    """
+    port = ALERT_WEBHOOK_PORT
+    if not port:
+        return
+    try:
+        from aiohttp import web
+
+        async def handle_alert(request):
+            try:
+                body = await request.json()
+            except Exception:
+                return web.json_response({"ok": False, "error": "bad json"}, status=400)
+            _alert_state.ingest(alert_events.parse_alertmanager(body))
+            return web.json_response({"ok": True})
+
+        app = web.Application()
+        app.router.add_post("/alert", handle_alert)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        log_info(f"Alert webhook on :{port}/alert")
+    except Exception as e:
+        log_err(f"Alert webhook failed to start: {e}")
 
 
 async def get_prometheus_overlay_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
@@ -647,6 +687,10 @@ RAM_GB_HYST = 2      # clear RAM alert when used < 28 GB
 # Last active alert (target, metric) for hysteresis
 _last_alert: tuple = (None, None)  # ("CPU"|"GPU"|"RAM", "ct"|"gt"|"cl"|"gl"|"gv"|"ram")
 
+# External events from Prometheus Alertmanager (webhook). Distinct from the local
+# threshold RED ALERT above; surfaced to the device as the payload "events" block.
+_alert_state = alert_events.AlertState()
+
 
 def _alert_thresholds() -> Dict[str, int]:
     """Current RED-ALERT thresholds as the dict :func:`payload.evaluate_alert` wants."""
@@ -743,6 +787,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "mp": media.get("play", False), "idle": media.get("idle", False),
         "media_status": media_status,
         "claude": _build_claude_block(claude),
+        "events": _alert_state.snapshot(now),
         "sv": SERVER_VERSION,
     }
 
@@ -872,12 +917,13 @@ async def run():
     await asyncio.sleep(2)  # allow network/services to be ready (e.g. at autostart)
 
     try:
-        server = await asyncio.start_server(handle_client, TCP_HOST, TCP_PORT)
+        server = await asyncio.start_server(handle_client, TCP_HOST, TCP_PORT)  # noqa: F841
     except OSError as e:
         log_err(f"Bind failed: {e}")
         raise
 
     log_info("Server ready.")
+    await _start_alert_webhook()
     loop = asyncio.get_event_loop()
     last_lhm_time = 0.0
     last_weather_time = 0.0

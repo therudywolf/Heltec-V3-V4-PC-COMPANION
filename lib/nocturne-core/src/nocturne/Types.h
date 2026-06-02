@@ -56,6 +56,13 @@ struct MediaData {
   String mediaStatus = "PAUSED"; // "PLAYING" | "PAUSED"
 };
 
+/** External events from Prometheus Alertmanager (server "events" block). */
+struct EventsData {
+  int count = 0;            // "n" number of firing alerts
+  char top[21] = {0};       // "top" highest-severity alert name (banner)
+  char severity[12] = {0};  // "sev" severity of top
+};
+
 /** Claude Code usage/limits (from server "claude" block). pct fields are -1
  * when the server has no real source for them (render "n/a"). */
 struct ClaudeData {
@@ -89,6 +96,7 @@ struct AppState {
   MediaData media;
   ProcessData process;
   ClaudeData claude;
+  EventsData events;
   Settings settings;
   bool weatherReceived = false;
   bool alertActive = false;
