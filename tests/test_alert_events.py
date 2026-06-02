@@ -88,3 +88,38 @@ class TestAlertState:
         s.ingest([{"name": "D", "severity": "warning", "status": "firing"}], now=100.0)
         s.ingest([{"name": "D", "severity": "warning", "status": "firing"}], now=150.0)
         assert s.snapshot(now=190.0)["n"] == 1     # refreshed at 150, still fresh
+
+
+class TestAlertStateReplace:
+    def test_replace_sets_full_set(self):
+        s = ae.AlertState()
+        s.replace([
+            {"name": "A", "severity": "critical", "status": "firing"},
+            {"name": "B", "severity": "warning", "status": "firing"},
+        ], now=100.0)
+        snap = s.snapshot(now=101.0)
+        assert snap["n"] == 2
+        assert snap["top"] == "A"     # critical outranks warning
+
+    def test_replace_drops_absent_immediately(self):
+        s = ae.AlertState()
+        s.replace([{"name": "A", "severity": "critical", "status": "firing"}], now=100.0)
+        # next poll no longer lists A -> it's gone at once (no TTL wait)
+        s.replace([{"name": "B", "severity": "warning", "status": "firing"}], now=101.0)
+        snap = s.snapshot(now=102.0)
+        assert snap["n"] == 1 and snap["top"] == "B"
+
+    def test_replace_empty_clears(self):
+        s = ae.AlertState()
+        s.replace([{"name": "A", "severity": "critical", "status": "firing"}], now=100.0)
+        s.replace([], now=101.0)
+        assert s.snapshot(now=102.0)["n"] == 0
+
+    def test_replace_ignores_non_firing_and_nameless(self):
+        s = ae.AlertState()
+        s.replace([
+            {"name": "A", "severity": "critical", "status": "resolved"},
+            {"name": "", "severity": "critical", "status": "firing"},
+            {"severity": "critical", "status": "firing"},
+        ], now=100.0)
+        assert s.snapshot(now=101.0)["n"] == 0

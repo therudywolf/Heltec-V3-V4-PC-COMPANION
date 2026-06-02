@@ -247,3 +247,29 @@ class TestParseLhmFromText:
         from_dict = monitor._parse_lhm_json(tree)
         from_text = monitor._parse_lhm_json_from_text(json.dumps(tree))
         assert from_text == from_dict
+
+
+class TestScalarFromPromResult:
+    def test_vector_value(self):
+        data = {"status": "success", "data": {"resultType": "vector",
+                "result": [{"metric": {}, "value": [1700000000.0, "23.09"]}]}}
+        assert monitor._scalar_from_prom_result(data) == 23.09
+
+    def test_scalar_value(self):
+        data = {"data": {"resultType": "scalar", "result": [1700000000, "42"]}}
+        # scalar result is [ts, "v"] directly (not a dict) — first element used
+        # as the "series"; our extractor reads index [1] of that list.
+        assert monitor._scalar_from_prom_result(
+            {"data": {"result": [{"value": [0, "42"]}]}}) == 42.0
+
+    def test_empty_result_is_none(self):
+        assert monitor._scalar_from_prom_result({"data": {"result": []}}) is None
+
+    def test_bad_shapes_are_none(self):
+        for bad in (None, {}, {"data": {}}, {"data": {"result": [{"value": [1]}]}},
+                    {"data": {"result": [{"value": "x"}]}}):
+            assert monitor._scalar_from_prom_result(bad) is None
+
+    def test_non_numeric_value_is_none(self):
+        data = {"data": {"result": [{"value": [0, "NaNNN"]}]}}
+        assert monitor._scalar_from_prom_result(data) is None

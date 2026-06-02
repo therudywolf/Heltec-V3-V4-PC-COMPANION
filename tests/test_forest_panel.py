@@ -86,3 +86,56 @@ class TestBuildForestBlock:
         nodes = [fp.build_node("a", "A", None), fp.build_node("b", "B", None)]
         block = fp.build_forest_block(nodes)
         assert block["n"] == 2 and block["up"] == 0
+
+
+class TestBuildNodesFromQueries:
+    DEFS = [
+        {"id": "srv", "name": "Server", "cpu": "Q_CPU", "ram": "Q_RAM", "disk": "Q_DISK"},
+        {"id": "pc", "name": "PC", "cpu": "P_CPU", "ram": "P_RAM"},
+    ]
+
+    def test_runs_each_expr_and_builds_nodes(self):
+        seen = []
+
+        def run(expr):
+            seen.append(expr)
+            return {"Q_CPU": 23.0, "Q_RAM": 49.0, "Q_DISK": 46.0,
+                    "P_CPU": 22.0, "P_RAM": 88.0}.get(expr)
+
+        nodes = fp.build_nodes_from_queries(self.DEFS, run)
+        assert [n["id"] for n in nodes] == ["srv", "pc"]
+        assert nodes[0]["cpu"] == 23 and nodes[0]["ram"] == 49 and nodes[0]["disk"] == 46
+        assert nodes[0]["st"] == "up"
+        # PC has no disk expr -> n/a, others present
+        assert nodes[1]["cpu"] == 22 and nodes[1]["ram"] == 88 and nodes[1]["disk"] == -1
+        # only defined exprs were queried (no None disk for PC)
+        assert "P_RAM" in seen and len([e for e in seen if e is None]) == 0
+
+    def test_node_all_none_is_down(self):
+        nodes = fp.build_nodes_from_queries(self.DEFS, lambda e: None)
+        assert all(n["st"] == "down" for n in nodes)
+        assert all(n["cpu"] == -1 for n in nodes)
+
+    def test_partial_metrics_still_reachable(self):
+        # Only CPU resolves -> node is reachable (up/warn), ram/disk n/a
+        nodes = fp.build_nodes_from_queries(
+            [self.DEFS[0]], lambda e: 95.0 if e == "Q_CPU" else None)
+        assert nodes[0]["st"] == "warn"   # cpu 95 >= WARN
+        assert nodes[0]["ram"] == -1 and nodes[0]["disk"] == -1
+
+    def test_run_query_exception_treated_as_miss(self):
+        def boom(expr):
+            raise RuntimeError("network down")
+
+        nodes = fp.build_nodes_from_queries(self.DEFS, boom)
+        assert all(n["st"] == "down" for n in nodes)
+
+    def test_empty_defs(self):
+        assert fp.build_nodes_from_queries([], lambda e: 1.0) == []
+        assert fp.build_nodes_from_queries(None, lambda e: 1.0) == []
+
+    def test_default_nodes_have_exprs(self):
+        # Guard the shipped roster: every default node must carry a cpu query.
+        assert fp.DEFAULT_NODES
+        for d in fp.DEFAULT_NODES:
+            assert d.get("cpu"), d
