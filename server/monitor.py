@@ -452,11 +452,23 @@ async def _get_lhm_raw_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
 
 
 async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
-    """Primary hw source. With SOURCE=="prometheus", overlay Prometheus metrics
-    (CPU load/RAM/disk/net from windows_exporter) onto the LHM result. If
-    GPU_VIA_NVIDIA_SMI is on, overlay live GPU temp/load/VRAM/power/fan from
-    nvidia-smi (zero-install; windows_exporter has no GPU metrics). Each overlay
-    only fills keys it has, so missing sources degrade gracefully."""
+    """Build the hardware dict from the configured sources, layered cheaply.
+
+    Layering (each layer only fills keys it provides; missing layers no-op):
+      * BASE = LibreHardwareMonitor (LHM web server on lhm_url). LHM alone covers
+        EVERYTHING — CPU/GPU temps, loads, clocks, fan RPM, VRM/board temps, disk
+        temps, RAM. If you run LHM, this is all you need.
+      * If ``source=="prometheus"`` (hybrid without LHM, or to offload LHM):
+        overlay CPU-load/RAM/disk/net from the Grafana-Agent windows_exporter.
+        Skip this if you rely on LHM — it's redundant then.
+      * If ``gpu_via_nvidia_smi`` (default on): overlay live GPU metrics from
+        nvidia-smi. Redundant if LHM is up (LHM has GPU too) but harmless/cheap;
+        set it false to avoid the extra subprocess once LHM is your source.
+
+    Recommended configs:
+      * LHM only (least overhead, full data): source="lhm", gpu_via_nvidia_smi=false
+      * No-LHM hybrid:                        source="prometheus", gpu_via_nvidia_smi=true
+    A down source costs one fast failed fetch, so mixing is safe but wasteful."""
     loop = asyncio.get_event_loop()
     hw = await _get_lhm_raw_async(session)
     if SOURCE == "prometheus":
