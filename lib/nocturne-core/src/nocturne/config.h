@@ -124,7 +124,10 @@
 #define NOCT_TCP_RECONNECT_INTERVAL_MS 2000
 #define NOCT_SIGNAL_TIMEOUT_MS 5000
 #define NOCT_SIGNAL_GRACE_MS 8000
-#define NOCT_WIFI_RETRY_INTERVAL_MS 30000
+/* Backstop interval to force a clean WiFi.begin() when the radio is down. The
+ * ESP32 stack also auto-reconnects on its own (setAutoReconnect, see NetManager),
+ * so this only fires when that gets stuck. 30s was far too slow to recover. */
+#define NOCT_WIFI_RETRY_INTERVAL_MS 8000
 
 /* ── Timing ────────────────────────────────────────────────────────────── */
 #define NOCT_SPLASH_MS 2500

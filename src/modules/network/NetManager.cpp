@@ -90,6 +90,11 @@ void NetManager::begin(const char *ssid, const char *pass) {
   if (!ssid || strlen(ssid) == 0)
     return;
   WiFi.mode(WIFI_STA);
+  // Let the ESP32 stack recover from drops on its own (fast), instead of waiting
+  // for the manual backstop loop. persistent(false): don't thrash NVS on every
+  // begin(). These two are why reconnect was unreliable before.
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);
 #if defined(WIFI_STATIC_IP) && defined(WIFI_GATEWAY) && defined(WIFI_SUBNET)
   IPAddress staticIp, gateway, subnet;
   if (staticIp.fromString(WIFI_STATIC_IP) && gateway.fromString(WIFI_GATEWAY) &&
@@ -146,8 +151,14 @@ void NetManager::tick(unsigned long now) {
       disconnectTcp();
     searchMode_ = true;
     if (now - lastWifiRetry_ > NOCT_WIFI_RETRY_INTERVAL_MS) {
+      // Backstop when auto-reconnect is stuck: re-assert STA (a mode switch may
+      // have left the radio off) and force a clean begin().
+      if (WiFi.getMode() != WIFI_STA)
+        WiFi.mode(WIFI_STA);
+      WiFi.setAutoReconnect(true);
       WiFi.disconnect();
       WiFi.begin(storedSSID_, storedPass_);
+      WiFi.setSleep(false);
       lastWifiRetry_ = now;
     }
   }
