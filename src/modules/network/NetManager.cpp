@@ -346,6 +346,23 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     cd.available = false;
   }
 
+  // External events block (Prometheus Alertmanager via server webhook).
+  JsonObjectConst ev_obj = doc["events"];
+  EventsData &ev = state->events;
+  if (!ev_obj.isNull()) {
+    ev.count = ev_obj["n"] | 0;
+    const char *top = ev_obj["top"];
+    strncpy(ev.top, top ? top : "", sizeof(ev.top) - 1);
+    ev.top[sizeof(ev.top) - 1] = '\0';
+    const char *sev = ev_obj["sev"];
+    strncpy(ev.severity, sev ? sev : "", sizeof(ev.severity) - 1);
+    ev.severity[sizeof(ev.severity) - 1] = '\0';
+  } else {
+    ev.count = 0;
+    ev.top[0] = '\0';
+    ev.severity[0] = '\0';
+  }
+
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];
   const char *metric = doc["alert_metric"];

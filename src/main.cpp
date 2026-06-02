@@ -665,6 +665,20 @@ void loop()
               display.netDownGraph.push((float)hw.nd);
               display.netUpGraph.setMax(2048);
               display.netUpGraph.push((float)hw.nu);
+              // External event (Alertmanager): toast when a new top alert fires.
+              static char lastEventTop[21] = {0};
+              if (state.events.count > 0 && state.events.top[0])
+              {
+                if (strncmp(lastEventTop, state.events.top, sizeof(lastEventTop)) != 0)
+                {
+                  snprintf(toastMsg, sizeof(toastMsg), "! %s", state.events.top);
+                  toastUntil = now + 4000;
+                  strncpy(lastEventTop, state.events.top, sizeof(lastEventTop) - 1);
+                  lastEventTop[sizeof(lastEventTop) - 1] = '\0';
+                }
+              }
+              else
+                lastEventTop[0] = '\0';
             }
           }
         }
