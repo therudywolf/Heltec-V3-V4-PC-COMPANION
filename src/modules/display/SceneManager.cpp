@@ -845,6 +845,17 @@ void SceneManager::drawClaude(int xOff)
     }
   }
 
+  // Freshness line (centered, between bars and footer): the date the figures
+  // apply to, so the gauge never silently implies "live". "STALE" if not today.
+  if (c.date.length() >= 10)
+  {
+    char ds[24];
+    String md = c.date.substring(5);  // "YYYY-MM-DD" -> "MM-DD"
+    snprintf(ds, sizeof(ds), "%s %s", c.stale ? "STALE" : "as of", md.c_str());
+    int dw = u8g2.getUTF8Width(ds);
+    u8g2.drawUTF8(X((NOCT_DISP_W - dw) / 2, xOff), NOCT_CONTENT_START + 31, ds);
+  }
+
   // Footer: tokens today (k/M) left, plan tag (e.g. PRO) right.
   char foot[24];
   if (c.todayTokens >= 1000000L)
