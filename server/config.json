@@ -11,9 +11,9 @@
   },
   "weather_city": "London",
 
-  "_comment_claude": "Token budgets for the Claude gauge + the 80% reminder. 0 disables a gauge.",
-  "claude_daily_budget": 5000000,
-  "claude_weekly_budget": 25000000,
+  "_comment_claude": "SELF-SET token budgets for the Claude gauge + 80% reminder (Anthropic's real quota isn't on disk). Usage is summed FRESH from ~/.claude session transcripts (input+output, cache excluded) so it's current, not from the stale stats-cache. Sized for that metric (~15-30M heavy day, ~70M/week). 0 disables a gauge.",
+  "claude_daily_budget": 30000000,
+  "claude_weekly_budget": 100000000,
   "claude_alert_pct": 80,
 
   "_comment_alerts": "Show the SAME alerts as your Telegram. Either POLL Alertmanager (alertmanager_url -> /api/v2/alerts, no inbound port) OR receive webhooks (alert_webhook_port, POST /alert). Leave alertmanager_url empty to disable polling.",

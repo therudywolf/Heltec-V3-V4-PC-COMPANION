@@ -21,10 +21,12 @@ and never-raising.
 
 from typing import Any, Dict, List, Optional, Tuple
 
-# Default budgets (tokens). Sized from observed ~2-3.3M tokens/day on a Max plan;
-# overridable in config.json. 0 disables that gauge.
-DEFAULT_DAILY_BUDGET = 5_000_000
-DEFAULT_WEEKLY_BUDGET = 25_000_000
+# Default budgets (tokens) for the input+output usage metric (cache excluded),
+# sized from observed transcript usage (~15-30M on a heavy day, ~70M/week).
+# These are a SELF-SET proxy, not Anthropic's real quota (which isn't on disk);
+# tune in config.json. 0 disables that gauge.
+DEFAULT_DAILY_BUDGET = 30_000_000
+DEFAULT_WEEKLY_BUDGET = 100_000_000
 
 # Raise the reminder when usage reaches this percent of any budget.
 DEFAULT_ALERT_PCT = 80
@@ -68,16 +70,21 @@ def apply_budget(
     stats: Any,
     daily_budget: int = DEFAULT_DAILY_BUDGET,
     weekly_budget: int = DEFAULT_WEEKLY_BUDGET,
+    weekly_tokens_override: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Return a copy of ``usage`` with window_pct/weekly_pct filled from budgets.
 
     Does NOT overwrite a non-None window_pct/weekly_pct already present (so a real
     rate-limit source, if it ever appears, wins over the budget estimate). Adds
     ``daily_budget``/``weekly_budget``/``weekly_tokens`` for transparency. Pure.
+
+    ``weekly_tokens_override`` (when not None) supplies the 7-day total directly
+    (e.g. summed fresh from session transcripts), bypassing the stale stats-cache
+    ``dailyModelTokens`` series.
     """
     out = dict(usage or {})
     today = out.get("today_tokens")
-    wk = weekly_tokens(stats)
+    wk = weekly_tokens_override if weekly_tokens_override is not None else weekly_tokens(stats)
 
     if out.get("window_pct") is None:
         out["window_pct"] = _pct(today, daily_budget)
