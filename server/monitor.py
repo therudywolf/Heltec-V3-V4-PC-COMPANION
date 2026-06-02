@@ -34,6 +34,7 @@ import claude_usage as claude_mod
 import lhm_parse
 import netrates
 import alert_events
+import claude_budget
 import forest_panel
 import payload as payload_mod
 import prometheus_source
@@ -121,6 +122,11 @@ def load_config() -> Dict:
         # Prometheus Alertmanager webhook receiver port (0 = disabled). POST the
         # Alertmanager webhook JSON to http://<host>:<port>/alert.
         "alert_webhook_port": 0,
+        # Claude usage budgets (tokens) for the PC-monitor Claude gauge + the
+        # "80% reminder" alert. 0 disables that gauge. window=daily, weekly=7-day.
+        "claude_daily_budget": claude_budget.DEFAULT_DAILY_BUDGET,
+        "claude_weekly_budget": claude_budget.DEFAULT_WEEKLY_BUDGET,
+        "claude_alert_pct": claude_budget.DEFAULT_ALERT_PCT,
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -143,6 +149,12 @@ def load_config() -> Dict:
             out["prometheus_url"] = data["prometheus_url"]
         if "alert_webhook_port" in data:
             out["alert_webhook_port"] = int(data["alert_webhook_port"])
+        if "claude_daily_budget" in data:
+            out["claude_daily_budget"] = int(data["claude_daily_budget"])
+        if "claude_weekly_budget" in data:
+            out["claude_weekly_budget"] = int(data["claude_weekly_budget"])
+        if "claude_alert_pct" in data:
+            out["claude_alert_pct"] = int(data["claude_alert_pct"])
     except Exception:
         pass
     return out
@@ -214,6 +226,9 @@ LHM_URL = os.getenv("LHM_URL", _config["lhm_url"])
 SOURCE = os.getenv("SOURCE", _config.get("source", "lhm"))
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", _config.get("prometheus_url", ""))
 ALERT_WEBHOOK_PORT = int(os.getenv("ALERT_WEBHOOK_PORT", str(_config.get("alert_webhook_port", 0))))
+CLAUDE_DAILY_BUDGET = int(_config.get("claude_daily_budget", claude_budget.DEFAULT_DAILY_BUDGET))
+CLAUDE_WEEKLY_BUDGET = int(_config.get("claude_weekly_budget", claude_budget.DEFAULT_WEEKLY_BUDGET))
+CLAUDE_ALERT_PCT = int(_config.get("claude_alert_pct", claude_budget.DEFAULT_ALERT_PCT))
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
@@ -698,11 +713,22 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
 
 
 def get_claude_usage_sync() -> Dict[str, Any]:
-    """Read local Claude Code usage/limits (~/.claude). Cheap file reads; runs in
-    the executor like the other blocking readers. Never raises (the contract lives
-    in :mod:`claude_usage`), so a failure just yields the graceful-empty dict."""
+    """Read local Claude Code usage/limits (~/.claude) and apply token budgets so
+    window_pct/weekly_pct are populated (Claude exposes no official quota % on
+    disk — see claude_budget). Cheap file reads; runs in the executor. Never
+    raises: a failure yields the graceful-empty dict."""
     try:
-        return claude_mod.read_claude_usage()
+        usage = claude_mod.read_claude_usage()
+        # Re-read stats for the weekly token series, then apply configured budgets.
+        import os as _os
+        stats = claude_mod._load_json(
+            _os.path.join(claude_mod._default_base_dir(), "stats-cache.json"))
+        usage = claude_budget.apply_budget(
+            usage, stats,
+            daily_budget=CLAUDE_DAILY_BUDGET,
+            weekly_budget=CLAUDE_WEEKLY_BUDGET,
+        )
+        return usage
     except Exception as e:
         log_debug(f"Claude usage: {e}")
         return dict(claude_mod.EMPTY_USAGE)
@@ -780,6 +806,30 @@ def _build_claude_block(claude: Optional[Dict]) -> Dict[str, Any]:
     }
 
 
+def _events_with_claude(claude: Optional[Dict], now: float) -> Dict[str, Any]:
+    """Events block = Alertmanager webhook alerts + the Claude 80% reminder.
+
+    The Claude reminder reuses the same on-device events banner. When usage
+    crosses the configured threshold it's surfaced as an extra firing event so
+    the device toasts e.g. "Claude wk 88%". Non-firing claude => just the
+    webhook events.
+    """
+    block = _alert_state.snapshot(now)
+    if isinstance(claude, dict):
+        fire, name = claude_budget.alert_for(claude, threshold_pct=CLAUDE_ALERT_PCT)
+        if fire:
+            existing = list(block.get("list", []))
+            if name not in existing:
+                existing.insert(0, name)
+            block = {
+                "n": block.get("n", 0) + 1,
+                "top": name,                 # Claude reminder takes the banner
+                "sev": "warning",
+                "list": existing[:4],
+            }
+    return block
+
+
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
                   net: tuple, disk: tuple, ping_ms: int, now: float,
                   claude: Optional[Dict] = None) -> Dict:
@@ -829,7 +879,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "mp": media.get("play", False), "idle": media.get("idle", False),
         "media_status": media_status,
         "claude": _build_claude_block(claude),
-        "events": _alert_state.snapshot(now),
+        "events": _events_with_claude(claude, now),
         "forest": _forest_block,
         "sv": SERVER_VERSION,
     }
@@ -910,17 +960,18 @@ async def handle_client(reader, writer):
     client_buffers[writer] = ""
     try:
         snap = await cache_snapshot()
-        if snap["hw"]:
-            payload = build_payload(
-                snap["hw"], snap["media"],
-                snap["weather"], snap["top_procs"],
-                snap["top_procs_ram"], snap["net"],
-                snap["disk"], snap["ping"], time.time(),
-                claude=snap.get("claude"),
-            )
-            await send_data_to_client(writer, payload)
-        else:
-            await send_data_to_client(writer, {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0})
+        # Always send a full payload on connect (even before the first hw poll, or
+        # on a machine with no LHM): build_payload tolerates an empty hw dict and
+        # the device gets the complete shape immediately — hw zeros plus the
+        # claude/forest/events/weather blocks — rather than a stripped stub.
+        payload = build_payload(
+            snap["hw"], snap["media"],
+            snap["weather"], snap["top_procs"],
+            snap["top_procs_ram"], snap["net"],
+            snap["disk"], snap["ping"], time.time(),
+            claude=snap.get("claude"),
+        )
+        await send_data_to_client(writer, payload)
     except Exception as e:
         log_debug(f"Initial send: {e}")
     try:
