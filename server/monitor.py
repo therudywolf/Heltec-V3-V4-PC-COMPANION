@@ -400,13 +400,28 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     return results
 
 
+def _parse_lhm_json_from_text(text: str) -> Dict[str, Any]:
+    """Deserialize raw LHM ``/data.json`` text and parse it into the short-key dict.
+
+    Both ``json.loads`` and the recursive :func:`_parse_lhm_json` tree-walk are
+    pure-Python CPU work; bundling them here lets the caller run the whole step in
+    the executor so it never blocks the asyncio event loop (see OPTIMIZATION_NOTES
+    5.5). Reads only module constants / ``os.getenv`` — safe off-thread. Behaviour
+    is identical to the former inline ``_parse_lhm_json(await r.json())``.
+    """
+    return _parse_lhm_json(json.loads(text))
+
+
 async def _get_lhm_raw_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
+    loop = asyncio.get_event_loop()
     for attempt in range(3):
         try:
             async with session.get(LHM_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
                 if r.status != 200:
                     continue
-                return _parse_lhm_json(await r.json())
+                text = await r.text()
+            # JSON deserialize + tree-walk are CPU-bound; keep them off the loop.
+            return await loop.run_in_executor(executor, _parse_lhm_json_from_text, text)
         except Exception as e:
             if attempt == 2:
                 log_debug(f"LHM failed: {e}")
@@ -583,43 +598,65 @@ def get_ping_latency_sync() -> int:
         return 0
 
 
-def get_top_processes_cpu_sync(n: int = 3) -> List[Dict]:
-    try:
-        procs = []
-        for p in psutil.process_iter(["name", "cpu_percent"]):
-            try:
-                i = p.info
-                if i.get("cpu_percent") and i["cpu_percent"] > 0:
-                    procs.append({"n": (i.get("name") or "")[:20], "c": int(i["cpu_percent"])})
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        procs.sort(key=lambda x: x["c"], reverse=True)
-        return procs[:n]
-    except Exception as e:
-        logging.warning("top CPU processes failed: %s", e)
-        return []
+def _collect_top_processes(
+    procs_info: List[Dict[str, Any]], cpu_n: int, ram_n: int
+) -> Tuple[List[Dict], List[Dict]]:
+    """Build the top-CPU and top-RAM lists from one batch of process ``info`` dicts.
+
+    Pure (no psutil calls) so it is unit-testable: ``procs_info`` is the list of
+    ``Process.info`` mappings (each may carry ``name`` / ``cpu_percent`` /
+    ``memory_info``) gathered by a single :func:`psutil.process_iter` pass.
+
+    Filtering/shaping/sorting reproduce the former two separate functions exactly:
+
+    * CPU: keep ``cpu_percent`` truthy and ``> 0`` -> ``{"n": name[:20], "c": int}``
+      (name **not** stripped), sorted by ``c`` desc, top ``cpu_n``.
+    * RAM: skip ``memcompression`` (case-insensitive on the stripped name), require
+      ``memory_info``, keep RSS MB ``> 10`` -> ``{"n": name[:20], "r": int(mb)}``
+      (name stripped), sorted by ``r`` desc, top ``ram_n``.
+    """
+    cpu_procs: List[Dict] = []
+    ram_procs: List[Dict] = []
+    for i in procs_info:
+        # CPU list (uses the raw, unstripped name — identical to the original).
+        cpu = i.get("cpu_percent")
+        if cpu and cpu > 0:
+            cpu_procs.append({"n": (i.get("name") or "")[:20], "c": int(cpu)})
+        # RAM list (uses the stripped name and a memcompression skip).
+        name = (i.get("name") or "").strip()
+        if "memcompression" in name.lower():
+            continue
+        mem = i.get("memory_info")
+        if mem:
+            mb = mem.rss / (1024 * 1024)
+            if mb > 10:
+                ram_procs.append({"n": name[:20], "r": int(mb)})
+    cpu_procs.sort(key=lambda x: x["c"], reverse=True)
+    ram_procs.sort(key=lambda x: x["r"], reverse=True)
+    return cpu_procs[:cpu_n], ram_procs[:ram_n]
 
 
-def get_top_processes_ram_sync(n: int = 2) -> List[Dict]:
+def get_top_processes_sync(
+    cpu_n: int = 3, ram_n: int = 2
+) -> Tuple[List[Dict], List[Dict]]:
+    """Single ``process_iter`` pass yielding both the top-CPU and top-RAM lists.
+
+    Replaces the two separate full process-table walks (OPTIMIZATION_NOTES 5.1):
+    one enumeration collects ``name`` + ``cpu_percent`` + ``memory_info`` and feeds
+    :func:`_collect_top_processes`. Output shapes/sorting match the prior pair of
+    functions exactly. MUST stay off the event loop (called via the executor).
+    """
     try:
-        procs = []
-        for p in psutil.process_iter(["name", "memory_info"]):
+        procs_info: List[Dict[str, Any]] = []
+        for p in psutil.process_iter(["name", "cpu_percent", "memory_info"]):
             try:
-                i = p.info
-                name = (i.get("name") or "").strip()
-                if "memcompression" in name.lower():
-                    continue
-                if i.get("memory_info"):
-                    mb = i["memory_info"].rss / (1024 * 1024)
-                    if mb > 10:
-                        procs.append({"n": name[:20], "r": int(mb)})
+                procs_info.append(p.info)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        procs.sort(key=lambda x: x["r"], reverse=True)
-        return procs[:n]
+        return _collect_top_processes(procs_info, cpu_n, ram_n)
     except Exception as e:
-        logging.warning("top RAM processes failed: %s", e)
-        return []
+        logging.warning("top processes failed: %s", e)
+        return [], []
 
 
 async def _get_media_info_async_impl() -> Dict:
@@ -827,20 +864,36 @@ def should_send_payload(payload: Dict, now: float) -> bool:
     return False
 
 
-async def send_data_to_client(writer, payload: Dict) -> bool:
+def encode_payload(payload: Dict) -> bytes:
+    """Serialize a payload to the newline-terminated UTF-8 bytes sent on the wire.
+
+    Applies the same oversize guard as before: if the encoded frame exceeds
+    ``MAX_PAYLOAD_BYTES`` (the firmware line cap) it logs and falls back to a tiny
+    minimal frame. Pulled out of :func:`send_data_to_client` so the broadcast loop
+    can encode the identical payload once for all clients instead of once per
+    client (OPTIMIZATION_NOTES 5.3).
+    """
+    raw = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
+    if len(raw) > MAX_PAYLOAD_BYTES:
+        logging.warning("Payload too large (%d bytes), sending minimal", len(raw))
+        minimal = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0}
+        raw = (json.dumps(minimal, separators=(",", ":")) + "\n").encode("utf-8")
+    return raw
+
+
+async def send_raw_to_client(writer, raw: bytes) -> bool:
+    """Write pre-encoded payload bytes to one client. Returns False on error."""
     try:
-        data = json.dumps(payload, separators=(",", ":")) + "\n"
-        raw = data.encode("utf-8")
-        if len(raw) > MAX_PAYLOAD_BYTES:
-            logging.warning("Payload too large (%d bytes), sending minimal", len(raw))
-            minimal = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0}
-            raw = (json.dumps(minimal, separators=(",", ":")) + "\n").encode("utf-8")
         writer.write(raw)
         await writer.drain()
         return True
     except Exception as e:
         log_debug(f"Send: {e}")
         return False
+
+
+async def send_data_to_client(writer, payload: Dict) -> bool:
+    return await send_raw_to_client(writer, encode_payload(payload))
 
 
 async def handle_client(reader, writer):
@@ -938,8 +991,9 @@ async def run():
         await cache_set("net", await loop.run_in_executor(executor, get_network_speed_sync))
         await cache_set("disk", await loop.run_in_executor(executor, get_disk_speed_sync))
         await cache_set("media", await get_media_info(loop))
-        top_procs_cache = await loop.run_in_executor(executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N))
-        top_procs_ram_cache = await loop.run_in_executor(executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N))
+        top_procs_cache, top_procs_ram_cache = await loop.run_in_executor(
+            executor, lambda: get_top_processes_sync(TOP_PROCS_CPU_N, TOP_PROCS_RAM_N)
+        )
         await cache_set("top_procs", top_procs_cache)
         await cache_set("top_procs_ram", top_procs_ram_cache)
         last_top_procs_time = time.time()
@@ -966,8 +1020,9 @@ async def run():
 
             if now - last_top_procs_time >= TOP_PROCS_CACHE_TTL:
                 try:
-                    top_procs_cache = await loop.run_in_executor(executor, lambda: get_top_processes_cpu_sync(TOP_PROCS_CPU_N))
-                    top_procs_ram_cache = await loop.run_in_executor(executor, lambda: get_top_processes_ram_sync(TOP_PROCS_RAM_N))
+                    top_procs_cache, top_procs_ram_cache = await loop.run_in_executor(
+                        executor, lambda: get_top_processes_sync(TOP_PROCS_CPU_N, TOP_PROCS_RAM_N)
+                    )
                     last_top_procs_time = now
                     await cache_set("top_procs", top_procs_cache)
                     await cache_set("top_procs_ram", top_procs_ram_cache)
@@ -1016,8 +1071,11 @@ async def run():
                 _last_heartbeat_time = now
                 _last_sent_snapshot = _payload_snapshot(payload)
                 dead = []
-                for w in list(tcp_clients):
-                    if not await send_data_to_client(w, payload):
+                clients = list(tcp_clients)
+                # Encode the identical payload once for all clients (not per-client).
+                raw = encode_payload(payload) if clients else b""
+                for w in clients:
+                    if not await send_raw_to_client(w, raw):
                         dead.append(w)
                 for w in dead:
                     if w in tcp_clients:
