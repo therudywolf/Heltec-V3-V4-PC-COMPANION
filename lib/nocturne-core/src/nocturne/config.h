@@ -136,7 +136,8 @@
 #define NOCT_BUTTON_PREDATOR_MS 2500
 #define NOCT_GLITCH_INTERVAL_MS 10000
 #define NOCT_GLITCH_DURATION_MS 100
-#define NOCT_REDRAW_INTERVAL_MS 17
+#define NOCT_REDRAW_INTERVAL_MS 17       /* ~60 FPS: transitions/menu/glitch/alert */
+#define NOCT_REDRAW_IDLE_INTERVAL_MS 33  /* ~30 FPS: steady screens (saves I2C/CPU/power) */
 #define NOCT_GRAPH_SAMPLES 32
 #define NOCT_GRAPH_HEIGHT 11
 
