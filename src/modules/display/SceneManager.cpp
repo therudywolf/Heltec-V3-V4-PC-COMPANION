@@ -813,53 +813,39 @@ void SceneManager::drawClaude(int xOff)
     return;
   }
 
-  // Plan tag, top-right (e.g. "MAX") if known.
-  if (c.plan.length())
-  {
-    char plan[12];
-    int n = 0;
-    for (; n < (int)sizeof(plan) - 1 && c.plan[n]; n++)
-      plan[n] = (char)toupper((unsigned char)c.plan[n]);
-    plan[n] = '\0';
-    u8g2.setFont(LABEL_FONT);
-    int pw_ = u8g2.getUTF8Width(plan);
-    u8g2.drawUTF8(X(right - pw_, xOff), NOCT_CONTENT_START + 6, plan);
-  }
-
-  // Two usage bars.
-  const int barH = 7;
-  const int labelW = 22;
-  const int pctW = 26;
+  // Layout (content band Y=17..63): two labelled bars with a right % column,
+  // then a footer (tokens left / plan right). No vertical overlap.
+  u8g2.setFont(LABEL_FONT);
+  const int barH = 6;
+  const int labelW = 18;                 // "5H"/"WK"
+  const int pctW = 28;                   // "100%"
   const int barX = left + labelW;
-  const int barW = right - pctW - 2 - barX;
-  int rowY = NOCT_CONTENT_START + 2;
+  const int barW = right - pctW - barX;  // bar ends before the % column
+  const int pctX = right - pctW + 2;     // % column left edge (no overlap w/ bar)
 
   struct { const char *label; int pct; } rows[2] = {
       {"5H", c.windowPct}, {"WK", c.weeklyPct}};
   for (int i = 0; i < 2; i++)
   {
-    int by = rowY + i * (barH + 6);
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(left, xOff), by + barH, rows[i].label);
+    int top = NOCT_CONTENT_START + 3 + i * 14;   // row tops: 20, 34
+    int textY = top + barH;                       // baseline aligned to bar
+    u8g2.drawUTF8(X(left, xOff), textY, rows[i].label);
     if (rows[i].pct >= 0)
     {
       int pct = rows[i].pct > 100 ? 100 : rows[i].pct;
-      disp_.drawProgressBar(X(barX, xOff), by, barW, barH, pct);
+      disp_.drawProgressBar(X(barX, xOff), top, barW, barH, pct);
       char pb[8];
       snprintf(pb, sizeof(pb), "%d%%", pct);
-      int w2 = u8g2.getUTF8Width(pb);
-      u8g2.drawUTF8(X(right - w2, xOff), by + barH, pb);
+      u8g2.drawUTF8(X(pctX, xOff), textY, pb);
     }
     else
     {
-      disp_.drawTechFrame(X(barX, xOff), by, barW, barH);
-      const char *na = "n/a";
-      int w2 = u8g2.getUTF8Width(na);
-      u8g2.drawUTF8(X(right - w2, xOff), by + barH, na);
+      disp_.drawTechFrame(X(barX, xOff), top, barW, barH);
+      u8g2.drawUTF8(X(pctX, xOff), textY, "n/a");
     }
   }
 
-  // Footer: tokens today (k/M) left, reset countdown right.
+  // Footer: tokens today (k/M) left, plan tag (e.g. PRO) right.
   char foot[24];
   if (c.todayTokens >= 1000000L)
     snprintf(foot, sizeof(foot), "%.1fM tok", c.todayTokens / 1000000.0);
@@ -867,18 +853,17 @@ void SceneManager::drawClaude(int xOff)
     snprintf(foot, sizeof(foot), "%ldk tok", c.todayTokens / 1000L);
   else
     snprintf(foot, sizeof(foot), "%ld tok", c.todayTokens);
-  u8g2.setFont(LABEL_FONT);
   u8g2.drawUTF8(X(left, xOff), NOCT_DISP_H - 3, foot);
 
-  if (c.resetsInMin >= 0)
+  if (c.plan.length())
   {
-    char rb[16];
-    if (c.resetsInMin >= 60)
-      snprintf(rb, sizeof(rb), "r%dh%02d", c.resetsInMin / 60, c.resetsInMin % 60);
-    else
-      snprintf(rb, sizeof(rb), "r%dm", c.resetsInMin);
-    int w3 = u8g2.getUTF8Width(rb);
-    u8g2.drawUTF8(X(right - w3, xOff), NOCT_DISP_H - 3, rb);
+    char plan[12];
+    int n = 0;
+    for (; n < (int)sizeof(plan) - 1 && c.plan[n]; n++)
+      plan[n] = (char)toupper((unsigned char)c.plan[n]);
+    plan[n] = '\0';
+    int pw_ = u8g2.getUTF8Width(plan);
+    u8g2.drawUTF8(X(right - pw_, xOff), NOCT_DISP_H - 3, plan);
   }
 }
 
