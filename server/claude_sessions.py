@@ -112,6 +112,97 @@ def tokens_by_date(base_dir: Optional[str] = None, days: int = 8) -> Dict[str, D
         return {}
 
 
+def _epoch_from_ts(ts: str) -> Optional[float]:
+    """ISO-8601 timestamp -> POSIX seconds (float), or None."""
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def window_events(base_dir: Optional[str] = None, lookback_sec: int = 13 * 3600):
+    """Collect recent ``(epoch_ts, tokens)`` assistant events for window math.
+
+    Bounded to transcript files modified in the last day and to events within the
+    last ``lookback_sec`` (default ~13h, enough to anchor a 5h window). Returns a
+    time-sorted list. Never raises.
+    """
+    out = []
+    try:
+        base = base_dir if base_dir is not None else os.path.join(os.path.expanduser("~"), ".claude")
+        proj = os.path.join(base, "projects")
+        if not os.path.isdir(proj):
+            return out
+        import time
+        now = time.time()
+        fcut = now - 86400
+        ecut = now - lookback_sec
+        for path in glob.glob(os.path.join(proj, "**", "*.jsonl"), recursive=True):
+            try:
+                if os.path.getmtime(path) < fcut:
+                    continue
+            except OSError:
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                    for line in fh:
+                        if '"usage"' not in line:
+                            continue
+                        try:
+                            obj = json.loads(line)
+                        except ValueError:
+                            continue
+                        if not isinstance(obj, dict) or obj.get("type") != "assistant":
+                            continue
+                        msg = obj.get("message")
+                        usage = msg.get("usage") if isinstance(msg, dict) else None
+                        if not isinstance(usage, dict):
+                            continue
+                        ep = _epoch_from_ts(obj.get("timestamp"))
+                        if ep is None or ep < ecut:
+                            continue
+                        try:
+                            tok = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+                        except (TypeError, ValueError):
+                            tok = 0
+                        out.append((ep, tok))
+            except OSError:
+                continue
+    except Exception:
+        return out
+    out.sort(key=lambda e: e[0])
+    return out
+
+
+def window_summary(events, now_ts: float, window_sec: int = 5 * 3600) -> Dict[str, Any]:
+    """Current rolling-window usage + reset from ``(ts, tokens)`` events. Pure.
+
+    Anthropic's 5-hour limit window opens at the first message of a block and
+    resets ``window_sec`` later; a message falling outside the running window
+    opens a new one. Returns ``{resets_in_min, window_tokens, window_start}`` or
+    ``{}`` if there are no events. Never raises.
+    """
+    if not events:
+        return {}
+    try:
+        ws = events[0][0]
+        for ep, _t in events:
+            if ep >= ws + window_sec:
+                ws = ep
+        reset = ws + window_sec
+        wtok = sum(t for ep, t in events if ep >= ws)
+        return {
+            "resets_in_min": max(0, int(round((reset - now_ts) / 60.0))),
+            "window_tokens": int(wtok),
+            "window_start": ws,
+        }
+    except Exception:
+        return {}
+
+
 def summarize(by_date: Dict[str, Dict[str, int]], today: str, weekly_days: int = 7) -> Dict[str, Any]:
     """Reduce a ``{date: {tok,msg,tool}}`` map to fresh usage fields. Never raises.
 

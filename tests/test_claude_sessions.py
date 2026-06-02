@@ -98,6 +98,37 @@ class TestSummarize:
         assert cs.summarize(self.BY_DATE, "not-a-date") == {}
 
 
+class TestWindowSummary:
+    H = 3600
+
+    def test_continuous_use_advances_window(self):
+        # messages every hour for 8h (at -7h..0h); 5h window.
+        now = 100 * self.H
+        events = [(now - i * self.H, 1000) for i in range(8)][::-1]  # oldest..newest
+        s = cs.window_summary(events, now, window_sec=5 * self.H)
+        # blocks: [-7h,-2h) then [-2h,+3h). Current opens at -2h, resets in 3h.
+        assert s["window_start"] == now - 2 * self.H
+        assert s["resets_in_min"] == 180          # reset = start+5h = now+3h
+        assert s["window_tokens"] == 3000         # events at -2,-1,0h (3 msgs)
+
+    def test_single_block_reset_future(self):
+        now = 10 * self.H
+        events = [(now - 2 * self.H, 500), (now - 1 * self.H, 700)]
+        s = cs.window_summary(events, now, window_sec=5 * self.H)
+        assert s["resets_in_min"] == 180          # start -2h, reset +3h
+        assert s["window_tokens"] == 1200
+
+    def test_reset_clamped_nonnegative(self):
+        now = 10 * self.H
+        # last block started >5h ago and idle since -> reset already passed -> 0
+        events = [(now - 6 * self.H, 100)]
+        s = cs.window_summary(events, now, window_sec=5 * self.H)
+        assert s["resets_in_min"] == 0
+
+    def test_empty(self):
+        assert cs.window_summary([], 1000.0) == {}
+
+
 class TestTokensByDate:
     def _write(self, path, records):
         with open(path, "w", encoding="utf-8") as fh:
