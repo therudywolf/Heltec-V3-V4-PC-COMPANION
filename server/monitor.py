@@ -34,6 +34,7 @@ import claude_usage as claude_mod
 import lhm_parse
 import netrates
 import payload as payload_mod
+import prometheus_source
 import weather as weather_mod
 
 try:
@@ -111,6 +112,10 @@ def load_config() -> Dict:
         "limits": {"gpu": 80, "cpu": 75},
         "weather_city": "Moscow",
         "lhm_storage_fallback": "psutil",
+        # Telemetry source: "lhm" (default) or "prometheus" (hybrid: Prometheus
+        # fills load/ram/disk/net, LHM still provides temps/GPU/fans).
+        "source": "lhm",
+        "prometheus_url": "http://localhost:9182/metrics",
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -127,6 +132,10 @@ def load_config() -> Dict:
             out["weather_city"] = data["weather_city"]
         if "lhm_storage_fallback" in data:
             out["lhm_storage_fallback"] = data["lhm_storage_fallback"]
+        if "source" in data:
+            out["source"] = data["source"]
+        if "prometheus_url" in data:
+            out["prometheus_url"] = data["prometheus_url"]
     except Exception:
         pass
     return out
@@ -195,6 +204,8 @@ def set_autostart(enable: bool) -> None:
 
 _config = load_config()
 LHM_URL = os.getenv("LHM_URL", _config["lhm_url"])
+SOURCE = os.getenv("SOURCE", _config.get("source", "lhm"))
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", _config.get("prometheus_url", ""))
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
@@ -382,7 +393,7 @@ def _parse_lhm_json(data: Dict) -> Dict[str, Any]:
     return results
 
 
-async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
+async def _get_lhm_raw_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
     for attempt in range(3):
         try:
             async with session.get(LHM_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
@@ -393,6 +404,39 @@ async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
             if attempt == 2:
                 log_debug(f"LHM failed: {e}")
     return {}
+
+
+async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Primary hw source. With SOURCE=="prometheus", overlay Prometheus metrics
+    (load/ram/disk/net) onto the LHM result (temps/GPU/fans). LHM stays the base
+    so a Prometheus outage degrades gracefully to LHM-only."""
+    hw = await _get_lhm_raw_async(session)
+    if SOURCE == "prometheus":
+        overlay = await get_prometheus_overlay_async(session)
+        if overlay:
+            hw = prometheus_source.merge_hw(hw, overlay)
+    return hw
+
+
+async def get_prometheus_overlay_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Scrape windows_exporter /metrics and map to the hw-key overlay.
+
+    Returns {} on any failure (so the merge is a no-op and LHM stands alone).
+    Pure parsing lives in prometheus_source; this is just the fetch.
+    """
+    if not PROMETHEUS_URL:
+        return {}
+    try:
+        async with session.get(PROMETHEUS_URL, timeout=aiohttp.ClientTimeout(total=2)) as r:
+            if r.status != 200:
+                return {}
+            text = await r.text()
+        return prometheus_source.build_hw_from_exposition(
+            text, drive_letters=payload_mod.DRIVE_LETTERS
+        )
+    except Exception as e:
+        log_debug(f"Prometheus failed: {e}")
+        return {}
 
 
 # Weather code -> short description now lives in weather.py; re-exported.
