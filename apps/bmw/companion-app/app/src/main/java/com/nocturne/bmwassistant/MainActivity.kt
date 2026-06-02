@@ -2,17 +2,6 @@ package com.nocturne.bmwassistant
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCharacteristic
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothGattDescriptor
-import android.bluetooth.BluetoothProfile
-import android.bluetooth.le.BluetoothLeScanner
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
@@ -29,20 +18,12 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
-import java.util.UUID
 
 class MainActivity : AppCompatActivity(), BleAssistantHost {
-
-    private val controlServiceUuid = UUID.fromString("1a2b0001-5e6f-4a5b-8c9d-0e1f2a3b4c5d")
-    private val controlCharUuid = UUID.fromString("1a2b0002-5e6f-4a5b-8c9d-0e1f2a3b4c5d")
-    private val statusCharUuid = UUID.fromString("1a2b0003-5e6f-4a5b-8c9d-0e1f2a3b4c5d")
-    private val nowPlayingCharUuid = UUID.fromString("1a2b0004-5e6f-4a5b-8c9d-0e1f2a3b4c5d")
-    private val clusterTextCharUuid = UUID.fromString("1a2b0005-5e6f-4a5b-8c9d-0e1f2a3b4c5d")
 
     companion object {
         private const val LOG_TAG = "BMWAssistant"
         private const val REQUEST_PERMISSIONS = 100
-        private const val deviceName = "BMW E39 Key"
         private const val prefsName = "bmw_assistant"
         private const val prefsLastDevice = "last_device_address"
         private const val prefsAutoConnect = "auto_connect"
@@ -58,13 +39,7 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
         private const val prefsLeaveGoodbyeLights = "scenario_leave_goodbye_lights"
     }
 
-    private var bluetoothAdapter: BluetoothAdapter? = null
-    private var scanner: BluetoothLeScanner? = null
-    private var gatt: BluetoothGatt? = null
-    private var controlChar: BluetoothGattCharacteristic? = null
-    private var statusChar: BluetoothGattCharacteristic? = null
-    private var nowPlayingChar: BluetoothGattCharacteristic? = null
-    private var clusterTextChar: BluetoothGattCharacteristic? = null
+    private lateinit var ble: BmwBleManager
 
     private lateinit var viewModel: BleAssistantViewModel
     private lateinit var buttonScan: MaterialButton
@@ -118,21 +93,73 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
             }
         })
 
-        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        if (bluetoothAdapter == null) {
+        ble = BmwBleManager(this, handler)
+        if (!ble.bluetoothAvailable) {
             viewModel.setConnectionState("no_bt")
             return
         }
+        ble.listener = bleListener
 
         requestPermissionsThen {
-            buttonScan.setOnClickListener { startScan() }
-            buttonDisconnect.setOnClickListener { disconnect() }
+            buttonScan.setOnClickListener { onScanClicked() }
+            buttonDisconnect.setOnClickListener { ble.disconnect() }
             if (getAutoConnectPref()) {
                 getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(prefsLastDevice, null)?.let { addr ->
                     if (addr.isNotBlank()) tryAutoConnect(addr)
                 }
             }
         }
+    }
+
+    /** Bridges BmwBleManager events to the ViewModel + UI buttons. */
+    private val bleListener = object : BmwBleManager.Listener {
+        override fun onState(state: String) {
+            viewModel.setConnectionState(state)
+            when (state) {
+                "connected" -> {
+                    buttonScan.isEnabled = false
+                    buttonDisconnect.isEnabled = true
+                }
+                "connecting" -> {
+                    viewModel.clearStatus()
+                    buttonScan.isEnabled = false
+                }
+                else -> { // disconnected
+                    viewModel.clearStatus()
+                    buttonScan.isEnabled = true
+                    buttonDisconnect.isEnabled = false
+                    if (getAutoConnectPref()) {
+                        handler.postDelayed({
+                            if (!ble.isConnected)
+                                getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                                    .getString(prefsLastDevice, null)?.let { addr ->
+                                        if (addr.isNotBlank()) tryAutoConnect(addr)
+                                    }
+                        }, 2500)
+                    }
+                }
+            }
+        }
+        override fun onStatusPacket(value: ByteArray) = viewModel.setStatusFromPacket(value)
+        override fun onWriteFailed() {
+            Toast.makeText(this@MainActivity, getString(R.string.toast_write_failed), Toast.LENGTH_SHORT).show()
+        }
+        override fun onDeviceAddress(address: String) {
+            getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit()
+                .putString(prefsLastDevice, address).apply()
+        }
+    }
+
+    private fun onScanClicked() {
+        if (BluetoothAdapter.getDefaultAdapter()?.isEnabled != true) {
+            Toast.makeText(this, "Turn on Bluetooth", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!ble.bluetoothAvailable) {
+            Toast.makeText(this, "BLE not available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        ble.startScan()
     }
 
     /** Opens the I-Bus / Bus data screen (page 5). Called from Settings. */
@@ -233,40 +260,19 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
         return m == "e46" || m == "e46_fl"
     }
 
-    override fun isConnected(): Boolean = controlChar != null
+    override fun isConnected(): Boolean = ble.isConnected
 
     override fun sendCommand(byte: Int) {
-        val c = controlChar ?: run {
+        if (!ble.isConnected) {
             Toast.makeText(this, getString(R.string.hint_connect_first), Toast.LENGTH_SHORT).show()
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        }
-        c.value = byteArrayOf(byte.toByte())
-        gatt?.writeCharacteristic(c)
+        ble.sendCommand(byte)
     }
 
-    override fun sendNowPlaying(track: String, artist: String) {
-        val c = nowPlayingChar ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        }
-        val payload = if (artist.isEmpty()) track.toByteArray(Charsets.UTF_8)
-        else (track + "\u0000" + artist).toByteArray(Charsets.UTF_8)
-        c.value = payload
-        gatt?.writeCharacteristic(c)
-    }
+    override fun sendNowPlaying(track: String, artist: String) = ble.sendNowPlaying(track, artist)
 
-    override fun sendClusterText(text: String) {
-        val c = clusterTextChar ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        }
-        val raw = text.toByteArray(Charsets.UTF_8)
-        c.value = if (raw.size > 20) raw.copyOf(20) else raw
-        gatt?.writeCharacteristic(c)
-    }
+    override fun sendClusterText(text: String) = ble.sendClusterText(text)
 
     private fun requestPermissionsThen(block: () -> Unit) {
         val perms = mutableListOf<String>()
@@ -303,158 +309,12 @@ class MainActivity : AppCompatActivity(), BleAssistantHost {
     }
 
     private fun tryAutoConnect(address: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        val device = try { bluetoothAdapter?.getRemoteDevice(address) } catch (e: Exception) { null } ?: return
-        viewModel.setConnectionState("connecting")
         buttonScan.isEnabled = false
-        connect(device)
-    }
-
-    private fun startScan() {
-        if (BluetoothAdapter.getDefaultAdapter()?.isEnabled != true) {
-            Toast.makeText(this, "Turn on Bluetooth", Toast.LENGTH_SHORT).show()
-            return
-        }
-        scanner = bluetoothAdapter?.bluetoothLeScanner
-        if (scanner == null) {
-            Toast.makeText(this, "BLE not available", Toast.LENGTH_SHORT).show()
-            return
-        }
-        viewModel.setConnectionState("connecting")
-        viewModel.clearStatus()
-        buttonScan.isEnabled = false
-        val filter = ScanFilter.Builder().setDeviceName(deviceName).build()
-        val scanSettings = ScanSettings.Builder().build()
-        val scanCallback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult?) {
-                result ?: return
-                val dev = result.device ?: return
-                if (dev.name == deviceName) {
-                    scanner?.stopScan(this)
-                    handler.post { connect(dev) }
-                }
-            }
-            override fun onScanFailed(errorCode: Int) {
-                handler.post {
-                    viewModel.setConnectionState("disconnected")
-                    buttonScan.isEnabled = true
-                    Toast.makeText(this@MainActivity, "Scan failed: $errorCode", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-        scanner?.startScan(listOf(filter), scanSettings, scanCallback)
-        handler.postDelayed({
-            scanner?.stopScan(scanCallback)
-            if (controlChar == null) {
-                viewModel.setConnectionState("disconnected")
-                buttonScan.isEnabled = true
-            }
-        }, 15000)
-    }
-
-    private fun connect(device: BluetoothDevice) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
-        gatt = device.connectGatt(this, false, gattCallback)
-    }
-
-    private val gattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
-            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                gatt?.discoverServices()
-            } else {
-                handler.post {
-                    controlChar = null
-                    statusChar = null
-                    nowPlayingChar = null
-                    clusterTextChar = null
-                    this@MainActivity.gatt = null
-                    viewModel.setConnectionState("disconnected")
-                    viewModel.clearStatus()
-                    buttonScan.isEnabled = true
-                    buttonDisconnect.isEnabled = false
-                    if (getAutoConnectPref()) {
-                        handler.postDelayed({
-                            if (controlChar == null)
-                                getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(prefsLastDevice, null)?.let { addr ->
-                                    if (addr.isNotBlank()) tryAutoConnect(addr)
-                                }
-                        }, 2500)
-                    }
-                }
-            }
-        }
-        override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS || gatt == null) return
-            val service = gatt.getService(controlServiceUuid) ?: return
-            controlChar = service.getCharacteristic(controlCharUuid)
-            statusChar = service.getCharacteristic(statusCharUuid)
-            nowPlayingChar = service.getCharacteristic(nowPlayingCharUuid)
-            clusterTextChar = service.getCharacteristic(clusterTextCharUuid)
-            gatt.device?.address?.let { addr ->
-                getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().putString(prefsLastDevice, addr).apply()
-            }
-            statusChar?.let { c ->
-                if ((c.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                    gatt.setCharacteristicNotification(c, true)
-                    c.descriptors?.firstOrNull()?.let { d ->
-                        d.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(d)
-                    }
-                }
-            }
-            handler.post {
-                viewModel.setConnectionState("connected")
-                buttonScan.isEnabled = false
-                buttonDisconnect.isEnabled = true
-            }
-        }
-        override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS || gatt == null || descriptor == null) return
-            if (descriptor.characteristic?.uuid == statusCharUuid) {
-                statusChar?.let { gatt.readCharacteristic(it) }
-            }
-        }
-        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
-            if (characteristic.uuid == statusCharUuid) {
-                val value = characteristic.value
-                if (value != null && value.size >= 10) {
-                    handler.post { viewModel.setStatusFromPacket(value) }
-                }
-            }
-        }
-        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
-            if (characteristic.uuid == statusCharUuid && value.size >= 10) {
-                handler.post { viewModel.setStatusFromPacket(value) }
-            }
-        }
-        override fun onCharacteristicWrite(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                handler.post {
-                    Toast.makeText(this@MainActivity, getString(R.string.toast_write_failed), Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun disconnect() {
-        gatt?.disconnect()
-        gatt?.close()
-        gatt = null
-        controlChar = null
-        statusChar = null
-        nowPlayingChar = null
-        clusterTextChar = null
-        viewModel.setConnectionState("disconnected")
-        viewModel.clearStatus()
-        buttonScan.isEnabled = true
-        buttonDisconnect.isEnabled = false
+        ble.connectToAddress(address)
     }
 
     override fun onDestroy() {
-        disconnect()
+        ble.disconnect()
         super.onDestroy()
     }
 }
