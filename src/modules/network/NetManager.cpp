@@ -56,7 +56,9 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     }
     Serial.println("---------------------------------------");
   } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
-    Serial.println("[WIFI-DIAG] >> CONNECTED. IP Obtained.");
+    Serial.printf("[WIFI-DIAG] >> CONNECTED. IP=%s GW=%s RSSI=%d\n",
+                  WiFi.localIP().toString().c_str(),
+                  WiFi.gatewayIP().toString().c_str(), WiFi.RSSI());
   }
 }
 
@@ -177,6 +179,8 @@ bool NetManager::tryTcpConnect(unsigned long now) {
   lastTcpAttempt_ = now;
   client_.setTimeout(NOCT_TCP_CONNECT_TIMEOUT_MS / 1000);
 
+  Serial.printf("[NET] TCP connect -> %s:%u (rssi %d) ...\n",
+                serverIp_ ? serverIp_ : "?", (unsigned)serverPort_, WiFi.RSSI());
   if (client_.connect(serverIp_, serverPort_)) {
     lineBuffer_[0] = '\0';
     lineBufferLen_ = 0;
@@ -185,8 +189,10 @@ bool NetManager::tryTcpConnect(unsigned long now) {
     tcpConnectTime_ = now;
     lastUpdate_ = now;
     client_.print("HELO\n");
+    Serial.println("[NET] TCP connected, sent HELO");
     return true;
   }
+  Serial.println("[NET] TCP connect FAILED");
   return false;
 }
 
