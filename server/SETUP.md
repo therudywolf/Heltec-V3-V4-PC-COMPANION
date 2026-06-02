@@ -34,13 +34,31 @@ clock/fan from `nvidia-smi` (zero-install, ships with the driver). Useful with
 `source: "prometheus"` (windows_exporter has no GPU). Turn it **off** when
 `source: "lhm"` — LHM already has the GPU.
 
-### Option A — LibreHardwareMonitor (full data, recommended)
-1. Download LibreHardwareMonitor, run it (as admin for full sensors).
-2. Options → **Remote Web Server → Run** (port 8085). First time, the listener
-   needs admin or a URL reservation:
-   `netsh http add urlacl url=http://+:8085/ user=Everyone` (run once as admin).
-3. Verify: open `http://localhost:8085/data.json`.
-4. `config.json`: `"source": "lhm"`, `"gpu_via_nvidia_smi": false`.
+### Option A — LHM bridge (full data, recommended)
+LibreHardwareMonitor's own web server uses Windows HTTP.sys, which needs an admin
+URL reservation and frequently won't bind (stale `+:8085` reservations, wrong
+bind IP, 503s). Instead of fighting it, run **`tools/lhm_bridge.ps1`** — it loads
+`LibreHardwareMonitorLib.dll` directly and serves the same `/data.json` over a
+plain socket on `127.0.0.1`, so there's no HTTP.sys, no urlacl, no GUI.
+
+1. Get LibreHardwareMonitor (just the files; the GUI isn't needed). Note the
+   folder with `LibreHardwareMonitorLib.dll`.
+2. Double-click **`tools/Install-LHM-Bridge.bat`** and click **Yes** on UAC.
+   That one admin step lets it read CPU/VRM/super-IO temps + CPU/case fan RPM
+   (a ring0 driver Windows only allows with admin). It registers a hidden
+   auto-start task and starts the bridge now.
+   - Decline UAC and it still runs with **partial** data (GPU temps/fans, CPU
+     load, clocks, RAM, disk) via a no-admin Startup launcher.
+3. It serves on **port 8086**, not 8085: a leftover `http://+:8085/` HTTP.sys
+   reservation poisons 8085 for raw sockets (WSAEACCES). `config.json` is already
+   `"lhm_url": "http://127.0.0.1:8086/data.json"`.
+4. Verify: open `http://127.0.0.1:8086/data.json`.
+5. `config.json`: `"source": "lhm"`, `"gpu_via_nvidia_smi": false`.
+6. You can now close the LibreHardwareMonitor GUI — the bridge replaces it.
+
+Run under **Windows PowerShell 5.1** (`powershell.exe`), not PowerShell 7: LHM
+0.9.x is a .NET Framework build whose `Open()` calls a `Mutex` overload absent
+on .NET Core/5+. The bat/task already use 5.1.
 
 ### Option B — already running Grafana Agent / windows_exporter (no install)
 If you already run a Grafana Agent with a `windows_exporter` integration (e.g.
@@ -54,26 +72,59 @@ for a remote Prometheus), reuse it — no extra monitoring load:
 
 ---
 
-## Alerts — two independent sources, both on
+## Alerts — same ones your Telegram gets
 
 1. **Local thresholds (always on, no network):** the device shows a RED ALERT
    when CPU/GPU temp or load crosses the `limits` in `config.json`, and a
    **Claude 80% reminder** when window/weekly usage reaches `claude_alert_pct`.
-2. **Prometheus Alertmanager webhook (optional, matches your Telegram):** set
-   `alert_webhook_port` (e.g. 9099) and point your Alertmanager at
-   `http://<this-pc>:9099/alert`. The device then shows the **same** firing
-   alerts that go to Telegram.
-   ```yaml
-   # Alertmanager receiver
-   receivers:
-     - name: nocturne-device
-       webhook_configs:
-         - url: http://<this-pc-ip>:9099/alert
-           send_resolved: true
-   ```
-   If your Prometheus/Alertmanager runs remotely (e.g. dashboard.example.com), it must
-   be able to reach this PC's IP:port (VPN / port-forward). Otherwise run a small
-   local Alertmanager, or stick with the local thresholds.
+2. **Alertmanager — show the SAME alerts as Telegram.** Two ways; pick one:
+   - **Poll (recommended, no inbound port):** set `alertmanager_url` to the
+     Alertmanager **v2 API**, e.g.
+     `https://dashboard.example.com/monitoring/alertmanager/api/v2/alerts`. The server
+     polls it every ~20 s and shows the firing alerts. Works even when the
+     Alertmanager can't reach this PC — *we* call *it*. Active alerts map to
+     firing; silenced/suppressed are hidden; resolved disappear on the next poll.
+   - **Webhook (push):** set `alert_webhook_port` (e.g. 9099) and point your
+     Alertmanager at `http://<this-pc>:9099/alert`. Needs the Alertmanager to be
+     able to reach this PC (VPN / port-forward).
+     ```yaml
+     receivers:
+       - name: nocturne-device
+         webhook_configs:
+           - url: http://<this-pc-ip>:9099/alert
+             send_resolved: true
+     ```
+   Leave both empty to rely on local thresholds only.
+
+---
+
+## Forest panel — node-status scene
+
+Mirrors the dashboard.example.com node dashboard on the device: a compact CPU/RAM/disk
+status per monitored host. Populated by querying a **Prometheus-compatible**
+`/api/v1/query` endpoint — set `forest_query_url`. A Grafana **datasource proxy**
+works unauthenticated and read-only, e.g.
+`https://dashboard.example.com/monitoring/api/datasources/proxy/1/api/v1/query`.
+
+The roster + per-node PromQL ship in `forest_panel.DEFAULT_NODES` (a Linux
+`node_exporter` host and a Windows `windows_exporter` host). Override per node
+from `config.json`:
+
+```json
+"forest_nodes": [
+  { "id": "srv", "name": "Forestserver",
+    "cpu":  "100-(avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"forestserver\"}[2m]))*100)",
+    "ram":  "100*(1-node_memory_MemAvailable_bytes{instance=\"forestserver\"}/node_memory_MemTotal_bytes{instance=\"forestserver\"})",
+    "disk": "100*(1-node_filesystem_avail_bytes{instance=\"forestserver\",mountpoint=\"/\"}/node_filesystem_size_bytes{instance=\"forestserver\",mountpoint=\"/\"})" }
+]
+```
+
+A node turns **warn** at ≥90% on any resource and **down** when its queries
+return nothing. Empty `forest_query_url` → the scene shows `NO NODES`. Polled
+every ~30 s. *Read-only — it only runs `query`, never writes.*
+
+> Note for Windows hosts scraped via Grafana Agent: their scrape interval is
+> longer, so the CPU `rate()` needs a wider window (`[5m]`, not `[2m]`).
 
 ---
 
@@ -97,6 +148,9 @@ plan; `0` disables a gauge. The 80% reminder fires off these.
 | `gpu_via_nvidia_smi` | overlay GPU from nvidia-smi (NVIDIA). |
 | `limits.cpu` / `limits.gpu` | temp/load alert thresholds. |
 | `alert_webhook_port` | Alertmanager webhook receiver port (`0` = off). |
+| `alertmanager_url` | Alertmanager **v2** `/api/v2/alerts` URL to poll (`""` = off). |
+| `forest_query_url` | Prometheus `/api/v1/query` URL for the Forest panel (`""` = off). |
+| `forest_nodes` | optional per-node roster + PromQL (defaults to `DEFAULT_NODES`). |
 | `claude_daily_budget` / `claude_weekly_budget` | token budgets for the gauge. |
 | `claude_alert_pct` | Claude reminder threshold (default 80). |
 | `weather_city` | weather scene location. |

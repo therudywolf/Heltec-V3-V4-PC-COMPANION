@@ -34,6 +34,7 @@ import claude_usage as claude_mod
 import lhm_parse
 import netrates
 import alert_events
+import alertmanager_poll
 import claude_budget
 import forest_panel
 import nvidia_smi
@@ -131,6 +132,12 @@ def load_config() -> Dict:
         # Overlay live NVIDIA GPU metrics (temp/load/VRAM/power/fan) from
         # nvidia-smi — zero-install, fills what windows_exporter cannot. true/false.
         "gpu_via_nvidia_smi": True,
+        # Forest panel: query node status from a Prometheus-compatible URL
+        # (e.g. a Grafana datasource proxy). "" disables (scene shows NO NODES).
+        "forest_query_url": "",
+        # Alertmanager v2 alerts URL to POLL (shows the SAME alerts as your
+        # Telegram). "" disables polling (local thresholds + webhook still work).
+        "alertmanager_url": "",
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -161,6 +168,12 @@ def load_config() -> Dict:
             out["claude_alert_pct"] = int(data["claude_alert_pct"])
         if "gpu_via_nvidia_smi" in data:
             out["gpu_via_nvidia_smi"] = bool(data["gpu_via_nvidia_smi"])
+        if "forest_query_url" in data:
+            out["forest_query_url"] = data["forest_query_url"]
+        if "alertmanager_url" in data:
+            out["alertmanager_url"] = data["alertmanager_url"]
+        if "forest_nodes" in data and isinstance(data["forest_nodes"], list):
+            out["forest_nodes"] = data["forest_nodes"]
     except Exception:
         pass
     return out
@@ -236,6 +249,11 @@ CLAUDE_DAILY_BUDGET = int(_config.get("claude_daily_budget", claude_budget.DEFAU
 CLAUDE_WEEKLY_BUDGET = int(_config.get("claude_weekly_budget", claude_budget.DEFAULT_WEEKLY_BUDGET))
 CLAUDE_ALERT_PCT = int(_config.get("claude_alert_pct", claude_budget.DEFAULT_ALERT_PCT))
 GPU_VIA_NVIDIA_SMI = str(os.getenv("GPU_VIA_NVIDIA_SMI", str(_config.get("gpu_via_nvidia_smi", True)))).lower() in ("1", "true", "yes")
+FOREST_QUERY_URL = os.getenv("FOREST_QUERY_URL", _config.get("forest_query_url", ""))
+ALERTMANAGER_URL = os.getenv("ALERTMANAGER_URL", _config.get("alertmanager_url", ""))
+FOREST_NODES = _config.get("forest_nodes") or forest_panel.DEFAULT_NODES
+FOREST_UPDATE_INTERVAL = 30.0   # node-status poll cadence (seconds)
+ALERTMANAGER_UPDATE_INTERVAL = 20.0  # Alertmanager poll cadence (seconds)
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
@@ -534,6 +552,93 @@ async def get_prometheus_overlay_async(session: aiohttp.ClientSession) -> Dict[s
     except Exception as e:
         log_debug(f"Prometheus failed: {e}")
         return {}
+
+
+def _scalar_from_prom_result(data: Any) -> Optional[float]:
+    """Extract one float from a Prometheus instant-query JSON response.
+
+    Accepts the standard ``{"data":{"result":[{"value":[ts,"<num>"]}]}}`` shape
+    (vector or scalar). Returns the first series' value, or None on miss/bad data.
+    """
+    try:
+        result = (data or {}).get("data", {}).get("result", [])
+        if not result:
+            return None
+        first = result[0]
+        # vector/matrix -> {"value":[ts, "v"]}; scalar -> {"value":[ts,"v"]} too
+        val = first.get("value") if isinstance(first, dict) else first
+        if isinstance(val, (list, tuple)) and len(val) >= 2:
+            return float(val[1])
+    except (ValueError, TypeError, AttributeError, IndexError):
+        return None
+    return None
+
+
+async def _prom_query_async(session: aiohttp.ClientSession, expr: str) -> Optional[float]:
+    """Run a single PromQL instant query against FOREST_QUERY_URL; scalar or None.
+
+    FOREST_QUERY_URL is a Prometheus-compatible ``/api/v1/query`` endpoint (e.g. a
+    Grafana datasource proxy). Best-effort: returns None on any failure.
+    """
+    if not FOREST_QUERY_URL:
+        return None
+    try:
+        async with session.get(
+            FOREST_QUERY_URL, params={"query": expr},
+            timeout=aiohttp.ClientTimeout(total=4),
+        ) as r:
+            if r.status != 200:
+                return None
+            data = await r.json(content_type=None)
+        return _scalar_from_prom_result(data)
+    except Exception as e:
+        log_debug(f"Forest query failed ({expr[:32]}…): {e}")
+        return None
+
+
+async def get_forest_block_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Poll each forest node's PromQL and build the ``forest`` payload block.
+
+    Runs every node's cpu/ram/disk expressions concurrently through the Grafana
+    datasource proxy, then aggregates via forest_panel. Returns EMPTY_FOREST when
+    no query URL is configured or every node is unreachable.
+    """
+    if not FOREST_QUERY_URL:
+        return dict(forest_panel.EMPTY_FOREST)
+
+    # Collect the unique expressions across all nodes, query them concurrently,
+    # then look each up by expression when building nodes (avoids re-querying a
+    # shared expr and keeps build_nodes_from_queries pure/sync).
+    exprs = {e for d in FOREST_NODES for e in (d.get("cpu"), d.get("ram"), d.get("disk")) if e}
+    expr_list = list(exprs)
+    results = await asyncio.gather(*[_prom_query_async(session, e) for e in expr_list])
+    by_expr = dict(zip(expr_list, results))
+    nodes = forest_panel.build_nodes_from_queries(FOREST_NODES, lambda e: by_expr.get(e))
+    return forest_panel.build_forest_block(nodes)
+
+
+async def poll_alertmanager_async(session: aiohttp.ClientSession) -> None:
+    """Poll the Alertmanager v2 API and feed firing alerts into the events block.
+
+    Surfaces the SAME alerts that go to Telegram (dashboard.example.com stack). Replaces
+    each poll's view of external alerts via AlertState.replace, so resolved/cleared
+    alerts disappear. No-op when ALERTMANAGER_URL is unset. Best-effort.
+    """
+    if not ALERTMANAGER_URL:
+        return
+    try:
+        async with session.get(
+            ALERTMANAGER_URL, timeout=aiohttp.ClientTimeout(total=4),
+        ) as r:
+            if r.status != 200:
+                return
+            data = await r.json(content_type=None)
+    except Exception as e:
+        log_debug(f"Alertmanager poll failed: {e}")
+        return
+    events = alertmanager_poll.normalize_am_v2(data)
+    firing = [e for e in events if e.get("status") == "firing"]
+    _alert_state.replace(firing)
 
 
 # Weather code -> short description now lives in weather.py; re-exported.
@@ -1045,7 +1150,7 @@ async def handle_client(reader, writer):
 async def run():
     global executor, last_sent_track_key, top_procs_cache, top_procs_ram_cache
     global last_top_procs_time, last_media_time, ping_latency_ms, global_data_cache
-    global _last_sent_snapshot, _last_heartbeat_time
+    global _last_sent_snapshot, _last_heartbeat_time, _forest_block
 
     server = None
     executor = ThreadPoolExecutor(max_workers=6)
@@ -1066,7 +1171,14 @@ async def run():
     last_ping_time = 0.0
     last_media_time = 0.0
     last_claude_time = 0.0
+    last_forest_time = 0.0
+    last_am_time = 0.0
     session = aiohttp.ClientSession()
+
+    if FOREST_QUERY_URL:
+        log_info(f"Forest panel: querying {len(FOREST_NODES)} node(s) via {FOREST_QUERY_URL}")
+    if ALERTMANAGER_URL:
+        log_info(f"Alertmanager poll: {ALERTMANAGER_URL}")
 
     try:
         await cache_set("hw", await get_lhm_data_async(session))
@@ -1084,6 +1196,12 @@ async def run():
         await cache_set("ping", ping_latency_ms)
         await cache_set("claude", await loop.run_in_executor(executor, get_claude_usage_sync))
         last_claude_time = time.time()
+        if FOREST_QUERY_URL:
+            _forest_block = await get_forest_block_async(session)
+            last_forest_time = time.time()
+        if ALERTMANAGER_URL:
+            await poll_alertmanager_async(session)
+            last_am_time = time.time()
     except Exception as e:
         log_err(f"Initial data: {e}")
 
@@ -1140,6 +1258,20 @@ async def run():
                     await cache_set("claude", await loop.run_in_executor(executor, get_claude_usage_sync))
                 except Exception as e:
                     log_debug(f"Claude: {e}")
+
+            if FOREST_QUERY_URL and now - last_forest_time >= FOREST_UPDATE_INTERVAL:
+                last_forest_time = now
+                try:
+                    _forest_block = await get_forest_block_async(session)
+                except Exception as e:
+                    log_debug(f"Forest: {e}")
+
+            if ALERTMANAGER_URL and now - last_am_time >= ALERTMANAGER_UPDATE_INTERVAL:
+                last_am_time = now
+                try:
+                    await poll_alertmanager_async(session)
+                except Exception as e:
+                    log_debug(f"Alertmanager: {e}")
 
             snap = await cache_snapshot()
             payload = build_payload(

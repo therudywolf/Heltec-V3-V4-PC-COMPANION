@@ -97,11 +97,52 @@ def build_forest_block(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"n": len(wire), "up": up, "nodes": wire}
 
 
-# Default node roster (matches the dashboard.example.com panel). The scrape URL is
-# read by monitor.py; metric extraction per node type lives there. Kept as data
-# so it's overridable from config.json ("forest_nodes") without code changes.
-DEFAULT_NODES: List[Dict[str, str]] = [
-    {"id": "srv", "name": "Forestserver", "type": "prometheus"},
-    {"id": "pc", "name": "PC-Rudywolf", "type": "prometheus"},
-    {"id": "rtr", "name": "Forestrouter", "type": "keenetic"},
+# Default node roster (matches the dashboard.example.com panel). Each node has a set of
+# PromQL expressions for cpu/ram/disk; monitor.py runs them against the Grafana
+# datasource-proxy query API and feeds the results to build_node. Overridable via
+# config.json "forest_nodes". Verified targets on dashboard.example.com:
+#   node_exporter job="node" instance="forestserver"
+#   windows_exporter job="integrations/windows_exporter" instance="PC-RUDYWOLF"
+DEFAULT_NODES: List[Dict[str, Any]] = [
+    {
+        "id": "srv", "name": "Forestserver",
+        "cpu": '100-(avg(rate(node_cpu_seconds_total{mode="idle",instance="forestserver"}[2m]))*100)',
+        "ram": '100*(1-node_memory_MemAvailable_bytes{instance="forestserver"}/node_memory_MemTotal_bytes{instance="forestserver"})',
+        "disk": '100*(1-node_filesystem_avail_bytes{instance="forestserver",mountpoint="/"}/node_filesystem_size_bytes{instance="forestserver",mountpoint="/"})',
+    },
+    {
+        "id": "pc", "name": "PC-Rudywolf",
+        # PC scrapes via Grafana Agent at a longer interval than the server's
+        # node_exporter, so the idle rate needs a wider [5m] window than [2m].
+        "cpu": '100-(avg(rate(windows_cpu_time_total{mode="idle",instance="PC-RUDYWOLF"}[5m]))*100)',
+        "ram": '100*(1-windows_os_physical_memory_free_bytes{instance="PC-RUDYWOLF"}/windows_cs_physical_memory_bytes{instance="PC-RUDYWOLF"})',
+        "disk": '100*(1-windows_logical_disk_free_bytes{instance="PC-RUDYWOLF",volume="C:"}/windows_logical_disk_size_bytes{instance="PC-RUDYWOLF",volume="C:"})',
+    },
 ]
+
+
+def build_nodes_from_queries(node_defs, run_query) -> List[Dict[str, Any]]:
+    """Build wire nodes by running each node's cpu/ram/disk PromQL.
+
+    ``run_query`` is a callable(expr)->float|None (a single scalar from the first
+    result series; None on miss/error). A node with all-None metrics is treated
+    as unreachable ("down"). Pure except for the injected run_query. Never raises.
+    """
+    nodes: List[Dict[str, Any]] = []
+    for d in node_defs or []:
+        metrics: Dict[str, Any] = {}
+        any_ok = False
+        for key in ("cpu", "ram", "disk"):
+            expr = d.get(key)
+            if not expr:
+                continue
+            try:
+                v = run_query(expr)
+            except Exception:
+                v = None
+            if v is not None:
+                metrics[key] = v
+                any_ok = True
+        nodes.append(build_node(d.get("id", "?"), d.get("name", "?"),
+                                metrics if any_ok else None))
+    return nodes

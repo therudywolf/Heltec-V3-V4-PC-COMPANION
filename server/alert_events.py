@@ -110,6 +110,26 @@ class AlertState:
             else:
                 self._firing.pop(name, None)
 
+    def replace(self, alerts: List[Dict[str, str]], now: Optional[float] = None) -> None:
+        """Replace the entire firing set with ``alerts`` (poll semantics).
+
+        Unlike :meth:`ingest` (incremental webhook deltas), this sets the firing
+        set to exactly the given alerts, so any alert no longer present is dropped
+        immediately — correct when polling Alertmanager, which returns the full
+        current firing list each time. Non-firing entries are ignored.
+        """
+        t = now if now is not None else time.time()
+        self._firing = {
+            a["name"]: {
+                "name": a["name"],
+                "severity": a.get("severity", "none"),
+                "status": "firing",
+                "ts": t,
+            }
+            for a in (alerts or [])
+            if a.get("name") and a.get("status", "firing") == "firing"
+        }
+
     def snapshot(self, now: Optional[float] = None) -> Dict[str, Any]:
         t = now if now is not None else time.time()
         # Drop expired entries.
