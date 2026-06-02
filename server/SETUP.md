@@ -7,8 +7,16 @@ The PC-side service that streams hardware + Claude usage + alerts to the board
 
 ```powershell
 pip install -r requirements.txt
-python monitor.py --console      # console + logs; or run for the tray icon
+python monitor.py --console      # console + logs (debug)
+pythonw monitor.py               # normal: tray icon, no console window
 ```
+
+### Tray icon + autostart (recommended)
+With `pystray`+`Pillow` installed, `pythonw monitor.py` runs as a **system-tray
+icon** (green = running) with a right-click menu: **Add to startup** (HKCU Run, no
+admin), **Restart Server**, **Close**. "Add to startup" makes it launch hidden at
+every login. A desktop shortcut that runs `pythonw monitor.py` gives a one-click
+start; keep `START_SERVER.bat` for a console/debug run.
 
 Set the board's `PC_IP` (in firmware `include/secrets.h`) to this PC's LAN IP,
 and `TCP_PORT` to match `config.json` `port` (default 8888).
