@@ -182,8 +182,8 @@ static const unsigned char icon_cloud_bits[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 const char *SceneManager::sceneNames_[] = {
-    "MAIN", "CPU",  "GPU",    "RAM",    "DISKS", "MEDIA",
-    "FANS", "MB",   "WTHR",   "CLAUDE", "NET"};
+    "MAIN", "CPU",  "GPU",    "RAM",    "DISKS",  "MEDIA",
+    "FANS", "MB",   "WTHR",   "CLAUDE", "NET",    "FOREST"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -241,6 +241,9 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
     break;
   case NOCT_SCENE_NET:
     drawNet(xOffset);
+    break;
+  case NOCT_SCENE_FOREST:
+    drawForest(xOffset);
     break;
   default:
     drawMain(blinkState, xOffset);
@@ -936,6 +939,83 @@ void SceneManager::drawNet(int xOff)
   else
     snprintf(pb, sizeof(pb), "PING --");
   u8g2.drawUTF8(X(left, xOff), NOCT_DISP_H - 3, pb);
+#else
+  (void)xOff;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// SCENE: FOREST — node-status panel (mirrors dashboard.example.com). One row per node:
+// status dot (filled=up, hollow=warn, x=down) + name left, cpu/ram/disk right.
+// Header shows up/total. Monitoring-only (data comes from the server payload).
+// ---------------------------------------------------------------------------
+void SceneManager::drawForest(int xOff)
+{
+#if NOCT_FEATURE_MONITORING
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  ForestData &f = state_.forest;
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  const int left = NOCT_CARD_LEFT;
+  const int right = NOCT_DISP_W - NOCT_CARD_LEFT;
+
+  if (f.count == 0) {
+    u8g2.setFont(VALUE_FONT);
+    const char *t = "FOREST";
+    int tw = u8g2.getUTF8Width(t);
+    u8g2.drawUTF8(X((NOCT_DISP_W - tw) / 2, xOff), NOCT_CONTENT_START + 14, t);
+    u8g2.setFont(LABEL_FONT);
+    const char *s = "NO NODES";
+    int sw = u8g2.getUTF8Width(s);
+    u8g2.drawUTF8(X((NOCT_DISP_W - sw) / 2, xOff), NOCT_CONTENT_START + 30, s);
+    return;
+  }
+
+  // Header: "NODES  up/total" right-aligned.
+  u8g2.setFont(LABEL_FONT);
+  char hdr[20];
+  snprintf(hdr, sizeof(hdr), "%d/%d up", f.up, f.count);
+  int hw_ = u8g2.getUTF8Width(hdr);
+  u8g2.drawUTF8(X(right - hw_, xOff), NOCT_CONTENT_START + 6, hdr);
+
+  // Node rows.
+  const int rowH = 9;
+  int y0 = NOCT_CONTENT_START + 8;
+  int rows = f.count < ForestData::kMaxNodes ? f.count : ForestData::kMaxNodes;
+  for (int i = 0; i < rows; i++) {
+    int ry = y0 + i * rowH;
+    if (ry + 7 > NOCT_DISP_H) break;
+    // Status dot at left.
+    int dotX = X(left + 2, xOff);
+    int dotY = ry + 3;
+    const char *st = f.nodes[i].status;
+    if (strcmp(st, "up") == 0) {
+      u8g2.drawDisc(dotX, dotY, 2);              // filled = up
+    } else if (strcmp(st, "warn") == 0) {
+      u8g2.drawCircle(dotX, dotY, 2);            // hollow = warn
+    } else {
+      u8g2.drawLine(dotX - 2, dotY - 2, dotX + 2, dotY + 2);  // x = down
+      u8g2.drawLine(dotX - 2, dotY + 2, dotX + 2, dotY - 2);
+    }
+    // Name.
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(left + 8, xOff), ry + 6, f.nodes[i].name);
+    // Right: cpu/ram/disk compact, or extra text if no percentages.
+    char rb[20];
+    if (f.nodes[i].cpu >= 0 || f.nodes[i].ram >= 0 || f.nodes[i].disk >= 0) {
+      snprintf(rb, sizeof(rb), "%d/%d/%d",
+               f.nodes[i].cpu < 0 ? 0 : f.nodes[i].cpu,
+               f.nodes[i].ram < 0 ? 0 : f.nodes[i].ram,
+               f.nodes[i].disk < 0 ? 0 : f.nodes[i].disk);
+    } else {
+      strncpy(rb, f.nodes[i].extra, sizeof(rb) - 1);
+      rb[sizeof(rb) - 1] = '\0';
+    }
+    int rw = u8g2.getUTF8Width(rb);
+    u8g2.drawUTF8(X(right - rw, xOff), ry + 6, rb);
+  }
 #else
   (void)xOff;
 #endif
