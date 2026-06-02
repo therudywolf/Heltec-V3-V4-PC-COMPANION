@@ -650,36 +650,34 @@ void loop()
         size_t bufLen = netManager.getLineBufferLen();
         if (bufLen > 0 && bufLen <= NOCT_TCP_LINE_MAX)
         {
-          JsonDocument doc;
-          DeserializationError err = deserializeJson(doc, buf, bufLen);
-          if (!err)
+          // Single parse: parsePayload() does the deserialize and returns false
+          // on malformed JSON, so a separate validity-check parse is wasted work
+          // (this runs ~twice/second). markDataReceived only on a good frame.
+          if (netManager.parsePayload(buf, bufLen, &state))
           {
             netManager.markDataReceived(now);
-            if (netManager.parsePayload(buf, bufLen, &state))
+            needRedraw = true;
+            HardwareData &hw = state.hw;
+            display.cpuGraph.push((float)hw.cl);
+            display.gpuGraph.push((float)hw.gl);
+            display.netDownGraph.setMax(2048);
+            display.netDownGraph.push((float)hw.nd);
+            display.netUpGraph.setMax(2048);
+            display.netUpGraph.push((float)hw.nu);
+            // External event (Alertmanager): toast when a new top alert fires.
+            static char lastEventTop[21] = {0};
+            if (state.events.count > 0 && state.events.top[0])
             {
-              needRedraw = true;
-              HardwareData &hw = state.hw;
-              display.cpuGraph.push((float)hw.cl);
-              display.gpuGraph.push((float)hw.gl);
-              display.netDownGraph.setMax(2048);
-              display.netDownGraph.push((float)hw.nd);
-              display.netUpGraph.setMax(2048);
-              display.netUpGraph.push((float)hw.nu);
-              // External event (Alertmanager): toast when a new top alert fires.
-              static char lastEventTop[21] = {0};
-              if (state.events.count > 0 && state.events.top[0])
+              if (strncmp(lastEventTop, state.events.top, sizeof(lastEventTop)) != 0)
               {
-                if (strncmp(lastEventTop, state.events.top, sizeof(lastEventTop)) != 0)
-                {
-                  snprintf(toastMsg, sizeof(toastMsg), "! %s", state.events.top);
-                  toastUntil = now + 4000;
-                  strncpy(lastEventTop, state.events.top, sizeof(lastEventTop) - 1);
-                  lastEventTop[sizeof(lastEventTop) - 1] = '\0';
-                }
+                snprintf(toastMsg, sizeof(toastMsg), "! %s", state.events.top);
+                toastUntil = now + 4000;
+                strncpy(lastEventTop, state.events.top, sizeof(lastEventTop) - 1);
+                lastEventTop[sizeof(lastEventTop) - 1] = '\0';
               }
-              else
-                lastEventTop[0] = '\0';
             }
+            else
+              lastEventTop[0] = '\0';
           }
         }
         netManager.clearLineBuffer();
