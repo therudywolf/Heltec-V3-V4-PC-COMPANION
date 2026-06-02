@@ -11,7 +11,10 @@
   },
   "weather_city": "London",
 
-  "_comment_claude": "SELF-SET token budgets for the Claude gauge + 80% reminder (Anthropic's real quota isn't on disk). Usage is summed FRESH from ~/.claude session transcripts (input+output, cache excluded) so it's current, not from the stale stats-cache. Sized for that metric (~15-30M heavy day, ~70M/week). 0 disables a gauge.",
+  "_comment_claude": "claude_live=true reads the REAL 5h/weekly limits via the Claude Code OAuth token (~/.claude/.credentials.json) - one tiny authed API call per interval, spends ~a dozen of your own tokens. Off by default. When off, the gauge is a self-set token budget summed FRESH from ~/.claude transcripts (the real quota isn't on disk otherwise). The 5h reset countdown is always shown.",
+  "claude_live": false,
+  "claude_live_interval_sec": 300,
+  "claude_live_model": "claude-haiku-4-5",
   "claude_daily_budget": 30000000,
   "claude_weekly_budget": 100000000,
   "claude_alert_pct": 80,

@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 # remains the public entry point and re-exports the names tests rely on.
 import claude_usage as claude_mod
 import claude_sessions
+import claude_live
 import lhm_parse
 import netrates
 import alert_events
@@ -130,6 +131,12 @@ def load_config() -> Dict:
         "claude_daily_budget": claude_budget.DEFAULT_DAILY_BUDGET,
         "claude_weekly_budget": claude_budget.DEFAULT_WEEKLY_BUDGET,
         "claude_alert_pct": claude_budget.DEFAULT_ALERT_PCT,
+        # REAL Claude limits via the Claude Code OAuth token (opt-in): one tiny
+        # authed API call reads the genuine 5h/weekly utilization + reset (not a
+        # budget proxy). Uses the account's own token + a negligible bit of quota.
+        "claude_live": False,
+        "claude_live_interval_sec": 300,
+        "claude_live_model": claude_live.DEFAULT_MODEL,
         # Overlay live NVIDIA GPU metrics (temp/load/VRAM/power/fan) from
         # nvidia-smi — zero-install, fills what windows_exporter cannot. true/false.
         "gpu_via_nvidia_smi": True,
@@ -175,6 +182,12 @@ def load_config() -> Dict:
             out["alertmanager_url"] = data["alertmanager_url"]
         if "forest_nodes" in data and isinstance(data["forest_nodes"], list):
             out["forest_nodes"] = data["forest_nodes"]
+        if "claude_live" in data:
+            out["claude_live"] = bool(data["claude_live"])
+        if "claude_live_interval_sec" in data:
+            out["claude_live_interval_sec"] = int(data["claude_live_interval_sec"])
+        if "claude_live_model" in data:
+            out["claude_live_model"] = data["claude_live_model"]
     except Exception:
         pass
     return out
@@ -249,6 +262,9 @@ ALERT_WEBHOOK_PORT = int(os.getenv("ALERT_WEBHOOK_PORT", str(_config.get("alert_
 CLAUDE_DAILY_BUDGET = int(_config.get("claude_daily_budget", claude_budget.DEFAULT_DAILY_BUDGET))
 CLAUDE_WEEKLY_BUDGET = int(_config.get("claude_weekly_budget", claude_budget.DEFAULT_WEEKLY_BUDGET))
 CLAUDE_ALERT_PCT = int(_config.get("claude_alert_pct", claude_budget.DEFAULT_ALERT_PCT))
+CLAUDE_LIVE = str(os.getenv("CLAUDE_LIVE", str(_config.get("claude_live", False)))).lower() in ("1", "true", "yes")
+CLAUDE_LIVE_INTERVAL = int(_config.get("claude_live_interval_sec", 300))
+CLAUDE_LIVE_MODEL = _config.get("claude_live_model", claude_live.DEFAULT_MODEL)
 GPU_VIA_NVIDIA_SMI = str(os.getenv("GPU_VIA_NVIDIA_SMI", str(_config.get("gpu_via_nvidia_smi", True)))).lower() in ("1", "true", "yes")
 FOREST_QUERY_URL = os.getenv("FOREST_QUERY_URL", _config.get("forest_query_url", ""))
 ALERTMANAGER_URL = os.getenv("ALERTMANAGER_URL", _config.get("alertmanager_url", ""))
@@ -844,6 +860,11 @@ async def get_media_info(_loop: asyncio.AbstractEventLoop) -> Dict:
     return {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
 
 
+# Cached REAL Claude limits from the OAuth API (throttled to CLAUDE_LIVE_INTERVAL).
+_claude_live_cache: Dict[str, Any] = {}
+_claude_live_at: float = 0.0
+
+
 def get_claude_usage_sync() -> Dict[str, Any]:
     """Read local Claude Code usage/limits (~/.claude) and apply token budgets so
     window_pct/weekly_pct are populated (Claude exposes no official quota % on
@@ -891,6 +912,31 @@ def get_claude_usage_sync() -> Dict[str, Any]:
             if CLAUDE_DAILY_BUDGET > 0:
                 usage["window_pct"] = max(0, min(100, int(round(
                     win["window_tokens"] * 100.0 / CLAUDE_DAILY_BUDGET))))
+
+        # REAL limits (opt-in): one tiny authed API call gives the genuine 5h/7d
+        # utilization + reset, overriding the budget proxy. Throttled + cached.
+        if CLAUDE_LIVE:
+            global _claude_live_cache, _claude_live_at
+            nowt = _time.time()
+            if not _claude_live_cache or (nowt - _claude_live_at) >= CLAUDE_LIVE_INTERVAL:
+                live = claude_live.fetch_live_usage(
+                    claude_live.read_oauth_token(), nowt, model=CLAUDE_LIVE_MODEL)
+                if live:
+                    _claude_live_cache = live
+                    _claude_live_at = nowt
+            lc = _claude_live_cache
+            if lc:
+                if lc.get("window_pct") is not None:
+                    usage["window_pct"] = lc["window_pct"]
+                if lc.get("weekly_pct") is not None:
+                    usage["weekly_pct"] = lc["weekly_pct"]
+                if lc.get("resets_in_min") is not None:
+                    usage["resets_in_min"] = lc["resets_in_min"]
+                usage["weekly_resets_in_min"] = lc.get("weekly_resets_in_min")
+                usage["limit_status"] = lc.get("limit_status")
+                usage["source"] = "live"
+                usage["available"] = True
+                usage["stale"] = False   # live data is current by definition
 
         usage = claude_budget.apply_budget(
             usage, stats,
@@ -975,6 +1021,8 @@ def _build_claude_block(claude: Optional[Dict]) -> Dict[str, Any]:
         "day": c.get("date"),           # date the today_* figures apply to
         "stale": bool(c.get("stale", False)),  # True if "day" isn't today (data is old)
         "act": c.get("last_active"),    # most recent date with activity (freshness)
+        "wrst": c.get("weekly_resets_in_min"),  # minutes to weekly reset (live only)
+        "src": c.get("source"),         # "live" (real API) | "sessions" | "stats-cache"
     }
 
 
