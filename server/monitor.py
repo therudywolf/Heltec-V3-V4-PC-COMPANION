@@ -36,6 +36,7 @@ import netrates
 import alert_events
 import claude_budget
 import forest_panel
+import nvidia_smi
 import payload as payload_mod
 import prometheus_source
 import weather as weather_mod
@@ -127,6 +128,9 @@ def load_config() -> Dict:
         "claude_daily_budget": claude_budget.DEFAULT_DAILY_BUDGET,
         "claude_weekly_budget": claude_budget.DEFAULT_WEEKLY_BUDGET,
         "claude_alert_pct": claude_budget.DEFAULT_ALERT_PCT,
+        # Overlay live NVIDIA GPU metrics (temp/load/VRAM/power/fan) from
+        # nvidia-smi — zero-install, fills what windows_exporter cannot. true/false.
+        "gpu_via_nvidia_smi": True,
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -155,6 +159,8 @@ def load_config() -> Dict:
             out["claude_weekly_budget"] = int(data["claude_weekly_budget"])
         if "claude_alert_pct" in data:
             out["claude_alert_pct"] = int(data["claude_alert_pct"])
+        if "gpu_via_nvidia_smi" in data:
+            out["gpu_via_nvidia_smi"] = bool(data["gpu_via_nvidia_smi"])
     except Exception:
         pass
     return out
@@ -229,6 +235,7 @@ ALERT_WEBHOOK_PORT = int(os.getenv("ALERT_WEBHOOK_PORT", str(_config.get("alert_
 CLAUDE_DAILY_BUDGET = int(_config.get("claude_daily_budget", claude_budget.DEFAULT_DAILY_BUDGET))
 CLAUDE_WEEKLY_BUDGET = int(_config.get("claude_weekly_budget", claude_budget.DEFAULT_WEEKLY_BUDGET))
 CLAUDE_ALERT_PCT = int(_config.get("claude_alert_pct", claude_budget.DEFAULT_ALERT_PCT))
+GPU_VIA_NVIDIA_SMI = str(os.getenv("GPU_VIA_NVIDIA_SMI", str(_config.get("gpu_via_nvidia_smi", True)))).lower() in ("1", "true", "yes")
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
@@ -446,13 +453,20 @@ async def _get_lhm_raw_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
 
 async def get_lhm_data_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
     """Primary hw source. With SOURCE=="prometheus", overlay Prometheus metrics
-    (load/ram/disk/net) onto the LHM result (temps/GPU/fans). LHM stays the base
-    so a Prometheus outage degrades gracefully to LHM-only."""
+    (CPU load/RAM/disk/net from windows_exporter) onto the LHM result. If
+    GPU_VIA_NVIDIA_SMI is on, overlay live GPU temp/load/VRAM/power/fan from
+    nvidia-smi (zero-install; windows_exporter has no GPU metrics). Each overlay
+    only fills keys it has, so missing sources degrade gracefully."""
+    loop = asyncio.get_event_loop()
     hw = await _get_lhm_raw_async(session)
     if SOURCE == "prometheus":
         overlay = await get_prometheus_overlay_async(session)
         if overlay:
             hw = prometheus_source.merge_hw(hw, overlay)
+    if GPU_VIA_NVIDIA_SMI:
+        gpu = await loop.run_in_executor(executor, nvidia_smi.query_gpu_sync)
+        if gpu:
+            hw = prometheus_source.merge_hw(hw, gpu)
     return hw
 
 
