@@ -4,6 +4,7 @@ name: Release
 #   bmw-v0.5.0     -> Nocturne BMW
 #   pc-v0.5.0      -> Nocturne PC
 #   hacker-v0.5.0  -> Nocturne Hacker
+#   multi-v0.5.0   -> Nocturne Multi (all-in-one)
 # Builds that app, packages a flashable factory image + ESP Web Tools manifest
 # (and the Android APK for BMW), and publishes a GitHub Release.
 
@@ -13,6 +14,7 @@ on:
       - 'bmw-v*'
       - 'pc-v*'
       - 'hacker-v*'
+      - 'multi-v*'
 
 permissions:
   contents: write

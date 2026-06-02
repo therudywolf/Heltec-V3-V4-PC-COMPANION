@@ -14,11 +14,13 @@ this monorepo on a single shared core ([`lib/nocturne-core`](lib/nocturne-core))
 
 | Product | Dir | What it is |
 |---------|-----|-----------|
-| 🚗 **BMW** | [`apps/bmw`](apps/bmw) | BMW E39 I-Bus assistant + BLE proximity key (+ Android app) |
-| 🖥️ **PC** | [`apps/pc`](apps/pc) | PC hardware monitoring + Forza telemetry (+ Python data collector) |
+| 🚗 **BMW** | [`apps/bmw`](apps/bmw) | BMW E39 I-Bus assistant + BLE proximity key + OBD2 diagnostics (+ Android app) |
+| 🖥️ **PC** | [`apps/pc`](apps/pc) | PC hardware monitoring + Forza telemetry + events (+ Python data collector) |
 | 📡 **Hacker** | [`apps/hacker`](apps/hacker) | WiFi/BLE research toolkit — sniff, scan, honeypot, BLE |
+| 🐺 **Multi** | [`apps/multi`](apps/multi) | All-in-one: everything above in one firmware (for enthusiasts) |
 
-Each product has its own README, version, and (soon) its own release track.
+Each product has its own README, version, and its own release track
+(`bmw-v*` / `pc-v*` / `hacker-v*` / `multi-v*`).
 
 ## Build
 
@@ -26,17 +28,18 @@ Each product has its own README, version, and (soon) its own release track.
 pio run -d apps/bmw       # BMW product
 pio run -d apps/pc        # PC product
 pio run -d apps/hacker    # Hacker product
+pio run -d apps/multi     # All-in-one
 # add -t upload to flash over USB-C
 ```
 
-PC and Hacker need WiFi creds in `include/secrets.h` (copy `include/secrets.h.example`).
+PC, Hacker and Multi need WiFi creds in `include/secrets.h` (copy `include/secrets.h.example`).
 
 ## Repository layout
 
 ```
 lib/nocturne-core/    shared core: display engine, menu/input, battery, boot, config
 src/                  shared firmware sources (compiled per-product via build_src_filter)
-apps/{bmw,pc,hacker}/ one PlatformIO project per product (platformio.ini + VERSION + README)
+apps/{bmw,pc,hacker,multi}/ one PlatformIO project per product (platformio.ini + VERSION + README)
 server/               PC-side data collector for the PC product (Python)
 BMW datasheet/        I-Bus protocol reference (wilhelm-docs, E46 codes, AVR-IBus)
 docs/                 guides + docs/RESTRUCTURE_PLAN.md (the 3-product roadmap)

@@ -7,14 +7,14 @@ on:
     branches: [main]
 
 jobs:
-  # The three standalone products (the future of the repo).
+  # The standalone products (the future of the repo): 3 clean + multi (all-in-one).
   apps:
     name: Build app (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [bmw, pc, hacker]
+        app: [bmw, pc, hacker, multi]
     steps:
       - uses: actions/checkout@v4
 
