@@ -99,6 +99,41 @@ class TestMapQueryResults:
         assert ps.map_query_results(None) == {}
 
 
+class TestCpuLoadFromIdle:
+    def _m(self, idle, busy):
+        # one idle-mode series + one busy-mode series => total = idle+busy
+        return [
+            ("windows_cpu_time_total", {"core": "0,0", "mode": "idle"}, float(idle)),
+            ("windows_cpu_time_total", {"core": "0,0", "mode": "user"}, float(busy)),
+        ]
+
+    def test_first_sample_none(self):
+        st = {"idle": None, "total": None}
+        assert ps.cpu_load_from_idle(self._m(100, 0), st) is None
+
+    def test_50pct_load(self):
+        st = {"idle": None, "total": None}
+        ps.cpu_load_from_idle(self._m(100, 100), st)          # prime
+        # next: idle +10, busy +10 => d_idle=10 d_total=20 => load 50%
+        load = ps.cpu_load_from_idle(self._m(110, 110), st)
+        assert load == 50
+
+    def test_full_idle_zero_load(self):
+        st = {"idle": None, "total": None}
+        ps.cpu_load_from_idle(self._m(100, 100), st)
+        load = ps.cpu_load_from_idle(self._m(120, 100), st)   # only idle grew
+        assert load == 0
+
+    def test_no_counter_none(self):
+        assert ps.cpu_load_from_idle([], {"idle": None, "total": None}) is None
+
+    def test_clamped(self):
+        st = {"idle": None, "total": None}
+        ps.cpu_load_from_idle(self._m(100, 100), st)
+        load = ps.cpu_load_from_idle(self._m(100, 130), st)   # all busy => 100
+        assert load == 100
+
+
 class TestMergeHw:
     def test_overlay_wins(self):
         base = {"cl": 10, "ct": 60, "gl": 20}

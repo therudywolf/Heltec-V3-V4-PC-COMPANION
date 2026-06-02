@@ -45,6 +45,43 @@ LOGICAL_SIZE_METRIC = "windows_logical_disk_size_bytes"
 
 BYTES_PER_GB = 1024.0 ** 3
 
+# CPU load is derived from the idle-time counter: load% = 100 * (1 - d_idle/d_total)
+# across all cores between two scrapes. State held by the caller (monitor.py).
+_cpu_last = {"idle": None, "total": None}
+
+
+def cpu_load_from_idle(metrics, state=None) -> Optional[int]:
+    """Compute total CPU load % from windows_cpu_time_total idle vs all modes.
+
+    ``metrics`` is parse_exposition() output. Sums idle seconds and total seconds
+    across every core/mode, compares to the previous sample in ``state`` (a dict
+    with 'idle'/'total'), and returns 0..100. Returns None on the first sample
+    (no delta yet) or if the counters are absent. Updates ``state`` in place.
+    """
+    st = state if state is not None else _cpu_last
+    idle = 0.0
+    total = 0.0
+    for n, labels, val in metrics:
+        if n != CPU_IDLE_METRIC:
+            continue
+        total += val
+        if labels.get("mode") == "idle":
+            idle += val
+    if total <= 0:
+        return None
+    prev_idle = st.get("idle")
+    prev_total = st.get("total")
+    st["idle"] = idle
+    st["total"] = total
+    if prev_idle is None or prev_total is None:
+        return None
+    d_total = total - prev_total
+    d_idle = idle - prev_idle
+    if d_total <= 0:
+        return None
+    load = 100.0 * (1.0 - (d_idle / d_total))
+    return max(0, min(100, int(round(load))))
+
 
 def parse_exposition(text: str) -> List[Tuple[str, Dict[str, str], float]]:
     """Parse Prometheus text exposition format into ``(name, labels, value)``.
@@ -126,6 +163,11 @@ def build_hw_from_exposition(text: str, drive_letters=("C", "D", "E", "F")) -> D
     """
     metrics = parse_exposition(text)
     hw: Dict = {}
+
+    # CPU load % from the idle counter (stateful; None on first scrape).
+    cl = cpu_load_from_idle(metrics)
+    if cl is not None:
+        hw["cl"] = cl
 
     # RAM: used = total - free, in GB.
     mem_total = _sum(metrics, MEM_TOTAL_METRIC)
