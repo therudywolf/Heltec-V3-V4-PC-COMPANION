@@ -182,7 +182,8 @@ static const unsigned char icon_cloud_bits[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 const char *SceneManager::sceneNames_[] = {
-    "MAIN", "CPU", "GPU", "RAM", "DISKS", "MEDIA", "FANS", "MB", "WTHR", "CLAUDE"};
+    "MAIN", "CPU",  "GPU",    "RAM",    "DISKS", "MEDIA",
+    "FANS", "MB",   "WTHR",   "CLAUDE", "NET"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -234,6 +235,12 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
     break;
   case NOCT_SCENE_WEATHER:
     drawWeather(xOffset);
+    break;
+  case NOCT_SCENE_CLAUDE:
+    drawClaude(xOffset);
+    break;
+  case NOCT_SCENE_NET:
+    drawNet(xOffset);
     break;
   default:
     drawMain(blinkState, xOffset);
@@ -772,6 +779,166 @@ void SceneManager::drawWeather(int xOff)
   u8g2.drawUTF8(tempX, WTHR_TEMP_Y, buf);
 
   disp_.drawGreebles();
+}
+
+// ---------------------------------------------------------------------------
+// SCENE: CLAUDE — usage/limits. Two labelled bars (5-hour window, weekly) with
+// right-aligned %, plan tag, tokens-today footer + reset countdown. pct = -1
+// renders "n/a"; unavailable renders a centred CLAUDE / OFFLINE.
+// ---------------------------------------------------------------------------
+void SceneManager::drawClaude(int xOff)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  ClaudeData &c = state_.claude;
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  const int left = NOCT_CARD_LEFT;            // 2
+  const int right = NOCT_DISP_W - NOCT_CARD_LEFT;
+
+  if (!c.available)
+  {
+    u8g2.setFont(VALUE_FONT);
+    const char *t = "CLAUDE";
+    int tw = u8g2.getUTF8Width(t);
+    u8g2.drawUTF8(X((NOCT_DISP_W - tw) / 2, xOff), NOCT_CONTENT_START + 14, t);
+    u8g2.setFont(LABEL_FONT);
+    const char *s = "OFFLINE";
+    int sw = u8g2.getUTF8Width(s);
+    u8g2.drawUTF8(X((NOCT_DISP_W - sw) / 2, xOff), NOCT_CONTENT_START + 30, s);
+    return;
+  }
+
+  // Plan tag, top-right (e.g. "MAX") if known.
+  if (c.plan.length())
+  {
+    char plan[12];
+    int n = 0;
+    for (; n < (int)sizeof(plan) - 1 && c.plan[n]; n++)
+      plan[n] = (char)toupper((unsigned char)c.plan[n]);
+    plan[n] = '\0';
+    u8g2.setFont(LABEL_FONT);
+    int pw_ = u8g2.getUTF8Width(plan);
+    u8g2.drawUTF8(X(right - pw_, xOff), NOCT_CONTENT_START + 6, plan);
+  }
+
+  // Two usage bars.
+  const int barH = 7;
+  const int labelW = 22;
+  const int pctW = 26;
+  const int barX = left + labelW;
+  const int barW = right - pctW - 2 - barX;
+  int rowY = NOCT_CONTENT_START + 2;
+
+  struct { const char *label; int pct; } rows[2] = {
+      {"5H", c.windowPct}, {"WK", c.weeklyPct}};
+  for (int i = 0; i < 2; i++)
+  {
+    int by = rowY + i * (barH + 6);
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(left, xOff), by + barH, rows[i].label);
+    if (rows[i].pct >= 0)
+    {
+      int pct = rows[i].pct > 100 ? 100 : rows[i].pct;
+      disp_.drawProgressBar(X(barX, xOff), by, barW, barH, pct);
+      char pb[8];
+      snprintf(pb, sizeof(pb), "%d%%", pct);
+      int w2 = u8g2.getUTF8Width(pb);
+      u8g2.drawUTF8(X(right - w2, xOff), by + barH, pb);
+    }
+    else
+    {
+      disp_.drawTechFrame(X(barX, xOff), by, barW, barH);
+      const char *na = "n/a";
+      int w2 = u8g2.getUTF8Width(na);
+      u8g2.drawUTF8(X(right - w2, xOff), by + barH, na);
+    }
+  }
+
+  // Footer: tokens today (k/M) left, reset countdown right.
+  char foot[24];
+  if (c.todayTokens >= 1000000L)
+    snprintf(foot, sizeof(foot), "%.1fM tok", c.todayTokens / 1000000.0);
+  else if (c.todayTokens >= 1000L)
+    snprintf(foot, sizeof(foot), "%ldk tok", c.todayTokens / 1000L);
+  else
+    snprintf(foot, sizeof(foot), "%ld tok", c.todayTokens);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(X(left, xOff), NOCT_DISP_H - 3, foot);
+
+  if (c.resetsInMin >= 0)
+  {
+    char rb[16];
+    if (c.resetsInMin >= 60)
+      snprintf(rb, sizeof(rb), "r%dh%02d", c.resetsInMin / 60, c.resetsInMin % 60);
+    else
+      snprintf(rb, sizeof(rb), "r%dm", c.resetsInMin);
+    int w3 = u8g2.getUTF8Width(rb);
+    u8g2.drawUTF8(X(right - w3, xOff), NOCT_DISP_H - 3, rb);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SCENE: NET — down/up rates with rolling sparklines + ping. Two stacked rows
+// (DN / UP), each: label, current rate (KB/s or MB/s), sparkline. Ping footer.
+// Reuses DisplayEngine netDownGraph/netUpGraph (pushed in the main loop).
+// ---------------------------------------------------------------------------
+static void formatRate(char *buf, size_t n, int kbs)
+{
+  if (kbs >= 1024)
+    snprintf(buf, n, "%.1fM/s", kbs / 1024.0);
+  else
+    snprintf(buf, n, "%dK/s", kbs);
+}
+
+void SceneManager::drawNet(int xOff)
+{
+#if NOCT_FEATURE_MONITORING
+  HardwareData &hw = state_.hw;
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  const int left = NOCT_CARD_LEFT;
+  const int right = NOCT_DISP_W - NOCT_CARD_LEFT;
+  const int graphW = 46;                       // sparkline width on the right
+  const int graphX = right - graphW;
+  const int rowTop = NOCT_CONTENT_START + 1;
+  const int rowH = 15;
+  const int graphH = 11;
+
+  struct { const char *label; int rate; RollingGraph *g; } rows[2] = {
+      {"DN", hw.nd, &disp_.netDownGraph},
+      {"UP", hw.nu, &disp_.netUpGraph}};
+
+  for (int i = 0; i < 2; i++)
+  {
+    int ry = rowTop + i * rowH;
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(left, xOff), ry + 8, rows[i].label);
+    char rb[16];
+    formatRate(rb, sizeof(rb), rows[i].rate < 0 ? 0 : rows[i].rate);
+    u8g2.setFont(VALUE_FONT);
+    u8g2.drawUTF8(X(left + 18, xOff), ry + 9, rb);
+    // Sparkline framed on the right.
+    disp_.drawTechFrame(X(graphX, xOff), ry, graphW, graphH);
+    disp_.drawRollingGraph(X(graphX + 1, xOff), ry + 1, graphW - 2, graphH - 2,
+                           *rows[i].g, rows[i].g->maxVal > 0 ? rows[i].g->maxVal : 2048);
+  }
+
+  // Footer: ping (pg) to gateway, left; RSSI hint right is in the header already.
+  u8g2.setFont(LABEL_FONT);
+  char pb[20];
+  if (hw.pg > 0)
+    snprintf(pb, sizeof(pb), "PING %dms", hw.pg);
+  else
+    snprintf(pb, sizeof(pb), "PING --");
+  u8g2.drawUTF8(X(left, xOff), NOCT_DISP_H - 3, pb);
+#else
+  (void)xOff;
+#endif
 }
 
 // ---------------------------------------------------------------------------

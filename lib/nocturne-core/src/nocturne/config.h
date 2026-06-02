@@ -185,7 +185,8 @@
 #define NOCT_SCENE_MOTHERBOARD 7
 #define NOCT_SCENE_WEATHER 8
 #define NOCT_SCENE_CLAUDE 9
-#define NOCT_TOTAL_SCENES 10
+#define NOCT_SCENE_NET 10
+#define NOCT_TOTAL_SCENES 11
 
 /* alert_metric codes (match monitor.py) */
 #define NOCT_ALERT_CT 0
