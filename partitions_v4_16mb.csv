@@ -1,0 +1,10 @@
+# Partition table for Heltec WiFi LoRa 32 V4 (ESP32-S3R2, 16 MB flash).
+# Dual OTA app slots (3 MB each — current biggest build ~1.1 MB, ample room for
+# the all-in-one "multi" product) + a large LittleFS for pcap capture / logs.
+# Total = 16 MB (0x1000000). Boot can only be confirmed on hardware.
+# Name,    Type, SubType,  Offset,    Size,      Flags
+nvs,       data, nvs,      0x9000,    0x5000,
+otadata,   data, ota,      0xe000,    0x2000,
+app0,      app,  ota_0,    0x10000,   0x300000,
+app1,      app,  ota_1,    0x310000,  0x300000,
+spiffs,    data, spiffs,   0x610000,  0x9F0000,
