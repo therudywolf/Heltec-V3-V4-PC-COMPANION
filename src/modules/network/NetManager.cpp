@@ -363,6 +363,36 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     ev.severity[0] = '\0';
   }
 
+  // Forest panel block (aggregated node status from the server).
+  JsonObjectConst fo_obj = doc["forest"];
+  ForestData &fo = state->forest;
+  if (!fo_obj.isNull()) {
+    fo.up = fo_obj["up"] | 0;
+    JsonArrayConst nodes = fo_obj["nodes"];
+    int n = 0;
+    for (JsonObjectConst nd : nodes) {
+      if (n >= ForestData::kMaxNodes) break;
+      ForestNode &dst = fo.nodes[n];
+      const char *nm = nd["name"];
+      strncpy(dst.name, nm ? nm : "", sizeof(dst.name) - 1);
+      dst.name[sizeof(dst.name) - 1] = '\0';
+      const char *st = nd["st"];
+      strncpy(dst.status, st ? st : "", sizeof(dst.status) - 1);
+      dst.status[sizeof(dst.status) - 1] = '\0';
+      dst.cpu = nd["cpu"] | -1;
+      dst.ram = nd["ram"] | -1;
+      dst.disk = nd["disk"] | -1;
+      const char *ex = nd["extra"];
+      strncpy(dst.extra, ex ? ex : "", sizeof(dst.extra) - 1);
+      dst.extra[sizeof(dst.extra) - 1] = '\0';
+      n++;
+    }
+    fo.count = n;
+  } else {
+    fo.count = 0;
+    fo.up = 0;
+  }
+
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];
   const char *metric = doc["alert_metric"];

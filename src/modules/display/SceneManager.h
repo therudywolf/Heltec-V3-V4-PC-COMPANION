@@ -33,6 +33,7 @@ public:
   void drawWeather(int xOff = 0);
   void drawClaude(int xOff = 0);
   void drawNet(int xOff = 0);
+  void drawForest(int xOff = 0);
 
   // --- Always available ---
   void drawSearchMode(int scanPhase);

@@ -63,6 +63,24 @@ struct EventsData {
   char severity[12] = {0};  // "sev" severity of top
 };
 
+/** Forest panel: one monitored node (server "forest".nodes[i]). */
+struct ForestNode {
+  char name[17] = {0};   // "name"
+  char status[6] = {0};  // "st": up | warn | down
+  int cpu = -1;          // "cpu" percent, -1 = n/a
+  int ram = -1;          // "ram" percent
+  int disk = -1;         // "disk" percent
+  char extra[17] = {0};  // "extra" short free text
+};
+
+/** Forest panel block (server "forest"). */
+struct ForestData {
+  static const int kMaxNodes = 6;
+  int count = 0;         // "n"
+  int up = 0;            // "up"
+  ForestNode nodes[kMaxNodes];
+};
+
 /** Claude Code usage/limits (from server "claude" block). pct fields are -1
  * when the server has no real source for them (render "n/a"). */
 struct ClaudeData {
@@ -97,6 +115,7 @@ struct AppState {
   ProcessData process;
   ClaudeData claude;
   EventsData events;
+  ForestData forest;
   Settings settings;
   bool weatherReceived = false;
   bool alertActive = false;

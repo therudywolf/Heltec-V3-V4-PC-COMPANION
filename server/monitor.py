@@ -34,6 +34,7 @@ import claude_usage as claude_mod
 import lhm_parse
 import netrates
 import alert_events
+import forest_panel
 import payload as payload_mod
 import prometheus_source
 import weather as weather_mod
@@ -728,6 +729,10 @@ _last_alert: tuple = (None, None)  # ("CPU"|"GPU"|"RAM", "ct"|"gt"|"cl"|"gl"|"gv
 # threshold RED ALERT above; surfaced to the device as the payload "events" block.
 _alert_state = alert_events.AlertState()
 
+# Forest panel: latest aggregated node-status block (built by the forest poll in
+# run() and read into every payload). Empty until the first successful scrape.
+_forest_block: Dict[str, Any] = dict(forest_panel.EMPTY_FOREST)
+
 
 def _alert_thresholds() -> Dict[str, int]:
     """Current RED-ALERT thresholds as the dict :func:`payload.evaluate_alert` wants."""
@@ -825,6 +830,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "media_status": media_status,
         "claude": _build_claude_block(claude),
         "events": _alert_state.snapshot(now),
+        "forest": _forest_block,
         "sv": SERVER_VERSION,
     }
 
