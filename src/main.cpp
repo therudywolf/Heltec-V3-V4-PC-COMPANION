@@ -992,6 +992,18 @@ void loop()
     return;
   }
 
+  // Adaptive frame rate: run the full ~60 FPS only when something is actively
+  // animating (scene transition, open menu, glitch effect, or a live alert);
+  // otherwise fall back to ~30 FPS. Ambient decoration stays smooth (no freeze
+  // risk — we slow, never skip), but steady screens cut I2C/CPU/display power.
+  // Revert: set both intervals equal, or pin guiTimer to NOCT_REDRAW_INTERVAL_MS.
+  bool animating = quickMenuOpen || state.alertActive || settings.glitchEnabled;
+#if NOCT_FEATURE_MONITORING
+  animating = animating || inTransition;  // scene-carousel slide (monitoring only)
+#endif
+  guiTimer.intervalMs =
+      animating ? NOCT_REDRAW_INTERVAL_MS : NOCT_REDRAW_IDLE_INTERVAL_MS;
+
   if (!needRedraw && !guiTimer.check(now) && !quickMenuOpen)
   {
     if (now - lastYield > 10) { yield(); lastYield = now; }
