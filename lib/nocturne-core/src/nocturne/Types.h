@@ -92,6 +92,8 @@ struct ClaudeData {
   long todayTokens = 0;       // "tok" tokens today (all models)
   int todayMsgs = 0;          // "msg" messages today
   int todayTools = 0;         // "tool" tool calls today
+  String date = "";           // "day" date the figures apply to (YYYY-MM-DD)
+  bool stale = false;         // "stale" true if "day" is not today (data is old)
 };
 
 struct Settings {

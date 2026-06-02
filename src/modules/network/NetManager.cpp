@@ -348,6 +348,9 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     cd.todayTokens = cl_obj["tok"] | 0L;
     cd.todayMsgs = cl_obj["msg"] | 0;
     cd.todayTools = cl_obj["tool"] | 0;
+    const char *day = cl_obj["day"];
+    cd.date = String(day ? day : "");
+    cd.stale = cl_obj["stale"] | false;
   } else {
     cd.available = false;
   }
