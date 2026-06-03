@@ -129,11 +129,15 @@ bool blinkState = false;
 int alertBlinkCounter = 0;
 bool lastAlertActive = false;
 unsigned long lastBlink = 0;
+unsigned long alertSnoozeUntil = 0; /* one click snoozes a live alert til here */
+#define ALERT_SNOOZE_MS 60000UL     /* re-arm the alert after 60s */
 #endif
 
 #if NOCT_FEATURE_FORZA
 static unsigned long forzaSplashUntil = 0;
 #define FORZA_SPLASH_MS 3000
+static bool forzaUdpStarted = false; /* UDP 5300 bound once WiFi is up */
+static bool forzaAutoArmed = true;   /* auto-enter Forza once per boot on data */
 #endif
 
 #if NOCT_FEATURE_HACKER
@@ -689,8 +693,31 @@ void loop()
 #endif
 
 #if NOCT_FEATURE_FORZA
-  if (currentMode == MODE_GAME_FORZA)
+  // Lazy-bind the Forza UDP listener once WiFi STA is up, so a Forza stream can
+  // be auto-detected while in PC-monitoring mode.
+  if (!forzaUdpStarted && WiFi.getMode() == WIFI_STA &&
+      WiFi.status() == WL_CONNECTED)
+  {
+    forzaManager.begin();
+    forzaUdpStarted = true;
+  }
+  if (currentMode == MODE_GAME_FORZA || forzaUdpStarted)
     forzaManager.tick();
+
+  // Auto-enter Forza ONCE per boot when telemetry starts arriving. After a
+  // manual exit it will NOT pull back in (forzaAutoArmed latches false).
+  if (forzaAutoArmed && currentMode == MODE_NORMAL && splashDone &&
+      !quickMenuOpen && forzaManager.isConnected())
+  {
+    if (appModeManager.switchToMode(currentMode, MODE_GAME_FORZA))
+    {
+      forzaSplashUntil = now + FORZA_SPLASH_MS;
+      forzaAutoArmed = false;
+      needRedraw = true;
+      snprintf(toastMsg, sizeof(toastMsg), "FORZA LINK");
+      toastUntil = now + 1500;
+    }
+  }
 #endif
 
   // ── Input ───────────────────────────────────────────────────────────
@@ -774,14 +801,21 @@ void loop()
 
 #if NOCT_FEATURE_MONITORING
   // ── Alert & carousel (monitoring) ───────────────────────────────────
-  if (state.alertActive)
+  // A NEW alert (rising edge) re-arms; one button click snoozes a live alert
+  // for ALERT_SNOOZE_MS so the carousel/navigation become usable again.
+  if (state.alertActive && !lastAlertActive)
+    alertSnoozeUntil = 0;
+  lastAlertActive = state.alertActive;
+  bool alertLive = state.alertActive && now >= alertSnoozeUntil;
+
+  if (alertLive)
   {
     int total = sceneManager.totalScenes();
     int target = state.alertTargetScene;
     currentScene = (total > 0 && target >= 0 && target < total) ? target : 0;
     needRedraw = true;
   }
-  if (settings.carouselEnabled && !predatorMode && !state.alertActive)
+  if (settings.carouselEnabled && !predatorMode && !alertLive)
   {
     unsigned long intervalMs = (unsigned long)settings.carouselIntervalSec * 1000;
     if (now - lastCarousel > intervalMs)
@@ -908,7 +942,15 @@ void loop()
 
 #if NOCT_FEATURE_MONITORING
     case MODE_NORMAL:
-      if (event == EV_SHORT && !state.alertActive)
+      if (event == EV_SHORT && alertLive)
+      {
+        // One click snoozes the live alert and frees up navigation/carousel.
+        alertSnoozeUntil = now + ALERT_SNOOZE_MS;
+        snprintf(toastMsg, sizeof(toastMsg), "ALERT SNOOZED");
+        toastUntil = now + 1500;
+        needRedraw = true;
+      }
+      else if (event == EV_SHORT)
       {
         previousScene = currentScene;
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
