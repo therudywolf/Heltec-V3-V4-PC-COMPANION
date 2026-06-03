@@ -4,13 +4,13 @@
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-22c55e)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-ESP32--S3-0ea5e9)
-![Status](https://img.shields.io/badge/status-alpha-ef4444)
+![Status](https://img.shields.io/badge/status-beta-f59e0b)
 
-Nocturne OS is being split into **three standalone products**, all built from
-this monorepo on a single shared core ([`lib/nocturne-core`](lib/nocturne-core))
-— one source tree, no duplication.
+Nocturne OS is **four standalone products**, all built from this monorepo on a
+single shared core ([`lib/nocturne-core`](lib/nocturne-core)) — one source tree,
+no duplication, feature-flagged per product.
 
-## The three products
+## The four products
 
 | Product | Dir | What it is |
 |---------|-----|-----------|
