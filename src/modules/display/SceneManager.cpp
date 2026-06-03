@@ -1556,7 +1556,9 @@ void SceneManager::drawBottomHint(const char *hint)
   u8g2.setDrawColor(1);
   u8g2.drawLine(0, NOCT_FOOTER_Y, NOCT_DISP_W, NOCT_FOOTER_Y);
   u8g2.setFont(LABEL_FONT);
-  u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
+  // Hint sits BELOW the separator line (baseline 60), not across it - the old
+  // baseline 52 made the y50 line strike through the text ("poloska snizu").
+  u8g2.setCursor(NOCT_MARGIN, NOCT_DISP_H - 4);
   u8g2.print(hint ? hint : DEFAULT_BOTTOM_HINT);
 }
 
