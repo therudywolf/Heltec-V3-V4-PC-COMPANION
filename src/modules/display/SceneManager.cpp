@@ -15,6 +15,7 @@
 
 #if NOCT_FEATURE_HACKER
 #include "WifiSniffManager.h"
+#include "modules/ble/BleManager.h"
 #endif
 
 #if NOCT_FEATURE_FORZA
@@ -2307,6 +2308,58 @@ void SceneManager::drawBleSpammer(int packetCount, const char *modeName)
   snprintf(num, sizeof(num), "%lu", (unsigned long)packetCount);
   drawStatBox(u8g2, disp_, 52, 12, 74, 32, "PKT", num);
 
+  drawBottomHint();
+}
+
+// --- BLE SCAN / TRACKER DETECTOR (passive) ---
+// Surfaces BleManager's scan + tracker heuristics: total devices + Flipper /
+// Flock / skimmer tallies + the strongest couple of devices. Header flags
+// "!TRACKER!" when any tracker is detected.
+void SceneManager::drawBleScan(BleManager &mgr)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setDrawColor(1);
+
+  int n = mgr.getScanCount();
+  int fl = mgr.getFlipperCount();
+  int fk = mgr.getFlockCount();
+  int sk = mgr.getSkimmerCount();
+  bool hit = (fl + fk + sk) > 0;
+
+  char rt[12];
+  snprintf(rt, sizeof(rt), "%d dev", n);
+  bool blink = hit && ((millis() / 350) % 2 == 0);
+  drawModeHeader(u8g2, (hit && !blink) ? "!TRACKER!" : "BLE TRACK", rt);
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+  char l[28];
+  snprintf(l, sizeof(l), "Flipper %d   Flock %d", fl, fk);
+  u8g2.setCursor(2, 21);
+  u8g2.print(l);
+  snprintf(l, sizeof(l), "Skimmer %d", sk);
+  u8g2.setCursor(2, 31);
+  u8g2.print(l);
+
+  int shown = 0;
+  for (int i = 0; i < n && shown < 2; i++)
+  {
+    const BleScanDevice *d = mgr.getScanDevice(i);
+    if (!d)
+      continue;
+    const char *nm = (d->name[0]) ? d->name : "(unknown)";
+    snprintf(l, sizeof(l), "%-12.12s %d", nm, d->rssi);
+    u8g2.setCursor(2, 41 + shown * 8);
+    u8g2.print(l);
+    shown++;
+  }
+  if (n == 0)
+  {
+    u8g2.setCursor(2, 43);
+    u8g2.print("scanning...");
+  }
+  u8g2.setMaxClipWindow();
   drawBottomHint();
 }
 

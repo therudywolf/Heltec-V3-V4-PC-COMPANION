@@ -39,6 +39,7 @@ enum AppMode
   MODE_BLE_SWIFTPAIR_GOOGLE,
   MODE_BLE_SWIFTPAIR_SAMSUNG,
   MODE_BLE_FLIPPER_SPAM,
+  MODE_BLE_SCAN,        // passive BLE scan + tracker detection (AirTag/Flipper/Tile)
 #endif
 };
 

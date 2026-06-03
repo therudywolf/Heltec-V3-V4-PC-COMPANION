@@ -96,6 +96,8 @@ void AppModeManager::cleanupMode(AppMode mode)
   case MODE_BLE_SWIFTPAIR_GOOGLE:
   case MODE_BLE_SWIFTPAIR_SAMSUNG:
   case MODE_BLE_FLIPPER_SPAM:
+  case MODE_BLE_SCAN:
+    ble_.stopScan();
     ble_.stop();
     WiFi.mode(WIFI_STA);
     break;
@@ -284,6 +286,18 @@ bool AppModeManager::initializeMode(AppMode mode
       return false;
     }
     Serial.println("[SYS] BLE SPAM mode initialized");
+    return true;
+
+  case MODE_BLE_SCAN:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF)
+    {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    ble_.beginScan(BLE_SCAN_BASIC);
+    Serial.println("[SYS] BLE TRACKER SCAN mode initialized");
     return true;
 
   case MODE_WIFI_PROBE_SCAN:

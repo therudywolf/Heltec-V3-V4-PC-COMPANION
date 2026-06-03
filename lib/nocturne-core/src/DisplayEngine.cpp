@@ -819,6 +819,14 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
      scene names like CLAUDE/FOREST. Liveness is shown by the heartbeat dot;
      battery % sits at the right edge via drawPowerStatus.) */
 
+  /* Cyberpunk accent: a thin dark scan-tick sweeping the header's top edge —
+     an intentional "active scan" motif. 1px tall, above the title baseline, so
+     it never collides with the scene name. */
+  int sweep = (int)((millis() / 22) % (NOCT_DISP_W + 16)) - 8;
+  u8g2_.setDrawColor(0);
+  u8g2_.drawBox(sweep, 0, 8, 1);
+  u8g2_.setDrawColor(1);
+
   /* Separator: black line for visible boundary below white header */
   u8g2_.setDrawColor(0);
   u8g2_.drawHLine(0, NOCT_HEADER_SEP_Y, NOCT_DISP_W / 2);
