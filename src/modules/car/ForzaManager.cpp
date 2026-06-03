@@ -23,6 +23,8 @@ ForzaManager::ForzaManager() {
   state_.gear = 0;
   state_.tireFL = state_.tireFR = state_.tireRL = state_.tireRR = 0.0f;
   state_.combinedSlip = 0.0f;
+  state_.accelLong = 0.0f;
+  state_.accelLat = 0.0f;
   state_.throttle = 0;
   state_.brake = 0;
   state_.fuel = 1.0f;
@@ -107,6 +109,12 @@ void ForzaManager::parsePacket(const uint8_t *buf, size_t len) {
   if (s2 > slipMax) slipMax = s2;
   if (s3 > slipMax) slipMax = s3;
   state_.combinedSlip = (slipMax >= 0.0f && slipMax < 50.0f) ? slipMax : 0.0f;
+
+  // Acceleration vector (sled block) -> drives the kinetic dashboard reactions.
+  float aLat = readFloatLE(buf + FORZA_OFF_ACCEL_X);
+  float aLong = readFloatLE(buf + FORZA_OFF_ACCEL_Z);
+  state_.accelLat = (fabsf(aLat) < 200.0f) ? aLat : 0.0f;
+  state_.accelLong = (fabsf(aLong) < 200.0f) ? aLong : 0.0f;
 
   state_.fuel = readFloatLE(buf + offFuel);
   if (state_.fuel < 0.0f || state_.fuel > 1.0f)
