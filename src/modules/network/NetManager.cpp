@@ -473,6 +473,12 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     state->alertMetric = -1;
   }
 
+  // PC presence: idle seconds + wall clock (for idle-dim and time-of-day).
+  state->pcIdleSec = doc["pidle"] | -1;
+  const char *clk = doc["clk"];
+  strncpy(state->pcClock, clk ? clk : "", sizeof(state->pcClock) - 1);
+  state->pcClock[sizeof(state->pcClock) - 1] = '\0';
+
   return true;
 }
 
