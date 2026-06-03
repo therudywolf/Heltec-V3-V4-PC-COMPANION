@@ -2959,32 +2959,11 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   bool soon = pct >= SHIFT_SOON;
   bool redline = pct >= SHIFT_NOW;
 
-  // Engine shake (starts @76%, ramps toward redline).
-  // The rev strip + shift badge are drawn WITHOUT shake so the cue stays sharp.
-  int shakeX = 0, shakeY = 0;
-  if (pct > 0.76f)
-  {
-    int it = (int)((pct - 0.76f) * 18.0f);
-    if (it > 3)
-      it = 3;
-    if (it > 0)
-    {
-      shakeX = random(-it, it + 1);
-      shakeY = random(-it, it + 1);
-    }
-  }
-
-  // ---- Kinetic reactions: the dash is alive, driven by car physics ----
+  // ---- Event reactions (DISCRETE only, so the static readouts stay sharp) ----
+  // Numbers do NOT jitter; the dash reacts to events instead:
+  //   impact -> glitch tear, hard brake -> bottom flash, shift -> rev bar + anim.
   float gLong = st.accelLong;  // + accelerate, - brake/decel
-  float gLat = st.accelLat;    // cornering
-  // Inertia lean of the hero numbers (weight transfer feel).
-  int leanX = (int)(-gLat * 0.35f);
-  if (leanX > 5) leanX = 5;
-  if (leanX < -5) leanX = -5;
-  int leanY = (int)(-gLong * 0.32f);
-  if (leanY > 6) leanY = 6;
-  if (leanY < -4) leanY = -4;
-  // Impact: a sudden G spike (collision / hard curb) -> jolt + glitch.
+  float gLat = st.accelLat;
   static float prevMag = 0.0f;
   float mag = sqrtf(gLong * gLong + gLat * gLat);
   float jolt = fabsf(mag - prevMag);
@@ -2993,12 +2972,6 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (jolt > 11.0f)
     impactMs = now;
   bool impact = (now - impactMs < 260);
-  if (impact)
-  {
-    shakeX += random(-4, 5);
-    shakeY += random(-4, 5);
-  }
-  // Hard braking.
   bool hardBrake = (st.brake > 170) || (gLong < -7.0f);
 
   // --- Gear-change detection + shift-quality verdict ---
@@ -3064,81 +3037,64 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
       u8g2.drawHLine(sx + 1, stripH - 1, segW - 2);  // unlit: continuous track
   }
 
-  // --- center shift hint: animated chevrons (up = upshift due, down = lugging)
-  const int sepX = 56;
+  // ====================================================================
+  // PIXEL MAP (128x64), strict non-overlapping bands:
+  //   y0..11  TACH bar (rev lights)            full width
+  //   y15..47 GEAR (logisoso32, left)   |  RPM (logisoso24, right)
+  //   y46..62 SPEED+km/h (right)        |  P/L/SLIP (left)
+  //   x0..53 left column | x54 chevrons | x58..124 right column | x126 fuel
+  // Big numbers are positioned by getAscent() so their TOP lands exactly on
+  // the band top -> no collision with the tach bar regardless of font metrics.
+  // ====================================================================
+  const int sepX = 54;
+
+  // --- center shift hint: chevrons (up = upshift due, down = lugging) ---
   {
-    bool wantUp = soon;                                       // pct >= 78%
-    bool wantDown = (gear >= 2 && pct < 0.32f && speed > 15); // revs too low
+    bool wantUp = soon;
+    bool wantDown = (gear >= 2 && pct < 0.32f && speed > 15);
     if (wantUp || wantDown)
     {
-      int dir = wantUp ? -1 : 1;          // up = -y
+      int dir = wantUp ? -1 : 1;
       int rate = redline ? 80 : 170;
       int active = (int)((now / rate) % 3);
       for (int c = 0; c < 3; c++)
       {
         if (!(redline || c == active))
           continue;
-        int cyc = 30 + c * 11;            // climbing order top->bottom
-        int baseY = cyc;
-        int tipY = cyc + dir * 5;
-        u8g2.drawLine(sepX - 4, baseY, sepX, tipY);
-        u8g2.drawLine(sepX, tipY, sepX + 4, baseY);
+        int cyc = 22 + c * 9;
+        u8g2.drawLine(sepX - 4, cyc, sepX, cyc + dir * 4);
+        u8g2.drawLine(sepX, cyc + dir * 4, sepX + 4, cyc);
       }
-    }
-    else
-    {
-      u8g2.drawPixel(sepX, 36);           // idle: faint separation tick
     }
   }
 
-  // ===================== GEAR (left hero) =====================
+  // ===================== GEAR (left hero, top @ y15) =====================
   char gearBuf[4];
   forza.getGearString(gearBuf, sizeof(gearBuf));
-  u8g2.setFont(u8g2_font_logisoso34_tf);
+  u8g2.setFont(u8g2_font_logisoso32_tf);
   int gw = u8g2.getUTF8Width(gearBuf);
-  int gx = (sepX - gw) / 2 + shakeX + leanX;
-  if (gx < 4)
-    gx = 4;
-  u8g2.drawUTF8(gx, 49 + shakeY + leanY, gearBuf);
+  int gx = (sepX - gw) / 2;
+  if (gx < 3)
+    gx = 3;
+  u8g2.drawUTF8(gx, 15 + u8g2.getAscent(), gearBuf);
 
-  // ============ TACHO: RPM number (right, prominent = 2nd hero) ============
+  // ============ TACHO RPM number (right hero, top @ y15) ============
   char rb[8];
   snprintf(rb, sizeof(rb), "%d", (int)currentRpm);
   u8g2.setFont(u8g2_font_logisoso24_tn);
   int rw = u8g2.getUTF8Width(rb);
-  int rpmX = (NOCT_DISP_W - 5 - rw) + shakeX + leanX;
-  if (rpmX < sepX + 6)
-    rpmX = sepX + 6;
-  u8g2.drawUTF8(rpmX, 33 + shakeY + leanY, rb);
+  u8g2.drawUTF8(NOCT_DISP_W - 4 - rw, 15 + u8g2.getAscent(), rb);
 
-  // ===================== SPEED (secondary, small) =====================
+  // ===================== SPEED (secondary, small, baseline @ y62) ========
   char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
   u8g2.setFont(u8g2_font_logisoso16_tr);
   int spdW = u8g2.getUTF8Width(spdBuf);
-  int spdX = (NOCT_DISP_W - 5 - spdW) + leanX;
-  if (spdX < sepX + 6)
-    spdX = sepX + 6;
-  u8g2.drawUTF8(spdX, 54 + leanY, spdBuf);
+  int spdLeft = NOCT_DISP_W - 4 - spdW;
+  u8g2.drawUTF8(spdLeft, 62, spdBuf);
   u8g2.setFont(u8g2_font_profont10_tf);
   int unitW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - 5 - unitW, 63, "km/h");
-
-  // --- driver-input pedal bar (left edge): solid up = throttle, dotted = brake
-  {
-    int py0 = 14, py1 = 62, ph = py1 - py0;
-    if (st.brake > st.throttle && st.brake > 8)
-    {
-      int bh = (int)((st.brake / 255.0f) * ph);
-      for (int yy = py1 - bh; yy < py1; yy += 2)  // dotted = braking
-        u8g2.drawHLine(0, yy, 2);
-    }
-    else if (st.throttle > 8)
-    {
-      int th = (int)((st.throttle / 255.0f) * ph);
-      u8g2.drawBox(0, py1 - th, 2, th);            // solid = throttle
-    }
-  }
+  u8g2.drawUTF8(spdLeft - 3 - unitW, 62, "km/h");
 
   // --- fuel: slim vertical gauge on the far-right edge (+ low-fuel blink) ---
   float fuel = st.fuel;
@@ -3147,7 +3103,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     int fy0 = 14, fy1 = 62, fh = fy1 - fy0;
     int fillH = (int)(fuel * fh);
     bool low = fuel < 0.15f;
-    if (!(low && (now / 250) % 2 == 0))  // blink whole gauge when low
+    if (!(low && (now / 250) % 2 == 0))
     {
       u8g2.drawFrame(NOCT_DISP_W - 2, fy0, 2, fh);
       if (fillH > 0)
@@ -3155,31 +3111,30 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // --- bottom-left data: SLIP (priority) else position + lap ---
+  // --- bottom-left: SLIP (priority) else position + lap, baseline @ y62 ---
   {
-    bool slipping = st.combinedSlip > 1.1f;
     u8g2.setFont(u8g2_font_profont10_tf);
-    if (slipping && (now / 90) % 2 == 0)
-      u8g2.drawUTF8(4, 62, "SLIP");
-    else if (!slipping)
+    if (st.combinedSlip > 1.1f && (now / 90) % 2 == 0)
+      u8g2.drawUTF8(3, 62, "SLIP");
+    else if (st.combinedSlip <= 1.1f)
     {
       char db[12];
       int pos = st.racePosition;
       if (pos >= 1 && pos <= 24)
       {
         snprintf(db, sizeof(db), "P%d", pos);
-        u8g2.drawUTF8(4, 62, db);
+        u8g2.drawUTF8(3, 62, db);
       }
       if (st.lapNumber >= 1 && st.lapNumber < 999)
       {
         snprintf(db, sizeof(db), "L%d", (int)st.lapNumber);
         int lw = u8g2.getUTF8Width(db);
-        u8g2.drawUTF8(sepX - 3 - lw, 62, db);
+        u8g2.drawUTF8(sepX - 6 - lw, 62, db);
       }
     }
   }
 
-  // --- hard-brake cue: flashing bottom edge (weight-transfer / braking) ---
+  // --- hard-brake cue: flashing bottom edge ---
   if (hardBrake && (now / 70) % 2 == 0)
     u8g2.drawHLine(0, 63, NOCT_DISP_W);
 
