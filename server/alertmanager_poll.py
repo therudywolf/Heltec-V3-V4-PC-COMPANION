@@ -41,7 +41,8 @@ def normalize_am_v2(payload: Any) -> List[Dict[str, str]]:
             severity = "none"
         state = ((a.get("status") or {}).get("state") or "active").lower()
         status = "firing" if state == "active" else "resolved"
-        out.append({"name": str(name)[:20], "severity": severity, "status": status})
+        out.append({"name": str(name)[:20], "severity": severity, "status": status,
+                    "text": alert_events.alert_text(a.get("annotations") or {}, name)})
     return out
 
 

@@ -63,6 +63,7 @@ struct EventsData {
   char top[21] = {0};       // "top" highest-severity alert name (banner)
   char severity[12] = {0};  // "sev" severity of top
   char list[kMaxList][21] = {{0}};  // "list" up to 4 firing alert names (events scene)
+  char text[61] = {0};      // "txt" human summary of the top alert (TG-style text)
 };
 
 /** Forest panel: one monitored node (server "forest".nodes[i]). */

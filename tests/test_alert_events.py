@@ -16,7 +16,8 @@ class TestParseAlertmanager:
         }
         out = ae.parse_alertmanager(body)
         assert len(out) == 2
-        assert out[0] == {"name": "DiskFull", "severity": "critical", "status": "firing"}
+        assert out[0] == {"name": "DiskFull", "severity": "critical", "status": "firing",
+                          "text": "DiskFull"}
 
     def test_resolved_status(self):
         body = {"alerts": [{"labels": {"alertname": "X"}, "status": "resolved"}]}
@@ -61,6 +62,34 @@ class TestBuildEventsBlock:
     def test_ignores_resolved(self):
         alerts = [{"name": "R", "severity": "critical", "status": "resolved"}]
         assert ae.build_events_block(alerts)["n"] == 0
+
+    def test_txt_uses_top_alert_text(self):
+        alerts = [
+            {"name": "Warn", "severity": "warning", "status": "firing", "text": "low mem"},
+            {"name": "Crit", "severity": "critical", "status": "firing", "text": "disk full!"},
+        ]
+        assert ae.build_events_block(alerts)["txt"] == "disk full!"
+
+    def test_txt_falls_back_to_name(self):
+        alerts = [{"name": "Crit", "severity": "critical", "status": "firing"}]
+        assert ae.build_events_block(alerts)["txt"] == "Crit"
+
+
+class TestAlertText:
+    def test_prefers_summary(self):
+        ann = {"summary": "Disk almost full", "description": "ignored"}
+        assert ae.alert_text(ann, "DiskFull") == "Disk almost full"
+
+    def test_falls_through_to_description(self):
+        assert ae.alert_text({"description": "boom"}, "X") == "boom"
+
+    def test_fallback_to_name_when_empty(self):
+        assert ae.alert_text({}, "MyAlert") == "MyAlert"
+        assert ae.alert_text(None, "MyAlert") == "MyAlert"
+
+    def test_truncated_to_max(self):
+        ann = {"summary": "z" * 200}
+        assert len(ae.alert_text(ann, "X")) == ae.TEXT_MAX
 
 
 class TestAlertState:
