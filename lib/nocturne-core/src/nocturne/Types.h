@@ -58,9 +58,11 @@ struct MediaData {
 
 /** External events from Prometheus Alertmanager (server "events" block). */
 struct EventsData {
+  static const int kMaxList = 4;
   int count = 0;            // "n" number of firing alerts
   char top[21] = {0};       // "top" highest-severity alert name (banner)
   char severity[12] = {0};  // "sev" severity of top
+  char list[kMaxList][21] = {{0}};  // "list" up to 4 firing alert names (events scene)
 };
 
 /** Forest panel: one monitored node (server "forest".nodes[i]). */

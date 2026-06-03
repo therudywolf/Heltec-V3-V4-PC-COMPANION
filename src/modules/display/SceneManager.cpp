@@ -183,7 +183,7 @@ static const unsigned char icon_cloud_bits[] = {
 
 const char *SceneManager::sceneNames_[] = {
     "MAIN", "CPU",  "GPU",    "RAM",    "DISKS",  "MEDIA",
-    "FANS", "MB",   "WTHR",   "CLAUDE", "NET",    "FOREST"};
+    "FANS", "MB",   "WTHR",   "CLAUDE", "NET",    "FOREST", "EVENTS"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -244,6 +244,9 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
     break;
   case NOCT_SCENE_FOREST:
     drawForest(xOffset);
+    break;
+  case NOCT_SCENE_EVENTS:
+    drawEvents(xOffset);
     break;
   default:
     drawMain(blinkState, xOffset);
@@ -1049,6 +1052,75 @@ void SceneManager::drawForest(int xOff)
     }
     int rw = u8g2.getUTF8Width(rb);
     u8g2.drawUTF8(X(right - rw, xOff), ry + 6, rb);
+  }
+#else
+  (void)xOff;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// SCENE: EVENTS — firing Alertmanager alerts (same set the Telegram bot gets).
+// Count + top severity banner, then a bulleted list of up to 4 alert names.
+// "ALL CLEAR" when nothing is firing. Monitoring-only (server "events" block).
+// ---------------------------------------------------------------------------
+void SceneManager::drawEvents(int xOff)
+{
+#if NOCT_FEATURE_MONITORING
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  EventsData &e = state_.events;
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  const int left = NOCT_CARD_LEFT;
+  const int right = NOCT_DISP_W - NOCT_CARD_LEFT;
+
+  if (e.count <= 0)
+  {
+    u8g2.setFont(VALUE_FONT);
+    const char *t = "ALL CLEAR";
+    int tw = u8g2.getUTF8Width(t);
+    u8g2.drawUTF8(X((NOCT_DISP_W - tw) / 2, xOff), NOCT_CONTENT_START + 16, t);
+    u8g2.setFont(LABEL_FONT);
+    const char *s = "no alerts firing";
+    int sw = u8g2.getUTF8Width(s);
+    u8g2.drawUTF8(X((NOCT_DISP_W - sw) / 2, xOff), NOCT_CONTENT_START + 30, s);
+    return;
+  }
+
+  // Banner: "<n> FIRING" left (bold), top severity right (uppercased).
+  char hdr[20];
+  snprintf(hdr, sizeof(hdr), "%d FIRING", e.count);
+  u8g2.setFont(VALUE_FONT);
+  u8g2.drawUTF8(X(left, xOff), NOCT_CONTENT_START + 11, hdr);
+  if (e.severity[0])
+  {
+    char sev[12];
+    int n = 0;
+    for (; n < (int)sizeof(sev) - 1 && e.severity[n]; n++)
+      sev[n] = (char)toupper((unsigned char)e.severity[n]);
+    sev[n] = '\0';
+    u8g2.setFont(LABEL_FONT);
+    int sw = u8g2.getUTF8Width(sev);
+    u8g2.drawUTF8(X(right - sw, xOff), NOCT_CONTENT_START + 10, sev);
+  }
+  u8g2.drawHLine(X(left, xOff), NOCT_CONTENT_START + 14, right - left);
+
+  // List of firing alert names (up to 4), each with a bullet.
+  u8g2.setFont(LABEL_FONT);
+  int y = NOCT_CONTENT_START + 25;
+  for (int i = 0; i < EventsData::kMaxList; i++)
+  {
+    if (!e.list[i][0])
+      break;
+    u8g2.drawDisc(X(left + 2, xOff), y - 3, 1);
+    char nm[20];
+    strncpy(nm, e.list[i], sizeof(nm) - 1);
+    nm[sizeof(nm) - 1] = '\0';
+    u8g2.drawUTF8(X(left + 8, xOff), y, nm);
+    y += 10;
+    if (y > NOCT_DISP_H - 1)
+      break;
   }
 #else
   (void)xOff;
