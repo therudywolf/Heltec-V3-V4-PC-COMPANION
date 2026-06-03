@@ -88,7 +88,8 @@ struct ClaudeData {
   String plan = "";           // "plan" (e.g. "max"); empty if unknown
   int windowPct = -1;         // "win" 5h window usage %, -1 = n/a
   int weeklyPct = -1;         // "wk" weekly usage %, -1 = n/a
-  int resetsInMin = -1;       // "rst" minutes to window reset, -1 = n/a
+  int resetsInMin = -1;       // "rst" minutes to 5h-window reset, -1 = n/a
+  int weeklyResetMin = -1;    // "wrst" minutes to weekly reset, -1 = n/a
   long todayTokens = 0;       // "tok" tokens today (all models)
   int todayMsgs = 0;          // "msg" messages today
   int todayTools = 0;         // "tool" tool calls today

@@ -356,6 +356,7 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     cd.windowPct = cl_obj["win"].isNull() ? -1 : (int)(cl_obj["win"] | -1);
     cd.weeklyPct = cl_obj["wk"].isNull() ? -1 : (int)(cl_obj["wk"] | -1);
     cd.resetsInMin = cl_obj["rst"].isNull() ? -1 : (int)(cl_obj["rst"] | -1);
+    cd.weeklyResetMin = cl_obj["wrst"].isNull() ? -1 : (int)(cl_obj["wrst"] | -1);
     cd.todayTokens = cl_obj["tok"] | 0L;
     cd.todayMsgs = cl_obj["msg"] | 0;
     cd.todayTools = cl_obj["tool"] | 0;
