@@ -249,7 +249,7 @@ void setup()
 {
   bootTime = millis();
   Serial.begin(115200);
-  Serial.println("[NOCT] Nocturne OS " NOCTURNE_VERSION " forza1");
+  Serial.println("[NOCT] Nocturne OS " NOCTURNE_VERSION " cyber1");
   setCpuFrequencyMhz(240);
 
   pinMode(NOCT_VEXT_PIN, OUTPUT);
@@ -1088,6 +1088,7 @@ void loop()
           if (progress > NOCT_DISP_W) progress = NOCT_DISP_W;
           sceneManager.drawWithOffset(previousScene, -progress, bootTime, blinkState, fanAnimFrame);
           sceneManager.drawWithOffset(currentScene, NOCT_DISP_W - progress, bootTime, blinkState, fanAnimFrame);
+          display.applyGlitch();  // cyberpunk scene-change glitch (transient)
           if (progress >= NOCT_DISP_W) inTransition = false;
         }
         else
