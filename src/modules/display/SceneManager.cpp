@@ -2878,14 +2878,6 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 // BMW ///M heritage accents (mono-panel friendly)
 // ===========================================================================
 
-// A thin column of "/" slashes used as the gear|speed divider -> M-stripe nod.
-static void drawMSlashColumn(U8G2 &u8g2, int x, int y0, int y1)
-{
-  const int sh = 5, gap = 2;
-  for (int y = y0; y + sh <= y1; y += sh + gap)
-    u8g2.drawLine(x, y + sh, x + 3, y);
-}
-
 // Three diagonal slashes "///" of increasing weight = the M-stripe motif.
 static void drawMSlashes3(U8G2 &u8g2, int x, int y, int hgt)
 {
@@ -3005,7 +2997,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   // ===================== REV-LIGHT STRIP (top) =====================
   // F1/sim-rig style: empty in low revs, fills dramatically toward redline.
   const int SEGS = 16;
-  const int stripH = 9;
+  const int stripH = 10;
   float litF = (pct - STRIP_BASE) / (1.0f - STRIP_BASE);  // 0 at base, 1 redline
   if (litF < 0)
     litF = 0;
@@ -3042,12 +3034,16 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
         u8g2.drawBox(sx, 0, segW, stripH);
     }
     else
-      u8g2.drawPixel(sx + segW / 2, stripH - 1);  // unlit tick
+      u8g2.drawHLine(sx + 1, stripH - 1, segW - 2);  // unlit: continuous track
   }
 
-  // --- zone divider with ///M slash accent ---
-  const int sepX = 57;
-  drawMSlashColumn(u8g2, sepX, stripH + 4, NOCT_DISP_H - 2);
+  // --- zone divider: NFS-style forward chevrons (motion / speed) ---
+  const int sepX = 56;
+  for (int cy = 22; cy <= 50; cy += 13)
+  {
+    u8g2.drawLine(sepX - 2, cy - 4, sepX + 2, cy);
+    u8g2.drawLine(sepX + 2, cy, sepX - 2, cy + 4);
+  }
 
   // ===================== GEAR (left hero) =====================
   char gearBuf[4];
@@ -3055,9 +3051,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.setFont(u8g2_font_logisoso42_tf);
   int gw = u8g2.getUTF8Width(gearBuf);
   int gx = (sepX - gw) / 2 + shakeX;
-  if (gx < 1)
-    gx = 1;
+  if (gx < 6)
+    gx = 6;
   u8g2.drawUTF8(gx, 63 + shakeY, gearBuf);
+  // NFS sticker-tag brackets framing the gear
+  int gbl = gx - 5;
+  if (gbl < 3)
+    gbl = 3;
+  disp_.drawTechBracket(gbl, 19 + shakeY, 42, true);
+  disp_.drawTechBracket(gx + gw + 2, 19 + shakeY, 42, false);
 
   // --- "^N" next-gear preview badge (the 3->4 sport-car cue) ---
   if (soon && !shiftAnim && gear >= 1 && gear <= 9)
@@ -3075,18 +3077,30 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // ===================== SPEED (right hero) =====================
+  // ============== SPEED (right hero, NFS-big, dynamic font) ==============
   char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
-  u8g2.setFont(u8g2_font_logisoso32_tn);
+  bool spdBig = (strlen(spdBuf) <= 2);
+  u8g2.setFont(spdBig ? u8g2_font_logisoso42_tn : u8g2_font_logisoso32_tn);
   int spdW = u8g2.getUTF8Width(spdBuf);
-  int spdX = (NOCT_DISP_W - 5 - spdW) + shakeX;
-  if (spdX < sepX + 4)
-    spdX = sepX + 4;
-  u8g2.drawUTF8(spdX, 50 + shakeY, spdBuf);
+  int spdBase = spdBig ? 57 : 51;
+  int spdX = (NOCT_DISP_W - 6 - spdW) + shakeX;
+  if (spdX < sepX + 6)
+    spdX = sepX + 6;
+  u8g2.drawUTF8(spdX, spdBase + shakeY, spdBuf);
   u8g2.setFont(u8g2_font_profont10_tf);
   int unitW = u8g2.getUTF8Width("km/h");
   u8g2.drawUTF8(NOCT_DISP_W - 4 - unitW + shakeX, 62 + shakeY, "km/h");
+
+  // NFS ground-speed streak: animated dashed line under the speed zone.
+  if (speed > 18)
+  {
+    const int period = 8;
+    unsigned long div = 1UL + (unsigned long)(300 / (speed + 1));
+    int scroll = (int)((now / div) % period);
+    for (int lx = sepX + 4 + scroll; lx < NOCT_DISP_W - 2; lx += period)
+      u8g2.drawHLine(lx, 63, 4);
+  }
 
   // tiny live RPM under the strip (right side)
   u8g2.setFont(u8g2_font_profont10_tf);
