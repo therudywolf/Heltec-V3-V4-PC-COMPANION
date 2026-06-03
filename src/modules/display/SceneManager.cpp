@@ -727,6 +727,55 @@ static void drawXbmScaled(U8G2 &u8g2, int x, int y, int srcW, int srcH,
   }
 }
 
+// Procedural weather glyphs: filled shapes read far better than scaled line-art
+// XBMs on a 128x64 mono OLED. Centered on (cx,cy) in a ~30px box.
+static const int8_t WX_RAY[8][2] = {
+    {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}};
+
+static void drawSunGlyph(U8G2 &u8g2, int cx, int cy, int r)
+{
+  u8g2.drawDisc(cx, cy, r);
+  for (int a = 0; a < 8; a++)
+  {
+    int x0 = cx + WX_RAY[a][0] * (r + 2), y0 = cy + WX_RAY[a][1] * (r + 2);
+    int x1 = cx + WX_RAY[a][0] * (r + 5), y1 = cy + WX_RAY[a][1] * (r + 5);
+    u8g2.drawLine(x0, y0, x1, y1);
+  }
+}
+
+static void drawCloudGlyph(U8G2 &u8g2, int cx, int cy)
+{
+  u8g2.drawDisc(cx - 7, cy + 1, 5);
+  u8g2.drawDisc(cx + 7, cy + 1, 6);
+  u8g2.drawDisc(cx, cy - 3, 7);
+  u8g2.drawBox(cx - 11, cy + 1, 25, 6);
+}
+
+static void drawWeatherGlyph(U8G2 &u8g2, int cx, int cy, int code)
+{
+  if (code <= 1)
+    drawSunGlyph(u8g2, cx, cy, 7);               // clear
+  else if (code <= 3)
+  {                                              // partly cloudy
+    drawSunGlyph(u8g2, cx - 6, cy - 6, 5);
+    drawCloudGlyph(u8g2, cx + 2, cy + 4);
+  }
+  else if (code >= 71 && code <= 77)
+  {                                              // snow
+    drawCloudGlyph(u8g2, cx, cy - 4);
+    for (int i = 0; i < 3; i++)
+      u8g2.drawDisc(cx - 7 + i * 7, cy + 10, 1);
+  }
+  else if ((code >= 51 && code <= 67) || (code >= 80))
+  {                                              // rain / storm
+    drawCloudGlyph(u8g2, cx, cy - 4);
+    for (int i = 0; i < 3; i++)
+      u8g2.drawLine(cx - 7 + i * 7, cy + 8, cx - 9 + i * 7, cy + 13);
+  }
+  else
+    drawCloudGlyph(u8g2, cx, cy);                // cloudy / fog
+}
+
 void SceneManager::drawWeather(int xOff)
 {
   WeatherData &weather = state_.weather;
@@ -752,26 +801,20 @@ void SceneManager::drawWeather(int xOff)
     return;
   }
 
-  /* Left: scaled XBM icon + description stacked */
-  const unsigned char *iconBits = icon_cloud_bits;
-  if (weather.wmoCode <= 3)
-    iconBits = icon_sun_bits;
-  else if (weather.wmoCode >= 50)
-    iconBits = icon_weather_rain_32_bits;
-  else
-    iconBits = icon_cloud_bits;
+  /* Left: procedural weather glyph + description stacked (crisp, bold). */
   const int stackH = WTHR_ICON_H + WTHR_DESC_PAD + WTHR_DESC_BASELINE;
-  const int iconX = boxX + (leftW - WTHR_ICON_W) / 2;
   const int iconY = boxY + (boxH - stackH) / 2;
+  const int gcx = boxX + leftW / 2;
+  const int gcy = iconY + WTHR_ICON_H / 2;
   const int descY = iconY + WTHR_ICON_H + WTHR_DESC_PAD + WTHR_DESC_BASELINE;
   u8g2.setClipWindow(boxX, boxY, boxX + leftW - 1, boxY + boxH - 1);
-  drawXbmScaled(u8g2, iconX, iconY, 32, 32, iconBits, WTHR_ICON_W, WTHR_ICON_H);
+  drawWeatherGlyph(u8g2, gcx, gcy, weather.wmoCode);
+  u8g2.setMaxClipWindow();
   u8g2.setFont(LABEL_FONT);
   const char *descStr = weather.desc.length() ? weather.desc.c_str() : "-";
   int descW = u8g2.getUTF8Width(descStr);
-  int descX = iconX + (WTHR_ICON_W / 2) - (descW / 2);
+  int descX = boxX + (leftW - descW) / 2;
   u8g2.drawUTF8(descX, descY, descStr);
-  u8g2.setMaxClipWindow();
 
   /* Right: temp in WEATHER_TEMP_FONT, Y=52 (baseline), right-aligned */
   static char buf[16];
@@ -899,41 +942,37 @@ void SceneManager::drawNet(int xOff)
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(0);
 
-  const int left = NOCT_CARD_LEFT;
-  const int right = NOCT_DISP_W - NOCT_CARD_LEFT;
-  const int graphW = 46;                       // sparkline width on the right
-  const int graphX = right - graphW;
-  const int rowTop = NOCT_CONTENT_START + 1;
-  const int rowH = 15;
-  const int graphH = 11;
-
-  struct { const char *label; int rate; RollingGraph *g; } rows[2] = {
-      {"DN", hw.nd, &disp_.netDownGraph},
-      {"UP", hw.nu, &disp_.netUpGraph}};
-
+  // Two bracket boxes (DN / UP) with bold rate values (MAIN look); ping below.
+  // Replaces the old empty sparkline frames that read as blank boxes.
+  const int boxY = 16, boxH = 32, boxW = 63;
+  const int bx[2] = {0, 65};
+  struct { const char *label; int rate; } box[2] = {
+      {"DN", hw.nd}, {"UP", hw.nu}};
   for (int i = 0; i < 2; i++)
   {
-    int ry = rowTop + i * rowH;
+    disp_.drawTechBrackets(X(bx[i], xOff), boxY, boxW, boxH, MAIN_BRACKET_LEN);
     u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(X(left, xOff), ry + 8, rows[i].label);
+    u8g2.drawUTF8(X(bx[i] + 4, xOff), boxY + 8, box[i].label);
     char rb[16];
-    formatRate(rb, sizeof(rb), rows[i].rate < 0 ? 0 : rows[i].rate);
+    formatRate(rb, sizeof(rb), box[i].rate < 0 ? 0 : box[i].rate);
     u8g2.setFont(VALUE_FONT);
-    u8g2.drawUTF8(X(left + 18, xOff), ry + 9, rb);
-    // Sparkline framed on the right.
-    disp_.drawTechFrame(X(graphX, xOff), ry, graphW, graphH);
-    disp_.drawRollingGraph(X(graphX + 1, xOff), ry + 1, graphW - 2, graphH - 2,
-                           *rows[i].g, rows[i].g->maxVal > 0 ? rows[i].g->maxVal : 2048);
+    int rw = u8g2.getUTF8Width(rb);
+    int cx = bx[i] + (boxW - rw) / 2;
+    if (cx < bx[i] + 2)
+      cx = bx[i] + 2;
+    u8g2.drawUTF8(X(cx, xOff), boxY + 26, rb);
   }
 
-  // Footer: ping (pg) to gateway, left; RSSI hint right is in the header already.
+  // Bottom chamfer row: gateway ping, centered.
+  disp_.drawChamferBox(X(0, xOff), 50, NOCT_DISP_W, 13, 3);
   u8g2.setFont(LABEL_FONT);
   char pb[20];
   if (hw.pg > 0)
     snprintf(pb, sizeof(pb), "PING %dms", hw.pg);
   else
     snprintf(pb, sizeof(pb), "PING --");
-  u8g2.drawUTF8(X(left, xOff), NOCT_DISP_H - 3, pb);
+  int pw = u8g2.getUTF8Width(pb);
+  u8g2.drawUTF8(X((NOCT_DISP_W - pw) / 2, xOff), 59, pb);
 #else
   (void)xOff;
 #endif
@@ -2061,21 +2100,21 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     return;
   }
 
-  // --- LIST RENDER (full screen, no header) ---
-  u8g2.setCursor(2, 2);
+  // --- LIST RENDER: inverted header bar + readable AP rows with signal bars ---
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
   if (useFiltered && filteredCount < n)
-  {
-    u8g2.printf("TARGETS: %d/%d", filteredCount, n);
-  }
+    u8g2.printf("WIFI %d/%d", filteredCount, n);
   else
-  {
-    u8g2.printf("TARGETS: %d", displayCount);
-  }
-  u8g2.drawLine(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+    u8g2.printf("WIFI %d APs", displayCount);
+  u8g2.setDrawColor(1);
 
-  int yStart = 12;
-  int h = 10;
-  const int maxVisibleRows = 4;  // keep list above NOCT_FOOTER_Y (50)
+  const int yStart = NOCT_MODE_HEADER_H + 11;   // first row baseline
+  const int h = 12;                             // taller rows = readable
+  const int maxVisibleRows = 4;
   int endIdx = pageOffset + maxVisibleRows < displayCount
                    ? pageOffset + maxVisibleRows
                    : displayCount;
@@ -2084,63 +2123,62 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
   {
     int actualIndex = useFiltered ? sortedIndices[i] : i;
     int y = yStart + ((i - pageOffset) * h);
-
-    if (i == selectedIndex)
+    bool sel = (i == selectedIndex);
+    if (sel)
     {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(0, y - 8, NOCT_DISP_W, h);
+      u8g2.drawBox(0, y - 9, NOCT_DISP_W, h);
       u8g2.setDrawColor(0);
     }
     else
-    {
       u8g2.setDrawColor(1);
-    }
 
-    // Copy SSID to local String so c_str() remains valid; then to buffer
+    // SSID (truncated) on the left
     String ssidStr = WiFi.SSID(actualIndex);
-    const char *ssid = ssidStr.c_str();
-    char ssidBuf[12]; // Max 10 chars + "." + null terminator
-    if (!ssid || ssidStr.length() == 0)
+    char ssidBuf[14];
+    if (ssidStr.length() == 0)
     {
-      strncpy(ssidBuf, "[HIDDEN]", sizeof(ssidBuf) - 1);
+      strncpy(ssidBuf, "[hidden]", sizeof(ssidBuf) - 1);
+      ssidBuf[sizeof(ssidBuf) - 1] = '\0';
+    }
+    else if (ssidStr.length() > 11)
+    {
+      strncpy(ssidBuf, ssidStr.c_str(), 10);
+      ssidBuf[10] = '.';
+      ssidBuf[11] = '\0';
     }
     else
     {
-      size_t len = ssidStr.length();
-      if (len > 10)
-      {
-        strncpy(ssidBuf, ssid, 9);
-        ssidBuf[9] = '.';
-        ssidBuf[10] = '\0';
-      }
-      else
-      {
-        strncpy(ssidBuf, ssid, sizeof(ssidBuf) - 1);
-        ssidBuf[sizeof(ssidBuf) - 1] = '\0';
-      }
+      strncpy(ssidBuf, ssidStr.c_str(), sizeof(ssidBuf) - 1);
+      ssidBuf[sizeof(ssidBuf) - 1] = '\0';
     }
+    u8g2.setFont(LABEL_FONT);
     u8g2.setCursor(2, y);
     u8g2.print(ssidBuf);
 
-    // RSSI ╨╕ ╨║╨░╨╜╨░╨╗
+    // Signal-strength bars (visual RSSI): 4 ascending bars, filled by level.
     int rssi = WiFi.RSSI(actualIndex);
-    int channel = WiFi.channel(actualIndex);
-    u8g2.setCursor(70, y);
-    u8g2.printf("%d CH%d", rssi, channel);
+    int bars = rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -78 ? 2
+               : rssi >= -90 ? 1 : 0;
+    for (int b = 0; b < 4; b++)
+    {
+      int bh = 2 + b * 2, bxp = 86 + b * 3, byp = y - bh;
+      if (b < bars)
+        u8g2.drawBox(bxp, byp, 2, bh);
+      else
+        u8g2.drawFrame(bxp, byp, 2, bh);
+    }
 
-    // ╨Ш╨╜╨┤╨╕╨║╨░╤Ж╨╕╤П ╤И╨╕╤Д╤А╨╛╨▓╨░╨╜╨╕╤П
+    // Channel + encryption lock on the right
+    u8g2.setCursor(102, y);
+    u8g2.printf("C%d", WiFi.channel(actualIndex));
     wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
     if (auth != WIFI_AUTH_OPEN)
     {
-      u8g2.setCursor(120, y);
-      if (auth == WIFI_AUTH_WPA3_PSK || auth == WIFI_AUTH_WPA2_WPA3_PSK)
-      {
-        u8g2.print("3"); // WPA3
-      }
-      else
-      {
-        u8g2.print("*"); // WPA/WPA2
-      }
+      u8g2.setCursor(121, y);
+      u8g2.print((auth == WIFI_AUTH_WPA3_PSK || auth == WIFI_AUTH_WPA2_WPA3_PSK)
+                     ? "3"
+                     : "*");
     }
     u8g2.setDrawColor(1);
   }
