@@ -2408,6 +2408,11 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
   int pkts = mgr.getPacketCount();
   int eapol = mgr.getEapolCount();
 
+  // Hard-clip every sub-mode's body to the content band [header..footer line] so
+  // none of the 12 bespoke views (varied hardcoded Y) can spill into the footer.
+  // Reset to full screen before drawing the footer hint below.
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+
   // ===================== Mode-specific content =========================
   // Each of the five formerly-stubbed modes now renders a distinct view.
   if (mode == SNIFF_MODE_SIGNAL_STRENGTH)
@@ -2707,12 +2712,12 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
         maxv = channels[i];
     for (int i = 0; i < 13; i++)
     {
-      int h = (int)(channels[i] * 30 / maxv);
+      int h = (int)(channels[i] * 28 / maxv);
       if (h < 0) h = 0;
-      if (h > 30) h = 30;
+      if (h > 28) h = 28;
       int x = 4 + i * 9;
-      u8g2.drawVLine(x, 52 - h, h);
-      u8g2.drawVLine(x + 1, 52 - h, h);
+      u8g2.drawVLine(x, 48 - h, h);       // baseline 48 - inside the band
+      u8g2.drawVLine(x + 1, 48 - h, h);
     }
   }
   else
@@ -2747,6 +2752,7 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
       }
     }
   }
+  u8g2.setMaxClipWindow();   // restore before footer
   drawBottomHint();
   disp_.drawGreebles();
 }
