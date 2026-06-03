@@ -44,7 +44,7 @@ int submenuCountForHackerGroup(int group)
   case HACKER_GROUP_WIFI:
     return 14;
   case HACKER_GROUP_BLE:
-    return 6;
+    return 7;
   default:
     return 1;
   }
@@ -88,6 +88,7 @@ AppMode getModeForHackerItem(int group, int item)
     case 3: return MODE_BLE_SWIFTPAIR_GOOGLE;
     case 4: return MODE_BLE_SWIFTPAIR_SAMSUNG;
     case 5: return MODE_BLE_FLIPPER_SPAM;
+    case 6: return MODE_BLE_SCAN;
     default: return MODE_BMW_ASSISTANT;
     }
   }

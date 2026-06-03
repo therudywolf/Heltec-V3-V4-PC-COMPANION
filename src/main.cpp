@@ -1147,6 +1147,10 @@ void loop()
       lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
       break;
     }
+    case MODE_BLE_SCAN:
+      if (bleManager.isScanning()) bleManager.tick();
+      sceneManager.drawBleScan(bleManager);
+      break;
     case MODE_WIFI_TRAP:
       if (trapManager.isActive()) trapManager.tick();
       sceneManager.drawTrapMode(

@@ -44,7 +44,8 @@ static const char* const kHackerWifiModes[] = {
 
 /* ── Hacker BLE submenu ────────────────────────────────────────────────── */
 static const char* const kHackerBleModes[] = {
-    "BLE Spam", "SourApple", "SwiftMS", "SwiftGG", "SwiftSam", "Flipper"};
+    "BLE Spam", "SourApple", "SwiftMS", "SwiftGG", "SwiftSam", "Flipper",
+    "Trackers"};
 #endif
 
 #endif
