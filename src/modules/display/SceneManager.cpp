@@ -2874,6 +2874,52 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 
 #if NOCT_FEATURE_FORZA
 
+// ===========================================================================
+// BMW ///M heritage accents (mono-panel friendly)
+// ===========================================================================
+
+// A thin column of "/" slashes used as the gear|speed divider -> M-stripe nod.
+static void drawMSlashColumn(U8G2 &u8g2, int x, int y0, int y1)
+{
+  const int sh = 5, gap = 2;
+  for (int y = y0; y + sh <= y1; y += sh + gap)
+    u8g2.drawLine(x, y + sh, x + 3, y);
+}
+
+// Three diagonal slashes "///" of increasing weight = the M-stripe motif.
+static void drawMSlashes3(U8G2 &u8g2, int x, int y, int hgt)
+{
+  int run = hgt;
+  for (int s = 0; s < 3; s++)
+  {
+    int bx = x + s * (run / 2 + 5);
+    int weight = s + 1;  // 1/2/3 px -> density nod to the three M colours
+    for (int t = 0; t < weight; t++)
+      u8g2.drawLine(bx + t, y + hgt, bx + t + run, y);
+  }
+}
+
+// BMW quartered roundel (ring + alternating filled quadrants + cross-hairs).
+static void drawRoundel(U8G2 &u8g2, int cx, int cy, int r)
+{
+  for (int yy = -r; yy <= r; yy++)
+    for (int xx = -r; xx <= r; xx++)
+    {
+      int d2 = xx * xx + yy * yy;
+      if (d2 > r * r)
+        continue;
+      if (d2 > (r - 1) * (r - 1))
+      {
+        u8g2.drawPixel(cx + xx, cy + yy);  // outer ring
+        continue;
+      }
+      if ((xx < 0) ^ (yy < 0))             // alternate quadrants
+        u8g2.drawPixel(cx + xx, cy + yy);
+    }
+  u8g2.drawHLine(cx - r, cy, 2 * r + 1);
+  u8g2.drawVLine(cx, cy - r, 2 * r + 1);
+}
+
 void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
                                  uint32_t localIp)
 {
@@ -2883,103 +2929,216 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(0);
 
-  // --- SPLASH SCREEN ---
+  // --- SPLASH / LINK SCREEN (BMW ///M flavoured) ---
   if (showSplash)
   {
+    drawMSlashes3(u8g2, 4, 6, 26);          // /// heritage stripes
+    drawRoundel(u8g2, 108, 18, 12);         // BMW roundel
     u8g2.setFont(u8g2_font_profont12_tf);
-    u8g2.drawUTF8(10, 20, ">> LINKING ECU >>");
-    char ipBuf[32];
-    snprintf(ipBuf, sizeof(ipBuf), "IP: %d.%d.%d.%d",
+    u8g2.drawUTF8(40, 14, "M POWER");
+    u8g2.drawUTF8(40, 27, "TELEMETRY");
+    u8g2.setFont(u8g2_font_profont10_tf);
+    u8g2.drawUTF8(4, 48, ">> LINKING ECU >>");
+    char ipBuf[40];
+    snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d:5300",
              (int)((localIp >> 24) & 0xFF), (int)((localIp >> 16) & 0xFF),
              (int)((localIp >> 8) & 0xFF), (int)(localIp & 0xFF));
-    u8g2.drawUTF8(10, 35, ipBuf);
-    u8g2.drawUTF8(10, 50, "PORT: 5300 UDP");
+    u8g2.drawUTF8(4, 60, ipBuf);
     disp_.drawTechBrackets(0, 0, NOCT_DISP_W, NOCT_DISP_H, 5);
     return;
   }
 
   // --- TELEMETRY ---
+  const ForzaState &st = forza.getState();
   float currentRpm = forza.getCurrentRpm();
   float maxRpm = forza.getMaxRpm();
   int speed = forza.getSpeedKmh();
-  bool isRedline = (maxRpm > 0 && currentRpm > 0.92f * maxRpm);
-  float rpmPct = (maxRpm > 0) ? (currentRpm / maxRpm) : 0;
-  if (rpmPct > 1.0f)
-    rpmPct = 1.0f;
+  int gear = st.gear;
+  float pct = (maxRpm > 0) ? (currentRpm / maxRpm) : 0.0f;
+  if (pct > 1.0f)
+    pct = 1.0f;
+  if (pct < 0.0f)
+    pct = 0.0f;
 
-  // --- JUICE (Jitter/Shake at high RPM) ---
-  int shakeX = 0;
-  int shakeY = 0;
-  if (rpmPct > 0.7f)
+  // Shift-light stages (relative to redline)
+  const float SHIFT_SOON = 0.86f;  // amber: get ready
+  const float SHIFT_NOW = 0.94f;   // red: SHIFT!
+  bool soon = pct >= SHIFT_SOON;
+  bool redline = pct >= SHIFT_NOW;
+
+  // Engine shake (retuned: starts later @82%, ramps harder toward redline).
+  // The rev strip + shift badge are drawn WITHOUT shake so the cue stays sharp.
+  int shakeX = 0, shakeY = 0;
+  if (pct > 0.82f)
   {
-    int intensity = (int)((rpmPct - 0.7f) * 10);
-    if (intensity > 0)
+    int it = (int)((pct - 0.82f) * 22.0f);
+    if (it > 3)
+      it = 3;
+    if (it > 0)
     {
-      shakeX = random(-intensity, intensity + 1);
-      shakeY = random(-intensity, intensity + 1);
+      shakeX = random(-it, it + 1);
+      shakeY = random(-it, it + 1);
     }
   }
 
-  // Full re-layout: clean racing dash. RPM bar on top, GEAR hero digit (left)
-  // and SPEED + km/h (right). No speed-line clutter, no footer line cutting the
-  // digits - the dash uses the whole screen.
-
-  // --- RPM BAR (top, 0..12): frame + fill (solid at redline, else striped) ---
-  const int barH = 13;
-  disp_.drawTechFrame(0, 0, NOCT_DISP_W, barH);
-  int fillW = (int)(rpmPct * (NOCT_DISP_W - 2));
-  if (fillW > 0)
+  // --- Gear-change detection + shift-quality verdict ---
+  static int prevGear = -100;
+  static unsigned long shiftMs = 0;
+  static int gFrom = 0, gTo = 0;
+  static float shiftPct = 0;
+  static bool shiftUp = false;
+  if (gear != prevGear)
   {
-    if (isRedline)
-      u8g2.drawBox(1, 1, fillW, barH - 2);
-    else
-      disp_.drawDiagonalStriped(1, 1, fillW, barH - 2, 3);
+    if (prevGear >= 1 && prevGear <= 10 && gear >= 1 && gear <= 10)
+    {
+      shiftMs = now;
+      gFrom = prevGear;
+      gTo = gear;
+      shiftPct = pct;
+      shiftUp = (gear > prevGear);
+    }
+    prevGear = gear;
   }
-  u8g2.setFont(u8g2_font_profont10_tf);
-  u8g2.drawUTF8(2, 9, "RPM");
-  char rpmBuf[12];
-  snprintf(rpmBuf, sizeof(rpmBuf), "%.0f", currentRpm);
-  int rpmW = u8g2.getUTF8Width(rpmBuf);
-  u8g2.setDrawColor(2);  // XOR so the number reads over the fill
-  u8g2.drawUTF8(NOCT_DISP_W - 3 - rpmW + shakeX, 9 + shakeY, rpmBuf);
-  u8g2.setDrawColor(1);
+  bool shiftAnim = (now - shiftMs < 380);
 
-  // --- Zone separator ---
-  const int sepX = 58;
-  u8g2.drawVLine(sepX + shakeX, 16, NOCT_DISP_H - 16);
+  // ===================== REV-LIGHT STRIP (top) =====================
+  // F1/sim-rig style: empty in low revs, fills dramatically toward redline.
+  const int SEGS = 16;
+  const int stripH = 9;
+  float litF = (pct - 0.45f) / 0.55f;  // 0 at 45%, 1 at redline
+  if (litF < 0)
+    litF = 0;
+  if (litF > 1)
+    litF = 1;
+  int litSegs = (int)(litF * SEGS + 0.0001f);
+  int segGap = 1;
+  int segW = (NOCT_DISP_W - (SEGS - 1) * segGap) / SEGS;
+  int stripW = SEGS * segW + (SEGS - 1) * segGap;
+  int sx0 = (NOCT_DISP_W - stripW) / 2;
+  int zoneStart = (int)(((SHIFT_SOON - 0.45f) / 0.55f) * SEGS);
+  bool allStrobe = redline && ((now / 55) % 2 == 0);
+  for (int i = 0; i < SEGS; i++)
+  {
+    int sx = sx0 + i * (segW + segGap);
+    bool inZone = (i >= zoneStart);
+    if (redline)
+    {
+      if (allStrobe)
+        u8g2.drawBox(sx, 0, segW, stripH);
+      else
+        u8g2.drawFrame(sx, 0, segW, stripH);
+    }
+    else if (i < litSegs)
+    {
+      if (inZone)
+      {
+        if ((now / 110) % 2 == 0)
+          u8g2.drawBox(sx, 0, segW, stripH);
+        else
+          u8g2.drawFrame(sx, 0, segW, stripH);
+      }
+      else
+        u8g2.drawBox(sx, 0, segW, stripH);
+    }
+    else
+      u8g2.drawPixel(sx + segW / 2, stripH - 1);  // unlit tick
+  }
 
-  // --- GEAR (left, hero logisoso42 digit, centered in the left zone) ---
+  // --- zone divider with ///M slash accent ---
+  const int sepX = 57;
+  drawMSlashColumn(u8g2, sepX, stripH + 4, NOCT_DISP_H - 2);
+
+  // ===================== GEAR (left hero) =====================
   char gearBuf[4];
   forza.getGearString(gearBuf, sizeof(gearBuf));
   u8g2.setFont(u8g2_font_logisoso42_tf);
   int gw = u8g2.getUTF8Width(gearBuf);
   int gx = (sepX - gw) / 2 + shakeX;
-  if (gx < 2) gx = 2;
-  u8g2.drawUTF8(gx, 63 + shakeY, gearBuf);   // baseline 63 -> top ~21
-  // shift-up chevron when revving near redline
-  if (rpmPct > 0.85f && (now / 120) % 2 == 0)
+  if (gx < 1)
+    gx = 1;
+  u8g2.drawUTF8(gx, 63 + shakeY, gearBuf);
+
+  // --- "^N" next-gear preview badge (the 3->4 sport-car cue) ---
+  if (soon && !shiftAnim && gear >= 1 && gear <= 9)
   {
-    int cx = sepX / 2 + shakeX;
-    u8g2.drawTriangle(cx - 6, 26, cx + 6, 26, cx, 18);
+    int blinkRate = redline ? 70 : 150;
+    if ((now / blinkRate) % 2 == 0)
+    {
+      int bx = sepX - 13, by = stripH + 3;
+      u8g2.drawTriangle(bx + 4, by, bx, by + 6, bx + 8, by + 6);  // up arrow
+      char nb[3];
+      nb[0] = (char)('0' + gear + 1);
+      nb[1] = '\0';
+      u8g2.setFont(u8g2_font_profont12_tf);
+      u8g2.drawUTF8(bx + 1, by + 18, nb);
+    }
   }
 
-  // --- SPEED (right, big) + km/h under it ---
+  // ===================== SPEED (right hero) =====================
   char spdBuf[8];
   snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
   u8g2.setFont(u8g2_font_logisoso32_tn);
   int spdW = u8g2.getUTF8Width(spdBuf);
-  int spdX = NOCT_DISP_W - 3 - spdW + shakeX;
-  u8g2.drawUTF8(spdX, 52 + shakeY, spdBuf);  // baseline 52 -> top ~22
+  int spdX = (NOCT_DISP_W - 5 - spdW) + shakeX;
+  if (spdX < sepX + 4)
+    spdX = sepX + 4;
+  u8g2.drawUTF8(spdX, 50 + shakeY, spdBuf);
   u8g2.setFont(u8g2_font_profont10_tf);
   int unitW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - 3 - unitW + shakeX, 63 + shakeY, "km/h");
+  u8g2.drawUTF8(NOCT_DISP_W - 4 - unitW + shakeX, 62 + shakeY, "km/h");
 
-  // --- REDLINE STROBE (frame flash - alarming but not blinding) ---
-  if (isRedline && (now / 60) % 2 == 0)
+  // tiny live RPM under the strip (right side)
+  u8g2.setFont(u8g2_font_profont10_tf);
+  char rb[8];
+  snprintf(rb, sizeof(rb), "%d", (int)currentRpm);
+  int rw = u8g2.getUTF8Width(rb);
+  u8g2.drawUTF8(NOCT_DISP_W - 4 - rw, stripH + 8, rb);
+
+  // --- fuel: slim vertical gauge on the far-right edge ---
+  float fuel = st.fuel;
+  if (fuel > 0.0f && fuel <= 1.0f)
   {
-    u8g2.drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
-    u8g2.drawFrame(1, 1, NOCT_DISP_W - 2, NOCT_DISP_H - 2);
+    int fy0 = 20, fy1 = 53, fh = fy1 - fy0;
+    int fillH = (int)(fuel * fh);
+    u8g2.drawFrame(NOCT_DISP_W - 2, fy0, 2, fh);
+    if (fillH > 0)
+      u8g2.drawBox(NOCT_DISP_W - 2, fy1 - fillH, 2, fillH);
   }
+
+  // ===================== SHIFT ANIMATION "3>4" =====================
+  if (shiftAnim && shiftUp)
+  {
+    char sa[6];
+    snprintf(sa, sizeof(sa), "%d>%d", gFrom, gTo);
+    u8g2.setFont(u8g2_font_logisoso24_tr);
+    int saw = u8g2.getUTF8Width(sa);
+    int pad = 6, bw = saw + pad * 2, bh = 30;
+    int bxp = (NOCT_DISP_W - bw) / 2, byp = (NOCT_DISP_H - bh) / 2;
+    u8g2.setDrawColor(1);
+    u8g2.drawBox(bxp, byp, bw, bh);
+    u8g2.setDrawColor(0);
+    u8g2.drawUTF8(bxp + pad, byp + bh - 5, sa);
+    u8g2.setDrawColor(1);
+    u8g2.drawFrame(bxp - 2, byp - 2, bw + 4, bh + 4);
+    const char *tag = (shiftPct >= 0.90f && shiftPct <= 0.99f) ? "M PERFECT"
+                      : (shiftPct < 0.90f)                     ? "EARLY"
+                                                               : "REDLINE";
+    u8g2.setFont(u8g2_font_profont10_tf);
+    int tw = u8g2.getUTF8Width(tag);
+    u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, byp - 3, tag);
+  }
+  else if (shiftAnim)
+  {
+    char sa[6];
+    snprintf(sa, sizeof(sa), "%d>%d", gFrom, gTo);
+    u8g2.setFont(u8g2_font_logisoso16_tr);
+    int saw = u8g2.getUTF8Width(sa);
+    u8g2.drawUTF8((NOCT_DISP_W - saw) / 2, 40, sa);
+  }
+
+  // ===================== REDLINE FRAME FLASH =====================
+  if (redline && (now / 55) % 2 == 0)
+    u8g2.drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
 }
 
 
