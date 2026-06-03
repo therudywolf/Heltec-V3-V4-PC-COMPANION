@@ -920,7 +920,7 @@ def get_claude_usage_sync() -> Dict[str, Any]:
             nowt = _time.time()
             if not _claude_live_cache or (nowt - _claude_live_at) >= CLAUDE_LIVE_INTERVAL:
                 live = claude_live.fetch_live_usage(
-                    claude_live.read_oauth_token(), nowt, model=CLAUDE_LIVE_MODEL)
+                    claude_live.get_token(), nowt, model=CLAUDE_LIVE_MODEL)
                 if live:
                     _claude_live_cache = live
                     _claude_live_at = nowt
