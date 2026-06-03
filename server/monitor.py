@@ -1485,6 +1485,13 @@ def _on_toggle_autostart(icon: "pystray.Icon", item: Any) -> None:
         pass
 
 
+def _on_open_logs(icon: "pystray.Icon", item: Any) -> None:
+    try:
+        os.startfile(_LOG_FILE)  # type: ignore[attr-defined]  # noqa: PTH123 (Windows-only tray)
+    except Exception as e:
+        log_err(f"Open logs failed: {e}")
+
+
 def _build_tray_menu() -> "pystray.Menu":
     autostart_label = "Remove from startup" if is_autostart_enabled() else "Add to startup"
     return pystray.Menu(
@@ -1492,6 +1499,7 @@ def _build_tray_menu() -> "pystray.Menu":
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(autostart_label, _on_toggle_autostart),
         pystray.MenuItem("Restart Server", _on_restart),
+        pystray.MenuItem("Open Logs", _on_open_logs),
         pystray.MenuItem("Close", _on_exit),
     )
 
