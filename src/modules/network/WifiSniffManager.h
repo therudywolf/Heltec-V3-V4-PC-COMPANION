@@ -71,6 +71,7 @@ struct PacketStats {
   uint32_t dataFrames;
   uint32_t beaconFrames;
   uint32_t deauthFrames;
+  uint32_t disassocFrames;   // 802.11 disassoc (subtype 10) - attack indicator
   uint32_t eapolFrames;
   int8_t minRssi;
   int8_t maxRssi;
@@ -139,6 +140,8 @@ public:
   uint32_t getPacketsPerSecond() const;
 
   int getPacketCount() const { return packetCount_; }
+  uint32_t getDeauthCount() const { return stats_.deauthFrames; }
+  uint32_t getDisassocCount() const { return stats_.disassocFrames; }
 
   // Raw Capture (recent frame ring buffer, newest-first ordering helper)
   int getRawCount() const { return rawCount_; }
