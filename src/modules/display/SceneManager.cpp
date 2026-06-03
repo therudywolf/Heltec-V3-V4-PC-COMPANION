@@ -2142,14 +2142,17 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     snprintf(hdr, sizeof(hdr), "WIFI %d APs", displayCount);
   drawModeHeader(u8g2, hdr, nullptr);
 
-  // Rows must stay above the footer hint (NOCT_FOOTER_Y=50). 4 rows at h=10
-  // from baseline 19 -> 19/29/39/49, selected boxes end at 49 (<50). No overlap.
-  const int yStart = NOCT_MODE_HEADER_H + 9;    // 19: first selected box clears header
+  // 3 rows inside the content band [11..NOCT_CONTENT_BOTTOM]: baselines 20/30/40,
+  // selected boxes 11..41 - all clear of the footer hint. A scroll bar on the far
+  // right shows position when there are more APs than fit.
+  const int yStart = NOCT_MODE_HEADER_H + 10;   // 20
   const int h = 10;
-  const int maxVisibleRows = 4;
+  const int maxVisibleRows = 3;
   int endIdx = pageOffset + maxVisibleRows < displayCount
                    ? pageOffset + maxVisibleRows
                    : displayCount;
+  bool scroll = displayCount > maxVisibleRows;
+  int rightEdge = scroll ? NOCT_DISP_W - 4 : NOCT_DISP_W;
 
   for (int i = pageOffset; i < endIdx; i++)
   {
@@ -2159,7 +2162,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     if (sel)
     {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(0, y - 9, NOCT_DISP_W, h);
+      u8g2.drawBox(0, y - 9, rightEdge, h);
       u8g2.setDrawColor(0);
     }
     else
@@ -2194,7 +2197,7 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
                : rssi >= -90 ? 1 : 0;
     for (int b = 0; b < 4; b++)
     {
-      int bh = 2 + b * 2, bxp = 86 + b * 3, byp = y - bh;
+      int bh = 2 + b * 2, bxp = 80 + b * 3, byp = y - bh;
       if (b < bars)
         u8g2.drawBox(bxp, byp, 2, bh);
       else
@@ -2202,17 +2205,33 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     }
 
     // Channel + encryption lock on the right
-    u8g2.setCursor(102, y);
+    u8g2.setCursor(96, y);
     u8g2.printf("C%d", WiFi.channel(actualIndex));
     wifi_auth_mode_t auth = WiFi.encryptionType(actualIndex);
     if (auth != WIFI_AUTH_OPEN)
     {
-      u8g2.setCursor(121, y);
+      u8g2.setCursor(114, y);
       u8g2.print((auth == WIFI_AUTH_WPA3_PSK || auth == WIFI_AUTH_WPA2_WPA3_PSK)
                      ? "3"
                      : "*");
     }
     u8g2.setDrawColor(1);
+  }
+
+  // Cyberpunk scroll bar: track + thumb, far right, within the content band.
+  if (scroll)
+  {
+    int tx = NOCT_DISP_W - 2;
+    int ty = NOCT_MODE_HEADER_H + 2;
+    int trackH = NOCT_CONTENT_BOTTOM - ty;
+    int span = displayCount - maxVisibleRows;
+    int thumbH = trackH * maxVisibleRows / displayCount;
+    if (thumbH < 4)
+      thumbH = 4;
+    int thumbY = ty + (span > 0 ? (trackH - thumbH) * pageOffset / span : 0);
+    u8g2.setDrawColor(1);
+    u8g2.drawVLine(tx, ty, trackH);
+    u8g2.drawBox(tx - 1, thumbY, 3, thumbH);
   }
 
   drawBottomHint();
@@ -2251,12 +2270,12 @@ void SceneManager::drawBleSpammer(int packetCount, const char *modeName)
   int pulse = (int)(t % 8) - 4;
   if (pulse < 0)
     pulse = -pulse;
-  drawBtIcon(u8g2, 26, 38, 11, pulse);
+  drawBtIcon(u8g2, 26, 28, 10, pulse);
 
-  // Big packet counter in a bracket box (active-mode template).
+  // Big packet counter in a bracket box (active-mode template), in the band.
   char num[12];
   snprintf(num, sizeof(num), "%lu", (unsigned long)packetCount);
-  drawStatBox(u8g2, disp_, 52, 16, 74, 32, "PKT", num);
+  drawStatBox(u8g2, disp_, 52, 12, 74, 32, "PKT", num);
 
   drawBottomHint();
 }
@@ -2318,8 +2337,8 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
     char cb[12], lb[12];
     snprintf(cb, sizeof(cb), "%d", clientCount);
     snprintf(lb, sizeof(lb), "%d", logsCaptured);
-    drawStatBox(u8g2, disp_, 0, 16, 63, 32, "CLIENTS", cb);
-    drawStatBox(u8g2, disp_, 65, 16, 63, 32, "LOGS", lb);
+    drawStatBox(u8g2, disp_, 0, 12, 63, 32, "CLIENTS", cb);
+    drawStatBox(u8g2, disp_, 65, 12, 63, 32, "LOGS", lb);
   }
 
   drawBottomHint();

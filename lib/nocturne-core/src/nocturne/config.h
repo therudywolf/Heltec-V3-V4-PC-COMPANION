@@ -110,6 +110,12 @@
 #define NOCT_CARD_ROW_DY NOCT_ROW_DY
 #define NOCT_FOOTER_Y 50
 #define NOCT_FOOTER_TEXT_Y 52
+/* DESIGN-SYSTEM CONTENT BAND: every scene draws ONLY between the header and the
+ * footer. The footer hint text (baseline NOCT_FOOTER_TEXT_Y=52) rises to ~y45,
+ * so content must stop at 44 or it visibly collides with the hint. Hacker mode
+ * header is NOCT_MODE_HEADER_H (10); content band = [11 .. NOCT_CONTENT_BOTTOM].
+ * Never draw scene content below NOCT_CONTENT_BOTTOM. */
+#define NOCT_CONTENT_BOTTOM 44
 
 /* Mode screens */
 #define NOCT_MODE_HEADER_H 10
