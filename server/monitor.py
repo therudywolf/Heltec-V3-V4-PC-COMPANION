@@ -1050,6 +1050,28 @@ def _events_with_claude(claude: Optional[Dict], now: float) -> Dict[str, Any]:
     return block
 
 
+def get_pc_idle_seconds() -> int:
+    """Seconds since the last keyboard/mouse input (Windows). -1 elsewhere/on error.
+
+    Uses GetLastInputInfo + GetTickCount via ctypes; no extra dependency. The
+    firmware dims the OLED once this exceeds ~10 min and restores on activity.
+    """
+    try:
+        import ctypes
+
+        class _LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+        lii = _LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(_LASTINPUTINFO)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return -1
+        tick = ctypes.windll.kernel32.GetTickCount()
+        return max(0, int((tick - lii.dwTime) / 1000))
+    except Exception:
+        return -1
+
+
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
                   net: tuple, disk: tuple, ping_ms: int, now: float,
                   claude: Optional[Dict] = None) -> Dict:
@@ -1101,6 +1123,8 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "claude": _build_claude_block(claude),
         "events": _events_with_claude(claude, now),
         "forest": _forest_block,
+        "pidle": get_pc_idle_seconds(),       # PC idle seconds (device dims >10min)
+        "clk": time.strftime("%H:%M"),        # PC wall clock (time-of-day)
         "sv": SERVER_VERSION,
     }
 
@@ -1488,6 +1512,26 @@ def run_with_tray() -> None:
 if __name__ == "__main__":
     use_console = "--no-tray" in sys.argv or "--console" in sys.argv
     _setup_logging(console=use_console)
+    # Scriptable autostart management (e.g. from a one-click .bat installer).
+    if "--enable-autostart" in sys.argv:
+        set_autostart(True)
+        print("Autostart enabled (runs hidden at every Windows login).")
+        sys.exit(0)
+    if "--disable-autostart" in sys.argv:
+        set_autostart(False)
+        print("Autostart disabled.")
+        sys.exit(0)
+    # "Loads itself": register for login startup on the FIRST run only. A marker
+    # file means a later tray "Remove from startup" is respected afterwards.
+    if sys.platform == "win32":
+        _as_marker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  ".autostart_init")
+        if not os.path.exists(_as_marker) and not is_autostart_enabled():
+            set_autostart(True)
+            try:
+                open(_as_marker, "w").close()
+            except OSError:
+                pass
     log_info("NOCTURNE_OS — PC Monitor Server (media_status only)")
     if not use_console:
         log_info(f"Log file: {_LOG_FILE}")

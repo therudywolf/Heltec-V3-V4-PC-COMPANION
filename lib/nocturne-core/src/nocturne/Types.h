@@ -130,6 +130,9 @@ struct AppState {
   int batteryPct = 0;
   float batteryVoltage = 0.0f;
   bool isCharging = false;
+  /* PC presence (server "pidle"/"clk"): idle seconds (-1=unknown) + HH:MM. */
+  int pcIdleSec = -1;
+  char pcClock[6] = {0};
 };
 
 #endif

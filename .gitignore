@@ -5,6 +5,7 @@
 secrets.h
 include/secrets.h
 firmware/include/secrets.h
+server/.autostart_init
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Python

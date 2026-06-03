@@ -812,7 +812,11 @@ void loop()
   {
     int total = sceneManager.totalScenes();
     int target = state.alertTargetScene;
-    currentScene = (total > 0 && target >= 0 && target < total) ? target : 0;
+    if (total <= 0 || target < 0 || target >= total) target = 0;
+    // #3: alternate between the alerting hardware scene and the MAIN temps
+    // overview every 2.5s so both are visible while the alert is live.
+    bool showOverview = ((now / 2500) % 2) == 1;
+    currentScene = showOverview ? NOCT_SCENE_MAIN : target;
     needRedraw = true;
   }
   if (settings.carouselEnabled && !predatorMode && !alertLive)
@@ -1055,8 +1059,14 @@ void loop()
 
   if (lastInputTime == 0) lastInputTime = now;
   // applyContrast() skips redundant I2C writes when the value is unchanged.
-  if (!quickMenuOpen && settings.displayTimeoutSec > 0 &&
-      (now - lastInputTime > (unsigned long)settings.displayTimeoutSec * 1000))
+  bool dimByInput = (!quickMenuOpen && settings.displayTimeoutSec > 0 &&
+      (now - lastInputTime > (unsigned long)settings.displayTimeoutSec * 1000));
+  bool dimByPc = false;
+#if NOCT_FEATURE_MONITORING
+  // PC-idle dim: PC reports >10 min idle while we're showing its data.
+  dimByPc = (currentMode == MODE_NORMAL && state.pcIdleSec >= 600);
+#endif
+  if (dimByInput || dimByPc)
     applyContrast(NOCT_CONTRAST_MIN);
   else
     applyContrast(settings.displayContrast);
@@ -1121,7 +1131,8 @@ void loop()
       else
       {
         display.drawGlobalHeader(sceneManager.getSceneName(currentScene),
-                                 nullptr, netManager.rssi(), netManager.isWifiConnected());
+                                 state.pcClock[0] ? state.pcClock : nullptr,
+                                 netManager.rssi(), netManager.isWifiConnected());
         sceneManager.drawPowerStatus(state.batteryPct, state.isCharging, state.batteryVoltage);
         if (inTransition)
         {
@@ -1135,6 +1146,9 @@ void loop()
         }
         else
           sceneManager.draw(currentScene, bootTime, blinkState, fanAnimFrame);
+        // #3: blinking hazard border while a critical alert is live.
+        if (alertLive && (now / 350) % 2 == 0)
+          display.drawHazardBorder();
       }
       break;
     }
