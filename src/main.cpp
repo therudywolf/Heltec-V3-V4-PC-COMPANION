@@ -249,7 +249,7 @@ void setup()
 {
   bootTime = millis();
   Serial.begin(115200);
-  Serial.println("[NOCT] Nocturne OS " NOCTURNE_VERSION);
+  Serial.println("[NOCT] Nocturne OS " NOCTURNE_VERSION " ui-band1");
   setCpuFrequencyMhz(240);
 
   pinMode(NOCT_VEXT_PIN, OUTPUT);
