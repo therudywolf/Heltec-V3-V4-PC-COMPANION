@@ -3024,7 +3024,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   // ===================== REV-LIGHT STRIP (top) =====================
   // F1/sim-rig style: empty in low revs, fills dramatically toward redline.
   const int SEGS = 16;
-  const int stripH = 10;
+  const int stripH = 12;  // tall tachometer = the primary display element
   float litF = (pct - STRIP_BASE) / (1.0f - STRIP_BASE);  // 0 at base, 1 redline
   if (litF < 0)
     litF = 0;
@@ -3094,64 +3094,35 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   // ===================== GEAR (left hero) =====================
   char gearBuf[4];
   forza.getGearString(gearBuf, sizeof(gearBuf));
-  u8g2.setFont(u8g2_font_logisoso42_tf);
+  u8g2.setFont(u8g2_font_logisoso34_tf);
   int gw = u8g2.getUTF8Width(gearBuf);
   int gx = (sepX - gw) / 2 + shakeX + leanX;
   if (gx < 4)
     gx = 4;
-  u8g2.drawUTF8(gx, 63 + shakeY + leanY, gearBuf);
+  u8g2.drawUTF8(gx, 49 + shakeY + leanY, gearBuf);
 
-  // --- "^N" next-gear preview badge (the 3->4 sport-car cue) ---
-  if (soon && !shiftAnim && gear >= 1 && gear <= 9)
-  {
-    int blinkRate = redline ? 70 : 150;
-    if ((now / blinkRate) % 2 == 0)
-    {
-      int bx = sepX - 13, by = stripH + 3;
-      u8g2.drawTriangle(bx + 4, by, bx, by + 6, bx + 8, by + 6);  // up arrow
-      char nb[3];
-      nb[0] = (char)('0' + gear + 1);
-      nb[1] = '\0';
-      u8g2.setFont(u8g2_font_profont12_tf);
-      u8g2.drawUTF8(bx + 1, by + 18, nb);
-    }
-  }
-
-  // ============== SPEED (right hero, NFS-big, dynamic font) ==============
-  char spdBuf[8];
-  snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
-  bool spdBig = (strlen(spdBuf) <= 2);
-  u8g2.setFont(spdBig ? u8g2_font_logisoso42_tn : u8g2_font_logisoso32_tn);
-  int spdW = u8g2.getUTF8Width(spdBuf);
-  int spdBase = spdBig ? 57 : 51;
-  int spdX = (NOCT_DISP_W - 6 - spdW) + shakeX + leanX;
-  if (spdX < sepX + 6)
-    spdX = sepX + 6;
-  u8g2.drawUTF8(spdX, spdBase + shakeY + leanY, spdBuf);
-  u8g2.setFont(u8g2_font_profont10_tf);
-  int unitW = u8g2.getUTF8Width("km/h");
-  u8g2.drawUTF8(NOCT_DISP_W - 4 - unitW + shakeX, 62 + shakeY, "km/h");
-
-  // NFS ground-speed streak: animated dashed line under the speed zone.
-  // Hidden while braking (the brake flash owns that row).
-  if (speed > 30 && !hardBrake)
-  {
-    const int period = 9;
-    unsigned long div = 1UL + (unsigned long)(300 / (speed + 1));
-    int scroll = (int)((now / div) % period);
-    for (int lx = sepX + 6 + scroll; lx < NOCT_DISP_W - 2; lx += period)
-      u8g2.drawHLine(lx, 63, 3);
-  }
-  // Hard-brake reaction: a pulsing bar under the speed (weight-transfer cue).
-  if (hardBrake && (now / 70) % 2 == 0)
-    u8g2.drawBox(sepX + 6, 62, NOCT_DISP_W - sepX - 8, 2);
-
-  // tiny live RPM under the strip (right side)
-  u8g2.setFont(u8g2_font_profont10_tf);
+  // ============ TACHO: RPM number (right, prominent = 2nd hero) ============
   char rb[8];
   snprintf(rb, sizeof(rb), "%d", (int)currentRpm);
+  u8g2.setFont(u8g2_font_logisoso24_tn);
   int rw = u8g2.getUTF8Width(rb);
-  u8g2.drawUTF8(NOCT_DISP_W - 4 - rw, stripH + 8, rb);
+  int rpmX = (NOCT_DISP_W - 5 - rw) + shakeX + leanX;
+  if (rpmX < sepX + 6)
+    rpmX = sepX + 6;
+  u8g2.drawUTF8(rpmX, 33 + shakeY + leanY, rb);
+
+  // ===================== SPEED (secondary, small) =====================
+  char spdBuf[8];
+  snprintf(spdBuf, sizeof(spdBuf), "%d", speed);
+  u8g2.setFont(u8g2_font_logisoso16_tr);
+  int spdW = u8g2.getUTF8Width(spdBuf);
+  int spdX = (NOCT_DISP_W - 5 - spdW) + leanX;
+  if (spdX < sepX + 6)
+    spdX = sepX + 6;
+  u8g2.drawUTF8(spdX, 54 + leanY, spdBuf);
+  u8g2.setFont(u8g2_font_profont10_tf);
+  int unitW = u8g2.getUTF8Width("km/h");
+  u8g2.drawUTF8(NOCT_DISP_W - 5 - unitW, 63, "km/h");
 
   // --- driver-input pedal bar (left edge): solid up = throttle, dotted = brake
   {
@@ -3184,20 +3155,33 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
-  // --- top-left nook: SLIP warning (priority) or race position ---
+  // --- bottom-left data: SLIP (priority) else position + lap ---
   {
     bool slipping = st.combinedSlip > 1.1f;
-    int pos = st.racePosition;
     u8g2.setFont(u8g2_font_profont10_tf);
     if (slipping && (now / 90) % 2 == 0)
-      u8g2.drawUTF8(3, stripH + 8, "SLIP");
-    else if (!slipping && pos >= 1 && pos <= 24)
+      u8g2.drawUTF8(4, 62, "SLIP");
+    else if (!slipping)
     {
-      char pb[6];
-      snprintf(pb, sizeof(pb), "P%d", pos);
-      u8g2.drawUTF8(3, stripH + 8, pb);
+      char db[12];
+      int pos = st.racePosition;
+      if (pos >= 1 && pos <= 24)
+      {
+        snprintf(db, sizeof(db), "P%d", pos);
+        u8g2.drawUTF8(4, 62, db);
+      }
+      if (st.lapNumber >= 1 && st.lapNumber < 999)
+      {
+        snprintf(db, sizeof(db), "L%d", (int)st.lapNumber);
+        int lw = u8g2.getUTF8Width(db);
+        u8g2.drawUTF8(sepX - 3 - lw, 62, db);
+      }
     }
   }
+
+  // --- hard-brake cue: flashing bottom edge (weight-transfer / braking) ---
+  if (hardBrake && (now / 70) % 2 == 0)
+    u8g2.drawHLine(0, 63, NOCT_DISP_W);
 
   // ===================== SHIFT ANIMATION "3>4" =====================
   if (shiftAnim && shiftUp)
