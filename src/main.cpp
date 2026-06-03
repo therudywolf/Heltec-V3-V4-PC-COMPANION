@@ -1132,7 +1132,14 @@ void loop()
     {
       static int lastPhantomPayloadIndex = -1;
       if (bleManager.isActive()) bleManager.tick();
-      sceneManager.drawBleSpammer(bleManager.getPacketCount());
+      const char *bleLabel =
+          currentMode == MODE_BLE_SOUR_APPLE            ? "BLE APPLE"
+          : currentMode == MODE_BLE_SWIFTPAIR_MICROSOFT ? "BLE MS"
+          : currentMode == MODE_BLE_SWIFTPAIR_GOOGLE    ? "BLE GOOGLE"
+          : currentMode == MODE_BLE_SWIFTPAIR_SAMSUNG   ? "BLE SAMSUNG"
+          : currentMode == MODE_BLE_FLIPPER_SPAM        ? "BLE FLIPPER"
+                                                        : "BLE SPAM";
+      sceneManager.drawBleSpammer(bleManager.getPacketCount(), bleLabel);
       if (lastPhantomPayloadIndex >= 0 &&
           bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
         display.applyGlitch();

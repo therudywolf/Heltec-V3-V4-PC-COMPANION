@@ -2032,6 +2032,40 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 
 #if NOCT_FEATURE_HACKER
 
+// Shared hacker-mode header: inverted bar, mode name left, optional status right.
+// One consistent template for every WiFi/BLE/LoRa screen.
+static void drawModeHeader(U8G2 &u8g2, const char *name, const char *right)
+{
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
+  u8g2.print(name);
+  if (right && right[0])
+  {
+    int w = u8g2.getUTF8Width(right);
+    u8g2.setCursor(NOCT_DISP_W - 2 - w, NOCT_MODE_HEADER_H - 2);
+    u8g2.print(right);
+  }
+  u8g2.setDrawColor(1);
+}
+
+// Big centered stat in a tech-bracket box (MAIN/Claude look) for active modes.
+static void drawStatBox(U8G2 &u8g2, DisplayEngine &disp, int x, int y, int w,
+                        int h, const char *label, const char *value)
+{
+  disp.drawTechBrackets(x, y, w, h, 4);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.drawUTF8(x + 4, y + 8, label);
+  u8g2.setFont(VALUE_FONT);
+  int vw = u8g2.getUTF8Width(value);
+  int cx = x + (w - vw) / 2;
+  if (cx < x + 2)
+    cx = x + 2;
+  u8g2.drawUTF8(cx, y + h - 6, value);
+}
+
 void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
                                    int *sortedIndices, int filteredCount,
                                    const char *footerOverride)
@@ -2100,17 +2134,13 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     return;
   }
 
-  // --- LIST RENDER: inverted header bar + readable AP rows with signal bars ---
-  u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
+  // --- LIST RENDER: shared header + readable AP rows with signal bars ---
+  char hdr[20];
   if (useFiltered && filteredCount < n)
-    u8g2.printf("WIFI %d/%d", filteredCount, n);
+    snprintf(hdr, sizeof(hdr), "WIFI %d/%d", filteredCount, n);
   else
-    u8g2.printf("WIFI %d APs", displayCount);
-  u8g2.setDrawColor(1);
+    snprintf(hdr, sizeof(hdr), "WIFI %d APs", displayCount);
+  drawModeHeader(u8g2, hdr, nullptr);
 
   const int yStart = NOCT_MODE_HEADER_H + 11;   // first row baseline
   const int h = 12;                             // taller rows = readable
@@ -2206,33 +2236,27 @@ static void drawBtIcon(U8G2 &u8g2, int cx, int cy, int r, int pulse)
   u8g2.drawLine(cx - tip, cy + R - 2, cx + R - 2, cy + 4);
 }
 
-void SceneManager::drawBleSpammer(int packetCount)
+void SceneManager::drawBleSpammer(int packetCount, const char *modeName)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(NOCT_MARGIN, 7);
-  u8g2.print("BLE SPAM");
-  u8g2.setDrawColor(1);
+  drawModeHeader(u8g2, modeName ? modeName : "BLE SPAM", nullptr);
 
-  // Pulsing Bluetooth icon (center)
+  // Pulsing Bluetooth icon on the left.
   unsigned long t = millis() / 100;
   int pulse = (int)(t % 8) - 4;
   if (pulse < 0)
     pulse = -pulse;
-  drawBtIcon(u8g2, PHANTOM_BT_CX, PHANTOM_BT_CY, PHANTOM_BT_R, pulse);
+  drawBtIcon(u8g2, 26, 38, 11, pulse);
 
-  static char pktBuf[20];
-  snprintf(pktBuf, sizeof(pktBuf), "PKT: %lu", (unsigned long)packetCount);
-  u8g2.setCursor(NOCT_MARGIN, 46);
-  u8g2.print(pktBuf);
+  // Big packet counter in a bracket box (active-mode template).
+  char num[12];
+  snprintf(num, sizeof(num), "%lu", (unsigned long)packetCount);
+  drawStatBox(u8g2, disp_, 52, 16, 74, 32, "PKT", num);
 
   drawBottomHint();
-  disp_.drawGreebles();
 }
 
 // --- TRAP (Evil Twin / Captive Portal) ---
@@ -2246,19 +2270,11 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
-  u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
 
-  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(NOCT_MARGIN, 7);
-  u8g2.print("PORTAL");
-  if (clonedSSID && clonedSSID[0] != '\0')
-  {
-    u8g2.setCursor(60, 7);
-    u8g2.print("[CLONE]");
-  }
-  u8g2.setDrawColor(1);
+  bool cloned = clonedSSID && clonedSSID[0] != '\0';
+  drawModeHeader(u8g2, "PORTAL", cloned ? "CLONE" : nullptr);
+  u8g2.setFont(TINY_FONT);
 
   unsigned long now = millis();
   bool showBite =
@@ -2297,26 +2313,11 @@ void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
   }
   else
   {
-    int cx = TRAP_WEB_CX;
-    int cy = TRAP_WEB_CY;
-    for (int i = 0; i < 8; i++)
-    {
-      double a = (i * 2.0 * 3.14159265359) / 8.0;
-      int x2 = cx + (int)(24 * cos(a));
-      int y2 = cy + (int)(24 * sin(a));
-      u8g2.drawLine(cx, cy, x2, y2);
-    }
-    u8g2.drawCircle(cx, cy, 8);
-    u8g2.drawCircle(cx, cy, 16);
-    u8g2.drawCircle(cx, cy, 24);
-
-    static char buf[24];
-    snprintf(buf, sizeof(buf), "CLIENTS: %d", clientCount);
-    u8g2.setCursor(NOCT_MARGIN, 22);
-    u8g2.print(buf);
-    snprintf(buf, sizeof(buf), "LOGS: %d", logsCaptured);
-    u8g2.setCursor(NOCT_MARGIN, 32);
-    u8g2.print(buf);
+    char cb[12], lb[12];
+    snprintf(cb, sizeof(cb), "%d", clientCount);
+    snprintf(lb, sizeof(lb), "%d", logsCaptured);
+    drawStatBox(u8g2, disp_, 0, 16, 63, 32, "CLIENTS", cb);
+    drawStatBox(u8g2, disp_, 65, 16, 63, 32, "LOGS", lb);
   }
 
   drawBottomHint();
@@ -2330,10 +2331,7 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
   u8g2.setFontMode(1);
   u8g2.setFont(TINY_FONT);
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, 0, NOCT_DISP_W, 10);
-  u8g2.setDrawColor(0);
-
-  // Show mode name in header
+  // Mode name computed below, drawn via the shared mode header.
   const char *modeName = "SNIFF";
   SniffMode mode = mgr.getMode();
   switch (mode)
@@ -2378,19 +2376,10 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
     break;
   }
 
-  u8g2.setCursor(2, 7);
-  u8g2.print(modeName);
-  // Header-right: show the live channel while hopping (passive survey).
+  char chBuf[8] = "";
   if (mgr.isChannelHopping())
-  {
-    char chBuf[8];
     snprintf(chBuf, sizeof(chBuf), "C%d>", (int)mgr.getCurrentChannel());
-    int w = u8g2.getUTF8Width(chBuf);
-    u8g2.setCursor(NOCT_DISP_W - 2 - w, 7);
-    u8g2.print(chBuf);
-  }
-  u8g2.setDrawColor(1);
-  u8g2.drawLine(0, 10, NOCT_DISP_W, 10);
+  drawModeHeader(u8g2, modeName, chBuf[0] ? chBuf : nullptr);
 
   int n = mgr.getApCount();
   int pkts = mgr.getPacketCount();
