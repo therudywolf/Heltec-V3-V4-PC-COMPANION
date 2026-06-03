@@ -813,88 +813,67 @@ void SceneManager::drawClaude(int xOff)
     return;
   }
 
-  // Layout (content band Y=17..63): two labelled bars with a right % column,
-  // then a footer (tokens left / plan right). No vertical overlap.
-  u8g2.setFont(LABEL_FONT);
-  const int barH = 6;
-  const int labelW = 18;                 // "5H"/"WK"
-  const int pctW = 28;                   // "100%"
-  const int barX = left + labelW;
-  const int barW = right - pctW - barX;  // bar ends before the % column
-  const int pctX = right - pctW + 2;     // % column left edge (no overlap w/ bar)
-
-  struct { const char *label; int pct; } rows[2] = {
+  // Clawdmeter-style in MAIN's look: two bracket boxes with a BIG % for the 5h
+  // window + the weekly limit, then a bottom chamfer row with the real reset
+  // countdowns. Mirrors the MAIN CPU/GPU + RAM layout the user likes.
+  const int boxY = 16;          // content band top (same as MAIN's boxes)
+  const int boxH = 32;
+  const int boxW = 63;
+  const int bx[2] = {0, 65};
+  struct { const char *label; int pct; } box[2] = {
       {"5H", c.windowPct}, {"WK", c.weeklyPct}};
   for (int i = 0; i < 2; i++)
   {
-    int top = NOCT_CONTENT_START + 3 + i * 14;   // row tops: 20, 34
-    int textY = top + barH;                       // baseline aligned to bar
-    u8g2.drawUTF8(X(left, xOff), textY, rows[i].label);
-    if (rows[i].pct >= 0)
-    {
-      int pct = rows[i].pct > 100 ? 100 : rows[i].pct;
-      disp_.drawProgressBar(X(barX, xOff), top, barW, barH, pct);
-      char pb[8];
-      snprintf(pb, sizeof(pb), "%d%%", pct);
-      u8g2.drawUTF8(X(pctX, xOff), textY, pb);
-    }
+    disp_.drawTechBrackets(X(bx[i], xOff), boxY, boxW, boxH, MAIN_BRACKET_LEN);
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(bx[i] + 4, xOff), boxY + 8, box[i].label);
+    char val[8];
+    if (box[i].pct >= 0)
+      snprintf(val, sizeof(val), "%d%%", box[i].pct > 100 ? 100 : box[i].pct);
     else
-    {
-      disp_.drawTechFrame(X(barX, xOff), top, barW, barH);
-      u8g2.drawUTF8(X(pctX, xOff), textY, "n/a");
-    }
+      snprintf(val, sizeof(val), "--");
+    u8g2.setFont(HUGE_FONT);                 // big readable number
+    int vw = u8g2.getUTF8Width(val);
+    int cx = bx[i] + (boxW - vw) / 2;
+    if (cx < bx[i] + 2) cx = bx[i] + 2;
+    u8g2.drawUTF8(X(cx, xOff), boxY + 30, val);
   }
 
-  // Middle line (centered, between bars and footer): the real 5h-window reset
-  // countdown when data is fresh ("time to limit reset"); a STALE marker with
-  // the date if the figures aren't today (never silently implies "live").
+  // Bottom chamfer row: 5h reset (left) + weekly reset (right), the genuine
+  // "time to limit reset". STALE marker (centered) if the data isn't today.
+  disp_.drawChamferBox(X(0, xOff), 50, NOCT_DISP_W, 13, 3);
+  u8g2.setFont(LABEL_FONT);
+  const int rowY = 59;
+  if (c.stale && c.date.length() >= 10)
   {
-    char ds[28];
-    ds[0] = '\0';
-    if (c.stale && c.date.length() >= 10)
-    {
-      String md = c.date.substring(5);             // "YYYY-MM-DD" -> "MM-DD"
-      snprintf(ds, sizeof(ds), "STALE %s", md.c_str());
-    }
-    else if (c.resetsInMin >= 0)
+    String md = c.date.substring(5);          // "YYYY-MM-DD" -> "MM-DD"
+    char ds[20];
+    snprintf(ds, sizeof(ds), "STALE %s", md.c_str());
+    int dw = u8g2.getUTF8Width(ds);
+    u8g2.drawUTF8(X((NOCT_DISP_W - dw) / 2, xOff), rowY, ds);
+  }
+  else
+  {
+    char l[16];
+    if (c.resetsInMin >= 0)
     {
       int h = c.resetsInMin / 60, m = c.resetsInMin % 60;
-      if (h > 0)
-        snprintf(ds, sizeof(ds), "5H resets %dh%02dm", h, m);
+      if (h > 0) snprintf(l, sizeof(l), "5H %dh%02dm", h, m);
+      else       snprintf(l, sizeof(l), "5H %dm", m);
+    }
+    else snprintf(l, sizeof(l), "5H --");
+    u8g2.drawUTF8(X(left + 2, xOff), rowY, l);
+
+    if (c.weeklyResetMin >= 0)
+    {
+      char r[16];
+      if (c.weeklyResetMin >= 1440)
+        snprintf(r, sizeof(r), "WK %.1fd", c.weeklyResetMin / 1440.0);
       else
-        snprintf(ds, sizeof(ds), "5H resets %dm", m);
+        snprintf(r, sizeof(r), "WK %dh", c.weeklyResetMin / 60);
+      int rw = u8g2.getUTF8Width(r);
+      u8g2.drawUTF8(X(right - rw - 2, xOff), rowY, r);
     }
-    else if (c.date.length() >= 10)
-    {
-      String md = c.date.substring(5);
-      snprintf(ds, sizeof(ds), "as of %s", md.c_str());
-    }
-    if (ds[0])
-    {
-      int dw = u8g2.getUTF8Width(ds);
-      u8g2.drawUTF8(X((NOCT_DISP_W - dw) / 2, xOff), NOCT_CONTENT_START + 31, ds);
-    }
-  }
-
-  // Footer: tokens today (k/M) left, plan tag (e.g. PRO) right.
-  char foot[24];
-  if (c.todayTokens >= 1000000L)
-    snprintf(foot, sizeof(foot), "%.1fM tok", c.todayTokens / 1000000.0);
-  else if (c.todayTokens >= 1000L)
-    snprintf(foot, sizeof(foot), "%ldk tok", c.todayTokens / 1000L);
-  else
-    snprintf(foot, sizeof(foot), "%ld tok", c.todayTokens);
-  u8g2.drawUTF8(X(left, xOff), NOCT_DISP_H - 3, foot);
-
-  if (c.plan.length())
-  {
-    char plan[12];
-    int n = 0;
-    for (; n < (int)sizeof(plan) - 1 && c.plan[n]; n++)
-      plan[n] = (char)toupper((unsigned char)c.plan[n]);
-    plan[n] = '\0';
-    int pw_ = u8g2.getUTF8Width(plan);
-    u8g2.drawUTF8(X(right - pw_, xOff), NOCT_DISP_H - 3, plan);
   }
 }
 
