@@ -34,6 +34,7 @@ public:
   void drawClaude(int xOff = 0);
   void drawNet(int xOff = 0);
   void drawForest(int xOff = 0);
+  void drawEvents(int xOff = 0);
 
   // --- Always available ---
   void drawSearchMode(int scanPhase);

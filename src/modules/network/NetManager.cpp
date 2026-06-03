@@ -378,10 +378,24 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     const char *sev = ev_obj["sev"];
     strncpy(ev.severity, sev ? sev : "", sizeof(ev.severity) - 1);
     ev.severity[sizeof(ev.severity) - 1] = '\0';
+    // Per-alert list for the events scene (up to kMaxList names).
+    for (int i = 0; i < EventsData::kMaxList; i++)
+      ev.list[i][0] = '\0';
+    JsonArrayConst evlist = ev_obj["list"];
+    int li = 0;
+    for (JsonVariantConst v : evlist) {
+      if (li >= EventsData::kMaxList) break;
+      const char *nm = v.as<const char *>();
+      strncpy(ev.list[li], nm ? nm : "", sizeof(ev.list[li]) - 1);
+      ev.list[li][sizeof(ev.list[li]) - 1] = '\0';
+      li++;
+    }
   } else {
     ev.count = 0;
     ev.top[0] = '\0';
     ev.severity[0] = '\0';
+    for (int i = 0; i < EventsData::kMaxList; i++)
+      ev.list[i][0] = '\0';
   }
 
   // Forest panel block (aggregated node status from the server).
