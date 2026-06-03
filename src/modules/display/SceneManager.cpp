@@ -2960,18 +2960,19 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   if (pct < 0.0f)
     pct = 0.0f;
 
-  // Shift-light stages (relative to redline)
-  const float SHIFT_SOON = 0.86f;  // amber: get ready
-  const float SHIFT_NOW = 0.94f;   // red: SHIFT!
+  // Shift-light stages (relative to redline). Tuned LOW so the cue lands early.
+  const float SHIFT_SOON = 0.78f;   // amber: get ready
+  const float SHIFT_NOW = 0.88f;    // red: SHIFT NOW
+  const float STRIP_BASE = 0.38f;   // rev strip starts filling here
   bool soon = pct >= SHIFT_SOON;
   bool redline = pct >= SHIFT_NOW;
 
-  // Engine shake (retuned: starts later @82%, ramps harder toward redline).
+  // Engine shake (starts @76%, ramps toward redline).
   // The rev strip + shift badge are drawn WITHOUT shake so the cue stays sharp.
   int shakeX = 0, shakeY = 0;
-  if (pct > 0.82f)
+  if (pct > 0.76f)
   {
-    int it = (int)((pct - 0.82f) * 22.0f);
+    int it = (int)((pct - 0.76f) * 18.0f);
     if (it > 3)
       it = 3;
     if (it > 0)
@@ -3005,7 +3006,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   // F1/sim-rig style: empty in low revs, fills dramatically toward redline.
   const int SEGS = 16;
   const int stripH = 9;
-  float litF = (pct - 0.45f) / 0.55f;  // 0 at 45%, 1 at redline
+  float litF = (pct - STRIP_BASE) / (1.0f - STRIP_BASE);  // 0 at base, 1 redline
   if (litF < 0)
     litF = 0;
   if (litF > 1)
@@ -3015,7 +3016,7 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int segW = (NOCT_DISP_W - (SEGS - 1) * segGap) / SEGS;
   int stripW = SEGS * segW + (SEGS - 1) * segGap;
   int sx0 = (NOCT_DISP_W - stripW) / 2;
-  int zoneStart = (int)(((SHIFT_SOON - 0.45f) / 0.55f) * SEGS);
+  int zoneStart = (int)(((SHIFT_SOON - STRIP_BASE) / (1.0f - STRIP_BASE)) * SEGS);
   bool allStrobe = redline && ((now / 55) % 2 == 0);
   for (int i = 0; i < SEGS; i++)
   {
@@ -3094,15 +3095,50 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   int rw = u8g2.getUTF8Width(rb);
   u8g2.drawUTF8(NOCT_DISP_W - 4 - rw, stripH + 8, rb);
 
-  // --- fuel: slim vertical gauge on the far-right edge ---
-  float fuel = st.fuel;
-  if (fuel > 0.0f && fuel <= 1.0f)
+  // --- driver-input pedal bar (left edge): solid up = throttle, dotted = brake
   {
-    int fy0 = 20, fy1 = 53, fh = fy1 - fy0;
+    int py0 = 14, py1 = 62, ph = py1 - py0;
+    if (st.brake > st.throttle && st.brake > 8)
+    {
+      int bh = (int)((st.brake / 255.0f) * ph);
+      for (int yy = py1 - bh; yy < py1; yy += 2)  // dotted = braking
+        u8g2.drawHLine(0, yy, 2);
+    }
+    else if (st.throttle > 8)
+    {
+      int th = (int)((st.throttle / 255.0f) * ph);
+      u8g2.drawBox(0, py1 - th, 2, th);            // solid = throttle
+    }
+  }
+
+  // --- fuel: slim vertical gauge on the far-right edge (+ low-fuel blink) ---
+  float fuel = st.fuel;
+  if (fuel >= 0.0f && fuel <= 1.0f)
+  {
+    int fy0 = 14, fy1 = 62, fh = fy1 - fy0;
     int fillH = (int)(fuel * fh);
-    u8g2.drawFrame(NOCT_DISP_W - 2, fy0, 2, fh);
-    if (fillH > 0)
-      u8g2.drawBox(NOCT_DISP_W - 2, fy1 - fillH, 2, fillH);
+    bool low = fuel < 0.15f;
+    if (!(low && (now / 250) % 2 == 0))  // blink whole gauge when low
+    {
+      u8g2.drawFrame(NOCT_DISP_W - 2, fy0, 2, fh);
+      if (fillH > 0)
+        u8g2.drawBox(NOCT_DISP_W - 2, fy1 - fillH, 2, fillH);
+    }
+  }
+
+  // --- top-left nook: SLIP warning (priority) or race position ---
+  {
+    bool slipping = st.combinedSlip > 1.1f;
+    int pos = st.racePosition;
+    u8g2.setFont(u8g2_font_profont10_tf);
+    if (slipping && (now / 90) % 2 == 0)
+      u8g2.drawUTF8(3, stripH + 8, "SLIP");
+    else if (!slipping && pos >= 1 && pos <= 24)
+    {
+      char pb[6];
+      snprintf(pb, sizeof(pb), "P%d", pos);
+      u8g2.drawUTF8(3, stripH + 8, pb);
+    }
   }
 
   // ===================== SHIFT ANIMATION "3>4" =====================

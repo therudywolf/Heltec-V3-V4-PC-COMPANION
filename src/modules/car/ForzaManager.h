@@ -42,25 +42,31 @@
 #define FORZA_KMH_FONT u8g2_font_profont12_tf
 #define FORZA_SHIFT_FONT u8g2_font_logisoso16_tr
 
-// Offsets from Forza packet (little-endian)
+// Offsets from Forza packet (little-endian). Values verified against the
+// canonical Forza "Data Out" V2 sled+dash spec.
 #define FORZA_OFF_IS_RACE_ON 0
 #define FORZA_OFF_ENGINE_MAX_RPM 8
 #define FORZA_OFF_ENGINE_IDLE_RPM 12
 #define FORZA_OFF_CURRENT_ENGINE_RPM 16
+// TireCombinedSlip FL/FR/RL/RR lives in the SLED block (first 232 bytes),
+// so it is at the same offset for every format. ~0 = grip, >1 = sliding.
+#define FORZA_OFF_SLIP_FL 180
 // FM7/FM8 Dash (311 bytes)
 #define FORZA_OFF_SPEED 244
 #define FORZA_OFF_TIRE_FL 256
-#define FORZA_OFF_FUEL 280
-#define FORZA_OFF_LAP 296
-#define FORZA_OFF_RACE_POS 298
+#define FORZA_OFF_FUEL 276    /* was 280 (that is DistanceTraveled) */
+#define FORZA_OFF_LAP 300     /* u16 LapNumber, was 296 (CurrentRaceTime) */
+#define FORZA_OFF_RACE_POS 302 /* u8, was 298 */
 #define FORZA_OFF_GEAR 307
-// FH4/FH5 Dash (323 bytes): +12 after NumCylinders
+// FH4/FH5 Dash (323 bytes): +12 after NumCylinders (the Horizon CarType block)
 #define FORZA_OFF_SPEED_FH 256
 #define FORZA_OFF_TIRE_FL_FH 268
-#define FORZA_OFF_FUEL_FH 292
-#define FORZA_OFF_LAP_FH 308
-#define FORZA_OFF_RACE_POS_FH 310
+#define FORZA_OFF_FUEL_FH 288
+#define FORZA_OFF_LAP_FH 312
+#define FORZA_OFF_RACE_POS_FH 314
 #define FORZA_OFF_GEAR_FH 319
+// Driver inputs sit just before Gear in the dash block: accel = gear-4,
+// brake = gear-3 (works for both FM and FH layouts).
 
 struct ForzaState
 {
@@ -70,6 +76,9 @@ struct ForzaState
   float speedMs;
   int gear;
   float tireFL, tireFR, tireRL, tireRR;
+  float combinedSlip;  // max of the 4 wheels (traction limit indicator)
+  uint8_t throttle;    // 0..255
+  uint8_t brake;       // 0..255
   float fuel;
   uint16_t lapNumber;
   uint8_t racePosition;
