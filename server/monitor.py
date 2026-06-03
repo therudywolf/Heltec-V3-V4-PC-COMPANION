@@ -1046,6 +1046,7 @@ def _events_with_claude(claude: Optional[Dict], now: float) -> Dict[str, Any]:
                 "top": name,                 # Claude reminder takes the banner
                 "sev": "warning",
                 "list": existing[:4],
+                "txt": name,
             }
     return block
 

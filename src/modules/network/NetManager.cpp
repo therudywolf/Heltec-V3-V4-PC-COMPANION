@@ -390,10 +390,14 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
       ev.list[li][sizeof(ev.list[li]) - 1] = '\0';
       li++;
     }
+    const char *txt = ev_obj["txt"];
+    strncpy(ev.text, txt ? txt : "", sizeof(ev.text) - 1);
+    ev.text[sizeof(ev.text) - 1] = '\0';
   } else {
     ev.count = 0;
     ev.top[0] = '\0';
     ev.severity[0] = '\0';
+    ev.text[0] = '\0';
     for (int i = 0; i < EventsData::kMaxList; i++)
       ev.list[i][0] = '\0';
   }

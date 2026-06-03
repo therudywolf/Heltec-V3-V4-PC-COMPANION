@@ -29,7 +29,20 @@ from typing import Any, Dict, List, Optional
 # Severity ranking (higher = more urgent) for choosing the banner alert.
 SEVERITY_RANK = {"critical": 3, "warning": 2, "info": 1, "none": 0}
 
-EMPTY_EVENTS: Dict[str, Any] = {"n": 0, "top": "", "sev": "", "list": []}
+EMPTY_EVENTS: Dict[str, Any] = {"n": 0, "top": "", "sev": "", "list": [], "txt": ""}
+
+# Max length of the human-readable alert text sent to the device.
+TEXT_MAX = 60
+
+
+def alert_text(annotations: Dict[str, Any], fallback: str) -> str:
+    """Best human text for an alert: annotations summary/description, else name."""
+    if isinstance(annotations, dict):
+        for k in ("summary", "description", "message", "title"):
+            v = annotations.get(k)
+            if v:
+                return str(v)[:TEXT_MAX]
+    return str(fallback)[:TEXT_MAX]
 
 # Firing alerts older than this (no refresh) are dropped, so a missed "resolved"
 # webhook can't pin a stale banner forever.
@@ -59,7 +72,8 @@ def parse_alertmanager(body: Dict[str, Any]) -> List[Dict[str, str]]:
         if severity not in SEVERITY_RANK:
             severity = "none"
         status = (a.get("status") or "firing").lower()
-        out.append({"name": str(name)[:20], "severity": severity, "status": status})
+        out.append({"name": str(name)[:20], "severity": severity, "status": status,
+                    "text": alert_text(a.get("annotations") or {}, name)})
     return out
 
 
@@ -79,6 +93,7 @@ def build_events_block(alerts: List[Dict[str, str]]) -> Dict[str, Any]:
         "top": top.get("name", "")[:20],
         "sev": top.get("severity", ""),
         "list": [a.get("name", "")[:20] for a in firing[:4]],
+        "txt": (top.get("text") or top.get("name", ""))[:TEXT_MAX],
     }
 
 
@@ -105,6 +120,7 @@ class AlertState:
                     "name": name,
                     "severity": a.get("severity", "none"),
                     "status": "firing",
+                    "text": a.get("text", name),
                     "ts": t,
                 }
             else:
@@ -124,6 +140,7 @@ class AlertState:
                 "name": a["name"],
                 "severity": a.get("severity", "none"),
                 "status": "firing",
+                "text": a.get("text", a["name"]),
                 "ts": t,
             }
             for a in (alerts or [])

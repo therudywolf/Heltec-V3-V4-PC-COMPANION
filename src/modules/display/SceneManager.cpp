@@ -1063,21 +1063,43 @@ void SceneManager::drawEvents(int xOff)
   }
   u8g2.drawHLine(X(left, xOff), NOCT_CONTENT_START + 14, right - left);
 
-  // List of firing alert names (up to 4), each with a bullet.
+  // The actual alert TEXT (TG-style human summary), word-wrapped over 3 lines.
   u8g2.setFont(LABEL_FONT);
+  const char *msg = e.text[0] ? e.text : e.top;
+  const int CPL = 20;  // chars/line at LABEL_FONT across the content width
   int y = NOCT_CONTENT_START + 25;
-  for (int i = 0; i < EventsData::kMaxList; i++)
+  int start = 0, len = (int)strlen(msg), lines = 0;
+  while (start < len && lines < 3)
   {
-    if (!e.list[i][0])
-      break;
-    u8g2.drawDisc(X(left + 2, xOff), y - 3, 1);
-    char nm[20];
-    strncpy(nm, e.list[i], sizeof(nm) - 1);
-    nm[sizeof(nm) - 1] = '\0';
-    u8g2.drawUTF8(X(left + 8, xOff), y, nm);
+    int end = start + CPL;
+    if (end >= len)
+      end = len;
+    else
+    {
+      int b = end;  // back up to a space for a clean break
+      while (b > start && msg[b] != ' ')
+        b--;
+      if (b > start)
+        end = b;
+    }
+    char line[24];
+    int n = end - start;
+    if (n > 23) n = 23;
+    memcpy(line, msg + start, n);
+    line[n] = '\0';
+    u8g2.drawUTF8(X(left, xOff), y, line);
     y += 10;
-    if (y > NOCT_DISP_H - 1)
-      break;
+    lines++;
+    start = end;
+    while (start < len && msg[start] == ' ')
+      start++;
+  }
+  if (e.count > 1)
+  {
+    char more[16];
+    snprintf(more, sizeof(more), "+%d more", e.count - 1);
+    int mw = u8g2.getUTF8Width(more);
+    u8g2.drawUTF8(X(right - mw, xOff), NOCT_DISP_H - 2, more);
   }
 #else
   (void)xOff;
