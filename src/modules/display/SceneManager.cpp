@@ -2142,8 +2142,10 @@ void SceneManager::drawWiFiScanner(int selectedIndex, int pageOffset,
     snprintf(hdr, sizeof(hdr), "WIFI %d APs", displayCount);
   drawModeHeader(u8g2, hdr, nullptr);
 
-  const int yStart = NOCT_MODE_HEADER_H + 11;   // first row baseline
-  const int h = 12;                             // taller rows = readable
+  // Rows must stay above the footer hint (NOCT_FOOTER_Y=50). 4 rows at h=10
+  // from baseline 19 -> 19/29/39/49, selected boxes end at 49 (<50). No overlap.
+  const int yStart = NOCT_MODE_HEADER_H + 9;    // 19: first selected box clears header
+  const int h = 10;
   const int maxVisibleRows = 4;
   int endIdx = pageOffset + maxVisibleRows < displayCount
                    ? pageOffset + maxVisibleRows
