@@ -2792,6 +2792,35 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
       u8g2.drawVLine(x + 1, 48 - h, h);
     }
   }
+  else if (mode == SNIFF_MODE_PACKET_MONITOR)
+  {
+    // Deauth/disassoc attack monitor (passive). The promiscuous callback counts
+    // deauth (subtype 12) + disassoc (subtype 10); a non-zero count = someone is
+    // running a deauth attack nearby. Headline DEAUTH count blinks inverted.
+    uint32_t deauth = mgr.getDeauthCount();
+    uint32_t disas = mgr.getDisassocCount();
+    bool attack = (deauth + disas) > 0;
+    u8g2.setFont(LABEL_FONT);
+    u8g2.setCursor(2, 19);
+    u8g2.print(attack ? "!! DEAUTH ATTACK !!" : "deauth watch: clear");
+    char nb[20];
+    snprintf(nb, sizeof(nb), "DEAUTH %lu", (unsigned long)deauth);
+    bool inv = attack && ((millis() / 350) % 2 == 0);
+    if (inv)
+    {
+      u8g2.setDrawColor(1);
+      u8g2.drawBox(2, 24, NOCT_DISP_W - 4, 14);
+      u8g2.setDrawColor(0);
+    }
+    u8g2.setFont(VALUE_FONT);
+    u8g2.setCursor(6, 35);
+    u8g2.print(nb);
+    u8g2.setDrawColor(1);
+    u8g2.setFont(LABEL_FONT);
+    snprintf(nb, sizeof(nb), "disassoc %lu   pkts %d", (unsigned long)disas, pkts);
+    u8g2.setCursor(2, 47);
+    u8g2.print(nb);
+  }
   else
   {
     // SNIFF_MODE_AP and any others: original AP-detail view.

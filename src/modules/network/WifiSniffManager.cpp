@@ -47,6 +47,8 @@ void WifiSniffManager::promiscuousCb(void *buf,
         s_instance->stats_.beaconFrames++;
       } else if (frameSubtype == 12) {
         s_instance->stats_.deauthFrames++;
+      } else if (frameSubtype == 10) {
+        s_instance->stats_.disassocFrames++;   // disassoc - also an attack sign
       }
     } else if (frameType == 2) {
       s_instance->stats_.dataFrames++;
@@ -530,6 +532,7 @@ void WifiSniffManager::tick() {
       stats_.dataFrames = 0;
       stats_.beaconFrames = 0;
       stats_.deauthFrames = 0;
+      stats_.disassocFrames = 0;
       stats_.eapolFrames = 0;
       lastStatsReset_ = now;
     }
