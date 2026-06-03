@@ -22,24 +22,93 @@ import urllib.request
 from typing import Any, Dict, Optional
 
 API_URL = "https://api.anthropic.com/v1/messages"
+TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
 OAUTH_BETA = "oauth-2025-04-20"
 # OAuth (Pro/Max) tokens are scoped to Claude Code; the API expects the CLI's
 # system prompt on the request, otherwise it rejects the token.
 SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude."
-DEFAULT_MODEL = "claude-haiku-4-5"   # cheapest; falls back if unavailable
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"   # cheapest; matches the forestserver bot
+CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"   # Claude Code OAuth client
+USER_AGENT = "claude-code/2.1.5"
+REFRESH_SKEW = 120   # refresh if the token expires within this many seconds
+
+
+def _creds_path(base_dir: Optional[str]) -> str:
+    base = base_dir if base_dir is not None else os.path.join(os.path.expanduser("~"), ".claude")
+    return os.path.join(base, ".credentials.json")
 
 
 def read_oauth_token(base_dir: Optional[str] = None) -> Optional[str]:
     """Read claudeAiOauth.accessToken from ~/.claude/.credentials.json, or None."""
     try:
-        base = base_dir if base_dir is not None else os.path.join(os.path.expanduser("~"), ".claude")
-        with open(os.path.join(base, ".credentials.json"), "r", encoding="utf-8") as fh:
+        with open(_creds_path(base_dir), "r", encoding="utf-8") as fh:
             creds = json.load(fh)
         oauth = creds.get("claudeAiOauth") or {}
         tok = oauth.get("accessToken")
         return tok if isinstance(tok, str) and tok.strip() else None
     except Exception:
         return None
+
+
+def _refresh_access_token(refresh_token: str, timeout: int = 30) -> Optional[Dict[str, Any]]:
+    """Exchange a refresh_token for a fresh access token (same flow as Claude Code
+    and the forestserver bot). Returns the token JSON or None. Never raises."""
+    if not refresh_token:
+        return None
+    body = json.dumps({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": CLIENT_ID,
+    }).encode("utf-8")
+    req = urllib.request.Request(TOKEN_URL, data=body, method="POST")
+    req.add_header("content-type", "application/json")
+    req.add_header("accept", "application/json")
+    req.add_header("User-Agent", USER_AGENT)
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def get_token(base_dir: Optional[str] = None) -> Optional[str]:
+    """Return a VALID access token, refreshing (and writing back) if it's expired
+    or within REFRESH_SKEW of expiry — so the device's Claude never goes stale the
+    way a static token would. Mirrors the forestserver bot's claude_meter. Falls
+    back to the stored token on any refresh failure. Never raises.
+    """
+    import time
+    try:
+        path = _creds_path(base_dir)
+        with open(path, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        o = cfg.get("claudeAiOauth") or {}
+        access = o.get("accessToken")
+        expires_at = float(o.get("expiresAt", 0)) / 1000.0
+        if access and (expires_at - time.time()) > REFRESH_SKEW:
+            return access                      # still fresh
+        rt = o.get("refreshToken")
+        if not rt:
+            return access                      # nothing to refresh with
+        tok = _refresh_access_token(rt)
+        if not tok or not tok.get("access_token"):
+            return access                      # refresh blocked/failed -> stale token
+        o["accessToken"] = tok["access_token"]
+        if tok.get("refresh_token"):
+            o["refreshToken"] = tok["refresh_token"]
+        if tok.get("expires_in"):
+            o["expiresAt"] = int((time.time() + float(tok["expires_in"])) * 1000)
+        cfg["claudeAiOauth"] = o
+        try:                                   # atomic write-back, preserve perms
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh)
+            os.replace(tmp, path)
+        except Exception:
+            pass
+        return o["accessToken"]
+    except Exception:
+        return read_oauth_token(base_dir)
 
 
 def _header_get(headers: Dict[str, str], key: str) -> Optional[str]:
@@ -131,6 +200,7 @@ def fetch_live_usage(token: Optional[str], now_ts: float,
     req.add_header("anthropic-version", "2023-06-01")
     req.add_header("anthropic-beta", OAUTH_BETA)
     req.add_header("content-type", "application/json")
+    req.add_header("User-Agent", USER_AGENT)
     try:
         resp = urllib.request.urlopen(req, timeout=timeout)
         headers = dict(resp.headers)
