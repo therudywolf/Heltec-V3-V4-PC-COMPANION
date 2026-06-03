@@ -56,6 +56,7 @@ uint16_t ForzaManager::readU16LE(const uint8_t *p) {
 }
 
 void ForzaManager::begin() {
+  udp_.stop();  // idempotent: safe to call again (no socket leak on re-begin)
   if (udp_.begin(FORZA_UDP_PORT)) {
     Serial.printf("[FORZA] UDP listening on port %d\n", FORZA_UDP_PORT);
   } else {
