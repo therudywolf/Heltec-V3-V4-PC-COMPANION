@@ -2974,6 +2974,33 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
     }
   }
 
+  // ---- Kinetic reactions: the dash is alive, driven by car physics ----
+  float gLong = st.accelLong;  // + accelerate, - brake/decel
+  float gLat = st.accelLat;    // cornering
+  // Inertia lean of the hero numbers (weight transfer feel).
+  int leanX = (int)(-gLat * 0.35f);
+  if (leanX > 5) leanX = 5;
+  if (leanX < -5) leanX = -5;
+  int leanY = (int)(-gLong * 0.32f);
+  if (leanY > 6) leanY = 6;
+  if (leanY < -4) leanY = -4;
+  // Impact: a sudden G spike (collision / hard curb) -> jolt + glitch.
+  static float prevMag = 0.0f;
+  float mag = sqrtf(gLong * gLong + gLat * gLat);
+  float jolt = fabsf(mag - prevMag);
+  prevMag = mag;
+  static unsigned long impactMs = 0;
+  if (jolt > 11.0f)
+    impactMs = now;
+  bool impact = (now - impactMs < 260);
+  if (impact)
+  {
+    shakeX += random(-4, 5);
+    shakeY += random(-4, 5);
+  }
+  // Hard braking.
+  bool hardBrake = (st.brake > 170) || (gLong < -7.0f);
+
   // --- Gear-change detection + shift-quality verdict ---
   static int prevGear = -100;
   static unsigned long shiftMs = 0;
@@ -3037,12 +3064,31 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
       u8g2.drawHLine(sx + 1, stripH - 1, segW - 2);  // unlit: continuous track
   }
 
-  // --- zone divider: NFS-style forward chevrons (motion / speed) ---
+  // --- center shift hint: animated chevrons (up = upshift due, down = lugging)
   const int sepX = 56;
-  for (int cy = 22; cy <= 50; cy += 13)
   {
-    u8g2.drawLine(sepX - 2, cy - 4, sepX + 2, cy);
-    u8g2.drawLine(sepX + 2, cy, sepX - 2, cy + 4);
+    bool wantUp = soon;                                       // pct >= 78%
+    bool wantDown = (gear >= 2 && pct < 0.32f && speed > 15); // revs too low
+    if (wantUp || wantDown)
+    {
+      int dir = wantUp ? -1 : 1;          // up = -y
+      int rate = redline ? 80 : 170;
+      int active = (int)((now / rate) % 3);
+      for (int c = 0; c < 3; c++)
+      {
+        if (!(redline || c == active))
+          continue;
+        int cyc = 30 + c * 11;            // climbing order top->bottom
+        int baseY = cyc;
+        int tipY = cyc + dir * 5;
+        u8g2.drawLine(sepX - 4, baseY, sepX, tipY);
+        u8g2.drawLine(sepX, tipY, sepX + 4, baseY);
+      }
+    }
+    else
+    {
+      u8g2.drawPixel(sepX, 36);           // idle: faint separation tick
+    }
   }
 
   // ===================== GEAR (left hero) =====================
@@ -3050,16 +3096,10 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   forza.getGearString(gearBuf, sizeof(gearBuf));
   u8g2.setFont(u8g2_font_logisoso42_tf);
   int gw = u8g2.getUTF8Width(gearBuf);
-  int gx = (sepX - gw) / 2 + shakeX;
-  if (gx < 6)
-    gx = 6;
-  u8g2.drawUTF8(gx, 63 + shakeY, gearBuf);
-  // NFS sticker-tag brackets framing the gear
-  int gbl = gx - 5;
-  if (gbl < 3)
-    gbl = 3;
-  disp_.drawTechBracket(gbl, 19 + shakeY, 42, true);
-  disp_.drawTechBracket(gx + gw + 2, 19 + shakeY, 42, false);
+  int gx = (sepX - gw) / 2 + shakeX + leanX;
+  if (gx < 4)
+    gx = 4;
+  u8g2.drawUTF8(gx, 63 + shakeY + leanY, gearBuf);
 
   // --- "^N" next-gear preview badge (the 3->4 sport-car cue) ---
   if (soon && !shiftAnim && gear >= 1 && gear <= 9)
@@ -3084,23 +3124,27 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   u8g2.setFont(spdBig ? u8g2_font_logisoso42_tn : u8g2_font_logisoso32_tn);
   int spdW = u8g2.getUTF8Width(spdBuf);
   int spdBase = spdBig ? 57 : 51;
-  int spdX = (NOCT_DISP_W - 6 - spdW) + shakeX;
+  int spdX = (NOCT_DISP_W - 6 - spdW) + shakeX + leanX;
   if (spdX < sepX + 6)
     spdX = sepX + 6;
-  u8g2.drawUTF8(spdX, spdBase + shakeY, spdBuf);
+  u8g2.drawUTF8(spdX, spdBase + shakeY + leanY, spdBuf);
   u8g2.setFont(u8g2_font_profont10_tf);
   int unitW = u8g2.getUTF8Width("km/h");
   u8g2.drawUTF8(NOCT_DISP_W - 4 - unitW + shakeX, 62 + shakeY, "km/h");
 
   // NFS ground-speed streak: animated dashed line under the speed zone.
-  if (speed > 18)
+  // Hidden while braking (the brake flash owns that row).
+  if (speed > 30 && !hardBrake)
   {
-    const int period = 8;
+    const int period = 9;
     unsigned long div = 1UL + (unsigned long)(300 / (speed + 1));
     int scroll = (int)((now / div) % period);
-    for (int lx = sepX + 4 + scroll; lx < NOCT_DISP_W - 2; lx += period)
-      u8g2.drawHLine(lx, 63, 4);
+    for (int lx = sepX + 6 + scroll; lx < NOCT_DISP_W - 2; lx += period)
+      u8g2.drawHLine(lx, 63, 3);
   }
+  // Hard-brake reaction: a pulsing bar under the speed (weight-transfer cue).
+  if (hardBrake && (now / 70) % 2 == 0)
+    u8g2.drawBox(sepX + 6, 62, NOCT_DISP_W - sepX - 8, 2);
 
   // tiny live RPM under the strip (right side)
   u8g2.setFont(u8g2_font_profont10_tf);
@@ -3189,6 +3233,15 @@ void SceneManager::drawForzaDash(ForzaManager &forza, bool showSplash,
   // ===================== REDLINE FRAME FLASH =====================
   if (redline && (now / 55) % 2 == 0)
     u8g2.drawFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+
+  // ===================== IMPACT GLITCH (collision tear) =====================
+  if (impact)
+  {
+    u8g2.setDrawColor(2);  // XOR -> torn bands across the frame
+    for (int k = 0; k < 3; k++)
+      u8g2.drawBox(0, random(0, NOCT_DISP_H - 4), NOCT_DISP_W, random(1, 4));
+    u8g2.setDrawColor(1);
+  }
 }
 
 

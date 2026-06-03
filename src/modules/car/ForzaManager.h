@@ -48,8 +48,11 @@
 #define FORZA_OFF_ENGINE_MAX_RPM 8
 #define FORZA_OFF_ENGINE_IDLE_RPM 12
 #define FORZA_OFF_CURRENT_ENGINE_RPM 16
-// TireCombinedSlip FL/FR/RL/RR lives in the SLED block (first 232 bytes),
-// so it is at the same offset for every format. ~0 = grip, >1 = sliding.
+// These all live in the SLED block (first 232 bytes), so the offset is the
+// same for every Forza format. AccelerationX/Z drive the kinetic reactions.
+#define FORZA_OFF_ACCEL_X 20  /* sway / lateral G  (m/s^2) */
+#define FORZA_OFF_ACCEL_Z 28  /* surge / longitudinal G (+accel / -brake) */
+// TireCombinedSlip FL/FR/RL/RR: ~0 = grip, >1 = sliding.
 #define FORZA_OFF_SLIP_FL 180
 // FM7/FM8 Dash (311 bytes)
 #define FORZA_OFF_SPEED 244
@@ -77,6 +80,8 @@ struct ForzaState
   int gear;
   float tireFL, tireFR, tireRL, tireRR;
   float combinedSlip;  // max of the 4 wheels (traction limit indicator)
+  float accelLong;     // surge (m/s^2): + accelerate, - brake/decel
+  float accelLat;      // sway  (m/s^2): cornering
   uint8_t throttle;    // 0..255
   uint8_t brake;       // 0..255
   float fuel;
