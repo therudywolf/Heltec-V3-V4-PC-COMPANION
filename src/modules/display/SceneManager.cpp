@@ -10,6 +10,9 @@
 #if NOCT_FEATURE_BMW
 #include "BmwManager.h"
 #endif
+#if NOCT_FEATURE_WOLFPET
+#include "modules/game/WolfPet.h"
+#endif
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
@@ -1547,11 +1550,16 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #if NOCT_FEATURE_MONITORING
     if (menuCategory == MCAT_MONITORING)
     {
-      strncpy(items[0], STR_MENU_PC_MONITOR, sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
+      int k = 0;
+      strncpy(items[k], STR_MENU_PC_MONITOR, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
 #if NOCT_FEATURE_FORZA
-      strncpy(items[1], STR_MENU_FORZA, sizeof(items[1]) - 1);
-      items[1][sizeof(items[1]) - 1] = '\0';
+      strncpy(items[k], STR_MENU_FORZA, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
+#endif
+#if NOCT_FEATURE_WOLFPET
+      strncpy(items[k], "Wolf Pet", sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
 #endif
     }
     else
@@ -1846,6 +1854,54 @@ void SceneManager::drawIdleScreensaver(unsigned long now)
   if ((now / 200) % 7 == 0)
     disp_.drawGlitch(1);
 }
+
+#if NOCT_FEATURE_WOLFPET
+// ---------------------------------------------------------------------------
+// SCENE: WOLF PET (#3) — tamagotchi. Wolf sprite by mood + FOOD/JOY/NRG bars,
+// age + status, and the selected action (short = cycle, long = do).
+// ---------------------------------------------------------------------------
+void SceneManager::drawWolfPet(WolfPet &pet, int selectedAction)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  // Wolf sprite by mood (reuse the screensaver sprites).
+  const unsigned char *spr = wolf_idle;
+  int m = pet.mood();
+  if (!pet.isAlive() || m == 0) spr = wolf_blink;
+  else if (m == 2) spr = wolf_funny;
+  const int wx = 2, wy = NOCT_CONTENT_TOP + 4;
+  u8g2.drawXBMP(wx, wy, 32, 32, spr);
+  disp_.drawTechBrackets(wx - 1, wy - 1, 34, 34, 4);
+
+  // Stat bars to the right of the wolf.
+  const int lx = 40;
+  struct { const char *l; int v; } bars[3] = {
+      {"food", pet.hunger()}, {"joy", pet.happy()}, {"nrg", pet.energy()}};
+  u8g2.setFont(LABEL_FONT);
+  for (int i = 0; i < 3; i++)
+  {
+    int by = NOCT_CONTENT_TOP + 2 + i * 11;
+    u8g2.drawUTF8(lx, by + 6, bars[i].l);
+    int barX = lx + 26, barW = NOCT_DISP_W - barX - 3, barH = 7;
+    u8g2.drawFrame(barX, by, barW, barH);
+    int fw = (bars[i].v * (barW - 2) + 50) / 100;
+    if (fw > 0) u8g2.drawBox(barX + 1, by + 1, fw, barH - 2);
+  }
+
+  // Footer: age + status (left), selected action (right).
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%lud %s", (unsigned long)pet.ageDays(), pet.statusText());
+  u8g2.drawUTF8(2, NOCT_DISP_H - 2, buf);
+  static const char *kActs[3] = {"FEED", "PLAY", "REST"};
+  int sa = selectedAction < 0 ? 0 : (selectedAction > 2 ? 2 : selectedAction);
+  snprintf(buf, sizeof(buf), ">%s", kActs[sa]);
+  int aw = u8g2.getUTF8Width(buf);
+  u8g2.drawUTF8(NOCT_DISP_W - aw - 2, NOCT_DISP_H - 2, buf);
+}
+#endif // NOCT_FEATURE_WOLFPET
 
 // ---------------------------------------------------------------------------
 // DAEMON MODE: Wolf (left) | CPU, GPU, RAM (right). Wolf sprites by mood.

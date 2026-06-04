@@ -321,6 +321,12 @@ bool AppModeManager::initializeMode(AppMode mode
 
 #endif
 
+#if NOCT_FEATURE_WOLFPET
+  case MODE_WOLFPET:
+    Serial.println("[SYS] WolfPet mode initialized");
+    return true;
+#endif
+
   default:
     Serial.println("[SYS] Unknown mode");
     return false;

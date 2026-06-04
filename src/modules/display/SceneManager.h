@@ -38,6 +38,9 @@ public:
   void drawForest(int xOff = 0);
   void drawEvents(int xOff = 0);
   void drawServices(int xOff = 0);
+#if NOCT_FEATURE_WOLFPET
+  void drawWolfPet(class WolfPet &pet, int selectedAction);
+#endif
 
   // --- Always available ---
   void drawSearchMode(int scanPhase);
