@@ -40,6 +40,9 @@ enum AppMode
 #if NOCT_FEATURE_LORA
   MODE_LORA,            // SX1262 packet listener: mesh RX + node list (#21, EU868)
   MODE_LORA_SWEEP,      // SX1262 wide-band RSSI spectrum sweep (863-870 MHz)
+#if NOCT_FEATURE_LORA_TX
+  MODE_LORA_TX,         // SX1262 transmit: beacon / mesh-ping / replay (gated)
+#endif
 #endif
 #if NOCT_FEATURE_WOLFPET
   MODE_WOLFPET,         // tamagotchi wolf pet (#3)

@@ -3,6 +3,12 @@
 
 #include <Arduino.h>
 #include <SPI.h>
+#include <Preferences.h>
+#include <string.h>
+
+// Minimum gap between manual transmits — keeps us comfortably inside the EU868
+// duty-cycle even though 869.4-869.65 MHz (where LongFast lives) allows 10%.
+static const unsigned long kTxCooldownMs = 3000;
 
 // Dedicated SPI bus for the SX1262 (separate from the OLED's I2C).
 static SPIClass loraSpi(FSPI);
@@ -39,7 +45,29 @@ bool LoraManager::begin() {
     radio.startReceive();
   }
   for (int i = 0; i < LORA_SPEC_BINS; i++) spec_[i] = -128;
+  loadNodes(); // restore the unique-node table across reboots
   return ready_;
+}
+
+void LoraManager::loadNodes() {
+  Preferences p;
+  if (!p.begin("loranodes", true)) return;
+  int n = p.getInt("n", 0);
+  if (n < 0) n = 0;
+  if (n > LORA_NODE_MAX) n = LORA_NODE_MAX;
+  size_t want = (size_t)n * sizeof(LoraNode);
+  size_t got = (want > 0) ? p.getBytes("nodes", nodes_, want) : 0;
+  nodeCount_ = (got == want) ? n : 0;
+  p.end();
+}
+
+void LoraManager::saveNodes() {
+  Preferences p;
+  if (!p.begin("loranodes", false)) return;
+  p.putInt("n", nodeCount_);
+  if (nodeCount_ > 0)
+    p.putBytes("nodes", nodes_, (size_t)nodeCount_ * sizeof(LoraNode));
+  p.end();
 }
 
 void LoraManager::applyPreset() {
@@ -65,6 +93,7 @@ void LoraManager::nextPreset() {
 }
 
 void LoraManager::sleep() {
+  saveNodes(); // persist the node table before parking the radio
   if (ready_) radio.sleep();
 }
 
@@ -87,6 +116,10 @@ void LoraManager::tick() {
 }
 
 void LoraManager::recordPacket(const uint8_t *buf, int len, float rssi, float snr) {
+  // Keep the full frame for TX_REPLAY.
+  lastRxLen_ = (len < (int)sizeof(lastRx_)) ? len : (int)sizeof(lastRx_);
+  memcpy(lastRx_, buf, lastRxLen_);
+
   LoraPacket &pk = ring_[ringHead_];
   pk.len = (uint16_t)len;
   pk.rssi = (int16_t)rssi;
@@ -176,5 +209,65 @@ void LoraManager::sweepTick() {
     sweepIdx_ = (sweepIdx_ + 1) % LORA_SPEC_BINS;
   }
 }
+
+#if NOCT_FEATURE_LORA_TX
+const char *LoraManager::txKindName(int k) {
+  switch (k) {
+    case TX_BEACON:    return "Beacon";
+    case TX_MESH_PING: return "MeshPing";
+    case TX_REPLAY:    return "Replay";
+    default:           return "?";
+  }
+}
+
+int LoraManager::txCooldownLeft() const {
+  if (lastTxMs_ == 0) return 0;
+  unsigned long since = millis() - lastTxMs_;
+  if (since >= kTxCooldownMs) return 0;
+  return (int)((kTxCooldownMs - since + 999) / 1000);
+}
+
+bool LoraManager::transmit(int kind) {
+  if (!ready_) return false;
+  unsigned long now = millis();
+  if (lastTxMs_ != 0 && (now - lastTxMs_) < kTxCooldownMs) return false; // cooldown
+
+  uint8_t buf[64];
+  int len = 0;
+  if (kind == TX_BEACON) {
+    const char tag[] = "NOCTURNE";
+    for (int i = 0; i < 8; i++) buf[len++] = (uint8_t)tag[i];
+    buf[len++] = (uint8_t)(txCount_ & 0xFF);
+  } else if (kind == TX_MESH_PING) {
+    // A valid-LENGTH Meshtastic frame: real nodes RECEIVE it (a packet from an
+    // unknown node !4e4f4354) though the payload won't decrypt. Header layout:
+    // to[4]=broadcast, from[4]=myNodeId, id[4], flags(hop_limit=3), chanHash.
+    buf[0] = buf[1] = buf[2] = buf[3] = 0xFF;
+    buf[4] = myNodeId_ & 0xFF; buf[5] = (myNodeId_ >> 8) & 0xFF;
+    buf[6] = (myNodeId_ >> 16) & 0xFF; buf[7] = (myNodeId_ >> 24) & 0xFF;
+    uint32_t id = txPktId_++;
+    buf[8] = id & 0xFF; buf[9] = (id >> 8) & 0xFF;
+    buf[10] = (id >> 16) & 0xFF; buf[11] = (id >> 24) & 0xFF;
+    buf[12] = 0x03; // hop_limit = 3
+    buf[13] = 0x08; // channel hash (plausible LongFast-ish)
+    for (int i = 14; i < 24; i++) buf[i] = (uint8_t)(0xA0 ^ i); // opaque payload
+    len = 24;
+  } else if (kind == TX_REPLAY) {
+    if (lastRxLen_ <= 0) return false;
+    len = lastRxLen_;
+    memcpy(buf, lastRx_, len);
+  } else {
+    return false;
+  }
+
+  radio.standby();
+  lastTxResult_ = radio.transmit(buf, len); // blocking
+  lastTxLen_ = len;
+  lastTxMs_ = now;
+  txCount_++;
+  radio.startReceive(); // back to listening
+  return (lastTxResult_ == RADIOLIB_ERR_NONE);
+}
+#endif // NOCT_FEATURE_LORA_TX
 
 #endif // NOCT_FEATURE_LORA

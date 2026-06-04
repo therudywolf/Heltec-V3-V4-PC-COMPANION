@@ -84,6 +84,9 @@ LoraManager loraMgr;
 static bool loraArmPending = false;          // antenna-gate confirm screen is showing
 static AppMode loraArmTarget = MODE_LORA;    // which LoRa tool the gate will arm
 static int loraView = 0;                     // MODE_LORA: 0 = packets, 1 = nodes
+#if NOCT_FEATURE_LORA_TX
+static int loraTxKind = 0;                    // MODE_LORA_TX: Beacon/MeshPing/Replay
+#endif
 #endif
 
 AppModeManager appModeManager(
@@ -470,7 +473,11 @@ static bool handleHackerItem(int group, int item, unsigned long now)
   rebootConfirmed = false;
   AppMode mode = getModeForHackerItem(group, item);
 #if NOCT_FEATURE_LORA
-  if (mode == MODE_LORA || mode == MODE_LORA_SWEEP)
+  bool isLoraMode = (mode == MODE_LORA || mode == MODE_LORA_SWEEP);
+#if NOCT_FEATURE_LORA_TX
+  isLoraMode = isLoraMode || (mode == MODE_LORA_TX);
+#endif
+  if (isLoraMode)
   {
     // Don't arm the radio yet — show the antenna-present gate first (#21).
     loraArmPending = true;
@@ -1304,6 +1311,26 @@ void loop()
         needRedraw = true;
       }
       break;
+#if NOCT_FEATURE_LORA_TX
+    case MODE_LORA_TX:
+      if (event == EV_SHORT) // cycle Beacon / MeshPing / Replay
+      {
+        loraTxKind = (loraTxKind + 1) % LoraManager::TX_KIND_COUNT;
+        needRedraw = true;
+      }
+      else if (event == EV_LONG) // fire one frame
+      {
+        bool ok = loraMgr.transmit(loraTxKind);
+        if (ok)
+          snprintf(toastMsg, sizeof(toastMsg), "%s sent",
+                   LoraManager::txKindName(loraTxKind));
+        else
+          snprintf(toastMsg, sizeof(toastMsg), "TX busy/none");
+        toastUntil = now + 1300;
+        needRedraw = true;
+      }
+      break;
+#endif
 #endif
 
     default:
@@ -1377,7 +1404,14 @@ void loop()
     display.drawSplash();
 #if NOCT_FEATURE_LORA
   else if (loraArmPending)
-    sceneManager.drawLoraArm(loraArmTarget == MODE_LORA_SWEEP ? "SWEEP" : "Listen");
+  {
+    const char *armWhat = "Listen";
+    if (loraArmTarget == MODE_LORA_SWEEP) armWhat = "SWEEP";
+#if NOCT_FEATURE_LORA_TX
+    else if (loraArmTarget == MODE_LORA_TX) armWhat = "TX";
+#endif
+    sceneManager.drawLoraArm(armWhat);
+  }
 #endif
   else if (quickMenuOpen)
   {
@@ -1510,6 +1544,12 @@ void loop()
       loraMgr.sweepTick();
       sceneManager.drawLoraSweep(loraMgr);
       break;
+#if NOCT_FEATURE_LORA_TX
+    case MODE_LORA_TX:
+      loraMgr.tick(); // keep listening (replay capture + node table)
+      sceneManager.drawLoraTx(loraMgr, loraTxKind);
+      break;
+#endif
 #endif
 
 #if NOCT_FEATURE_FORZA
