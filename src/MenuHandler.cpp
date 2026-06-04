@@ -59,7 +59,7 @@ int submenuCountForHackerGroup(int group)
   case HACKER_GROUP_WIFI:
     return 13;
   case HACKER_GROUP_BLE:
-    return 1;
+    return 2; // Trackers, Devices
 #if NOCT_FEATURE_LORA
   case HACKER_GROUP_LORA:
     return 1; // Spectrum (passive RSSI + CAD activity monitor, EU868)
@@ -101,6 +101,7 @@ AppMode getModeForHackerItem(int group, int item)
     switch (item)
     {
     case 0: return MODE_BLE_SCAN;
+    case 1: return MODE_BLE_DEVICES;
     default: return NOCT_DEFAULT_MODE;
     }
   }

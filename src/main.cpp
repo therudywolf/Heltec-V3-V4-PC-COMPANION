@@ -476,6 +476,8 @@ static bool handleHackerItem(int group, int item, unsigned long now)
     wifiListPage = 0;
     wifiFilteredCount = 0;
   }
+  if (mode == MODE_BLE_DEVICES)
+    bleScanSelected = 0;
   bool ok = appModeManager.switchToMode(currentMode, mode);
   if (!ok)
   {
@@ -1263,6 +1265,13 @@ void loop()
         if (n > 0) { wifiSniffSelected = (wifiSniffSelected + 1) % n; needRedraw = true; }
       }
       break;
+    case MODE_BLE_DEVICES:
+      if (event == EV_SHORT)
+      {
+        int c = bleManager.getScanCount();
+        if (c > 0) { bleScanSelected = (bleScanSelected + 1) % c; needRedraw = true; }
+      }
+      break;
 #endif
 #if NOCT_FEATURE_LORA
     case MODE_LORA:
@@ -1464,6 +1473,10 @@ void loop()
     case MODE_BLE_SCAN:
       if (bleManager.isScanning()) bleManager.tick();
       sceneManager.drawBleScan(bleManager);
+      break;
+    case MODE_BLE_DEVICES:
+      if (bleManager.isScanning()) bleManager.tick();
+      sceneManager.drawBleDevices(bleManager, bleScanSelected);
       break;
 #endif // NOCT_FEATURE_HACKER
 

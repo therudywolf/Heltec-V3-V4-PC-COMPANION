@@ -103,6 +103,7 @@ void AppModeManager::cleanupMode(AppMode mode)
     WiFi.scanDelete();
     break;
   case MODE_BLE_SCAN:
+  case MODE_BLE_DEVICES:
     ble_.stopScan();
     ble_.stop();
     WiFi.mode(WIFI_STA);
@@ -161,6 +162,7 @@ void AppModeManager::manageWiFiState(AppMode mode)
 
 #if NOCT_FEATURE_HACKER
   case MODE_BLE_SCAN:
+  case MODE_BLE_DEVICES:
     if (WiFi.getMode() != WIFI_OFF)
     {
       WiFi.disconnect(true);
@@ -286,6 +288,18 @@ bool AppModeManager::initializeMode(AppMode mode
     }
     ble_.beginScan(BLE_SCAN_BASIC);
     Serial.println("[SYS] BLE TRACKER SCAN mode initialized");
+    return true;
+
+  case MODE_BLE_DEVICES:
+    manageWiFiState(mode);
+    if (WiFi.getMode() != WIFI_OFF)
+    {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+    }
+    ble_.beginScan(BLE_SCAN_BASIC); // same passive scan; the scene lists every advertiser
+    Serial.println("[SYS] BLE DEVICE BROWSER mode initialized");
     return true;
 
   case MODE_WIFI_PROBE_SCAN:
