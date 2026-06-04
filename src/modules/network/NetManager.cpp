@@ -325,6 +325,20 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
       state->weatherReceived = true;
   }
 
+  // #8: daily forecast "wf": [[tmin,tmax,wmocode], ...] (compact, <=5 days).
+  {
+    JsonArrayConst wf = doc["wf"];
+    int wd = 0;
+    for (JsonVariantConst day : wf) {
+      if (wd >= WeatherData::kMaxDays) break;
+      state->weather.wfMin[wd] = day[0] | 0;
+      state->weather.wfMax[wd] = day[1] | 0;
+      state->weather.wfCode[wd] = day[2] | 0;
+      wd++;
+    }
+    state->weather.wfDays = wd;
+  }
+
   JsonArray tp = doc["tp"];
   for (int i = 0; i < 3; i++) {
     if (i < (int)tp.size()) {

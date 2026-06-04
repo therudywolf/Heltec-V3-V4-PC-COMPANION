@@ -793,6 +793,20 @@ void SceneManager::drawWeather(int xOff)
   int tempX = rightX + rightW - tw - 4;
   u8g2.drawUTF8(tempX, WTHR_TEMP_Y, buf);
 
+  /* #8: compact forecast strip along the very bottom — highs of the next days
+   * (skip index 0 = today). Tiny font in the free band below desc/temp. */
+  if (weather.wfDays > 1) {
+    int n = weather.wfDays - 1;
+    if (n > 4) n = 4;
+    u8g2.setFont(UNIT_FONT);
+    int slot = boxW / n;
+    for (int i = 0; i < n; i++) {
+      char fb[8];
+      snprintf(fb, sizeof(fb), "%+d\xC2\xB0", weather.wfMax[i + 1]);
+      u8g2.drawUTF8(boxX + 4 + i * slot, boxY + boxH - 1, fb);
+    }
+  }
+
   disp_.drawGreebles();
 }
 

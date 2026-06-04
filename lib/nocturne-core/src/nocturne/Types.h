@@ -39,6 +39,12 @@ struct WeatherData {
   int temp = 0;
   String desc = "";
   int wmoCode = 0;
+  /* #8: compact daily forecast (server "wf": [tmin,tmax,wmocode] per day). */
+  static const int kMaxDays = 5;
+  int wfDays = 0;
+  int wfMin[kMaxDays] = {0};
+  int wfMax[kMaxDays] = {0};
+  int wfCode[kMaxDays] = {0};
 };
 
 struct ProcessData {
