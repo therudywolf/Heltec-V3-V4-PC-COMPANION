@@ -36,7 +36,6 @@
 #include "modules/car/ForzaManager.h"
 #endif
 #if NOCT_FEATURE_HACKER
-#include "modules/network/TrapManager.h"
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
 #endif
@@ -60,7 +59,6 @@ ForzaManager forzaManager;
 #endif
 #if NOCT_FEATURE_HACKER
 BleManager bleManager;
-TrapManager trapManager;
 WifiSniffManager wifiSniffManager;
 #endif
 
@@ -73,7 +71,6 @@ AppModeManager appModeManager(
     , forzaManager
 #endif
 #if NOCT_FEATURE_HACKER
-    , trapManager
     , wifiSniffManager
     , bleManager
 #endif
@@ -403,12 +400,7 @@ static bool handleHackerItem(int group, int item, unsigned long now)
     wifiListPage = 0;
     wifiFilteredCount = 0;
   }
-  bool ok = (mode == MODE_WIFI_TRAP)
-      ? (sortAndFilterWiFiNetworks(),
-         appModeManager.switchToMode(currentMode, mode,
-                                     wifiScanSelected, wifiFilteredCount,
-                                     wifiSortedIndices))
-      : appModeManager.switchToMode(currentMode, mode);
+  bool ok = appModeManager.switchToMode(currentMode, mode);
   if (!ok)
   {
     snprintf(toastMsg, sizeof(toastMsg), "FAIL");
@@ -1194,39 +1186,9 @@ void loop()
       wifiSniffManager.tick();
       sceneManager.drawWifiSniffMode(wifiSniffSelected, wifiSniffManager);
       break;
-    case MODE_BLE_SPAM:
-    case MODE_BLE_SOUR_APPLE:
-    case MODE_BLE_SWIFTPAIR_MICROSOFT:
-    case MODE_BLE_SWIFTPAIR_GOOGLE:
-    case MODE_BLE_SWIFTPAIR_SAMSUNG:
-    case MODE_BLE_FLIPPER_SPAM:
-    {
-      static int lastPhantomPayloadIndex = -1;
-      if (bleManager.isActive()) bleManager.tick();
-      const char *bleLabel =
-          currentMode == MODE_BLE_SOUR_APPLE            ? "BLE APPLE"
-          : currentMode == MODE_BLE_SWIFTPAIR_MICROSOFT ? "BLE MS"
-          : currentMode == MODE_BLE_SWIFTPAIR_GOOGLE    ? "BLE GOOGLE"
-          : currentMode == MODE_BLE_SWIFTPAIR_SAMSUNG   ? "BLE SAMSUNG"
-          : currentMode == MODE_BLE_FLIPPER_SPAM        ? "BLE FLIPPER"
-                                                        : "BLE SPAM";
-      sceneManager.drawBleSpammer(bleManager.getPacketCount(), bleLabel);
-      if (lastPhantomPayloadIndex >= 0 &&
-          bleManager.getCurrentPayloadIndex() != lastPhantomPayloadIndex)
-        display.applyGlitch();
-      lastPhantomPayloadIndex = bleManager.getCurrentPayloadIndex();
-      break;
-    }
     case MODE_BLE_SCAN:
       if (bleManager.isScanning()) bleManager.tick();
       sceneManager.drawBleScan(bleManager);
-      break;
-    case MODE_WIFI_TRAP:
-      if (trapManager.isActive()) trapManager.tick();
-      sceneManager.drawTrapMode(
-          trapManager.getClientCount(), trapManager.getLogsCaptured(),
-          trapManager.getLastPassword(), trapManager.getLastPasswordShowUntil(),
-          trapManager.getClonedSSID());
       break;
 #endif // NOCT_FEATURE_HACKER
 

@@ -2310,28 +2310,6 @@ static void drawBtIcon(U8G2 &u8g2, int cx, int cy, int r, int pulse)
   u8g2.drawLine(cx - tip, cy + R - 2, cx + R - 2, cy + 4);
 }
 
-void SceneManager::drawBleSpammer(int packetCount, const char *modeName)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setDrawColor(1);
-
-  drawModeHeader(u8g2, modeName ? modeName : "BLE SPAM", nullptr);
-
-  // Pulsing Bluetooth icon on the left.
-  unsigned long t = millis() / 100;
-  int pulse = (int)(t % 8) - 4;
-  if (pulse < 0)
-    pulse = -pulse;
-  drawBtIcon(u8g2, 26, 28, 10, pulse);
-
-  // Big packet counter in a bracket box (active-mode template), in the band.
-  char num[12];
-  snprintf(num, sizeof(num), "%lu", (unsigned long)packetCount);
-  drawStatBox(u8g2, disp_, 52, 12, 74, 32, "PKT", num);
-
-  drawBottomHint();
-}
 
 // --- BLE SCAN / TRACKER DETECTOR (passive) ---
 // Surfaces BleManager's scan + tracker heuristics: total devices + Flipper /
@@ -2385,70 +2363,6 @@ void SceneManager::drawBleScan(BleManager &mgr)
   drawBottomHint();
 }
 
-// --- TRAP (Evil Twin / Captive Portal) ---
-#define TRAP_WEB_CX (NOCT_DISP_W / 2)
-#define TRAP_WEB_CY 28
-
-void SceneManager::drawTrapMode(int clientCount, int logsCaptured,
-                                const char *lastPassword,
-                                unsigned long passwordShowUntil,
-                                const char *clonedSSID)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
-  u8g2.setDrawColor(1);
-
-  bool cloned = clonedSSID && clonedSSID[0] != '\0';
-  drawModeHeader(u8g2, "PORTAL", cloned ? "CLONE" : nullptr);
-  u8g2.setFont(TINY_FONT);
-
-  unsigned long now = millis();
-  bool showBite =
-      lastPassword && lastPassword[0] != '\0' && now < passwordShowUntil;
-
-  if (showBite)
-  {
-    u8g2.setDrawColor(0);
-    u8g2.drawBox(0, NOCT_MODE_HEADER_H, NOCT_DISP_W,
-                 NOCT_DISP_H - NOCT_MODE_HEADER_H);
-    u8g2.setDrawColor(1);
-    u8g2.drawXBM(48, 12, 32, 32, wolf_aggressive);
-    u8g2.setCursor(NOCT_MARGIN, 44);
-    u8g2.print("BITE:");
-    static char pwdBuf[22];
-    size_t len = strlen(lastPassword);
-    if (len >= sizeof(pwdBuf))
-      len = sizeof(pwdBuf) - 1;
-    strncpy(pwdBuf, lastPassword, len);
-    pwdBuf[len] = '\0';
-    int maxW = NOCT_DISP_W - NOCT_MARGIN * 2;
-    while (len > 0 && (int)u8g2.getUTF8Width(pwdBuf) > maxW)
-    {
-      pwdBuf[--len] = '\0';
-      if (len >= 3)
-      {
-        pwdBuf[len - 3] = '.';
-        pwdBuf[len - 2] = '.';
-        pwdBuf[len - 1] = '.';
-      }
-      else
-        break;
-    }
-    u8g2.setCursor(NOCT_MARGIN, NOCT_FOOTER_TEXT_Y);
-    u8g2.print(pwdBuf);
-  }
-  else
-  {
-    char cb[12], lb[12];
-    snprintf(cb, sizeof(cb), "%d", clientCount);
-    snprintf(lb, sizeof(lb), "%d", logsCaptured);
-    drawStatBox(u8g2, disp_, 0, 12, 63, 32, "CLIENTS", cb);
-    drawStatBox(u8g2, disp_, 65, 12, 63, 32, "LOGS", lb);
-  }
-
-  drawBottomHint();
-  disp_.drawGreebles();
-}
 
 // --- WIFI SNIFF ---
 void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)

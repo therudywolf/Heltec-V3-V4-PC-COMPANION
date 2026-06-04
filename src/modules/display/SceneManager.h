@@ -60,11 +60,7 @@ public:
   void drawWiFiScanner(int selectedIndex, int pageOffset,
                        int *sortedIndices = nullptr, int filteredCount = 0,
                        const char *footerOverride = nullptr);
-  void drawBleSpammer(int packetCount, const char *modeName = "BLE SPAM");
   void drawBleScan(class BleManager &mgr);
-  void drawTrapMode(int clientCount, int logsCaptured, const char *lastPassword,
-                    unsigned long passwordShowUntil,
-                    const char *clonedSSID = nullptr);
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
 #endif
 
