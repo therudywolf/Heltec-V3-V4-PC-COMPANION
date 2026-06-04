@@ -616,7 +616,6 @@ void SceneManager::drawDisks(int xOff)
 
 void SceneManager::drawFans(int fanFrame, int xOff)
 {
-  (void)fanFrame;
   HardwareData &hw = state_.hw;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setDrawColor(1);
@@ -637,8 +636,12 @@ void SceneManager::drawFans(int fanFrame, int xOff)
     int pct = (hw.fan_controls[i] >= 0 && hw.fan_controls[i] <= 100)
                   ? hw.fan_controls[i]
                   : -1;
-    snprintf(lineBuf, sizeof(lineBuf), "%s  [%d]  ", labels[i], rpm);
-    u8g2.drawUTF8(X(FAN_NAME_X, xOff), rowY, lineBuf);
+    /* #7: animated fan icon — spins only when the fan is actually turning;
+     * staggered per row so they don't beat in lockstep. */
+    int frame = (rpm > 0) ? ((fanFrame + i) & 3) : 0;
+    drawFanIconSmall(X(FAN_NAME_X, xOff), rowY - 7, frame);
+    snprintf(lineBuf, sizeof(lineBuf), "%s [%d]", labels[i], rpm);
+    u8g2.drawUTF8(X(FAN_NAME_X + 11, xOff), rowY, lineBuf);
     if (pct >= 0)
     {
       snprintf(lineBuf, sizeof(lineBuf), "%d%%", pct);
@@ -1227,6 +1230,21 @@ void SceneManager::drawPlayer(int xOff)
   u8g2.drawUTF8(boxX + 4 - scrollA, PLAYER_ARTIST_Y, artistBuf);
   u8g2.drawUTF8(boxX + 4 - scrollT, PLAYER_TRACK_Y, trackBuf);
   u8g2.setMaxClipWindow();
+
+  /* #6: animated equalizer along the bottom strip of the card. Bars dance while
+   * playing (no real position data from the server), flat when paused. */
+  {
+    const int eqBase = boxY + boxH - 2; /* baseline just inside the card bottom */
+    const int bw = 2, pitch = 4;
+    int bx = boxX + 6;
+    for (int b = 0; bx + bw <= boxX + boxW - 5; b++, bx += pitch)
+    {
+      int phase = ((int)(millis() / 70) + b * 11) % 10; /* 0..9 */
+      int tri = phase < 5 ? phase : (9 - phase);        /* 0..4 triangle wave */
+      int h = playing ? (1 + tri) : 1;                  /* 1..5 px */
+      u8g2.drawBox(bx, eqBase - h, bw, h);
+    }
+  }
   disp_.drawGreebles();
 }
 
@@ -1326,63 +1344,58 @@ void SceneManager::drawChargeOnlyScreen(int pct, bool isCharging,
   u8g2.setDrawColor(1);
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(0);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  const bool batOk = (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f);
 
-  /* Same layout as MAIN: header, two brackets (BAT | VOLT), chamfer status bar. */
+  /* #20 Charge-only screen: one big animated battery + big %, voltage, status. */
   u8g2.setFont(FONT_HEADER);
-  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y, "CHARGE");
+  u8g2.drawStr(NOCT_MARGIN, NOCT_HEADER_BASELINE_Y,
+               isCharging ? "CHARGING" : "BATTERY");
 
-  /* Left bracket: BAT + percentage (like CPU in MAIN). */
-  disp_.drawTechBrackets(MAIN_CPU_X, MAIN_CPU_Y, MAIN_CPU_W, MAIN_CPU_H,
-                        MAIN_BRACKET_LEN);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(MAIN_CPU_X + 4, MAIN_CPU_Y + 8, "BAT");
+  /* Chunky battery body (left) + terminal nub. Stays above the footer (y50). */
+  const int bx = 4, by = 18, bw = 78, bh = 28;
+  const int tw = 5, th = 12;
+  u8g2.drawFrame(bx, by, bw, bh);
+  u8g2.drawFrame(bx + 1, by + 1, bw - 2, bh - 2); /* 2px wall = chunky */
+  u8g2.drawBox(bx + bw, by + (bh - th) / 2, tw, th);
 
-  /* Right bracket: V + voltage (like GPU in MAIN). */
-  disp_.drawTechBrackets(MAIN_GPU_X, MAIN_GPU_Y, MAIN_GPU_W, MAIN_GPU_H,
-                        MAIN_BRACKET_LEN);
-  u8g2.setFont(LABEL_FONT);
-  u8g2.drawUTF8(MAIN_GPU_X + 4, MAIN_GPU_Y + 8, "V");
+  const int innerX = bx + 4, innerY = by + 4;
+  const int innerW = bw - 8, innerH = bh - 8;
 
-  if (batteryVoltage >= 3.5f && batteryVoltage <= 5.0f)
+  if (batOk)
   {
-    static char pctBuf[16];
-    snprintf(pctBuf, sizeof(pctBuf), "%d%%", pct);
+    int fillW = (pct * innerW + 50) / 100;
+    if (fillW > 0)
+      u8g2.drawBox(innerX, innerY, fillW, innerH);
+    if (isCharging)
+    {
+      /* Leading edge sweeps across the empty part to signal active charging. */
+      unsigned long t = millis() / 40;
+      int markX = innerX + (int)((fillW + (t % (unsigned long)(innerW + 1))) %
+                                 (unsigned long)(innerW + 1));
+      u8g2.drawVLine(markX, innerY, innerH);
+    }
+
+    /* Big percentage + voltage to the right of the battery. */
+    static char buf[10];
+    snprintf(buf, sizeof(buf), "%d%%", pct);
     u8g2.setFont(VALUE_FONT);
-    int pw = u8g2.getUTF8Width(pctBuf);
-    int cx = MAIN_CPU_X + MAIN_CPU_W / 2 - pw / 2;
-    u8g2.drawUTF8(cx, MAIN_CPU_Y + 22, pctBuf);
-
-    static char voltBuf[16];
-    snprintf(voltBuf, sizeof(voltBuf), "%.2f", batteryVoltage);
-    int vw = u8g2.getUTF8Width(voltBuf);
-    int vx = MAIN_GPU_X + MAIN_GPU_W / 2 - vw / 2;
-    u8g2.drawUTF8(vx, MAIN_GPU_Y + 22, voltBuf);
-
-    /* Bottom chamfer: status (like RAM bar in MAIN). */
-    disp_.drawChamferBox(0, MAIN_SCENE_RAM_Y, NOCT_DISP_W, MAIN_SCENE_RAM_H,
-                         MAIN_SCENE_RAM_CHAMFER);
+    int pw = u8g2.getUTF8Width(buf);
+    u8g2.drawUTF8(NOCT_DISP_W - pw - 3, by + 12, buf);
+    snprintf(buf, sizeof(buf), "%.2fV", batteryVoltage);
     u8g2.setFont(LABEL_FONT);
-    const char *statusStr = isCharging ? "CHARGING" : "READY";
-    u8g2.drawUTF8(NOCT_MARGIN + 4, MAIN_SCENE_RAM_TEXT_Y, statusStr);
-    snprintf(pctBuf, sizeof(pctBuf), "%.2f V", batteryVoltage);
-    int sw = u8g2.getUTF8Width(pctBuf);
-    u8g2.drawUTF8(NOCT_DISP_W - NOCT_MARGIN - 4 - sw, MAIN_SCENE_RAM_TEXT_Y,
-                  pctBuf);
+    int vw = u8g2.getUTF8Width(buf);
+    u8g2.drawUTF8(NOCT_DISP_W - vw - 3, by + 25, buf);
   }
   else
   {
     u8g2.setFont(LABEL_FONT);
-    const char *na = "N/A";
-    int naw = u8g2.getUTF8Width(na);
-    u8g2.drawUTF8(MAIN_CPU_X + MAIN_CPU_W / 2 - naw / 2, MAIN_CPU_Y + 22, na);
-    u8g2.drawUTF8(MAIN_GPU_X + MAIN_GPU_W / 2 - naw / 2, MAIN_GPU_Y + 22, na);
-    disp_.drawChamferBox(0, MAIN_SCENE_RAM_Y, NOCT_DISP_W, MAIN_SCENE_RAM_H,
-                         MAIN_SCENE_RAM_CHAMFER);
-    u8g2.setFont(LABEL_FONT);
-    u8g2.drawUTF8(NOCT_MARGIN + 4, MAIN_SCENE_RAM_TEXT_Y, "Connect USB");
+    u8g2.drawUTF8(innerX + 2, by + bh / 2 + 3, "NO BATTERY");
+    u8g2.drawUTF8(bx + bw + tw + 6, by + 14, "USB");
   }
 
-  drawBottomHint("2x menu");
+  drawBottomHint(isCharging ? "Charging   2x menu" : "2x menu");
   disp_.drawGreebles();
 }
 
