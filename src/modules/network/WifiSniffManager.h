@@ -14,6 +14,8 @@
 #define WIFISNIFF_RAW_MAX 16        // Ring buffer of recent raw frame summaries
 #define WIFISNIFF_RAW_HEX_LEN 16    // Bytes of header hex retained per raw frame
 #define WIFISNIFF_KARMA_SSID_MAX 8  // Distinct probed SSIDs tracked per suspect AP
+#define WIFISNIFF_CAP_MAX 48        // Full-frame ring for pcap export (#24)
+#define WIFISNIFF_CAP_SNAP 160      // Bytes captured per frame (covers EAPOL/mgmt)
 
 /* Channel hopping: passive listening only. Cycle 1..13 on a timer so the
  * single radio can survey the whole 2.4 GHz band instead of one channel. */
@@ -102,6 +104,17 @@ struct KarmaSuspect {
   uint8_t channel;
 };
 
+/* CAPTURE: a full(ish) 802.11 frame for pcap export (#24). Snap-limited to keep
+ * RAM bounded; orig_len records the true on-air length so Wireshark flags
+ * truncation. Filled for every frame while any sniff mode is active. */
+struct CapFrame {
+  uint16_t origLen; // true sig_len on air
+  uint16_t capLen;  // bytes actually stored in data[]
+  int8_t rssi;
+  uint8_t channel;
+  uint8_t data[WIFISNIFF_CAP_SNAP];
+};
+
 class WifiSniffManager {
 public:
   WifiSniffManager();
@@ -150,6 +163,12 @@ public:
   // Pinescan (karma / rogue-AP heuristic)
   int getKarmaCount() const { return karmaCount_; }
   const KarmaSuspect *getKarmaSuspect(int index) const;
+
+  // Full-frame capture ring for pcap export (#24). index 0 = oldest (pcap order).
+  int getCapCount() const { return capCount_; }
+  uint32_t getCapSeen() const { return capSeen_; }
+  const CapFrame *getCapFrame(int index) const;
+  void clearCapture() { capCount_ = 0; capHead_ = 0; capSeen_ = 0; }
 
   // --- Channel hopping (passive: only changes the listen channel) ---
   void setChannelHop(bool enabled);
@@ -200,6 +219,12 @@ private:
   // Pinescan / karma suspects
   KarmaSuspect karma_[WIFISNIFF_AP_MAX];
   int karmaCount_ = 0;
+
+  // Full-frame capture ring (pcap export)
+  CapFrame capRing_[WIFISNIFF_CAP_MAX];
+  int capHead_ = 0;     // next write slot
+  int capCount_ = 0;    // frames currently stored
+  uint32_t capSeen_ = 0; // total frames seen since last clear
 
   // Channel hopping state
   bool channelHop_ = false;

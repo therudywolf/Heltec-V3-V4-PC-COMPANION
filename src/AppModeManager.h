@@ -36,6 +36,7 @@ enum AppMode
   MODE_WIFI_SNIFF,
   MODE_BLE_SCAN,        // passive BLE scan + tracker detection (AirTag/Flipper/Tile)
   MODE_BLE_DEVICES,     // passive BLE device browser (all advertisers, by RSSI)
+  MODE_EXPORT,          // pcap/csv capture export over a SoftAP web page (#24)
 #endif
 #if NOCT_FEATURE_LORA
   MODE_LORA,            // SX1262 packet listener: mesh RX + node list (#21, EU868)
@@ -71,6 +72,7 @@ class ForzaManager;
 #if NOCT_FEATURE_HACKER
 class WifiSniffManager;
 class BleManager;
+class CaptureExport;
 #endif
 #if NOCT_FEATURE_LORA
 class LoraManager;
@@ -92,6 +94,7 @@ public:
 #if NOCT_FEATURE_HACKER
       WifiSniffManager &wifiSniff,
       BleManager &ble,
+      CaptureExport &capture,
 #endif
 #if NOCT_FEATURE_LORA
       LoraManager &lora,
@@ -134,6 +137,7 @@ private:
 #if NOCT_FEATURE_HACKER
   WifiSniffManager &wifiSniff_;
   BleManager &ble_;
+  CaptureExport &capture_;
 #endif
 #if NOCT_FEATURE_LORA
   LoraManager &lora_;

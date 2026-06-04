@@ -42,6 +42,7 @@
 #if NOCT_FEATURE_HACKER
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
+#include "modules/storage/CaptureExport.h"
 #endif
 #if NOCT_FEATURE_WOLFPET
 #include "modules/game/WolfPet.h"
@@ -74,6 +75,7 @@ ForzaManager forzaManager;
 #if NOCT_FEATURE_HACKER
 BleManager bleManager;
 WifiSniffManager wifiSniffManager;
+CaptureExport captureExport;
 #endif
 #if NOCT_FEATURE_WOLFPET
 WolfPet wolfPet;
@@ -102,6 +104,7 @@ AppModeManager appModeManager(
 #if NOCT_FEATURE_HACKER
     wifiSniffManager,
     bleManager,
+    captureExport,
 #endif
 #if NOCT_FEATURE_LORA
     loraMgr,
@@ -783,6 +786,10 @@ void loop()
 #endif
 #if NOCT_FEATURE_WOLFPET
   wolfPet.tick(now); // pet lives in the background regardless of the active scene
+#endif
+#if NOCT_FEATURE_HACKER
+  if (currentMode == MODE_EXPORT)
+    captureExport.tick(); // service the download SoftAP every loop, not just on redraw
 #endif
 
 #if NOCT_FEATURE_MONITORING
@@ -1532,6 +1539,9 @@ void loop()
     case MODE_BLE_DEVICES:
       if (bleManager.isScanning()) bleManager.tick();
       sceneManager.drawBleDevices(bleManager, bleScanSelected);
+      break;
+    case MODE_EXPORT:
+      sceneManager.drawExport(captureExport);
       break;
 #endif // NOCT_FEATURE_HACKER
 
