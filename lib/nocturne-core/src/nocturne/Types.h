@@ -103,6 +103,8 @@ struct ServiceData {
   int count = 0;         // "n"
   int up = 0;            // "up"
   ServiceEntry list[kMaxServices];
+  int dockTotal = 0;     // "dock":{"n"} total Docker containers (#5); 0 = unknown
+  int dockUp = -1;       // "dock":{"up"} running containers; -1 = unknown
 };
 
 /** Claude Code usage/limits (from server "claude" block). pct fields are -1
