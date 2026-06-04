@@ -161,3 +161,55 @@ def payload_snapshot(p: Dict) -> Tuple:
         p.get("ct", 0), p.get("gt", 0), p.get("cl", 0), p.get("gl", 0),
         p.get("nd", 0), p.get("nu", 0), p.get("ru", 0), p.get("ra", 0),
     )
+
+
+# Default Docker block: no data discovered. The firmware renders "DOCK --" when
+# n == 0 / up == 0 (treat as "unknown"); a real all-stopped stack would still
+# report n>0 with up==0.
+EMPTY_DOCK: Dict[str, int] = {"n": 0, "up": 0}
+
+
+def _to_int(value: Any) -> Optional[int]:
+    """Best-effort parse of a str/number to int; None when not parseable.
+
+    The dashboard feed sends numbers as JSON strings (e.g. ``"46"``); this
+    tolerates ints, floats and numeric strings, and returns None for anything
+    else so callers can treat a missing/garbage field as "unknown".
+    """
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_dashboard_stats(
+    stats: Any,
+    block: str = "server",
+    total_key: str = "containers",
+    up_key: str = "containers_up",
+) -> Dict[str, int]:
+    """Extract the Docker ``{"n": total, "up": running}`` block from a stats feed.
+
+    Pure / network-free so it is unit-testable: ``stats`` is the already-decoded
+    JSON dict from the dashboard's ``/stats.json`` (see
+    docs/FORESTSERVER_DASHBOARD.md for the real shape). Reads
+    ``stats[block][total_key]`` / ``stats[block][up_key]`` (numbers may be JSON
+    strings). Returns a copy of :data:`EMPTY_DOCK` when the feed is missing,
+    malformed, or the container fields are absent — never raises and never invents
+    data. ``up`` is clamped to ``0..n`` when both are present.
+    """
+    if not isinstance(stats, dict):
+        return dict(EMPTY_DOCK)
+    sub = stats.get(block)
+    if not isinstance(sub, dict):
+        return dict(EMPTY_DOCK)
+    n = _to_int(sub.get(total_key))
+    up = _to_int(sub.get(up_key))
+    if n is None and up is None:
+        return dict(EMPTY_DOCK)
+    n = max(0, n if n is not None else 0)
+    up = max(0, up if up is not None else 0)
+    up = min(up, n) if n > 0 else up
+    return {"n": n, "up": up}

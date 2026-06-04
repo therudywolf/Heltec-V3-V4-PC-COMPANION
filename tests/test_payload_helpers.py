@@ -149,3 +149,59 @@ class TestPayloadSnapshot:
 
     def test_defaults_zero(self):
         assert payload_mod.payload_snapshot({}) == (0, 0, 0, 0, 0, 0, 0, 0)
+
+
+# --------------------------------------------------------------------------- #
+# parse_dashboard_stats (Docker "dock" block, #5)
+# --------------------------------------------------------------------------- #
+class TestParseDashboardStats:
+    def test_real_feed_shape_string_numbers(self):
+        # Mirrors the live dashboard.example.com /stats.json: numbers are JSON strings.
+        stats = {
+            "server": {"containers": "46", "containers_up": "46", "cpu": "42.1"},
+            "pc": {"lmstudio_up": "1", "docker_running": "7"},
+            "alerts": "37",
+        }
+        assert payload_mod.parse_dashboard_stats(stats) == {"n": 46, "up": 46}
+
+    def test_partial_down_counts(self):
+        stats = {"server": {"containers": "46", "containers_up": "40"}}
+        assert payload_mod.parse_dashboard_stats(stats) == {"n": 46, "up": 40}
+
+    def test_up_clamped_to_total(self):
+        stats = {"server": {"containers": "5", "containers_up": "9"}}
+        assert payload_mod.parse_dashboard_stats(stats) == {"n": 5, "up": 5}
+
+    def test_int_and_float_values(self):
+        stats = {"server": {"containers": 10, "containers_up": 8.0}}
+        assert payload_mod.parse_dashboard_stats(stats) == {"n": 10, "up": 8}
+
+    def test_missing_block_is_empty(self):
+        assert payload_mod.parse_dashboard_stats({"pc": {}}) == payload_mod.EMPTY_DOCK
+        assert payload_mod.parse_dashboard_stats({}) == payload_mod.EMPTY_DOCK
+
+    def test_missing_container_fields_is_empty(self):
+        # A server block with no container fields -> "unknown", not a fake zero.
+        stats = {"server": {"cpu": "42.1", "ram": "48.6"}}
+        assert payload_mod.parse_dashboard_stats(stats) == payload_mod.EMPTY_DOCK
+
+    def test_garbage_and_none_never_raise(self):
+        for bad in (None, [], "nope", 123, {"server": "x"},
+                    {"server": {"containers": "NaN", "containers_up": None}}):
+            out = payload_mod.parse_dashboard_stats(bad)
+            assert out == payload_mod.EMPTY_DOCK
+
+    def test_only_up_present_defaults_total_zero(self):
+        # up present, total absent -> n=0; up kept (no total to clamp against).
+        stats = {"server": {"containers_up": "3"}}
+        assert payload_mod.parse_dashboard_stats(stats) == {"n": 0, "up": 3}
+
+    def test_custom_block_and_keys(self):
+        # Could point at the PC stack if it ever exposed a total.
+        stats = {"pc": {"docker_total": "7", "docker_running": "5"}}
+        out = payload_mod.parse_dashboard_stats(
+            stats, block="pc", total_key="docker_total", up_key="docker_running")
+        assert out == {"n": 7, "up": 5}
+
+    def test_empty_dock_constant(self):
+        assert payload_mod.EMPTY_DOCK == {"n": 0, "up": 0}

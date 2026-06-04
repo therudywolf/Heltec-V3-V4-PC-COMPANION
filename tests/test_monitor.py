@@ -109,6 +109,46 @@ class TestBuildPayload:
         assert len(payload["hdd"]) == 4
         assert payload["hdd"][0]["n"] == "C"
         assert payload["hdd"][0]["t"] == 35
+        # Legacy ICMP ping ("pg") still rides on the positional ping_ms arg.
+        assert payload["pg"] == 12
+        # New internet-latency key ("ping", #7): defaults to -1 when not supplied.
+        assert payload["ping"] == -1
+        # Docker block ("dock", #5): always present with {"n","up"} int shape.
+        assert set(payload["dock"].keys()) == {"n", "up"}
+        assert isinstance(payload["dock"]["n"], int)
+        assert isinstance(payload["dock"]["up"], int)
+
+    def test_ping_tcp_field(self):
+        # ping_tcp_ms is surfaced verbatim as the "ping" key (int ms or -1).
+        hw = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0,
+              "hdd": [], "fans": [0, 0, 0, 0], "fan_controls": [0, 0, 0, 0]}
+        media = {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
+        weather = {"temp": 0, "desc": "", "icon": 0}
+        import time
+        monitor._last_alert = (None, None)
+        ok = monitor.build_payload(hw, media, weather, [], [], (0, 0), (0, 0), 0,
+                                   time.time(), ping_tcp_ms=37)
+        assert ok["ping"] == 37 and isinstance(ok["ping"], int)
+        fail = monitor.build_payload(hw, media, weather, [], [], (0, 0), (0, 0), 0,
+                                     time.time(), ping_tcp_ms=-1)
+        assert fail["ping"] == -1
+
+    def test_dock_block_reflects_module_state(self):
+        # build_payload reads the module-level _dock_block (set by the poller).
+        hw = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0,
+              "hdd": [], "fans": [0, 0, 0, 0], "fan_controls": [0, 0, 0, 0]}
+        media = {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
+        weather = {"temp": 0, "desc": "", "icon": 0}
+        import time
+        monitor._last_alert = (None, None)
+        saved = monitor._dock_block
+        try:
+            monitor._dock_block = {"n": 46, "up": 46}
+            p = monitor.build_payload(hw, media, weather, [], [], (0, 0), (0, 0), 0,
+                                      time.time())
+            assert p["dock"] == {"n": 46, "up": 46}
+        finally:
+            monitor._dock_block = saved
 
     def test_build_payload_json_serializable(self):
         hw = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0, "hdd": [], "fans": [0, 0, 0, 0], "fan_controls": [0, 0, 0, 0]}
@@ -215,6 +255,41 @@ class TestCollectTopProcesses:
         cpu, ram = monitor._collect_top_processes(info, cpu_n=3, ram_n=2)
         assert cpu == ref_cpu(3)
         assert ram == ref_ram(2)
+
+
+class TestMeasureTcpConnect:
+    """The async TCP connect-time internet-latency probe (#7)."""
+
+    def test_failure_returns_minus_one(self):
+        import asyncio
+        # Unresolvable host -> graceful -1 (DNS failure), fast timeout.
+        ms = asyncio.run(monitor.measure_tcp_connect_ms(
+            "nonexistent.invalid.example", 443, timeout=1.0))
+        assert ms == -1
+
+    def test_timeout_returns_minus_one(self):
+        import asyncio
+        # TEST-NET-1 (192.0.2.0/24, RFC 5737) is non-routable -> connect times out.
+        ms = asyncio.run(monitor.measure_tcp_connect_ms("192.0.2.1", 443, timeout=0.5))
+        assert ms == -1
+
+    def test_success_returns_nonneg_int(self):
+        import asyncio
+
+        async def scenario():
+            # Stand up a throwaway local TCP listener and measure connect time.
+            server = await asyncio.start_server(
+                lambda r, w: w.close(), "127.0.0.1", 0)
+            port = server.sockets[0].getsockname()[1]
+            try:
+                return await monitor.measure_tcp_connect_ms(
+                    "127.0.0.1", port, timeout=2.0)
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        ms = asyncio.run(scenario())
+        assert isinstance(ms, int) and ms >= 0
 
 
 class TestEncodePayload:
