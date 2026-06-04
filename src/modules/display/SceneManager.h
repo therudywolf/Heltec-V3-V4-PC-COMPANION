@@ -70,6 +70,7 @@ public:
                        int *sortedIndices = nullptr, int filteredCount = 0,
                        const char *footerOverride = nullptr);
   void drawBleScan(class BleManager &mgr);
+  void drawBleDevices(class BleManager &mgr, int selected); // passive device browser
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
 #endif
 

@@ -45,7 +45,7 @@ static const char* const kHackerWifiModes[] = {
 
 /* ── Hacker BLE submenu ────────────────────────────────────────────────── */
 static const char* const kHackerBleModes[] = {
-    "Trackers"};
+    "Trackers", "Devices"};
 
 #if NOCT_FEATURE_LORA
 /* ── Hacker LoRa / sub-GHz submenu (EU868) ─────────────────────────────── */

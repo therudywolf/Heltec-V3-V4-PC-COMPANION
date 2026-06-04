@@ -35,6 +35,7 @@ enum AppMode
   MODE_WIFI_AP_STA,
   MODE_WIFI_SNIFF,
   MODE_BLE_SCAN,        // passive BLE scan + tracker detection (AirTag/Flipper/Tile)
+  MODE_BLE_DEVICES,     // passive BLE device browser (all advertisers, by RSSI)
 #endif
 #if NOCT_FEATURE_LORA
   MODE_LORA,            // SX1262 sub-GHz spectrum/activity monitor (#21, EU868)

@@ -2556,6 +2556,88 @@ void SceneManager::drawBleScan(BleManager &mgr)
 }
 
 
+// --- BLE DEVICE BROWSER (passive) ---
+// Scrollable inventory of every BLE advertiser the scan has seen: name (or MAC
+// when unnamed), signal, and a proximity bar. Complements the tracker view,
+// which only tallies suspicious classes. Tap scrolls, double-tap exits.
+void SceneManager::drawBleDevices(BleManager &mgr, int selected)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setDrawColor(1);
+
+  int n = mgr.getScanCount();
+  char rt[12];
+  snprintf(rt, sizeof(rt), "%d dev", n);
+  drawModeHeader(u8g2, "BLE DEV", rt);
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+
+  if (n <= 0)
+  {
+    u8g2.setCursor(2, 30);
+    u8g2.print("scanning...");
+    u8g2.setMaxClipWindow();
+    drawBottomHint("2x BACK");
+    return;
+  }
+
+  if (selected < 0) selected = 0;
+  if (selected >= n) selected = n - 1;
+
+  const int rows = 4;             // visible rows in the [11..49] band
+  const int rowH = 9;
+  int first = selected - rows / 2;
+  if (first > n - rows) first = n - rows;
+  if (first < 0) first = 0;
+
+  for (int r = 0; r < rows && (first + r) < n; r++)
+  {
+    int idx = first + r;
+    const BleScanDevice *d = mgr.getScanDevice(idx);
+    if (!d) continue;
+    int y = NOCT_MODE_HEADER_H + 1 + r * rowH; // 11,20,29,38
+    bool sel = (idx == selected);
+    if (sel)
+    {
+      u8g2.setDrawColor(1);
+      u8g2.drawBox(0, y, NOCT_DISP_W, rowH);
+      u8g2.setDrawColor(0);
+    }
+    char nm[18];
+    if (d->name[0])
+      snprintf(nm, sizeof(nm), "%.16s", d->name);
+    else // no name advertised — show the MAC tail
+      snprintf(nm, sizeof(nm), "%.16s", d->addr);
+    u8g2.setCursor(2, y + 8);
+    u8g2.print(nm);
+    char rb[8];
+    snprintf(rb, sizeof(rb), "%d", d->rssi);
+    int w = u8g2.getUTF8Width(rb);
+    u8g2.setCursor(NOCT_DISP_W - 2 - w, y + 8);
+    u8g2.print(rb);
+    u8g2.setDrawColor(1);
+  }
+
+  // scroll indicator on the right edge
+  if (n > rows)
+  {
+    int trackH = rows * rowH;
+    int thumbH = trackH * rows / n;
+    if (thumbH < 3) thumbH = 3;
+    int thumbY = NOCT_MODE_HEADER_H + 1 + (trackH - thumbH) * selected / (n - 1);
+    u8g2.drawVLine(NOCT_DISP_W - 1, NOCT_MODE_HEADER_H + 1, trackH);
+    u8g2.drawBox(NOCT_DISP_W - 2, thumbY, 2, thumbH);
+  }
+
+  u8g2.setMaxClipWindow();
+  char hint[20];
+  snprintf(hint, sizeof(hint), "%d/%d  TAP next", selected + 1, n);
+  drawBottomHint(hint);
+}
+
+
 // --- WIFI SNIFF ---
 void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 {
