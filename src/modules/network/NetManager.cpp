@@ -432,6 +432,31 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     fo.up = 0;
   }
 
+  // Service-status block (#18): up/down probes from the server.
+  JsonObjectConst sv_obj = doc["svc"];
+  ServiceData &sv = state->services;
+  if (!sv_obj.isNull()) {
+    sv.up = sv_obj["up"] | 0;
+    JsonArrayConst slist = sv_obj["list"];
+    int sn = 0;
+    for (JsonObjectConst sd : slist) {
+      if (sn >= ServiceData::kMaxServices) break;
+      ServiceEntry &dst = sv.list[sn];
+      const char *nm = sd["name"];
+      strncpy(dst.name, nm ? nm : "", sizeof(dst.name) - 1);
+      dst.name[sizeof(dst.name) - 1] = '\0';
+      const char *st = sd["st"];
+      strncpy(dst.status, st ? st : "", sizeof(dst.status) - 1);
+      dst.status[sizeof(dst.status) - 1] = '\0';
+      dst.ms = sd["ms"] | -1;
+      sn++;
+    }
+    sv.count = sn;
+  } else {
+    sv.count = 0;
+    sv.up = 0;
+  }
+
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];
   const char *metric = doc["alert_metric"];

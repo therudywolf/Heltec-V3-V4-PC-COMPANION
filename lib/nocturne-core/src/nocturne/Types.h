@@ -84,6 +84,21 @@ struct ForestData {
   ForestNode nodes[kMaxNodes];
 };
 
+/** Service-status panel: one probed service (server "svc".list[i]). */
+struct ServiceEntry {
+  char name[17] = {0};   // "name"
+  char status[6] = {0};  // "st": up | warn | down
+  int ms = -1;           // "ms" round-trip latency, -1 = n/a
+};
+
+/** Service-status block (server "svc"). */
+struct ServiceData {
+  static const int kMaxServices = 8;
+  int count = 0;         // "n"
+  int up = 0;            // "up"
+  ServiceEntry list[kMaxServices];
+};
+
 /** Claude Code usage/limits (from server "claude" block). pct fields are -1
  * when the server has no real source for them (render "n/a"). */
 struct ClaudeData {
@@ -122,6 +137,7 @@ struct AppState {
   ClaudeData claude;
   EventsData events;
   ForestData forest;
+  ServiceData services;
   Settings settings;
   bool weatherReceived = false;
   bool alertActive = false;

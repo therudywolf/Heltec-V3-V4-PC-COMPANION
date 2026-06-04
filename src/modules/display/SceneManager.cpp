@@ -162,7 +162,8 @@ static const uint8_t *icon_fan_frames[] = {icon_fan_8x8_f0, icon_fan_8x8_f1,
 
 const char *SceneManager::sceneNames_[] = {
     "MAIN", "CPU",  "GPU",    "RAM",    "DISKS",  "MEDIA",
-    "FANS", "MB",   "WTHR",   "CLAUDE", "NET",    "FOREST", "EVENTS"};
+    "FANS", "MB",   "WTHR",   "CLAUDE", "NET",    "FOREST", "EVENTS",
+    "SVCS"};
 
 SceneManager::SceneManager(DisplayEngine &disp, AppState &state)
     : disp_(disp), state_(state) {}
@@ -226,6 +227,9 @@ void SceneManager::drawWithOffset(int sceneIndex, int xOffset,
     break;
   case NOCT_SCENE_EVENTS:
     drawEvents(xOffset);
+    break;
+  case NOCT_SCENE_SERVICES:
+    drawServices(xOffset);
     break;
   default:
     drawMain(blinkState, xOffset);
@@ -1100,6 +1104,74 @@ void SceneManager::drawEvents(int xOff)
     snprintf(more, sizeof(more), "+%d more", e.count - 1);
     int mw = u8g2.getUTF8Width(more);
     u8g2.drawUTF8(X(right - mw, xOff), NOCT_DISP_H - 2, more);
+  }
+#else
+  (void)xOff;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// SCENE: SERVICES — resource up/down panel (server "svc"). One row per service:
+// status dot (filled=up, hollow=warn, x=down) + name left, latency ms right.
+// ---------------------------------------------------------------------------
+void SceneManager::drawServices(int xOff)
+{
+#if NOCT_FEATURE_MONITORING
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  ServiceData &s = state_.services;
+  u8g2.setDrawColor(1);
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(0);
+
+  const int left = NOCT_CARD_LEFT;
+  const int right = NOCT_DISP_W - NOCT_CARD_LEFT;
+
+  if (s.count == 0) {
+    u8g2.setFont(VALUE_FONT);
+    const char *t = "SERVICES";
+    int tw = u8g2.getUTF8Width(t);
+    u8g2.drawUTF8(X((NOCT_DISP_W - tw) / 2, xOff), NOCT_CONTENT_START + 14, t);
+    u8g2.setFont(LABEL_FONT);
+    const char *ss = "NONE";
+    int sw = u8g2.getUTF8Width(ss);
+    u8g2.drawUTF8(X((NOCT_DISP_W - sw) / 2, xOff), NOCT_CONTENT_START + 30, ss);
+    return;
+  }
+
+  u8g2.setFont(LABEL_FONT);
+  char hdr[20];
+  snprintf(hdr, sizeof(hdr), "%d/%d up", s.up, s.count);
+  int hw_ = u8g2.getUTF8Width(hdr);
+  u8g2.drawUTF8(X(right - hw_, xOff), NOCT_CONTENT_START + 6, hdr);
+
+  const int rowH = 9;
+  int y0 = NOCT_CONTENT_START + 8;
+  int rows = s.count < ServiceData::kMaxServices ? s.count : ServiceData::kMaxServices;
+  for (int i = 0; i < rows; i++) {
+    int ry = y0 + i * rowH;
+    if (ry + 7 > NOCT_DISP_H) break;
+    int dotX = X(left + 2, xOff);
+    int dotY = ry + 3;
+    const char *st = s.list[i].status;
+    if (strcmp(st, "up") == 0) {
+      u8g2.drawDisc(dotX, dotY, 2);
+    } else if (strcmp(st, "warn") == 0) {
+      u8g2.drawCircle(dotX, dotY, 2);
+    } else {
+      u8g2.drawLine(dotX - 2, dotY - 2, dotX + 2, dotY + 2);
+      u8g2.drawLine(dotX - 2, dotY + 2, dotX + 2, dotY - 2);
+    }
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(X(left + 8, xOff), ry + 6, s.list[i].name);
+    char rb[12];
+    if (strcmp(st, "down") == 0) {
+      strncpy(rb, "DOWN", sizeof(rb) - 1);
+      rb[sizeof(rb) - 1] = '\0';
+    } else {
+      snprintf(rb, sizeof(rb), "%dms", s.list[i].ms < 0 ? 0 : s.list[i].ms);
+    }
+    int rw = u8g2.getUTF8Width(rb);
+    u8g2.drawUTF8(X(right - rw, xOff), ry + 6, rb);
   }
 #else
   (void)xOff;

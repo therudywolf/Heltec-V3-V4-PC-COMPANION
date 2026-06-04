@@ -198,7 +198,8 @@
 #define NOCT_SCENE_NET 10
 #define NOCT_SCENE_FOREST 11
 #define NOCT_SCENE_EVENTS 12
-#define NOCT_TOTAL_SCENES 13
+#define NOCT_SCENE_SERVICES 13
+#define NOCT_TOTAL_SCENES 14
 
 /* alert_metric codes (match monitor.py) */
 #define NOCT_ALERT_CT 0

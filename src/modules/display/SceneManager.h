@@ -35,6 +35,7 @@ public:
   void drawNet(int xOff = 0);
   void drawForest(int xOff = 0);
   void drawEvents(int xOff = 0);
+  void drawServices(int xOff = 0);
 
   // --- Always available ---
   void drawSearchMode(int scanPhase);
