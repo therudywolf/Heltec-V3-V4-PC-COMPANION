@@ -109,6 +109,7 @@ MenuState menuState = MENU_MAIN;
 bool rebootConfirmed = false;
 unsigned long rebootConfirmTime = 0;
 static unsigned long lastInputTime = 0;
+static bool screensaverManual = false; // System-menu standby; any press wakes it
 
 unsigned long lastMenuEventTime = 0;
 #define MENU_EVENT_DEBOUNCE_MS 150
@@ -670,6 +671,15 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     }
     if (item == k++)
     {
+      // Screensaver: full-screen standby animation until any button press.
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      screensaverManual = true;
+      needRedraw = true;
+      return true;
+    }
+    if (item == k++)
+    {
       quickMenuOpen = false;
       rebootConfirmed = false;
       esp_sleep_enable_ext0_wakeup((gpio_num_t)NOCT_BUTTON_PIN, 0);
@@ -814,6 +824,14 @@ void loop()
   ButtonEvent event = input.update();
   if (event != EV_NONE)
     lastInputTime = now;
+
+  // Manual screensaver: any button press wakes it; the press is consumed so it
+  // doesn't also trigger navigation/menu.
+  if (screensaverManual)
+  {
+    if (event != EV_NONE) { screensaverManual = false; needRedraw = true; }
+    event = EV_NONE;
+  }
 
   if (event == EV_DOUBLE && !quickMenuOpen)
   {
@@ -1164,7 +1182,7 @@ void loop()
   // otherwise fall back to ~30 FPS. Ambient decoration stays smooth (no freeze
   // risk — we slow, never skip), but steady screens cut I2C/CPU/display power.
   // Revert: set both intervals equal, or pin guiTimer to NOCT_REDRAW_INTERVAL_MS.
-  bool animating = quickMenuOpen || state.alertActive || settings.glitchEnabled;
+  bool animating = quickMenuOpen || state.alertActive || settings.glitchEnabled || screensaverManual;
 #if NOCT_FEATURE_MONITORING
   animating = animating || inTransition;  // scene-carousel slide (monitoring only)
 #endif
@@ -1177,6 +1195,16 @@ void loop()
     return;
   }
   needRedraw = false;
+
+  // Manual screensaver (System menu): full-screen standby until any button press.
+  if (screensaverManual)
+  {
+    display.clearBuffer();
+    sceneManager.drawIdleScreensaver(now);
+    if (settings.glitchEnabled) display.applyGlitch();
+    display.sendBuffer();
+    return;
+  }
 
   if (lastInputTime == 0) lastInputTime = now;
   // applyContrast() skips redundant I2C writes when the value is unchanged.
