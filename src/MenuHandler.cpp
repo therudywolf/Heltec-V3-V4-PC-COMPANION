@@ -10,11 +10,16 @@ int submenuCount(int category)
   {
 #if NOCT_FEATURE_MONITORING
   case MCAT_MONITORING:
+  {
+    int n = 1; // PC Monitor
 #if NOCT_FEATURE_FORZA
-    return 2; // PC Monitor, Forza
-#else
-    return 1; // PC Monitor only
+    n++; // Forza
 #endif
+#if NOCT_FEATURE_WOLFPET
+    n++; // Wolf Pet
+#endif
+    return n;
+  }
 #endif
 
 #if NOCT_FEATURE_HACKER

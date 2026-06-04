@@ -43,6 +43,9 @@
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
 #endif
+#if NOCT_FEATURE_WOLFPET
+#include "modules/game/WolfPet.h"
+#endif
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -68,6 +71,10 @@ ForzaManager forzaManager;
 #if NOCT_FEATURE_HACKER
 BleManager bleManager;
 WifiSniffManager wifiSniffManager;
+#endif
+#if NOCT_FEATURE_WOLFPET
+WolfPet wolfPet;
+static int wolfActionSel = 0; // 0=feed 1=play 2=rest
 #endif
 
 AppModeManager appModeManager(
@@ -408,6 +415,10 @@ void setup()
 
   batteryManager.update(state);
 
+#if NOCT_FEATURE_WOLFPET
+  wolfPet.begin();
+#endif
+
 #if !NOCT_FEATURE_MONITORING && NOCT_FEATURE_BMW
   appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT);
   {
@@ -469,7 +480,8 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
   {
     quickMenuOpen = false;
     rebootConfirmed = false;
-    if (item == 0)
+    int k = 0;
+    if (item == k++)
     {
       if (!appModeManager.switchToMode(currentMode, MODE_NORMAL))
       {
@@ -479,7 +491,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       }
     }
 #if NOCT_FEATURE_FORZA
-    else if (item == 1)
+    else if (item == k++)
     {
       if (!appModeManager.switchToMode(currentMode, MODE_GAME_FORZA))
       {
@@ -488,6 +500,18 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
         return false;
       }
       forzaSplashUntil = now + FORZA_SPLASH_MS;
+    }
+#endif
+#if NOCT_FEATURE_WOLFPET
+    else if (item == k++)
+    {
+      if (!appModeManager.switchToMode(currentMode, MODE_WOLFPET))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+        return false;
+      }
+      wolfActionSel = 0;
     }
 #endif
     return true;
@@ -720,6 +744,9 @@ void loop()
 #if NOCT_FEATURE_BMW
   if (currentMode == MODE_BMW_ASSISTANT)
     bmwManager.tick();
+#endif
+#if NOCT_FEATURE_WOLFPET
+  wolfPet.tick(now); // pet lives in the background regardless of the active scene
 #endif
 
 #if NOCT_FEATURE_MONITORING
@@ -1127,6 +1154,20 @@ void loop()
       }
       break;
 #endif
+#if NOCT_FEATURE_WOLFPET
+    case MODE_WOLFPET:
+      if (event == EV_SHORT)
+      { wolfActionSel = (wolfActionSel + 1) % 3; needRedraw = true; }
+      else if (event == EV_LONG)
+      {
+        wolfPet.doAction(wolfActionSel);
+        snprintf(toastMsg, sizeof(toastMsg), "%s!",
+                 wolfActionSel == 0 ? "Fed" : wolfActionSel == 1 ? "Played" : "Rested");
+        toastUntil = now + 1000;
+        needRedraw = true;
+      }
+      break;
+#endif
 
 #if NOCT_FEATURE_HACKER
     case MODE_RADAR:
@@ -1324,6 +1365,12 @@ void loop()
       break;
     }
 #endif // NOCT_FEATURE_MONITORING
+
+#if NOCT_FEATURE_WOLFPET
+    case MODE_WOLFPET:
+      sceneManager.drawWolfPet(wolfPet, wolfActionSel);
+      break;
+#endif
 
 #if NOCT_FEATURE_HACKER
     case MODE_RADAR:

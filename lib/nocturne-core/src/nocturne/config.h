@@ -25,6 +25,9 @@
 #ifndef NOCT_FEATURE_HACKER
 #define NOCT_FEATURE_HACKER 0
 #endif
+#ifndef NOCT_FEATURE_WOLFPET
+#define NOCT_FEATURE_WOLFPET 0
+#endif
 
 /* ── Display contrast ──────────────────────────────────────────────────── */
 #define NOCT_CONTRAST_MIN 12

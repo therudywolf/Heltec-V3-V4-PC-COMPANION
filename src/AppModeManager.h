@@ -36,6 +36,9 @@ enum AppMode
   MODE_WIFI_SNIFF,
   MODE_BLE_SCAN,        // passive BLE scan + tracker detection (AirTag/Flipper/Tile)
 #endif
+#if NOCT_FEATURE_WOLFPET
+  MODE_WOLFPET,         // tamagotchi wolf pet (#3)
+#endif
 };
 
 /* The mode the device boots into / falls back to, given the build's features.
