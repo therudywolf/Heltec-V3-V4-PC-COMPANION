@@ -404,7 +404,14 @@ void setup()
   }
 #else
   (void)bootDemoRequested;
+#if NOCT_FEATURE_MONITORING
+  // Boot straight into PC monitoring so a fresh board auto-connects to the
+  // server. Booting into the open menu (old behaviour) left the board idle with
+  // no TCP link until someone pressed the button. The menu is one double-tap away.
+  quickMenuOpen = false;
+#else
   quickMenuOpen = true;
+#endif
   menuLevel = 0;
 #endif
 }

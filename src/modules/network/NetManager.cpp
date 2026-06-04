@@ -79,28 +79,30 @@ void NetManager::begin(const char *ssid, const char *pass) {
 
 void NetManager::begin(const WifiCred *nets, size_t count) {
   WiFi.onEvent(WiFiEvent);
-  // Register every candidate network; WiFiMulti connects to the strongest
-  // reachable one and fails over between them on drop (#2: multi-WiFi). The
-  // first valid entry is remembered as the "primary" (logging / fallback).
-  for (size_t i = 0; i < count; i++) {
+  // Store the candidates as a PRIORITY list (#2): connect to the first (primary)
+  // network — the one the PC server lives on — and only cycle to the others as
+  // failover when it is unreachable. This avoids a strongest-signal pick silently
+  // joining a phone hotspot where the PC server can't be reached.
+  netCount_ = 0;
+  for (size_t i = 0; i < count && netCount_ < kMaxNets; i++) {
     const char *s = nets[i].ssid;
     if (!s || s[0] == '\0')
       continue;
+    strncpy(netSsid_[netCount_], s, 32);
+    netSsid_[netCount_][32] = '\0';
     const char *p = nets[i].pass ? nets[i].pass : "";
-    wifiMulti_.addAP(s, p);
-    if (!haveNetworks_) {
-      strncpy(storedSSID_, s, sizeof(storedSSID_) - 1);
-      storedSSID_[sizeof(storedSSID_) - 1] = '\0';
-      strncpy(storedPass_, p, sizeof(storedPass_) - 1);
-      storedPass_[sizeof(storedPass_) - 1] = '\0';
-    }
-    haveNetworks_ = true;
+    strncpy(netPass_[netCount_], p, 64);
+    netPass_[netCount_][64] = '\0';
+    netCount_++;
   }
-  if (!haveNetworks_)
+  if (netCount_ == 0)
     return;
+  netIdx_ = 0;
+  strncpy(storedSSID_, netSsid_[0], sizeof(storedSSID_) - 1);
+  storedSSID_[sizeof(storedSSID_) - 1] = '\0';
+  strncpy(storedPass_, netPass_[0], sizeof(storedPass_) - 1);
+  storedPass_[sizeof(storedPass_) - 1] = '\0';
   WiFi.mode(WIFI_STA);
-  // Let the ESP32 stack recover from drops on its own (fast); persistent(false)
-  // avoids thrashing NVS on every begin().
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
 #if defined(WIFI_STATIC_IP) && defined(WIFI_GATEWAY) && defined(WIFI_SUBNET)
@@ -109,8 +111,7 @@ void NetManager::begin(const WifiCred *nets, size_t count) {
       subnet.fromString(WIFI_SUBNET))
     WiFi.config(staticIp, gateway, subnet);
 #endif
-  // Initial connect: pick the strongest reachable known network.
-  wifiMulti_.run(NOCT_WIFI_CONNECT_TIMEOUT_MS);
+  WiFi.begin(netSsid_[0], netPass_[0]); // primary first (the PC's LAN)
   // V4 Iron Grip: keep radio awake (no aggressive S3 power save)
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
@@ -165,12 +166,12 @@ void NetManager::tick(unsigned long now) {
       if (WiFi.getMode() != WIFI_STA)
         WiFi.mode(WIFI_STA);
       WiFi.setAutoReconnect(true);
-      if (haveNetworks_)
-        wifiMulti_.run(NOCT_WIFI_CONNECT_TIMEOUT_MS); // fail over to any reachable net
-      else {
-        WiFi.disconnect();
-        WiFi.begin(storedSSID_, storedPass_);
-      }
+      WiFi.disconnect();
+      // Failover: advance to the next network in the priority list each retry,
+      // wrapping back to the primary so we keep preferring the PC's LAN.
+      if (netCount_ > 1)
+        netIdx_ = (netIdx_ + 1) % netCount_;
+      WiFi.begin(netSsid_[netIdx_], netPass_[netIdx_]);
       WiFi.setSleep(false);
       lastWifiRetry_ = now;
     }
