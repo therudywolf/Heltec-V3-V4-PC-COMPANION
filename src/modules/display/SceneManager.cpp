@@ -1450,7 +1450,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                             int carouselSec, bool screenRotated,
                             bool glitchEnabled, bool ledEnabled,
                             bool lowBrightnessDefault, bool rebootConfirmed,
-                            int displayContrast, int displayTimeoutSec)
+                            int displayContrast, int displayTimeoutSec,
+                            int pinnedScene)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = NOCT_MENU_BOX_X;
@@ -1548,6 +1549,13 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       else
         snprintf(items[6], sizeof(items[6]), "TIMEOUT:%ds", displayTimeoutSec);
       items[6][sizeof(items[6]) - 1] = '\0';
+#if NOCT_FEATURE_MONITORING
+      if (pinnedScene < 0)
+        strncpy(items[7], "PIN: OFF", sizeof(items[7]) - 1);
+      else
+        snprintf(items[7], sizeof(items[7]), "PIN:%s", getSceneName(pinnedScene));
+      items[7][sizeof(items[7]) - 1] = '\0';
+#endif
     }
     else if (menuCategory == MCAT_SYSTEM)
     {

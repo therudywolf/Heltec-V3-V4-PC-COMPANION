@@ -352,6 +352,9 @@ void setup()
   if (settings.displayTimeoutSec != 0 && settings.displayTimeoutSec != 30 &&
       settings.displayTimeoutSec != 60)
     settings.displayTimeoutSec = 0;
+  settings.pinnedScene = prefs.getInt("pinScene", -1);
+  if (settings.pinnedScene < -1 || settings.pinnedScene >= NOCT_TOTAL_SCENES)
+    settings.pinnedScene = -1;
   prefs.end();
 
   {
@@ -375,6 +378,7 @@ void setup()
 #endif
   netManager.setServer(PC_IP, TCP_PORT);
   currentMode = MODE_NORMAL;
+  currentScene = (settings.pinnedScene >= 0) ? settings.pinnedScene : 0;
 #else
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
@@ -573,6 +577,26 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
               settings.displayTimeoutSec);
       toastUntil = now + 800;
     }
+#if NOCT_FEATURE_MONITORING
+    else if (item == 7)
+    {
+      // Cycle pinned home scene: OFF -> 0 -> ... -> last -> OFF (#10)
+      if (settings.pinnedScene < 0) settings.pinnedScene = 0;
+      else if (settings.pinnedScene >= NOCT_TOTAL_SCENES - 1) settings.pinnedScene = -1;
+      else settings.pinnedScene++;
+      Preferences p; p.begin("nocturne", false);
+      p.putInt("pinScene", settings.pinnedScene); p.end();
+      if (settings.pinnedScene >= 0)
+      {
+        currentScene = settings.pinnedScene;
+        snprintf(toastMsg, sizeof(toastMsg), "PIN:%s",
+                 sceneManager.getSceneName(settings.pinnedScene));
+      }
+      else
+        snprintf(toastMsg, sizeof(toastMsg), "PIN OFF");
+      toastUntil = now + 1000;
+    }
+#endif
     return true;
   }
 
@@ -871,6 +895,18 @@ void loop()
       lastCarousel = now;
     }
   }
+  // Pinned "home" scene (#10): carousel off + input idle -> drift back to it.
+  if (settings.pinnedScene >= 0 && !settings.carouselEnabled && !alertLive &&
+      currentMode == MODE_NORMAL && !quickMenuOpen &&
+      currentScene != settings.pinnedScene && lastInputTime != 0 &&
+      (now - lastInputTime > NOCT_PIN_RETURN_MS))
+  {
+    previousScene = currentScene;
+    currentScene = settings.pinnedScene;
+    if (previousScene != currentScene)
+    { inTransition = true; transitionStart = now; }
+    needRedraw = true;
+  }
   if (pcMonitoringActive && netManager.isTcpConnected() &&
       netManager.getLastSentScreen() != currentScene)
   {
@@ -1129,7 +1165,8 @@ void loop()
         settings.carouselEnabled, settings.carouselIntervalSec,
         settings.displayInverted, settings.glitchEnabled, settings.ledEnabled,
         settings.lowBrightnessDefault, rebootConfirmed,
-        settings.displayContrast, settings.displayTimeoutSec);
+        settings.displayContrast, settings.displayTimeoutSec,
+        settings.pinnedScene);
   }
   else
   {

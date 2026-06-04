@@ -125,6 +125,7 @@ struct Settings {
   bool glitchEnabled = false;
   bool lowBrightnessDefault =
       false; /* NVS "lowBright": start with dim display */
+  int pinnedScene = -1; /* NVS "pinScene": home monitoring scene; -1 = none (#10) */
 };
 
 /** Single app state: hardware, weather, media, process, alerts (filled by

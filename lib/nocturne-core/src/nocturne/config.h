@@ -140,6 +140,8 @@
 /* ── Timing ────────────────────────────────────────────────────────────── */
 #define NOCT_SPLASH_MS 2500
 #define NOCT_IDLE_SCREENSAVER_MS 10000
+/* Pinned "home" scene (#10): drift back to it after this much input-idle time. */
+#define NOCT_PIN_RETURN_MS 15000
 #define NOCT_TRANSITION_MS 180
 #define NOCT_TRANSITION_STEP 32
 #define NOCT_BUTTON_SHORT_MS 500
