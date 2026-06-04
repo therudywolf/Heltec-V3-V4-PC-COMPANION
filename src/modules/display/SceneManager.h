@@ -73,6 +73,12 @@ public:
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
 #endif
 
+  // --- Conditional: LoRa / sub-GHz (#21) ---
+#if NOCT_FEATURE_LORA
+  void drawLora(class LoraManager &mgr);
+  void drawLoraArm(); // antenna-present confirm gate shown before entering MODE_LORA
+#endif
+
   // --- Conditional: Forza ---
 #if NOCT_FEATURE_FORZA
   void drawForzaDash(class ForzaManager &forza, bool showSplash, uint32_t localIp);

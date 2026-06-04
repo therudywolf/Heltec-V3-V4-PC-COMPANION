@@ -36,6 +36,9 @@ enum AppMode
   MODE_WIFI_SNIFF,
   MODE_BLE_SCAN,        // passive BLE scan + tracker detection (AirTag/Flipper/Tile)
 #endif
+#if NOCT_FEATURE_LORA
+  MODE_LORA,            // SX1262 sub-GHz spectrum/activity monitor (#21, EU868)
+#endif
 #if NOCT_FEATURE_WOLFPET
   MODE_WOLFPET,         // tamagotchi wolf pet (#3)
 #endif
@@ -64,6 +67,9 @@ class ForzaManager;
 class WifiSniffManager;
 class BleManager;
 #endif
+#if NOCT_FEATURE_LORA
+class LoraManager;
+#endif
 
 class AppModeManager
 {
@@ -81,6 +87,9 @@ public:
 #if NOCT_FEATURE_HACKER
       WifiSniffManager &wifiSniff,
       BleManager &ble,
+#endif
+#if NOCT_FEATURE_LORA
+      LoraManager &lora,
 #endif
       int reserved = 0);
 
@@ -120,6 +129,9 @@ private:
 #if NOCT_FEATURE_HACKER
   WifiSniffManager &wifiSniff_;
   BleManager &ble_;
+#endif
+#if NOCT_FEATURE_LORA
+  LoraManager &lora_;
 #endif
 };
 

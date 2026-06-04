@@ -60,6 +60,10 @@ int submenuCountForHackerGroup(int group)
     return 13;
   case HACKER_GROUP_BLE:
     return 1;
+#if NOCT_FEATURE_LORA
+  case HACKER_GROUP_LORA:
+    return 1; // Spectrum (passive RSSI + CAD activity monitor, EU868)
+#endif
   default:
     return 1;
   }
@@ -100,6 +104,16 @@ AppMode getModeForHackerItem(int group, int item)
     default: return NOCT_DEFAULT_MODE;
     }
   }
+#if NOCT_FEATURE_LORA
+  if (group == HACKER_GROUP_LORA)
+  {
+    switch (item)
+    {
+    case 0: return MODE_LORA;
+    default: return NOCT_DEFAULT_MODE;
+    }
+  }
+#endif
 #else
   (void)group;
   (void)item;

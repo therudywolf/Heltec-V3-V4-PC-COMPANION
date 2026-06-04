@@ -46,6 +46,9 @@
 #if NOCT_FEATURE_WOLFPET
 #include "modules/game/WolfPet.h"
 #endif
+#if NOCT_FEATURE_LORA
+#include "modules/lora/LoraManager.h"
+#endif
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -76,6 +79,10 @@ WifiSniffManager wifiSniffManager;
 WolfPet wolfPet;
 static int wolfActionSel = 0; // 0=feed 1=play 2=rest
 #endif
+#if NOCT_FEATURE_LORA
+LoraManager loraMgr;
+static bool loraArmPending = false; // antenna-gate confirm screen is showing
+#endif
 
 AppModeManager appModeManager(
 #if NOCT_FEATURE_BMW
@@ -90,6 +97,9 @@ AppModeManager appModeManager(
 #if NOCT_FEATURE_HACKER
     wifiSniffManager,
     bleManager,
+#endif
+#if NOCT_FEATURE_LORA
+    loraMgr,
 #endif
     0);
 
@@ -452,6 +462,14 @@ static bool handleHackerItem(int group, int item, unsigned long now)
   quickMenuOpen = false;
   rebootConfirmed = false;
   AppMode mode = getModeForHackerItem(group, item);
+#if NOCT_FEATURE_LORA
+  if (mode == MODE_LORA)
+  {
+    // Don't arm the radio yet — show the antenna-present gate first (#21).
+    loraArmPending = true;
+    return true;
+  }
+#endif
   if (mode == MODE_RADAR)
   {
     wifiScanSelected = 0;
@@ -860,7 +878,11 @@ void loop()
     event = EV_NONE;
   }
 
-  if (event == EV_DOUBLE && !quickMenuOpen)
+  bool armGate = false;
+#if NOCT_FEATURE_LORA
+  armGate = loraArmPending; // the LoRa antenna gate owns its own button events
+#endif
+  if (event == EV_DOUBLE && !quickMenuOpen && !armGate)
   {
 #if NOCT_FEATURE_MONITORING
     if (currentMode != MODE_NORMAL && currentMode != MODE_CHARGE_ONLY
@@ -998,6 +1020,32 @@ void loop()
 #endif
 
   // ── Menu logic ──────────────────────────────────────────────────────
+#if NOCT_FEATURE_LORA
+  if (loraArmPending)
+  {
+    // Antenna-present gate: HOLD arms the radio + enters MODE_LORA, a tap backs out.
+    if (event == EV_LONG)
+    {
+      loraArmPending = false;
+      if (!appModeManager.switchToMode(currentMode, MODE_LORA))
+      {
+        snprintf(toastMsg, sizeof(toastMsg), "FAIL");
+        toastUntil = now + 1500;
+      }
+      needRedraw = true;
+    }
+    else if (event == EV_SHORT || event == EV_DOUBLE)
+    {
+      loraArmPending = false; // cancel → back to the LoRa submenu
+      quickMenuOpen = true;
+      menuLevel = 2;
+      menuHackerGroup = HACKER_GROUP_LORA;
+      quickMenuItem = 0;
+      needRedraw = true;
+    }
+  }
+  else
+#endif
   if (quickMenuOpen)
   {
     if (rebootConfirmed && (now - rebootConfirmTime > 5000))
@@ -1216,6 +1264,17 @@ void loop()
       }
       break;
 #endif
+#if NOCT_FEATURE_LORA
+    case MODE_LORA:
+      if (event == EV_SHORT)
+      {
+        loraMgr.resetCounters(); // clear the ACT/PKT session tallies
+        snprintf(toastMsg, sizeof(toastMsg), "Counters reset");
+        toastUntil = now + 1000;
+        needRedraw = true;
+      }
+      break;
+#endif
 
     default:
       break;
@@ -1286,6 +1345,10 @@ void loop()
 
   if (!splashDone)
     display.drawSplash();
+#if NOCT_FEATURE_LORA
+  else if (loraArmPending)
+    sceneManager.drawLoraArm();
+#endif
   else if (quickMenuOpen)
   {
     sceneManager.drawMenu(
@@ -1403,6 +1466,13 @@ void loop()
       sceneManager.drawBleScan(bleManager);
       break;
 #endif // NOCT_FEATURE_HACKER
+
+#if NOCT_FEATURE_LORA
+    case MODE_LORA:
+      loraMgr.tick();
+      sceneManager.drawLora(loraMgr);
+      break;
+#endif
 
 #if NOCT_FEATURE_FORZA
     case MODE_GAME_FORZA:

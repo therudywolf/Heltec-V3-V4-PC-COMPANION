@@ -21,6 +21,9 @@
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
 #endif
+#if NOCT_FEATURE_LORA
+#include "modules/lora/LoraManager.h"
+#endif
 
 AppModeManager::AppModeManager(
 #if NOCT_FEATURE_BMW
@@ -36,6 +39,9 @@ AppModeManager::AppModeManager(
     WifiSniffManager &wifiSniff,
     BleManager &ble,
 #endif
+#if NOCT_FEATURE_LORA
+    LoraManager &lora,
+#endif
     int reserved)
     : reserved_(reserved)
 #if NOCT_FEATURE_BMW
@@ -50,6 +56,9 @@ AppModeManager::AppModeManager(
 #if NOCT_FEATURE_HACKER
       , wifiSniff_(wifiSniff)
       , ble_(ble)
+#endif
+#if NOCT_FEATURE_LORA
+      , lora_(lora)
 #endif
 {
   (void)reserved_;
@@ -97,6 +106,11 @@ void AppModeManager::cleanupMode(AppMode mode)
     ble_.stopScan();
     ble_.stop();
     WiFi.mode(WIFI_STA);
+    break;
+#endif
+#if NOCT_FEATURE_LORA
+  case MODE_LORA:
+    lora_.sleep(); // park the SX1262 (RX off) on exit
     break;
 #endif
   default:
@@ -158,6 +172,22 @@ void AppModeManager::manageWiFiState(AppMode mode)
     net_.setSuspend(true);
 #endif
     break;
+#endif
+#if NOCT_FEATURE_LORA
+  case MODE_LORA:
+    if (WiFi.getMode() != WIFI_OFF)
+    {
+      WiFi.disconnect(true);
+      yield();
+      WiFi.mode(WIFI_OFF);
+      Serial.println("[SYS] WiFi OFF for LoRa");
+    }
+#if NOCT_FEATURE_MONITORING
+    net_.setSuspend(true);
+#endif
+    break;
+#endif
+#if NOCT_FEATURE_HACKER
   case MODE_RADAR:
   case MODE_WIFI_PROBE_SCAN:
   case MODE_WIFI_EAPOL_SCAN:
@@ -319,6 +349,16 @@ bool AppModeManager::initializeMode(AppMode mode
     Serial.println("[SYS] AP+STA mode initialized");
     return true;
 
+#endif
+
+#if NOCT_FEATURE_LORA
+  case MODE_LORA:
+    manageWiFiState(mode);            // WiFi off so the SX1262 owns the RF path
+    if (lora_.begin())                // init @ EU868; lazy, so re-entry re-arms it
+      lora_.startListen();
+    Serial.printf("[SYS] LoRa mode initialized (radio %s)\n",
+                  lora_.isReady() ? "OK" : "NOT FOUND");
+    return true;                      // enter even if radio missing — scene shows the error
 #endif
 
 #if NOCT_FEATURE_WOLFPET

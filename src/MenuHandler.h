@@ -33,7 +33,12 @@ enum MenuCategory
 #if NOCT_FEATURE_HACKER
 #define HACKER_GROUP_WIFI 0
 #define HACKER_GROUP_BLE 1
+#if NOCT_FEATURE_LORA
+#define HACKER_GROUP_LORA 2
+#define HACKER_GROUP_COUNT 3
+#else
 #define HACKER_GROUP_COUNT 2
+#endif
 #endif
 
 int submenuCount(int category);
