@@ -63,6 +63,8 @@ public:
   void drawBmwAssistant(class BmwManager &bmw, int selectedActionIndex);
 #endif
   void drawBottomHint(const char *hint = nullptr);
+  void drawSysInfo(); // NTP clock + RF/system info (bonus)
+  void drawBench();   // I2C bus scan + chip/GPIO bench (bonus)
 
   // --- Conditional: Hacker features ---
 #if NOCT_FEATURE_HACKER

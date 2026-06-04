@@ -13,6 +13,8 @@ enum AppMode
   MODE_BMW_ASSISTANT,
 #endif
   MODE_CHARGE_ONLY,
+  MODE_SYSINFO,         // NTP clock + RF/system info (heap/temp/MAC/RSSI) — bonus
+  MODE_BENCH,           // I2C bus scanner + chip/GPIO bench — bonus
 #if NOCT_FEATURE_MONITORING
   MODE_NORMAL,
 #endif
