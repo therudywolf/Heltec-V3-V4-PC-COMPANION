@@ -53,7 +53,9 @@ public:
                   bool tcpConnected = false, int rssi = 0);
   void drawPowerStatus(int pct, bool isCharging, float batteryVoltage = 0.0f,
                        bool onWhiteHeader = true);
+#if NOCT_FEATURE_BMW
   void drawBmwAssistant(class BmwManager &bmw, int selectedActionIndex);
+#endif
   void drawBottomHint(const char *hint = nullptr);
 
   // --- Conditional: Hacker features ---

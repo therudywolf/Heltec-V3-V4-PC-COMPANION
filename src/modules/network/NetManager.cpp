@@ -73,26 +73,34 @@ NetManager::NetManager()
 }
 
 void NetManager::begin(const char *ssid, const char *pass) {
-  // Copy SSID and password to static buffers
-  if (ssid) {
-    strncpy(storedSSID_, ssid, sizeof(storedSSID_) - 1);
-    storedSSID_[sizeof(storedSSID_) - 1] = '\0';
-  } else {
-    storedSSID_[0] = '\0';
-  }
-  if (pass) {
-    strncpy(storedPass_, pass, sizeof(storedPass_) - 1);
-    storedPass_[sizeof(storedPass_) - 1] = '\0';
-  } else {
-    storedPass_[0] = '\0';
-  }
+  WifiCred one = {ssid, pass};
+  begin(&one, 1);
+}
+
+void NetManager::begin(const WifiCred *nets, size_t count) {
   WiFi.onEvent(WiFiEvent);
-  if (!ssid || strlen(ssid) == 0)
+  // Register every candidate network; WiFiMulti connects to the strongest
+  // reachable one and fails over between them on drop (#2: multi-WiFi). The
+  // first valid entry is remembered as the "primary" (logging / fallback).
+  for (size_t i = 0; i < count; i++) {
+    const char *s = nets[i].ssid;
+    if (!s || s[0] == '\0')
+      continue;
+    const char *p = nets[i].pass ? nets[i].pass : "";
+    wifiMulti_.addAP(s, p);
+    if (!haveNetworks_) {
+      strncpy(storedSSID_, s, sizeof(storedSSID_) - 1);
+      storedSSID_[sizeof(storedSSID_) - 1] = '\0';
+      strncpy(storedPass_, p, sizeof(storedPass_) - 1);
+      storedPass_[sizeof(storedPass_) - 1] = '\0';
+    }
+    haveNetworks_ = true;
+  }
+  if (!haveNetworks_)
     return;
   WiFi.mode(WIFI_STA);
-  // Let the ESP32 stack recover from drops on its own (fast), instead of waiting
-  // for the manual backstop loop. persistent(false): don't thrash NVS on every
-  // begin(). These two are why reconnect was unreliable before.
+  // Let the ESP32 stack recover from drops on its own (fast); persistent(false)
+  // avoids thrashing NVS on every begin().
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
 #if defined(WIFI_STATIC_IP) && defined(WIFI_GATEWAY) && defined(WIFI_SUBNET)
@@ -101,7 +109,8 @@ void NetManager::begin(const char *ssid, const char *pass) {
       subnet.fromString(WIFI_SUBNET))
     WiFi.config(staticIp, gateway, subnet);
 #endif
-  WiFi.begin(ssid, pass);
+  // Initial connect: pick the strongest reachable known network.
+  wifiMulti_.run(NOCT_WIFI_CONNECT_TIMEOUT_MS);
   // V4 Iron Grip: keep radio awake (no aggressive S3 power save)
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
@@ -156,8 +165,12 @@ void NetManager::tick(unsigned long now) {
       if (WiFi.getMode() != WIFI_STA)
         WiFi.mode(WIFI_STA);
       WiFi.setAutoReconnect(true);
-      WiFi.disconnect();
-      WiFi.begin(storedSSID_, storedPass_);
+      if (haveNetworks_)
+        wifiMulti_.run(NOCT_WIFI_CONNECT_TIMEOUT_MS); // fail over to any reachable net
+      else {
+        WiFi.disconnect();
+        WiFi.begin(storedSSID_, storedPass_);
+      }
       WiFi.setSleep(false);
       lastWifiRetry_ = now;
     }

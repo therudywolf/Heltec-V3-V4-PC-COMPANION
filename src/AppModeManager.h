@@ -9,7 +9,9 @@
 
 enum AppMode
 {
+#if NOCT_FEATURE_BMW
   MODE_BMW_ASSISTANT,
+#endif
   MODE_CHARGE_ONLY,
 #if NOCT_FEATURE_MONITORING
   MODE_NORMAL,
@@ -36,7 +38,19 @@ enum AppMode
 #endif
 };
 
+/* The mode the device boots into / falls back to, given the build's features.
+ * MODE_CHARGE_ONLY always exists, so it is the ultimate fallback. */
+#if NOCT_FEATURE_BMW
+#define NOCT_DEFAULT_MODE MODE_BMW_ASSISTANT
+#elif NOCT_FEATURE_MONITORING
+#define NOCT_DEFAULT_MODE MODE_NORMAL
+#else
+#define NOCT_DEFAULT_MODE MODE_CHARGE_ONLY
+#endif
+
+#if NOCT_FEATURE_BMW
 class BmwManager;
+#endif
 #if NOCT_FEATURE_MONITORING
 class NetManager;
 #endif
@@ -52,18 +66,20 @@ class AppModeManager
 {
 public:
   AppModeManager(
-      BmwManager &bmw
+#if NOCT_FEATURE_BMW
+      BmwManager &bmw,
+#endif
 #if NOCT_FEATURE_MONITORING
-      , NetManager &net
+      NetManager &net,
 #endif
 #if NOCT_FEATURE_FORZA
-      , ForzaManager &forza
+      ForzaManager &forza,
 #endif
 #if NOCT_FEATURE_HACKER
-      , WifiSniffManager &wifiSniff
-      , BleManager &ble
+      WifiSniffManager &wifiSniff,
+      BleManager &ble,
 #endif
-  );
+      int reserved = 0);
 
   bool switchToMode(AppMode &current, AppMode next
 #if NOCT_FEATURE_HACKER
@@ -88,7 +104,10 @@ private:
 #endif
   );
 
+  int reserved_;  // anchors the conditional member-init list (see ctor)
+#if NOCT_FEATURE_BMW
   BmwManager &bmw_;
+#endif
 #if NOCT_FEATURE_MONITORING
   NetManager &net_;
 #endif
