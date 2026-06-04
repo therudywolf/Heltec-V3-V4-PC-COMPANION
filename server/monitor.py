@@ -144,6 +144,12 @@ def load_config() -> Dict:
         # Forest panel: query node status from a Prometheus-compatible URL
         # (e.g. a Grafana datasource proxy). "" disables (scene shows NO NODES).
         "forest_query_url": "",
+        # Dashboard stats feed (#5): a custom JSON endpoint that already aggregates
+        # node/Docker/LM-Studio status (the dashboard.example.com dashboard's
+        # /stats.json). Used ONLY to populate the "dock" container-count block.
+        # This is NOT a Prometheus query URL — see docs/FORESTSERVER_DASHBOARD.md.
+        # "" disables (payload then ships dock={"n":0,"up":0}).
+        "dashboard_stats_url": "",
         # Alertmanager v2 alerts URL to POLL (shows the SAME alerts as your
         # Telegram). "" disables polling (local thresholds + webhook still work).
         "alertmanager_url": "",
@@ -181,6 +187,8 @@ def load_config() -> Dict:
             out["gpu_via_nvidia_smi"] = bool(data["gpu_via_nvidia_smi"])
         if "forest_query_url" in data:
             out["forest_query_url"] = data["forest_query_url"]
+        if "dashboard_stats_url" in data:
+            out["dashboard_stats_url"] = data["dashboard_stats_url"]
         if "alertmanager_url" in data:
             out["alertmanager_url"] = data["alertmanager_url"]
         if "forest_nodes" in data and isinstance(data["forest_nodes"], list):
@@ -272,6 +280,8 @@ CLAUDE_LIVE_INTERVAL = int(_config.get("claude_live_interval_sec", 300))
 CLAUDE_LIVE_MODEL = _config.get("claude_live_model", claude_live.DEFAULT_MODEL)
 GPU_VIA_NVIDIA_SMI = str(os.getenv("GPU_VIA_NVIDIA_SMI", str(_config.get("gpu_via_nvidia_smi", True)))).lower() in ("1", "true", "yes")
 FOREST_QUERY_URL = os.getenv("FOREST_QUERY_URL", _config.get("forest_query_url", ""))
+DASHBOARD_STATS_URL = os.getenv("DASHBOARD_STATS_URL", _config.get("dashboard_stats_url", ""))
+DASHBOARD_UPDATE_INTERVAL = 30.0  # dashboard /stats.json poll cadence (seconds)
 ALERTMANAGER_URL = os.getenv("ALERTMANAGER_URL", _config.get("alertmanager_url", ""))
 FOREST_NODES = _config.get("forest_nodes") or forest_panel.DEFAULT_NODES
 FOREST_UPDATE_INTERVAL = 30.0   # node-status poll cadence (seconds)
@@ -287,6 +297,14 @@ WEATHER_TIMEOUT = 10
 WEATHER_UPDATE_INTERVAL = 10 * 60
 PING_TARGET = "8.8.8.8"
 PING_TIMEOUT = 2
+# Internet-latency probe (#7): asyncio TCP connect-time to a well-known host:port.
+# Portable (no ICMP / no admin), runs on the event loop, never blocks the 2x/sec
+# payload loop. Result cached in global_data_cache["ping_tcp"] and refreshed every
+# PING_TCP_INTERVAL seconds. -1 means the last probe failed/timed out.
+PING_TCP_HOST = "google.com"
+PING_TCP_PORT = 443
+PING_TCP_TIMEOUT = 2.0
+PING_TCP_INTERVAL = 10.0
 COVER_SIZE = 64
 TOP_PROCS_CPU_N = 3
 TOP_PROCS_RAM_N = 2
@@ -373,6 +391,7 @@ global_data_cache: Dict = {
     "hw": {}, "weather": {},
     "media": {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"},
     "top_procs": [], "top_procs_ram": [], "net": (0, 0), "disk": (0, 0), "ping": 0,
+    "ping_tcp": -1,  # TCP connect-time to google.com:443 in ms (-1 = not yet/failed)
     "claude": dict(claude_mod.EMPTY_USAGE),
 }
 # Guards multi-key access to global_data_cache so the poller's writes and a
@@ -821,6 +840,62 @@ def get_ping_latency_sync() -> int:
         return 0
 
 
+async def measure_tcp_connect_ms(
+    host: str = PING_TCP_HOST,
+    port: int = PING_TCP_PORT,
+    timeout: float = PING_TCP_TIMEOUT,
+) -> int:
+    """Internet latency = asyncio TCP connect-time to ``host:port`` in ms (#7).
+
+    Portable substitute for ICMP ping: opens a TCP connection (no admin, works
+    where ICMP is blocked), measures the handshake time, and closes it. Runs
+    directly on the event loop but is bounded by ``timeout`` so it can't stall the
+    payload loop; callers still only invoke it every PING_TCP_INTERVAL seconds and
+    cache the result. Returns integer milliseconds, or ``-1`` on
+    timeout/DNS/connection failure. Never raises.
+    """
+    t0 = time.perf_counter()
+    writer = None
+    try:
+        fut = asyncio.open_connection(host, port)
+        _reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+        return int(round((time.perf_counter() - t0) * 1000.0))
+    except Exception as e:
+        log_debug(f"TCP ping {host}:{port}: {e}")
+        return -1
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+
+async def get_dock_block_async(session: aiohttp.ClientSession) -> Dict[str, int]:
+    """Fetch the dashboard ``/stats.json`` and build the ``dock`` block (#5).
+
+    DASHBOARD_STATS_URL points at a custom JSON feed (the dashboard.example.com
+    dashboard) that already aggregates Docker container counts — see
+    docs/FORESTSERVER_DASHBOARD.md. Pure parsing lives in
+    :func:`payload.parse_dashboard_stats`; this is just the best-effort fetch.
+    Returns a copy of EMPTY_DOCK when unset or unreachable (never invents data).
+    """
+    if not DASHBOARD_STATS_URL:
+        return dict(payload_mod.EMPTY_DOCK)
+    try:
+        async with session.get(
+            DASHBOARD_STATS_URL, timeout=aiohttp.ClientTimeout(total=4),
+        ) as r:
+            if r.status != 200:
+                return dict(payload_mod.EMPTY_DOCK)
+            data = await r.json(content_type=None)
+    except Exception as e:
+        log_debug(f"Dashboard stats fetch failed: {e}")
+        return dict(payload_mod.EMPTY_DOCK)
+    return payload_mod.parse_dashboard_stats(data)
+
+
 def _collect_top_processes(
     procs_info: List[Dict[str, Any]], cpu_n: int, ram_n: int
 ) -> Tuple[List[Dict], List[Dict]]:
@@ -1034,6 +1109,9 @@ _alert_state = alert_events.AlertState()
 # run() and read into every payload). Empty until the first successful scrape.
 _forest_block: Dict[str, Any] = dict(forest_panel.EMPTY_FOREST)
 _svc_block: Dict[str, Any] = dict(services_panel.EMPTY_SVC)
+# Docker container counts (#5) from the dashboard /stats.json feed. Empty until
+# the first successful fetch (or when no DASHBOARD_STATS_URL is configured).
+_dock_block: Dict[str, int] = dict(payload_mod.EMPTY_DOCK)
 
 
 def _alert_thresholds() -> Dict[str, int]:
@@ -1135,7 +1213,7 @@ def get_pc_idle_seconds() -> int:
 
 def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_procs_ram: List,
                   net: tuple, disk: tuple, ping_ms: int, now: float,
-                  claude: Optional[Dict] = None) -> Dict:
+                  claude: Optional[Dict] = None, ping_tcp_ms: int = -1) -> Dict:
     global _last_alert
 
     w = weather  # (kept identical to prior weather-cache selection, which was a no-op)
@@ -1169,6 +1247,9 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "gtdp": int(hw.get("gtdp", 0)),
         "ru": ram_used_f, "ra": ram_total_f,
         "nd": net[1], "nu": net[0], "pg": ping_ms,
+        # Internet latency (#7): TCP connect-time to google.com:443 in ms, -1 on
+        # failure/timeout. Distinct from "pg" (legacy ICMP ping, 0 on failure).
+        "ping": int(ping_tcp_ms) if ping_tcp_ms is not None else -1,
         "cf": int(hw.get("cf", 0)), "s1": int(hw.get("s1", 0)), "s2": int(hw.get("s2", 0)), "gf": int(hw.get("gf", 0)),
         "fans": hw.get("fans", [0, 0, 0, 0]),
         "fan_controls": hw.get("fan_controls", [0, 0, 0, 0]),
@@ -1187,6 +1268,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "events": _events_with_claude(claude, now),
         "forest": _forest_block,
         "svc": _svc_block,
+        "dock": _dock_block,                  # Docker container counts {"n":total,"up":running} (#5)
         "pidle": get_pc_idle_seconds(),       # PC idle seconds (device dims >10min)
         "clk": time.strftime("%H:%M"),        # PC wall clock (time-of-day)
         "sv": SERVER_VERSION,
@@ -1278,6 +1360,7 @@ async def handle_client(reader, writer):
             snap["top_procs_ram"], snap["net"],
             snap["disk"], snap["ping"], time.time(),
             claude=snap.get("claude"),
+            ping_tcp_ms=snap.get("ping_tcp", -1),
         )
         await send_data_to_client(writer, payload)
     except Exception as e:
@@ -1339,7 +1422,7 @@ async def run():
     global executor, last_sent_track_key, top_procs_cache, top_procs_ram_cache
     global last_top_procs_time, last_media_time, ping_latency_ms, global_data_cache
     global _last_sent_snapshot, _last_heartbeat_time, _forest_block, _svc_block
-    global _force_claude_refresh, _force_status_refresh
+    global _dock_block, _force_claude_refresh, _force_status_refresh
 
     server = None
     executor = ThreadPoolExecutor(max_workers=6)
@@ -1358,15 +1441,19 @@ async def run():
     last_lhm_time = 0.0
     last_weather_time = 0.0
     last_ping_time = 0.0
+    last_ping_tcp_time = 0.0
     last_media_time = 0.0
     last_claude_time = 0.0
     last_forest_time = 0.0
     last_svc_time = 0.0
+    last_dock_time = 0.0
     last_am_time = 0.0
     session = aiohttp.ClientSession()
 
     if FOREST_QUERY_URL:
         log_info(f"Forest panel: querying {len(FOREST_NODES)} node(s) via {FOREST_QUERY_URL}")
+    if DASHBOARD_STATS_URL:
+        log_info(f"Dashboard stats (dock): {DASHBOARD_STATS_URL}")
     if ALERTMANAGER_URL:
         log_info(f"Alertmanager poll: {ALERTMANAGER_URL}")
 
@@ -1384,6 +1471,7 @@ async def run():
         last_top_procs_time = time.time()
         ping_latency_ms = await loop.run_in_executor(executor, get_ping_latency_sync)
         await cache_set("ping", ping_latency_ms)
+        await cache_set("ping_tcp", await measure_tcp_connect_ms())
         await cache_set("claude", await loop.run_in_executor(executor, get_claude_usage_sync))
         last_claude_time = time.time()
         if FOREST_QUERY_URL:
@@ -1392,6 +1480,9 @@ async def run():
         if SERVICES:
             _svc_block = await get_svc_block_async(session)
             last_svc_time = time.time()
+        if DASHBOARD_STATS_URL:
+            _dock_block = await get_dock_block_async(session)
+            last_dock_time = time.time()
         if ALERTMANAGER_URL:
             await poll_alertmanager_async(session)
             last_am_time = time.time()
@@ -1414,6 +1505,7 @@ async def run():
                 _force_status_refresh = False
                 last_forest_time = 0.0
                 last_svc_time = 0.0
+                last_dock_time = 0.0
 
             if now - last_lhm_time >= POLL_INTERVAL:
                 last_lhm_time = now
@@ -1452,6 +1544,13 @@ async def run():
                 except Exception as e:
                     log_debug(f"Ping: {e}")
 
+            if now - last_ping_tcp_time >= PING_TCP_INTERVAL:
+                last_ping_tcp_time = now
+                try:
+                    await cache_set("ping_tcp", await measure_tcp_connect_ms())
+                except Exception as e:
+                    log_debug(f"TCP ping: {e}")
+
             if now - last_media_time >= MEDIA_UPDATE_INTERVAL:
                 last_media_time = now
                 try:
@@ -1480,6 +1579,13 @@ async def run():
                 except Exception as e:
                     log_debug(f"Services: {e}")
 
+            if DASHBOARD_STATS_URL and now - last_dock_time >= DASHBOARD_UPDATE_INTERVAL:
+                last_dock_time = now
+                try:
+                    _dock_block = await get_dock_block_async(session)
+                except Exception as e:
+                    log_debug(f"Dashboard stats: {e}")
+
             if ALERTMANAGER_URL and now - last_am_time >= ALERTMANAGER_UPDATE_INTERVAL:
                 last_am_time = now
                 try:
@@ -1494,6 +1600,7 @@ async def run():
                 snap["top_procs_ram"], snap["net"],
                 snap["disk"], snap["ping"], now,
                 claude=snap.get("claude"),
+                ping_tcp_ms=snap.get("ping_tcp", -1),
             )
 
             if should_send_payload(payload, now):
