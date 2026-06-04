@@ -112,6 +112,9 @@ void AppModeManager::cleanupMode(AppMode mode)
 #if NOCT_FEATURE_LORA
   case MODE_LORA:
   case MODE_LORA_SWEEP:
+#if NOCT_FEATURE_LORA_TX
+  case MODE_LORA_TX:
+#endif
     lora_.sleep(); // park the SX1262 (RX off) on exit
     break;
 #endif
@@ -179,6 +182,9 @@ void AppModeManager::manageWiFiState(AppMode mode)
 #if NOCT_FEATURE_LORA
   case MODE_LORA:
   case MODE_LORA_SWEEP:
+#if NOCT_FEATURE_LORA_TX
+  case MODE_LORA_TX:
+#endif
     if (WiFi.getMode() != WIFI_OFF)
     {
       WiFi.disconnect(true);
@@ -383,6 +389,16 @@ bool AppModeManager::initializeMode(AppMode mode
     Serial.printf("[SYS] LoRa SWEEP initialized (radio %s)\n",
                   lora_.isReady() ? "OK" : "NOT FOUND");
     return true;
+
+#if NOCT_FEATURE_LORA_TX
+  case MODE_LORA_TX:
+    manageWiFiState(mode);
+    if (lora_.begin())
+      lora_.startListen(); // also listens between sends (for replay capture)
+    Serial.printf("[SYS] LoRa TX initialized (radio %s)\n",
+                  lora_.isReady() ? "OK" : "NOT FOUND");
+    return true;
+#endif
 #endif
 
 #if NOCT_FEATURE_WOLFPET

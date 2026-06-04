@@ -3291,6 +3291,59 @@ void SceneManager::drawLoraSweep(LoraManager &mgr)
 
   drawBottomHint("sweeping  2x BACK");
 }
+
+#if NOCT_FEATURE_LORA_TX
+// LoRa TX: pick a frame kind (Beacon / MeshPing / Replay), HOLD to send. Shows
+// TX count, last result and the duty-cycle cooldown. Antenna-gated on entry.
+void SceneManager::drawLoraTx(LoraManager &mgr, int kind)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+
+  char hr[14];
+  int cd = mgr.txCooldownLeft();
+  if (!mgr.isReady()) snprintf(hr, sizeof(hr), "NO RADIO");
+  else if (cd > 0)    snprintf(hr, sizeof(hr), "wait %ds", cd);
+  else                snprintf(hr, sizeof(hr), "READY");
+  drawLoraHeader(u8g2, "LoRa TX", hr);
+
+  if (!mgr.isReady())
+  {
+    u8g2.setFont(VALUE_FONT);
+    disp_.drawCentered(34, "RADIO FAIL");
+    drawBottomHint("2x BACK");
+    return;
+  }
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(VALUE_FONT);
+  char k[20];
+  snprintf(k, sizeof(k), "> %s", LoraManager::txKindName(kind));
+  u8g2.setCursor(2, 24);
+  u8g2.print(k);
+  if (kind == LoraManager::TX_REPLAY && !mgr.hasReplay())
+  {
+    u8g2.setFont(LABEL_FONT);
+    u8g2.setCursor(2, 35);
+    u8g2.print("(no frame captured)");
+  }
+  u8g2.setFont(LABEL_FONT);
+  char s[26];
+  if (mgr.txCount() > 0)
+  {
+    snprintf(s, sizeof(s), "last %db %s", mgr.lastTxLen(),
+             mgr.lastTxResult() == 0 ? "OK" : "ERR");
+    u8g2.setCursor(2, 37);
+    u8g2.print(s);
+  }
+  snprintf(s, sizeof(s), "sent %d  on %d.%01d", mgr.txCount(),
+           (int)mgr.freqMhz(), (int)(mgr.freqMhz() * 10) % 10);
+  u8g2.setCursor(2, 47);
+  u8g2.print(s);
+  u8g2.setMaxClipWindow();
+  drawBottomHint("TAP kind  HOLD send");
+}
+#endif // NOCT_FEATURE_LORA_TX
 #endif // NOCT_FEATURE_LORA
 
 #if NOCT_FEATURE_FORZA

@@ -79,6 +79,9 @@ public:
   void drawLora(class LoraManager &mgr, int view); // view 0=packets 1=nodes
   void drawLoraSweep(class LoraManager &mgr);       // band RSSI spectrum
   void drawLoraArm(const char *what); // antenna-present confirm gate
+#if NOCT_FEATURE_LORA_TX
+  void drawLoraTx(class LoraManager &mgr, int kind); // beacon/ping/replay sender
+#endif
 #endif
 
   // --- Conditional: Forza ---

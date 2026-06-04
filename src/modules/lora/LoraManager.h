@@ -79,6 +79,21 @@ public:
   unsigned long lastHitMs() const { return lastHitMs_; }
   void resetStats();
 
+#if NOCT_FEATURE_LORA_TX
+  // --- TX (passive-by-default; gated behind the antenna-present confirm) ---
+  enum TxKind { TX_BEACON = 0, TX_MESH_PING, TX_REPLAY, TX_KIND_COUNT };
+  static const char *txKindName(int k);
+  // Transmit one frame of the given kind on the active preset, then return to
+  // RX. Returns false if on cooldown / no replay data / radio not ready.
+  bool transmit(int kind);
+  int  txCount() const { return txCount_; }
+  int  lastTxLen() const { return lastTxLen_; }
+  int  lastTxResult() const { return lastTxResult_; } // RADIOLIB_ERR_* (0 = OK)
+  unsigned long lastTxMs() const { return lastTxMs_; }
+  int  txCooldownLeft() const; // seconds until the next TX is allowed (0 = ready)
+  bool hasReplay() const { return lastRxLen_ > 0; }
+#endif
+
   // --- Spectrum sweep mode ---
   void beginSweep();
   void sweepTick();                      // advance a few bins per call
@@ -93,6 +108,8 @@ private:
   void applyPreset();
   void recordPacket(const uint8_t *buf, int len, float rssi, float snr);
   int  findNode(uint32_t id);
+  void loadNodes();   // restore the node table from NVS on begin()
+  void saveNodes();   // persist the node table to NVS (called on sleep())
 
   static const LoraPreset kPresets[];
   static const int kPresetCount;
@@ -114,6 +131,18 @@ private:
 
   int8_t spec_[LORA_SPEC_BINS];
   int sweepIdx_ = 0;
+
+  // Last full RX frame (for TX_REPLAY) + TX bookkeeping.
+  uint8_t lastRx_[64];
+  int lastRxLen_ = 0;
+#if NOCT_FEATURE_LORA_TX
+  uint32_t myNodeId_ = 0x4E4F4354; // "NOCT" — our pseudo Meshtastic node id
+  uint32_t txPktId_ = 1;
+  int txCount_ = 0;
+  int lastTxLen_ = 0;
+  int lastTxResult_ = 0;
+  unsigned long lastTxMs_ = 0;
+#endif
 };
 
 #endif // NOCT_FEATURE_LORA
