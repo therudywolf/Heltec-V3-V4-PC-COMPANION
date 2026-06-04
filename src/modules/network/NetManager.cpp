@@ -122,6 +122,19 @@ void NetManager::setServer(const char *ip, uint16_t port) {
   serverPort_ = port;
 }
 
+void NetManager::setTls(bool on) {
+  useTls_ = on;
+  if (on) {
+    // Own infra behind a proxy/self-signed cert — skip chain validation. The
+    // line-JSON protocol rides on top of the TLS stream unchanged.
+    clientTls_.setInsecure();
+    client_ = &clientTls_;
+    Serial.println("[NET] transport: TLS (WiFiClientSecure, insecure)");
+  } else {
+    client_ = &clientPlain_;
+  }
+}
+
 void NetManager::setSuspend(bool suspend) {
   suspended_ = suspend;
   if (suspend) {
@@ -145,7 +158,7 @@ void NetManager::tick(unsigned long now) {
     if (now % 5000 < 100)
       rssi_ = WiFi.RSSI();
 
-    if (!client_.connected()) {
+    if (!client_->connected()) {
       if (tcpConnected_) {
         disconnectTcp();
         searchMode_ = true;
@@ -179,8 +192,8 @@ void NetManager::tick(unsigned long now) {
 }
 
 void NetManager::disconnectTcp() {
-  if (client_.connected())
-    client_.stop();
+  if (client_->connected())
+    client_->stop();
   lineBuffer_[0] = '\0';
   lineBufferLen_ = 0;
   lastSentScreen_ = -1;
@@ -198,23 +211,34 @@ bool NetManager::tryTcpConnect(unsigned long now) {
     return false;
   if (now - lastTcpAttempt_ < NOCT_TCP_RECONNECT_INTERVAL_MS)
     return false;
-  if (client_.connected())
+  if (client_->connected())
     return true;
 
   lastTcpAttempt_ = now;
-  client_.setTimeout(NOCT_TCP_CONNECT_TIMEOUT_MS / 1000);
+  client_->setTimeout(NOCT_TCP_CONNECT_TIMEOUT_MS / 1000);
 
   Serial.printf("[NET] TCP connect -> %s:%u (rssi %d) ...\n",
                 serverIp_ ? serverIp_ : "?", (unsigned)serverPort_, WiFi.RSSI());
-  if (client_.connect(serverIp_, serverPort_)) {
+  if (client_->connect(serverIp_, serverPort_)) {
     lineBuffer_[0] = '\0';
     lineBufferLen_ = 0;
     lastSentScreen_ = -1;
     tcpConnected_ = true;
     tcpConnectTime_ = now;
     lastUpdate_ = now;
-    client_.print("HELO\n");
-    Serial.println("[NET] TCP connected, sent HELO");
+    if (useTls_) {
+      // The public domain is HTTP(S)-fronted: a valid GET request line makes the
+      // proxy pipe us through to the raw line-JSON push server, after which the
+      // bare JSON stream (and our screen:/cmd: writes) ride the socket exactly as
+      // on the raw-TCP LAN path. Verified: GET -> continuous newline-JSON push.
+      client_->print("GET / HTTP/1.0\r\nHost: ");
+      client_->print(serverIp_ ? serverIp_ : "nocturne");
+      client_->print("\r\n\r\n");
+      Serial.println("[NET] TLS connected, sent GET (proxy passthrough)");
+    } else {
+      client_->print("HELO\n");
+      Serial.println("[NET] TCP connected, sent HELO");
+    }
     return true;
   }
   Serial.println("[NET] TCP connect FAILED");
