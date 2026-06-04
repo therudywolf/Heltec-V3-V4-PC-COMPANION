@@ -357,6 +357,13 @@ bool AppModeManager::initializeMode(AppMode mode
     Serial.println("[SYS] FOXHUNT mode initialized");
     return true;
 
+#if NOCT_FEATURE_BADUSB
+  case MODE_BADUSB:
+    // No radio needed; HID is always live (composite). main.cpp owns the run.
+    Serial.println("[SYS] BADUSB mode initialized");
+    return true;
+#endif
+
   case MODE_WIFI_PROBE_SCAN:
     manageWiFiState(mode);
     wifiSniff_.begin(SNIFF_MODE_PROBE_SCAN);

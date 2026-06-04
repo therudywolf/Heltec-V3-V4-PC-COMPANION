@@ -68,6 +68,10 @@ int submenuCountForHackerGroup(int group)
     return 2; // Listen (mesh packet RX), Spectrum (band sweep)
 #endif
 #endif
+#if NOCT_FEATURE_BADUSB
+  case HACKER_GROUP_USB:
+    return 1; // Run (payload selection happens inside the mode)
+#endif
   default:
     return 1;
   }
@@ -124,6 +128,10 @@ AppMode getModeForHackerItem(int group, int item)
     default: return NOCT_DEFAULT_MODE;
     }
   }
+#endif
+#if NOCT_FEATURE_BADUSB
+  if (group == HACKER_GROUP_USB)
+    return MODE_BADUSB;
 #endif
 #else
   (void)group;

@@ -43,6 +43,9 @@
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
 #include "modules/storage/CaptureExport.h"
+#if NOCT_FEATURE_BADUSB
+#include "modules/usb/BadUsb.h"
+#endif
 #endif
 #if NOCT_FEATURE_WOLFPET
 #include "modules/game/WolfPet.h"
@@ -76,6 +79,10 @@ ForzaManager forzaManager;
 BleManager bleManager;
 WifiSniffManager wifiSniffManager;
 CaptureExport captureExport;
+#if NOCT_FEATURE_BADUSB
+BadUsb badUsb;
+static int badUsbSel = 0;
+#endif
 #endif
 #if NOCT_FEATURE_WOLFPET
 WolfPet wolfPet;
@@ -445,6 +452,9 @@ void setup()
 
 #if NOCT_FEATURE_WOLFPET
   wolfPet.begin();
+#endif
+#if NOCT_FEATURE_BADUSB
+  badUsb.begin(); // composite HID is registered at static init; this arms it
 #endif
 
 #if !NOCT_FEATURE_MONITORING && NOCT_FEATURE_BMW
@@ -1338,6 +1348,22 @@ void loop()
       }
       else if (event == EV_LONG) { foxPeak = -120; needRedraw = true; } // reset peak
       break;
+#if NOCT_FEATURE_BADUSB
+    case MODE_BADUSB:
+      if (event == EV_SHORT) // cycle payload
+      {
+        int c = badUsb.payloadCount();
+        if (c > 0) { badUsbSel = (badUsbSel + 1) % c; needRedraw = true; }
+      }
+      else if (event == EV_LONG) // fire it (types on the connected host)
+      {
+        badUsb.run(badUsbSel);
+        snprintf(toastMsg, sizeof(toastMsg), "RAN %s", badUsb.payloadName(badUsbSel));
+        toastUntil = now + 1500;
+        needRedraw = true;
+      }
+      break;
+#endif
 #endif
 #if NOCT_FEATURE_LORA
     case MODE_LORA:
@@ -1625,6 +1651,11 @@ void loop()
       sceneManager.drawFoxhunt(foxSource, foxRssi, foxPeak, foxCount);
       break;
     }
+#if NOCT_FEATURE_BADUSB
+    case MODE_BADUSB:
+      sceneManager.drawBadUsb(badUsb, badUsbSel);
+      break;
+#endif
 #endif // NOCT_FEATURE_HACKER
 
 #if NOCT_FEATURE_LORA
