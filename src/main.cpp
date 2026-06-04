@@ -1094,12 +1094,27 @@ void loop()
       }
       else if (event == EV_LONG)
       {
-        // #14: long-press on Weather opens the multi-day forecast; elsewhere it
-        // toggles dim/low-brightness as before.
+        // Per-scene long-press: Weather -> multi-day forecast (#14); Claude ->
+        // force-refresh Claude usage (cmd:claude); Services/Forest -> force a
+        // status refresh (cmd:status — the same checks the Telegram bot runs,
+        // #4); elsewhere -> toggle dim/low-brightness.
         if (currentScene == NOCT_SCENE_WEATHER)
         {
           sceneManager.setWeatherExpanded(!sceneManager.weatherExpanded());
           needRedraw = true;
+        }
+        else if (currentScene == NOCT_SCENE_CLAUDE)
+        {
+          netManager.print("cmd:claude\n");
+          snprintf(toastMsg, sizeof(toastMsg), "Claude refresh");
+          toastUntil = now + 1200; needRedraw = true;
+        }
+        else if (currentScene == NOCT_SCENE_SERVICES ||
+                 currentScene == NOCT_SCENE_FOREST)
+        {
+          netManager.print("cmd:status\n");
+          snprintf(toastMsg, sizeof(toastMsg), "Status refresh");
+          toastUntil = now + 1200; needRedraw = true;
         }
         else
         {
