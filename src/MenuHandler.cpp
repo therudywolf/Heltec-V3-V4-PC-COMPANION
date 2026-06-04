@@ -62,7 +62,7 @@ int submenuCountForHackerGroup(int group)
     return 2; // Trackers, Devices
 #if NOCT_FEATURE_LORA
   case HACKER_GROUP_LORA:
-    return 1; // Spectrum (passive RSSI + CAD activity monitor, EU868)
+    return 2; // Listen (mesh packet RX), Spectrum (band sweep)
 #endif
   default:
     return 1;
@@ -111,6 +111,7 @@ AppMode getModeForHackerItem(int group, int item)
     switch (item)
     {
     case 0: return MODE_LORA;
+    case 1: return MODE_LORA_SWEEP;
     default: return NOCT_DEFAULT_MODE;
     }
   }

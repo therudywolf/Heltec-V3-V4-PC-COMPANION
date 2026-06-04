@@ -81,7 +81,9 @@ static int wolfActionSel = 0; // 0=feed 1=play 2=rest
 #endif
 #if NOCT_FEATURE_LORA
 LoraManager loraMgr;
-static bool loraArmPending = false; // antenna-gate confirm screen is showing
+static bool loraArmPending = false;          // antenna-gate confirm screen is showing
+static AppMode loraArmTarget = MODE_LORA;    // which LoRa tool the gate will arm
+static int loraView = 0;                     // MODE_LORA: 0 = packets, 1 = nodes
 #endif
 
 AppModeManager appModeManager(
@@ -463,10 +465,12 @@ static bool handleHackerItem(int group, int item, unsigned long now)
   rebootConfirmed = false;
   AppMode mode = getModeForHackerItem(group, item);
 #if NOCT_FEATURE_LORA
-  if (mode == MODE_LORA)
+  if (mode == MODE_LORA || mode == MODE_LORA_SWEEP)
   {
     // Don't arm the radio yet — show the antenna-present gate first (#21).
     loraArmPending = true;
+    loraArmTarget = mode;
+    if (mode == MODE_LORA) loraView = 0;
     return true;
   }
 #endif
@@ -1029,7 +1033,7 @@ void loop()
     if (event == EV_LONG)
     {
       loraArmPending = false;
-      if (!appModeManager.switchToMode(currentMode, MODE_LORA))
+      if (!appModeManager.switchToMode(currentMode, loraArmTarget))
       {
         snprintf(toastMsg, sizeof(toastMsg), "FAIL");
         toastUntil = now + 1500;
@@ -1275,11 +1279,23 @@ void loop()
 #endif
 #if NOCT_FEATURE_LORA
     case MODE_LORA:
-      if (event == EV_SHORT)
+      if (event == EV_SHORT) // cycle the modem preset to lock onto traffic
       {
-        loraMgr.resetCounters(); // clear the ACT/PKT session tallies
-        snprintf(toastMsg, sizeof(toastMsg), "Counters reset");
+        loraMgr.nextPreset();
+        snprintf(toastMsg, sizeof(toastMsg), "%s", loraMgr.presetName());
         toastUntil = now + 1000;
+        needRedraw = true;
+      }
+      else if (event == EV_LONG) // toggle packet list <-> node table
+      {
+        loraView ^= 1;
+        needRedraw = true;
+      }
+      break;
+    case MODE_LORA_SWEEP:
+      if (event == EV_SHORT) // re-prime the sweep from the band start
+      {
+        loraMgr.beginSweep();
         needRedraw = true;
       }
       break;
@@ -1356,7 +1372,7 @@ void loop()
     display.drawSplash();
 #if NOCT_FEATURE_LORA
   else if (loraArmPending)
-    sceneManager.drawLoraArm();
+    sceneManager.drawLoraArm(loraArmTarget == MODE_LORA_SWEEP ? "SWEEP" : "Listen");
 #endif
   else if (quickMenuOpen)
   {
@@ -1483,7 +1499,11 @@ void loop()
 #if NOCT_FEATURE_LORA
     case MODE_LORA:
       loraMgr.tick();
-      sceneManager.drawLora(loraMgr);
+      sceneManager.drawLora(loraMgr, loraView);
+      break;
+    case MODE_LORA_SWEEP:
+      loraMgr.sweepTick();
+      sceneManager.drawLoraSweep(loraMgr);
       break;
 #endif
 

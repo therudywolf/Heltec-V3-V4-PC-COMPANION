@@ -76,8 +76,9 @@ public:
 
   // --- Conditional: LoRa / sub-GHz (#21) ---
 #if NOCT_FEATURE_LORA
-  void drawLora(class LoraManager &mgr);
-  void drawLoraArm(); // antenna-present confirm gate shown before entering MODE_LORA
+  void drawLora(class LoraManager &mgr, int view); // view 0=packets 1=nodes
+  void drawLoraSweep(class LoraManager &mgr);       // band RSSI spectrum
+  void drawLoraArm(const char *what); // antenna-present confirm gate
 #endif
 
   // --- Conditional: Forza ---

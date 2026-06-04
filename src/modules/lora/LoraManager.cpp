@@ -9,24 +9,59 @@ static SPIClass loraSpi(FSPI);
 static SX1262 radio =
     new Module(NOCT_LORA_NSS, NOCT_LORA_DIO1, NOCT_LORA_RST, NOCT_LORA_BUSY, loraSpi);
 
+// DIO1 fires on RX-done; the ISR just flags it and tick() does the SPI read.
+static volatile bool s_rxFlag = false;
+static void IRAM_ATTR loraRxIsr() { s_rxFlag = true; }
+
+// EU868 mesh-oriented modem presets. Meshtastic uses sync word 0x2b; its EU868
+// default channel ("LongFast") is 869.525 MHz / BW250 / SF11 / CR4-5. Meshcore
+// and most generic stacks use the private sync 0x12. Cycle these to lock on.
+const LoraPreset LoraManager::kPresets[] = {
+    {"Mesh LF", 869.525f, 250.0f, 11, 5, 0x2b}, // Meshtastic LongFast (EU868 default)
+    {"Mesh MF", 869.525f, 250.0f,  9, 5, 0x2b}, // Meshtastic MediumFast
+    {"Mesh SF", 869.525f, 250.0f,  7, 5, 0x2b}, // Meshtastic ShortFast
+    {"Core LF", 869.525f, 250.0f, 11, 5, 0x12}, // Meshcore / generic (private sync)
+    {"Raw 868", 868.000f, 125.0f,  7, 5, 0x12}, // generic LoRa
+};
+const int LoraManager::kPresetCount =
+    (int)(sizeof(kPresets) / sizeof(kPresets[0]));
+
 bool LoraManager::begin() {
   loraSpi.begin(NOCT_LORA_SCK, NOCT_LORA_MISO, NOCT_LORA_MOSI, NOCT_LORA_NSS);
-  // 868 MHz, 125 kHz BW, SF9, CR4/7, private sync, 10 dBm, 8-sym preamble,
-  // 1.8V TCXO (Heltec module has a TCXO), DC-DC regulator.
-  lastErr_ = radio.begin(NOCT_LORA_FREQ, 125.0f, 9, 7, 0x12, 10, 8, NOCT_LORA_TCXO, false);
+  const LoraPreset &p = kPresets[preset_];
+  // freq, bw, sf, cr, sync, power(dBm, RX-irrelevant), preamble=16 (Meshtastic),
+  // 1.8V TCXO (Heltec module), DC-DC regulator. CRC defaults on (Meshtastic).
+  lastErr_ = radio.begin(p.freq, p.bw, p.sf, p.cr, p.sync, 10, 16, NOCT_LORA_TCXO, false);
   ready_ = (lastErr_ == RADIOLIB_ERR_NONE);
   if (ready_) {
-    radio.setDio2AsRfSwitch(true); // Heltec SX1262 uses DIO2 as the RF switch
+    radio.setDio2AsRfSwitch(true); // Heltec SX1262 drives the RF switch off DIO2
+    radio.setPacketReceivedAction(loraRxIsr);
     radio.startReceive();
   }
-  for (int i = 0; i < kHistLen; i++) hist_[i] = -128; // prime the waterfall flat (int8 floor)
-  histHead_ = 0;
-  lastPollMs_ = millis();
+  for (int i = 0; i < LORA_SPEC_BINS; i++) spec_[i] = -128;
   return ready_;
 }
 
+void LoraManager::applyPreset() {
+  if (!ready_) return;
+  const LoraPreset &p = kPresets[preset_];
+  radio.standby();
+  radio.setFrequency(p.freq);
+  radio.setBandwidth(p.bw);
+  radio.setSpreadingFactor(p.sf);
+  radio.setCodingRate(p.cr);
+  radio.setSyncWord(p.sync);
+  radio.setPreambleLength(16);
+  radio.startReceive();
+}
+
 void LoraManager::startListen() {
-  if (ready_) radio.startReceive();
+  if (ready_) applyPreset(); // restores the listen config (e.g. after a sweep)
+}
+
+void LoraManager::nextPreset() {
+  preset_ = (preset_ + 1) % kPresetCount;
+  applyPreset();
 }
 
 void LoraManager::sleep() {
@@ -35,32 +70,110 @@ void LoraManager::sleep() {
 
 void LoraManager::tick() {
   if (!ready_) return;
-  unsigned long now = millis();
-  if (now - lastPollMs_ < 120) return; // ~8 Hz
-  lastPollMs_ = now;
+  rssi_ = radio.getRSSI(false); // instantaneous channel RSSI for the meter
 
-  // Live channel RSSI (not packet RSSI) — a simple spectrum/energy meter.
-  rssi_ = radio.getRSSI(false);
-  // Slow noise-floor estimate (rises toward quiet level, snaps down on signal).
-  if (rssi_ < floor_) floor_ = rssi_;
-  else floor_ += (rssi_ - floor_) * 0.02f;
+  if (!s_rxFlag) return;
+  s_rxFlag = false;
+  uint8_t buf[256];
+  int len = (int)radio.getPacketLength();
+  if (len > (int)sizeof(buf)) len = sizeof(buf);
+  int st = radio.readData(buf, len);
+  if (st == RADIOLIB_ERR_NONE && len > 0) {
+    recordPacket(buf, len, radio.getRSSI(), radio.getSNR());
+    packets_++;
+    lastHitMs_ = millis();
+  }
+  radio.startReceive(); // re-arm
+}
 
-  // Push into the rolling waterfall (clamp to int8 dBm range).
-  float r = rssi_;
-  if (r > 0) r = 0; else if (r < -128) r = -128;
-  hist_[histHead_] = (int8_t)r;
-  histHead_ = (histHead_ + 1) % kHistLen;
+void LoraManager::recordPacket(const uint8_t *buf, int len, float rssi, float snr) {
+  LoraPacket &pk = ring_[ringHead_];
+  pk.len = (uint16_t)len;
+  pk.rssi = (int16_t)rssi;
+  pk.snr = (int8_t)snr;
+  pk.ms = millis();
+  pk.from = pk.to = 0;
+  pk.flags = pk.chanHash = 0;
+  for (int i = 0; i < 4; i++) pk.head[i] = (i < len) ? buf[i] : 0;
+  // Meshtastic LoRa header (unencrypted): to[0..3] from[4..7] id[8..11]
+  // flags[12] channelHash[13]. Little-endian node IDs.
+  if (len >= 16) {
+    pk.to = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+            ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+    pk.from = (uint32_t)buf[4] | ((uint32_t)buf[5] << 8) |
+              ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 24);
+    pk.flags = buf[12];
+    pk.chanHash = buf[13];
+  }
+  ringHead_ = (ringHead_ + 1) % LORA_PKT_RING;
+  if (ringCount_ < LORA_PKT_RING) ringCount_++;
 
-  // Channel Activity Detection: a quick LoRa-preamble probe.
-  int cad = radio.scanChannel();
-  if (cad == RADIOLIB_LORA_DETECTED) {
-    activity_++;
-    lastHitMs_ = now;
-    // A detected preamble often means a frame is incoming — try to read it.
-    uint8_t buf[64];
-    int len = radio.readData(buf, sizeof(buf));
-    if (len > 0 || radio.getPacketLength() > 0) packets_++;
+  if (pk.from != 0) { // track unique senders (Meshtastic-looking frames)
+    int idx = findNode(pk.from);
+    if (idx < 0 && nodeCount_ < LORA_NODE_MAX) {
+      idx = nodeCount_++;
+      nodes_[idx].id = pk.from;
+      nodes_[idx].count = 0;
+    }
+    if (idx >= 0) {
+      nodes_[idx].count++;
+      nodes_[idx].rssi = (int16_t)rssi;
+      nodes_[idx].lastMs = pk.ms;
+    }
+  }
+}
+
+const LoraPacket *LoraManager::recent(int i) const {
+  if (i < 0 || i >= ringCount_) return nullptr;
+  int idx = (ringHead_ - 1 - i + LORA_PKT_RING * 2) % LORA_PKT_RING;
+  return &ring_[idx];
+}
+
+const LoraNode *LoraManager::node(int i) const {
+  if (i < 0 || i >= nodeCount_) return nullptr;
+  return &nodes_[i];
+}
+
+int LoraManager::findNode(uint32_t id) {
+  for (int i = 0; i < nodeCount_; i++)
+    if (nodes_[i].id == id) return i;
+  return -1;
+}
+
+void LoraManager::resetStats() {
+  packets_ = 0;
+  ringCount_ = 0;
+  ringHead_ = 0;
+  nodeCount_ = 0;
+}
+
+// ── Spectrum sweep ────────────────────────────────────────────────────────
+// Wide-band energy view: hop the synth across 863..870 MHz reading the
+// instantaneous RSSI at each bin. A narrow modem (BW125/SF7) keeps the RBW
+// tight; only a few bins are sampled per call so the UI stays responsive.
+void LoraManager::beginSweep() {
+  if (!ready_) return;
+  radio.standby();
+  radio.setBandwidth(125.0f);
+  radio.setSpreadingFactor(7);
+  sweepIdx_ = 0;
+  for (int i = 0; i < LORA_SPEC_BINS; i++) spec_[i] = -128;
+}
+
+void LoraManager::sweepTick() {
+  if (!ready_) return;
+  const int binsPerTick = 6;
+  for (int k = 0; k < binsPerTick; k++) {
+    float f = kBandStart + (sweepIdx_ + 0.5f) * kBinMHz;
+    radio.standby();
+    radio.setFrequency(f);
     radio.startReceive();
+    delayMicroseconds(400); // let the instantaneous-RSSI register settle
+    float r = radio.getRSSI(false);
+    if (r > 0) r = 0;
+    else if (r < -128) r = -128;
+    spec_[sweepIdx_] = (int8_t)r;
+    sweepIdx_ = (sweepIdx_ + 1) % LORA_SPEC_BINS;
   }
 }
 

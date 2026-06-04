@@ -631,7 +631,8 @@ void SceneManager::drawFans(int fanFrame, int xOff)
 
   /* FORCE LABEL_FONT (ProFont10) for everything */
   u8g2.setFont(LABEL_FONT);
-  const char *labels[] = {"CPU", "PUMP", "GPU", "CASE"};
+  // Physical mapping on this rig: cf header drives the PUMP, s1 the CPU RADiator.
+  const char *labels[] = {"PUMP", "RAD", "GPU", "CASE"};
   int rpms[] = {hw.cf, hw.s1, hw.gf, hw.s2};
   static char lineBuf[32];
   for (int i = 0; i < 4; i++)
@@ -3096,50 +3097,62 @@ static int loraRssiToH(float dbm, int gh)
   return (int)v;
 }
 
-// Antenna-present gate shown before MODE_LORA arms the SX1262 (#21). We are
-// RX-only so a missing antenna won't damage the PA, but the gate keeps "start
-// sniffing 868 MHz" an explicit, deliberate action.
-void SceneManager::drawLoraArm()
+// Antenna-present gate shown before the SX1262 is armed (#21). We are RX-only
+// so a missing antenna won't damage the PA, but the gate keeps "start sniffing
+// 868 MHz" an explicit, deliberate action. `what` names the tool being armed.
+void SceneManager::drawLoraArm(const char *what)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   u8g2.setFontMode(1);
   u8g2.setDrawColor(1);
   disp_.drawTechFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
   u8g2.setFont(VALUE_FONT);
-  disp_.drawCentered(22, "LoRa 868 MHz");
+  char t[24];
+  snprintf(t, sizeof(t), "LoRa %s", what ? what : "");
+  disp_.drawCentered(22, t);
   u8g2.setFont(LABEL_FONT);
   disp_.drawCentered(36, "ATTACH ANTENNA FIRST");
   if ((millis() / 500) % 2 == 0)
     disp_.drawCentered(48, "[HOLD]=ARM  [TAP]=BACK");
 }
 
-void SceneManager::drawLora(LoraManager &mgr)
+// Shared LoRa header: "LoRa <right>" inverted bar + a right-aligned status.
+static void drawLoraHeader(U8G2 &u8g2, const char *left, const char *right)
 {
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  u8g2.setFontMode(1);
   u8g2.setDrawColor(1);
-  unsigned long now = millis();
-
-  // --- header (self-contained, mirrors the hacker mode-header style) ---
   u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
   u8g2.setDrawColor(0);
   u8g2.setFont(LABEL_FONT);
   u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
-  u8g2.print("LoRa 868");
+  u8g2.print(left);
+  if (right && right[0])
   {
-    char rt[12];
-    if (!mgr.isReady())
-      snprintf(rt, sizeof(rt), "NO RADIO");
-    else
-    {
-      bool live = (mgr.lastHitMs() != 0) && (now - mgr.lastHitMs() < 1200);
-      snprintf(rt, sizeof(rt), "%s%ddBm", live ? "*" : "", (int)mgr.rssi());
-    }
-    int w = u8g2.getUTF8Width(rt);
+    int w = u8g2.getUTF8Width(right);
     u8g2.setCursor(NOCT_DISP_W - 2 - w, NOCT_MODE_HEADER_H - 2);
-    u8g2.print(rt);
+    u8g2.print(right);
   }
   u8g2.setDrawColor(1);
+}
+
+// LoRa LISTEN: real packet RX. view 0 = recent packets (sender/dest node + RSSI/
+// SNR + len), view 1 = unique-node table. Header shows the active modem preset +
+// live channel RSSI; "*" marks a recent receive.
+void SceneManager::drawLora(LoraManager &mgr, int view)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  unsigned long now = millis();
+
+  char hl[16], hr[14];
+  snprintf(hl, sizeof(hl), "LoRa %s", mgr.presetName());
+  if (!mgr.isReady())
+    snprintf(hr, sizeof(hr), "NO RADIO");
+  else
+  {
+    bool live = (mgr.lastHitMs() != 0) && (now - mgr.lastHitMs() < 1500);
+    snprintf(hr, sizeof(hr), "%s%d", live ? "*" : "", (int)mgr.rssi());
+  }
+  drawLoraHeader(u8g2, hl, hr);
 
   if (!mgr.isReady())
   {
@@ -3149,42 +3162,134 @@ void SceneManager::drawLora(LoraManager &mgr)
     char e[26];
     snprintf(e, sizeof(e), "err %d - check wiring", mgr.lastError());
     disp_.drawCentered(43, e);
-    drawBottomHint();
+    drawBottomHint("TAP preset  2x BACK");
     return;
   }
 
-  // --- RSSI history waterfall (1 px per sample, oldest left) ---
-  const int gx = 4;
-  const int gw = mgr.histLen();          // 120 px
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+  char s[26];
+
+  if (view == 1)
+  {
+    // -------- node table --------
+    snprintf(s, sizeof(s), "NODES %d  (SF%d)", mgr.nodeCount(), mgr.spreadingFactor());
+    u8g2.setCursor(2, 19);
+    u8g2.print(s);
+    int shown = mgr.nodeCount() < 3 ? mgr.nodeCount() : 3;
+    for (int i = 0; i < shown; i++)
+    {
+      const LoraNode *nd = mgr.node(i);
+      if (!nd) continue;
+      snprintf(s, sizeof(s), "!%08lx x%u %ddB", (unsigned long)nd->id,
+               (unsigned)nd->count, (int)nd->rssi);
+      u8g2.setCursor(2, 29 + i * 9);
+      u8g2.print(s);
+    }
+    if (mgr.nodeCount() == 0)
+    {
+      u8g2.setCursor(2, 32);
+      u8g2.print("no mesh nodes yet");
+    }
+  }
+  else
+  {
+    // -------- recent packets --------
+    snprintf(s, sizeof(s), "PKT %d  ND %d", mgr.packetCount(), mgr.nodeCount());
+    u8g2.setCursor(2, 19);
+    u8g2.print(s);
+    int shown = mgr.recentCount() < 3 ? mgr.recentCount() : 3;
+    for (int i = 0; i < shown; i++)
+    {
+      const LoraPacket *pk = mgr.recent(i);
+      if (!pk) continue;
+      if (pk->from != 0) // decoded Meshtastic header
+        snprintf(s, sizeof(s), "!%08lx %ddB", (unsigned long)pk->from, (int)pk->rssi);
+      else               // raw / non-mesh frame
+        snprintf(s, sizeof(s), "raw L%u %ddB", (unsigned)pk->len, (int)pk->rssi);
+      u8g2.setCursor(2, 29 + i * 9);
+      u8g2.print(s);
+    }
+    if (mgr.recentCount() == 0)
+    {
+      char w[24];
+      snprintf(w, sizeof(w), "listening %d.%01d..", (int)mgr.freqMhz(),
+               (int)(mgr.freqMhz() * 10) % 10);
+      u8g2.setCursor(2, 32);
+      u8g2.print(w);
+    }
+  }
+
+  u8g2.setMaxClipWindow();
+  drawBottomHint(view == 1 ? "TAP preset HOLD pkts" : "TAP preset HOLD nodes");
+}
+
+// LoRa SPECTRUM: wide-band RSSI sweep across 863..870 MHz. Each bin is a bar;
+// the moving cursor shows where the synth currently sits; the Meshtastic
+// default channel (869.5) is ticked for reference.
+void SceneManager::drawLoraSweep(LoraManager &mgr)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+
+  char hr[14];
+  if (!mgr.isReady()) snprintf(hr, sizeof(hr), "NO RADIO");
+  else snprintf(hr, sizeof(hr), "%d-%dMHz", (int)mgr.bandStart(), (int)mgr.bandEnd());
+  drawLoraHeader(u8g2, "LoRa SWEEP", hr);
+
+  if (!mgr.isReady())
+  {
+    u8g2.setFont(VALUE_FONT);
+    disp_.drawCentered(34, "RADIO FAIL");
+    drawBottomHint("2x BACK");
+    return;
+  }
+
+  const int n = mgr.specBins();          // 56
+  const int gx = 8, gw = n * 2;          // 2 px per bin -> 112 px
   const int gy = NOCT_MODE_HEADER_H + 2; // 12
-  const int gh = 26;                     // body 12..38
+  const int gh = 28;                     // 12..40
   const int gbot = gy + gh;
   disp_.drawTechFrame(gx - 2, gy - 1, gw + 4, gh + 2);
-  for (int i = 0; i < gw; i++)
+
+  for (int i = 0; i < n; i++)
   {
-    int h = loraRssiToH((float)mgr.histAt(i), gh);
-    if (h > 0)
-      u8g2.drawVLine(gx + i, gbot - h, h);
+    int h = loraRssiToH((float)mgr.specAt(i), gh);
+    if (h > 0) u8g2.drawBox(gx + i * 2, gbot - h, 2, h);
   }
-  // dotted noise-floor reference across the meter
-  int fh = loraRssiToH(mgr.floorRssi(), gh);
-  for (int x = gx; x < gx + gw; x += 3)
-    u8g2.drawPixel(x, gbot - fh);
+  // moving sample cursor
+  int cx = gx + mgr.sweepCursor() * 2;
+  u8g2.drawVLine(cx, gy - 1, gh + 2);
 
-  // --- stats row ---
+  // reference tick at the Meshtastic default channel (869.5 MHz)
+  float span = mgr.bandEnd() - mgr.bandStart();
+  if (span > 0.1f)
+  {
+    int mx = gx + (int)((869.5f - mgr.bandStart()) / span * gw);
+    for (int y = gbot - 2; y <= gbot + 1; y++) u8g2.drawPixel(mx, y);
+  }
+
+  // axis labels
+  u8g2.setFont(UNIT_FONT);
+  char lb[6];
+  snprintf(lb, sizeof(lb), "%d", (int)mgr.bandStart());
+  u8g2.setCursor(gx, gbot + 8);
+  u8g2.print(lb);
+  snprintf(lb, sizeof(lb), "%d", (int)mgr.bandEnd());
+  u8g2.setCursor(gx + gw - 14, gbot + 8);
+  u8g2.print(lb);
+  // peak readout
+  int peakIdx = 0;
+  for (int i = 1; i < n; i++) if (mgr.specAt(i) > mgr.specAt(peakIdx)) peakIdx = i;
   u8g2.setFont(LABEL_FONT);
-  char s[16];
-  snprintf(s, sizeof(s), "FLR%d", (int)mgr.floorRssi());
-  u8g2.setCursor(2, 48);
-  u8g2.print(s);
-  snprintf(s, sizeof(s), "ACT%d", mgr.activity());
-  u8g2.setCursor(50, 48);
-  u8g2.print(s);
-  snprintf(s, sizeof(s), "PKT%d", mgr.packets());
-  u8g2.setCursor(92, 48);
-  u8g2.print(s);
+  char pk[22];
+  snprintf(pk, sizeof(pk), "pk %d.%01d %ddB", (int)mgr.specFreq(peakIdx),
+           (int)(mgr.specFreq(peakIdx) * 10) % 10, (int)mgr.specAt(peakIdx));
+  int w = u8g2.getUTF8Width(pk);
+  u8g2.setCursor((NOCT_DISP_W - w) / 2, gbot + 8);
+  u8g2.print(pk);
 
-  drawBottomHint();
+  drawBottomHint("sweeping  2x BACK");
 }
 #endif // NOCT_FEATURE_LORA
 
