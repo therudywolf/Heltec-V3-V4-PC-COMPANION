@@ -98,14 +98,33 @@ To enable, set in `config.json`:
 "dashboard_stats_url": "https://dashboard.example.com/stats.json"
 ```
 
-### LM Studio status → already in the `svc` block
+### LM Studio status → `svc` block, now sourced from `pc.lmstudio_up`
 
-LM Studio is surfaced through the **existing `services` probe** (the `lmstudio`
-entry in `config.example.json`, probing the local
-`http://127.0.0.1:1234/v1/models`). That is the same machine whose
-`pc.lmstudio_up` the dashboard shows, so no new field is needed — its up/down
-already rides in `svc.list[].st`. **Nothing changed here beyond confirming the
-example config covers it.**
+LM Studio is surfaced through the **`services` probe** `svc` block (the
+`lmstudio` entry in `config.example.json`). Its up/down status, however, now
+comes from the dashboard feed's **`pc.lmstudio_up`** (`"1"` = up, `"0"` = down)
+— the **same authoritative source the dashboard shows** — and **overrides** the
+local `http://127.0.0.1:1234/v1/models` probe result.
+
+Why the change: the local probe runs from the *server* host and could not always
+reach LM Studio on the PC, so the device showed "LM Studio: down" while the
+dashboard (reading `pc.lmstudio_up`) showed it up. Making `pc.lmstudio_up` the
+source of truth removes that disagreement.
+
+* The same `GET /stats.json` fetch that builds `dock` also extracts
+  `pc.lmstudio_up` (`get_dashboard_block_async()` in `monitor.py`), parsed by the
+  pure `payload.parse_lmstudio_up()`.
+* `payload.merge_lmstudio_status()` then rewrites the `svc` entry whose
+  `id == "lmstudio"`: `"1"` → `st="up"` (local-probe latency `ms` preserved),
+  `"0"` → `st="down"` (`ms=-1`). The `svc.up` count is recomputed accordingly.
+* **Precedence:** `pc.lmstudio_up` (when present) **>** local services probe.
+  If `dashboard_stats_url` is unset/unreachable, or `pc.lmstudio_up` is
+  missing/garbage, the value is **unknown** and the local probe result is kept
+  as the fallback — no fabricated "up". (So enabling this requires
+  `dashboard_stats_url` to be set; otherwise the `lmstudio` entry behaves exactly
+  as the plain probe did.)
+* No new payload key: this only changes the existing `svc.list[].st` (+ `ms`/`up`)
+  for the `lmstudio` entry.
 
 ## Deferred (real, but intentionally not wired) + exactly what's needed
 
@@ -117,11 +136,12 @@ example config covers it.**
    directly measurable locally with `docker ps -q | wc -l` if the owner wants a
    PC-side number instead of the dashboard's.
 
-2. **Remote LM Studio (`pc.lmstudio_up`) as a distinct field** — deferred as
-   redundant. It duplicates the local `lmstudio` service probe. If the device
-   should show LM Studio status *even when the local probe can't reach it*, add a
-   tiny `lms` bool to the payload from `pc.lmstudio_up` (`parse` already lives
-   next to `parse_dashboard_stats`); not done to avoid two sources of truth.
+2. ~~**Remote LM Studio (`pc.lmstudio_up`) as a distinct field**~~ — **DONE**
+   (no longer deferred). Rather than a separate payload field, `pc.lmstudio_up`
+   now drives the existing `svc` `lmstudio` entry directly (overriding the local
+   probe — see "LM Studio status" above). This gives the device the dashboard's
+   authoritative status *even when the local probe can't reach LM Studio*, with
+   one source of truth (`pc.lmstudio_up`, probe = fallback).
 
 3. **forest block from this host** — `forest_query_url` cannot point at
    dashboard.example.com (no `/api/v1/query`). The dashboard's `/stats.json` *does*
