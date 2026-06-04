@@ -24,6 +24,9 @@
 #include "WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
 #include "modules/storage/CaptureExport.h"
+#if NOCT_FEATURE_BADUSB
+#include "modules/usb/BadUsb.h"
+#endif
 #endif
 
 #if NOCT_FEATURE_FORZA
@@ -1546,6 +1549,9 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #if NOCT_FEATURE_LORA
     else if (menuHackerGroup == HACKER_GROUP_LORA) { headerStr = STR_MENU_LORA; names = kHackerLoraModes; }
 #endif
+#if NOCT_FEATURE_BADUSB
+    else if (menuHackerGroup == HACKER_GROUP_USB) { headerStr = STR_MENU_USB; names = kHackerUsbModes; }
+#endif
     else { headerStr = STR_MENU_WIFI; names = kHackerWifiModes; }
     for (int i = 0; i < count && i < 25; i++)
     {
@@ -1586,6 +1592,10 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       items[k][sizeof(items[k]) - 1] = '\0'; k++;
 #if NOCT_FEATURE_LORA
       strncpy(items[k], STR_MENU_LORA, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
+#endif
+#if NOCT_FEATURE_BADUSB
+      strncpy(items[k], STR_MENU_USB, sizeof(items[k]) - 1);
       items[k][sizeof(items[k]) - 1] = '\0'; k++;
 #endif
     }
@@ -2827,6 +2837,38 @@ void SceneManager::drawFoxhunt(int source, int rssi, int peak, int count)
   u8g2.setMaxClipWindow();
   drawBottomHint("TAP src  HOLD reset");
 }
+
+
+#if NOCT_FEATURE_BADUSB
+// --- BadUSB: USB-HID payload runner (HOLD to fire) ---
+void SceneManager::drawBadUsb(BadUsb &bu, int sel)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  drawModeHeader(u8g2, "BadUSB", bu.busy() ? "RUNNING" : "HID");
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(2, 18);
+  u8g2.print("! types on ANY host !");
+  // selected payload
+  u8g2.setFont(VALUE_FONT);
+  char k[22];
+  snprintf(k, sizeof(k), "> %s", bu.payloadName(sel));
+  u8g2.setCursor(2, 32);
+  u8g2.print(k);
+  u8g2.setFont(LABEL_FONT);
+  if (bu.lastRunIdx() >= 0)
+  {
+    char s[24];
+    snprintf(s, sizeof(s), "last: %d steps", bu.lastSteps());
+    u8g2.setCursor(2, 45);
+    u8g2.print(s);
+  }
+  u8g2.setMaxClipWindow();
+  drawBottomHint("TAP next  HOLD=RUN");
+}
+#endif
 
 
 // --- WIFI SNIFF ---

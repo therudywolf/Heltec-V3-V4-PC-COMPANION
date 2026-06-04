@@ -76,6 +76,9 @@ public:
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
   void drawExport(class CaptureExport &cap); // pcap/csv SoftAP download page
   void drawFoxhunt(int source, int rssi, int peak, int count); // RSSI direction-finder
+#if NOCT_FEATURE_BADUSB
+  void drawBadUsb(class BadUsb &bu, int sel); // USB-HID payload runner
+#endif
 #endif
 
   // --- Conditional: LoRa / sub-GHz (#21) ---

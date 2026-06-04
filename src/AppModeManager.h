@@ -40,6 +40,9 @@ enum AppMode
   MODE_BLE_DEVICES,     // passive BLE device browser (all advertisers, by RSSI)
   MODE_EXPORT,          // pcap/csv capture export over a SoftAP web page (#24)
   MODE_FOXHUNT,         // RSSI direction-finder (WiFi/BLE source) + LED proximity
+#if NOCT_FEATURE_BADUSB
+  MODE_BADUSB,          // USB-HID keyboard injection (Ducky-lite, composite CDC+HID)
+#endif
 #endif
 #if NOCT_FEATURE_LORA
   MODE_LORA,            // SX1262 packet listener: mesh RX + node list (#21, EU868)
