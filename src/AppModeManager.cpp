@@ -20,6 +20,7 @@
 #if NOCT_FEATURE_HACKER
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
+#include "modules/storage/CaptureExport.h"
 #endif
 #if NOCT_FEATURE_LORA
 #include "modules/lora/LoraManager.h"
@@ -38,6 +39,7 @@ AppModeManager::AppModeManager(
 #if NOCT_FEATURE_HACKER
     WifiSniffManager &wifiSniff,
     BleManager &ble,
+    CaptureExport &capture,
 #endif
 #if NOCT_FEATURE_LORA
     LoraManager &lora,
@@ -56,6 +58,7 @@ AppModeManager::AppModeManager(
 #if NOCT_FEATURE_HACKER
       , wifiSniff_(wifiSniff)
       , ble_(ble)
+      , capture_(capture)
 #endif
 #if NOCT_FEATURE_LORA
       , lora_(lora)
@@ -106,6 +109,10 @@ void AppModeManager::cleanupMode(AppMode mode)
   case MODE_BLE_DEVICES:
     ble_.stopScan();
     ble_.stop();
+    WiFi.mode(WIFI_STA);
+    break;
+  case MODE_EXPORT:
+    capture_.end(); // stop SoftAP + HTTP server
     WiFi.mode(WIFI_STA);
     break;
 #endif
@@ -174,6 +181,12 @@ void AppModeManager::manageWiFiState(AppMode mode)
       WiFi.mode(WIFI_OFF);
       Serial.println("[SYS] WiFi OFF for BLE");
     }
+#if NOCT_FEATURE_MONITORING
+    net_.setSuspend(true);
+#endif
+    break;
+  case MODE_EXPORT:
+    // SoftAP is started by CaptureExport.begin(); just suspend monitoring here.
 #if NOCT_FEATURE_MONITORING
     net_.setSuspend(true);
 #endif
@@ -308,6 +321,14 @@ bool AppModeManager::initializeMode(AppMode mode
     }
     ble_.beginScan(BLE_SCAN_BASIC); // same passive scan; the scene lists every advertiser
     Serial.println("[SYS] BLE DEVICE BROWSER mode initialized");
+    return true;
+
+  case MODE_EXPORT:
+    manageWiFiState(mode);
+    wifiSniff_.stop();           // stop promiscuous; the capture ring persists
+    WiFi.scanDelete();
+    capture_.begin(wifiSniff_);  // write pcap+csv to LittleFS, raise the SoftAP
+    Serial.println("[SYS] EXPORT (SoftAP) mode initialized");
     return true;
 
   case MODE_WIFI_PROBE_SCAN:

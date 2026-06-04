@@ -21,6 +21,7 @@
 #if NOCT_FEATURE_HACKER
 #include "WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
+#include "modules/storage/CaptureExport.h"
 #endif
 
 #if NOCT_FEATURE_FORZA
@@ -2636,6 +2637,33 @@ void SceneManager::drawBleDevices(BleManager &mgr, int selected)
   char hint[20];
   snprintf(hint, sizeof(hint), "%d/%d  TAP next", selected + 1, n);
   drawBottomHint(hint);
+}
+
+
+// --- CAPTURE EXPORT (SoftAP download page, #24) ---
+void SceneManager::drawExport(CaptureExport &cap)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  drawModeHeader(u8g2, "EXPORT", cap.isActive() ? "AP UP" : "...");
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+  char s[28];
+  u8g2.setCursor(2, 19);
+  u8g2.print("WiFi: ");
+  u8g2.print(CaptureExport::apSsid());
+  u8g2.setCursor(2, 28);
+  u8g2.print("pass: ");
+  u8g2.print(CaptureExport::apPass());
+  u8g2.setCursor(2, 37);
+  u8g2.print("http://");
+  u8g2.print(cap.ip()[0] ? cap.ip() : "192.168.4.1");
+  snprintf(s, sizeof(s), "pcap %d fr / csv %d ap", cap.pcapFrames(), cap.csvAps());
+  u8g2.setCursor(2, 46);
+  u8g2.print(s);
+  u8g2.setMaxClipWindow();
+  drawBottomHint("join AP+open URL  2x BACK");
 }
 
 

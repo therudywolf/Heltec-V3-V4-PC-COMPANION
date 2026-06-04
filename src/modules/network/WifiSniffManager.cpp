@@ -36,6 +36,20 @@ void WifiSniffManager::promiscuousCb(void *buf,
     s_instance->channelActivity_[currentChannel - 1]++;
   }
 
+  // Full-frame capture for pcap export (#24): snap-limited copy into the ring.
+  {
+    CapFrame &cf = s_instance->capRing_[s_instance->capHead_];
+    cf.origLen = (uint16_t)len;
+    cf.capLen = (len < WIFISNIFF_CAP_SNAP) ? (uint16_t)len : WIFISNIFF_CAP_SNAP;
+    cf.rssi = rssi;
+    cf.channel = currentChannel;
+    memcpy(cf.data, payload, cf.capLen);
+    s_instance->capHead_ = (s_instance->capHead_ + 1) % WIFISNIFF_CAP_MAX;
+    if (s_instance->capCount_ < WIFISNIFF_CAP_MAX)
+      s_instance->capCount_++;
+    s_instance->capSeen_++;
+  }
+
   // Packet Monitor: count all frame types
   if (s_instance->mode_ == SNIFF_MODE_PACKET_MONITOR ||
       s_instance->mode_ == SNIFF_MODE_CHANNEL_ANALYZER ||
@@ -640,6 +654,14 @@ const KarmaSuspect *WifiSniffManager::getKarmaSuspect(int index) const {
   if (index < 0 || index >= karmaCount_)
     return nullptr;
   return &karma_[index];
+}
+
+const CapFrame *WifiSniffManager::getCapFrame(int index) const {
+  if (index < 0 || index >= capCount_)
+    return nullptr;
+  // index 0 = oldest, so iteration yields chronological pcap order.
+  int oldest = (capHead_ - capCount_ + WIFISNIFF_CAP_MAX * 2) % WIFISNIFF_CAP_MAX;
+  return &capRing_[(oldest + index) % WIFISNIFF_CAP_MAX];
 }
 
 #endif // NOCT_FEATURE_HACKER
