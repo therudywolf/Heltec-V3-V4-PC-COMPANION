@@ -10,10 +10,10 @@
 #include "nocturne/config.h"
 
 /* ── Menu category headers ─────────────────────────────────────────────── */
-#define STR_CAT_MONITOR "Monitor"
+#define STR_CAT_MONITOR "Monitoring"
 #define STR_CAT_HACKER  "Hacker"
 #define STR_CAT_BMW     "BMW"
-#define STR_CAT_CONFIG  "Config"
+#define STR_CAT_CONFIG  "Settings"
 #define STR_CAT_SYSTEM  "System"
 
 /* ── Submenu items ─────────────────────────────────────────────────────── */

@@ -28,7 +28,11 @@ int submenuCount(int category)
 #endif
 
   case MCAT_CONFIG:
+#if NOCT_FEATURE_MONITORING
+    return 8; // AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT, PIN
+#else
     return 7; // AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
+#endif
 
   case MCAT_SYSTEM:
 #if NOCT_FEATURE_BMW
