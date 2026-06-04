@@ -39,6 +39,7 @@ import alert_events
 import alertmanager_poll
 import claude_budget
 import forest_panel
+import services_panel
 import nvidia_smi
 import payload as payload_mod
 import prometheus_source
@@ -146,6 +147,8 @@ def load_config() -> Dict:
         # Alertmanager v2 alerts URL to POLL (shows the SAME alerts as your
         # Telegram). "" disables polling (local thresholds + webhook still work).
         "alertmanager_url": "",
+        # Service-status panel (#18): list of {id,name, http|tcp, expect?, timeout?}.
+        "services": [],
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -182,6 +185,8 @@ def load_config() -> Dict:
             out["alertmanager_url"] = data["alertmanager_url"]
         if "forest_nodes" in data and isinstance(data["forest_nodes"], list):
             out["forest_nodes"] = data["forest_nodes"]
+        if "services" in data and isinstance(data["services"], list):
+            out["services"] = data["services"]
         if "claude_live" in data:
             out["claude_live"] = bool(data["claude_live"])
         if "claude_live_interval_sec" in data:
@@ -271,6 +276,8 @@ ALERTMANAGER_URL = os.getenv("ALERTMANAGER_URL", _config.get("alertmanager_url",
 FOREST_NODES = _config.get("forest_nodes") or forest_panel.DEFAULT_NODES
 FOREST_UPDATE_INTERVAL = 30.0   # node-status poll cadence (seconds)
 ALERTMANAGER_UPDATE_INTERVAL = 20.0  # Alertmanager poll cadence (seconds)
+SERVICES = _config.get("services") or []
+SERVICES_UPDATE_INTERVAL = 30.0  # service-status probe cadence (seconds)
 TCP_HOST = os.getenv("TCP_HOST", _config["host"])
 TCP_PORT = int(os.getenv("TCP_PORT", str(_config["port"])))
 WEATHER_LAT = os.getenv("WEATHER_LAT", "55.7558")
@@ -634,6 +641,46 @@ async def get_forest_block_async(session: aiohttp.ClientSession) -> Dict[str, An
     return forest_panel.build_forest_block(nodes)
 
 
+async def _probe_one_async(session, svc):
+    """Probe one service def -> (id, name, reachable, ms). HTTP or TCP. Never raises."""
+    sid = str(svc.get("id", "?"))
+    name = str(svc.get("name", sid))
+    timeout = float(svc.get("timeout", 2))
+    t0 = time.perf_counter()
+    try:
+        url = svc.get("http")
+        if url:
+            expect = svc.get("expect")
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as r:
+                ms = (time.perf_counter() - t0) * 1000.0
+                ok = (r.status == int(expect)) if expect else (200 <= r.status < 400)
+                return sid, name, ok, ms
+        tcp = svc.get("tcp")
+        if tcp:
+            host, _, port = str(tcp).rpartition(":")
+            fut = asyncio.open_connection(host, int(port))
+            _, writer = await asyncio.wait_for(fut, timeout=timeout)
+            ms = (time.perf_counter() - t0) * 1000.0
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return sid, name, True, ms
+    except Exception:
+        return sid, name, False, None
+    return sid, name, False, None
+
+
+async def get_svc_block_async(session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Probe all configured services concurrently and build the ``svc`` block (#18)."""
+    if not SERVICES:
+        return dict(services_panel.EMPTY_SVC)
+    results = await asyncio.gather(*[_probe_one_async(session, s) for s in SERVICES])
+    wire = [services_panel.build_service(i, n, ok, ms) for (i, n, ok, ms) in results]
+    return services_panel.build_svc_block(wire)
+
+
 async def poll_alertmanager_async(session: aiohttp.ClientSession) -> None:
     """Poll the Alertmanager v2 API and feed firing alerts into the events block.
 
@@ -974,6 +1021,7 @@ _alert_state = alert_events.AlertState()
 # Forest panel: latest aggregated node-status block (built by the forest poll in
 # run() and read into every payload). Empty until the first successful scrape.
 _forest_block: Dict[str, Any] = dict(forest_panel.EMPTY_FOREST)
+_svc_block: Dict[str, Any] = dict(services_panel.EMPTY_SVC)
 
 
 def _alert_thresholds() -> Dict[str, int]:
@@ -1124,6 +1172,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "claude": _build_claude_block(claude),
         "events": _events_with_claude(claude, now),
         "forest": _forest_block,
+        "svc": _svc_block,
         "pidle": get_pc_idle_seconds(),       # PC idle seconds (device dims >10min)
         "clk": time.strftime("%H:%M"),        # PC wall clock (time-of-day)
         "sv": SERVER_VERSION,
@@ -1264,7 +1313,7 @@ async def handle_client(reader, writer):
 async def run():
     global executor, last_sent_track_key, top_procs_cache, top_procs_ram_cache
     global last_top_procs_time, last_media_time, ping_latency_ms, global_data_cache
-    global _last_sent_snapshot, _last_heartbeat_time, _forest_block
+    global _last_sent_snapshot, _last_heartbeat_time, _forest_block, _svc_block
 
     server = None
     executor = ThreadPoolExecutor(max_workers=6)
@@ -1286,6 +1335,7 @@ async def run():
     last_media_time = 0.0
     last_claude_time = 0.0
     last_forest_time = 0.0
+    last_svc_time = 0.0
     last_am_time = 0.0
     session = aiohttp.ClientSession()
 
@@ -1313,6 +1363,9 @@ async def run():
         if FOREST_QUERY_URL:
             _forest_block = await get_forest_block_async(session)
             last_forest_time = time.time()
+        if SERVICES:
+            _svc_block = await get_svc_block_async(session)
+            last_svc_time = time.time()
         if ALERTMANAGER_URL:
             await poll_alertmanager_async(session)
             last_am_time = time.time()
@@ -1379,6 +1432,13 @@ async def run():
                     _forest_block = await get_forest_block_async(session)
                 except Exception as e:
                     log_debug(f"Forest: {e}")
+
+            if SERVICES and now - last_svc_time >= SERVICES_UPDATE_INTERVAL:
+                last_svc_time = now
+                try:
+                    _svc_block = await get_svc_block_async(session)
+                except Exception as e:
+                    log_debug(f"Services: {e}")
 
             if ALERTMANAGER_URL and now - last_am_time >= ALERTMANAGER_UPDATE_INTERVAL:
                 last_am_time = now

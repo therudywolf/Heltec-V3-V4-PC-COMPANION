@@ -24,5 +24,12 @@
   "alertmanager_url": "",
 
   "_comment_forest": "Forest panel node-status scene. Set forest_query_url to any Prometheus /api/v1/query endpoint (e.g. a Grafana datasource proxy) to populate it; empty = scene shows NO NODES. Nodes + PromQL default to forest_panel.DEFAULT_NODES; override with 'forest_nodes'. See SETUP.md.",
-  "forest_query_url": ""
+  "forest_query_url": "",
+
+  "_comment_services": "Resource-status panel (#18). Each entry probes an HTTP url (up = 2xx/3xx, or status matches 'expect') OR a 'tcp':'host:port'. 'timeout' seconds. Shown as up/down on the device; empty list hides the panel.",
+  "services": [
+    { "id": "lmstudio", "name": "LM Studio", "http": "http://127.0.0.1:1234/v1/models", "timeout": 2 },
+    { "id": "monitoring", "name": "Monitoring", "http": "https://monitoring.example.com/api/health", "timeout": 3 },
+    { "id": "nocturne", "name": "Nocturne", "tcp": "127.0.0.1:8888", "timeout": 2 }
+  ]
 }
