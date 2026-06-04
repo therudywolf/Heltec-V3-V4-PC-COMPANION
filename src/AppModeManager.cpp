@@ -3,7 +3,9 @@
  * Conditional compilation via NOCT_FEATURE_* flags.
  */
 #include "AppModeManager.h"
+#if NOCT_FEATURE_BMW
 #include "modules/car/BmwManager.h"
+#endif
 #include "nocturne/config.h"
 #include <Arduino.h>
 #include <WiFi.h>
@@ -21,19 +23,24 @@
 #endif
 
 AppModeManager::AppModeManager(
-    BmwManager &bmw
+#if NOCT_FEATURE_BMW
+    BmwManager &bmw,
+#endif
 #if NOCT_FEATURE_MONITORING
-    , NetManager &net
+    NetManager &net,
 #endif
 #if NOCT_FEATURE_FORZA
-    , ForzaManager &forza
+    ForzaManager &forza,
 #endif
 #if NOCT_FEATURE_HACKER
-    , WifiSniffManager &wifiSniff
-    , BleManager &ble
+    WifiSniffManager &wifiSniff,
+    BleManager &ble,
 #endif
-)
-    : bmw_(bmw)
+    int reserved)
+    : reserved_(reserved)
+#if NOCT_FEATURE_BMW
+      , bmw_(bmw)
+#endif
 #if NOCT_FEATURE_MONITORING
       , net_(net)
 #endif
@@ -45,15 +52,18 @@ AppModeManager::AppModeManager(
       , ble_(ble)
 #endif
 {
+  (void)reserved_;
 }
 
 void AppModeManager::cleanupMode(AppMode mode)
 {
   switch (mode)
   {
+#if NOCT_FEATURE_BMW
   case MODE_BMW_ASSISTANT:
     bmw_.end();
     break;
+#endif
   case MODE_CHARGE_ONLY:
     break;
 #if NOCT_FEATURE_MONITORING
@@ -98,7 +108,9 @@ void AppModeManager::manageWiFiState(AppMode mode)
 {
   switch (mode)
   {
+#if NOCT_FEATURE_BMW
   case MODE_BMW_ASSISTANT:
+#endif
   case MODE_CHARGE_ONLY:
     if (WiFi.getMode() != WIFI_OFF)
     {
@@ -184,6 +196,7 @@ bool AppModeManager::initializeMode(AppMode mode
 {
   switch (mode)
   {
+#if NOCT_FEATURE_BMW
   case MODE_BMW_ASSISTANT:
     manageWiFiState(mode);
     {
@@ -196,6 +209,7 @@ bool AppModeManager::initializeMode(AppMode mode
     bmw_.begin();
     Serial.println("[SYS] BMW Assistant mode initialized");
     return true;
+#endif
 
   case MODE_CHARGE_ONLY:
     WiFi.disconnect(true);

@@ -22,14 +22,20 @@ int submenuCount(int category)
     return HACKER_GROUP_COUNT; // WiFi, BLE
 #endif
 
+#if NOCT_FEATURE_BMW
   case MCAT_BMW:
     return 2; // BMW Assistant, BMW Demo
+#endif
 
   case MCAT_CONFIG:
     return 7; // AUTO, FLIP, GLITCH, LED, DIM, CONTRAST, TIMEOUT
 
   case MCAT_SYSTEM:
+#if NOCT_FEATURE_BMW
     return 5; // Demo toggle, REBOOT, CHARGE ONLY, POWER OFF, VERSION
+#else
+    return 4; // REBOOT, CHARGE ONLY, POWER OFF, VERSION
+#endif
 
   default:
     return 1;
@@ -74,7 +80,7 @@ AppMode getModeForHackerItem(int group, int item)
     case 10: return MODE_WIFI_SIGNAL_STRENGTH;
     case 11: return MODE_WIFI_RAW_CAPTURE;
     case 12: return MODE_WIFI_AP_STA;
-    default: return MODE_BMW_ASSISTANT;
+    default: return NOCT_DEFAULT_MODE;
     }
   }
   if (group == HACKER_GROUP_BLE)
@@ -82,12 +88,12 @@ AppMode getModeForHackerItem(int group, int item)
     switch (item)
     {
     case 0: return MODE_BLE_SCAN;
-    default: return MODE_BMW_ASSISTANT;
+    default: return NOCT_DEFAULT_MODE;
     }
   }
 #else
   (void)group;
   (void)item;
 #endif
-  return MODE_BMW_ASSISTANT;
+  return NOCT_DEFAULT_MODE;
 }

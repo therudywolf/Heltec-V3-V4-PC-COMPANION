@@ -20,10 +20,14 @@
 #include "MenuHandler.h"
 #include "BootAnim.h"        // nocturne-core (lib src root)
 #include "DisplayEngine.h"   // nocturne-core
+#if NOCT_FEATURE_BMW
 #include "modules/display/DisplayManager.h"
+#endif
 #include "modules/display/SceneManager.h"
+#if NOCT_FEATURE_BMW
 #include "modules/car/BmwManager.h"
 #include "modules/car/ObdClient.h"
+#endif
 #include "BatteryManager.h"  // nocturne-core
 #include "nocturne/Types.h"
 #include "nocturne/config.h"
@@ -44,11 +48,15 @@
 // Globals
 // ---------------------------------------------------------------------------
 DisplayEngine display(NOCT_RST_PIN, NOCT_SDA_PIN, NOCT_SCL_PIN);
+#if NOCT_FEATURE_BMW
 BmwManager bmwManager;
 ObdClient obdClient;
+#endif
 AppState state;
 SceneManager sceneManager(display, state);
+#if NOCT_FEATURE_BMW
 DisplayManager displayManager(display, bmwManager);
+#endif
 BatteryManager batteryManager;
 
 #if NOCT_FEATURE_MONITORING
@@ -63,18 +71,20 @@ WifiSniffManager wifiSniffManager;
 #endif
 
 AppModeManager appModeManager(
-    bmwManager
+#if NOCT_FEATURE_BMW
+    bmwManager,
+#endif
 #if NOCT_FEATURE_MONITORING
-    , netManager
+    netManager,
 #endif
 #if NOCT_FEATURE_FORZA
-    , forzaManager
+    forzaManager,
 #endif
 #if NOCT_FEATURE_HACKER
-    , wifiSniffManager
-    , bleManager
+    wifiSniffManager,
+    bleManager,
 #endif
-);
+    0);
 
 InputSystem input(NOCT_BUTTON_PIN);
 IntervalTimer guiTimer(NOCT_REDRAW_INTERVAL_MS);
@@ -106,12 +116,14 @@ unsigned long lastMenuEventTime = 0;
 static char toastMsg[20] = "";
 static unsigned long toastUntil = 0;
 
+#if NOCT_FEATURE_BMW
 #define BMW_ACTION_COUNT 12
 static int bmwActionIndex = 0;
+#endif
 
 static bool needRedraw = true;
 
-AppMode currentMode = MODE_BMW_ASSISTANT;
+AppMode currentMode = NOCT_DEFAULT_MODE;
 
 #if NOCT_FEATURE_MONITORING
 int currentScene = 0;
@@ -352,7 +364,15 @@ void setup()
   randomSeed(esp_random());
 
 #if NOCT_FEATURE_MONITORING
+#ifdef WIFI_NETWORKS
+  // Multi-network auto-failover (#2): connect to the strongest reachable of the
+  // list, reconnect across them on drop. Defined in secrets.h; falls back to the
+  // single WIFI_SSID/WIFI_PASS when absent (e.g. CI stub).
+  static const NetManager::WifiCred kWifiNets[] = WIFI_NETWORKS;
+  netManager.begin(kWifiNets, sizeof(kWifiNets) / sizeof(kWifiNets[0]));
+#else
   netManager.begin(WIFI_SSID, WIFI_PASS);
+#endif
   netManager.setServer(PC_IP, TCP_PORT);
   currentMode = MODE_NORMAL;
 #else
@@ -360,7 +380,7 @@ void setup()
   WiFi.mode(WIFI_OFF);
 #endif
 
-#if NOCT_OBD_ENABLED
+#if NOCT_OBD_ENABLED && NOCT_FEATURE_BMW
   obdClient.begin(NOCT_OBD_TX_PIN, NOCT_OBD_RX_PIN);
   obdClient.setDataCallback(
       [](bool c, int r, int co, int o) { bmwManager.setObdData(c, r, co, o); });
@@ -368,7 +388,7 @@ void setup()
 
   batteryManager.update(state);
 
-#if !NOCT_FEATURE_MONITORING
+#if !NOCT_FEATURE_MONITORING && NOCT_FEATURE_BMW
   appModeManager.switchToMode(currentMode, MODE_BMW_ASSISTANT);
   {
     Preferences p;
@@ -447,6 +467,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
   }
 #endif
 
+#if NOCT_FEATURE_BMW
   if (cat == MCAT_BMW)
   {
     quickMenuOpen = false;
@@ -479,6 +500,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       prefs.end();
     return true;
   }
+#endif
 
   if (cat == MCAT_CONFIG)
   {
@@ -556,7 +578,9 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
 
   if (cat == MCAT_SYSTEM)
   {
-    if (item == 0)
+    int k = 0;
+#if NOCT_FEATURE_BMW
+    if (item == k++)
     {
       Preferences p; p.begin("nocturne", false);
       bool demo = p.getBool("bmw_demo", false);
@@ -567,7 +591,8 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       toastUntil = now + 1200;
       return true;
     }
-    if (item == 1)
+#endif
+    if (item == k++)
     {
       if (!rebootConfirmed)
       { rebootConfirmed = true; rebootConfirmTime = now; }
@@ -575,7 +600,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       { rebootConfirmed = false; esp_restart(); }
       return true;
     }
-    if (item == 2)
+    if (item == k++)
     {
       quickMenuOpen = false;
       rebootConfirmed = false;
@@ -586,7 +611,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       }
       return true;
     }
-    if (item == 3)
+    if (item == k++)
     {
       quickMenuOpen = false;
       rebootConfirmed = false;
@@ -594,7 +619,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       esp_deep_sleep_start();
       return true;
     }
-    if (item == 4)
+    if (item == k++)
     {
       snprintf(toastMsg, sizeof(toastMsg), "v" NOCTURNE_VERSION);
       toastUntil = now + 2000;
@@ -625,8 +650,10 @@ void loop()
   unsigned long now = millis();
 
   // ── Background tasks ────────────────────────────────────────────────
+#if NOCT_FEATURE_BMW
   if (currentMode == MODE_BMW_ASSISTANT)
     bmwManager.tick();
+#endif
 
 #if NOCT_FEATURE_MONITORING
   bool pcMonitoringActive = (currentMode == MODE_NORMAL && splashDone && !quickMenuOpen);
@@ -734,7 +761,11 @@ void loop()
   if (event == EV_DOUBLE && !quickMenuOpen)
   {
 #if NOCT_FEATURE_MONITORING
-    if (currentMode != MODE_NORMAL && currentMode != MODE_BMW_ASSISTANT && currentMode != MODE_CHARGE_ONLY)
+    if (currentMode != MODE_NORMAL && currentMode != MODE_CHARGE_ONLY
+#if NOCT_FEATURE_BMW
+        && currentMode != MODE_BMW_ASSISTANT
+#endif
+       )
       appModeManager.exitToNormal(currentMode);
 #endif
     quickMenuOpen = true;
@@ -782,6 +813,7 @@ void loop()
     else if (settings.ledEnabled) digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   }
 #endif
+#if NOCT_FEATURE_BMW
   else if (currentMode == MODE_BMW_ASSISTANT)
   {
     if (bmwManager.isObdConnected() && bmwManager.getObdRpm() >= 5500)
@@ -791,6 +823,7 @@ void loop()
     }
     else if (settings.ledEnabled) digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   }
+#endif
   else
   {
     if (settings.ledEnabled) digitalWrite(NOCT_LED_ALERT_PIN, LOW);
@@ -912,6 +945,7 @@ void loop()
     // ── Mode-specific input ───────────────────────────────────────────
     switch (currentMode)
     {
+#if NOCT_FEATURE_BMW
     case MODE_BMW_ASSISTANT:
       if (event == EV_SHORT)
       { bmwActionIndex = (bmwActionIndex + 1) % BMW_ACTION_COUNT; needRedraw = true; }
@@ -946,6 +980,7 @@ void loop()
         needRedraw = true;
       }
       break;
+#endif
 
     case MODE_CHARGE_ONLY:
       break;
@@ -1078,7 +1113,11 @@ void loop()
     applyContrast(settings.displayContrast);
 
   bool displayManagerSent = false;
-  if (!(currentMode == MODE_BMW_ASSISTANT && !quickMenuOpen))
+  bool bmwHoldsBuffer = false;
+#if NOCT_FEATURE_BMW
+  bmwHoldsBuffer = (currentMode == MODE_BMW_ASSISTANT && !quickMenuOpen);
+#endif
+  if (!bmwHoldsBuffer)
     display.clearBuffer();
 
   if (!splashDone)
@@ -1100,12 +1139,14 @@ void loop()
       sceneManager.drawChargeOnlyScreen(state.batteryPct, state.isCharging, state.batteryVoltage);
       break;
 
+#if NOCT_FEATURE_BMW
     case MODE_BMW_ASSISTANT:
 #if NOCT_OBD_ENABLED
       if (obdClient.isEnabled()) obdClient.tick();
 #endif
       displayManagerSent = displayManager.update(now);
       break;
+#endif
 
 #if NOCT_FEATURE_MONITORING
     case MODE_NORMAL:

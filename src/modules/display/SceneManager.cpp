@@ -7,7 +7,9 @@
 #include "nocturne/config.h"
 #include "nocturne/strings.h"
 #include "MenuHandler.h"
+#if NOCT_FEATURE_BMW
 #include "BmwManager.h"
+#endif
 #include <Arduino.h>
 #include <WiFi.h>
 #include <math.h>
@@ -1435,7 +1437,9 @@ static const char *getCategoryName(int cat)
 #if NOCT_FEATURE_HACKER
   if (cat == MCAT_HACKER) return STR_CAT_HACKER;
 #endif
+#if NOCT_FEATURE_BMW
   if (cat == MCAT_BMW) return STR_CAT_BMW;
+#endif
   if (cat == MCAT_CONFIG) return STR_CAT_CONFIG;
   if (cat == MCAT_SYSTEM) return STR_CAT_SYSTEM;
   return "???";
@@ -1514,6 +1518,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     }
     else
 #endif
+#if NOCT_FEATURE_BMW
     if (menuCategory == MCAT_BMW)
     {
       strncpy(items[0], STR_MENU_BMW_ASSIST, sizeof(items[0]) - 1);
@@ -1521,7 +1526,9 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       items[0][sizeof(items[0]) - 1] = '\0';
       items[1][sizeof(items[1]) - 1] = '\0';
     }
-    else if (menuCategory == MCAT_CONFIG)
+    else
+#endif
+    if (menuCategory == MCAT_CONFIG)
     {
       if (!carouselOn)
         snprintf(items[0], sizeof(items[0]), "AUTO: OFF");
@@ -1544,19 +1551,27 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     }
     else if (menuCategory == MCAT_SYSTEM)
     {
-      strncpy(items[0], STR_MENU_DEMO, sizeof(items[0]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
+      int k = 0;
+#if NOCT_FEATURE_BMW
+      strncpy(items[k], STR_MENU_DEMO, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
+#endif
       if (rebootConfirmed)
-        snprintf(items[1], sizeof(items[1]), "REBOOT [OK]");
+        snprintf(items[k], sizeof(items[k]), "REBOOT [OK]");
       else
-        strncpy(items[1], STR_MENU_REBOOT, sizeof(items[1]) - 1);
-      items[1][sizeof(items[1]) - 1] = '\0';
-      strncpy(items[2], STR_MENU_CHARGE_ONLY, sizeof(items[2]) - 1);
-      strncpy(items[3], STR_MENU_POWER_OFF, sizeof(items[3]) - 1);
-      strncpy(items[4], STR_MENU_VERSION, sizeof(items[4]) - 1);
-      items[2][sizeof(items[2]) - 1] = '\0';
-      items[3][sizeof(items[3]) - 1] = '\0';
-      items[4][sizeof(items[4]) - 1] = '\0';
+        strncpy(items[k], STR_MENU_REBOOT, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
+      strncpy(items[k], STR_MENU_CHARGE_ONLY, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
+      strncpy(items[k], STR_MENU_POWER_OFF, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
+      strncpy(items[k], STR_MENU_VERSION, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
     }
   }
   if (count <= 0)
@@ -2012,6 +2027,7 @@ void SceneManager::drawDaemon(unsigned long bootTime, bool wifiConnected,
 #define BMW_ROW2_Y 12
 #define BMW_ROW3_Y 22
 
+#if NOCT_FEATURE_BMW
 void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
@@ -2120,6 +2136,7 @@ void SceneManager::drawBmwAssistant(BmwManager &bmw, int selectedActionIndex)
 
   disp_.drawGreebles();
 }
+#endif // NOCT_FEATURE_BMW
 
 // ===========================================================================
 // CONDITIONAL FEATURE METHODS (extracted from WolfPet branch)

@@ -10,6 +10,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
+#include <WiFiMulti.h>
 
 
 struct AppState;
@@ -17,7 +18,14 @@ struct AppState;
 class NetManager {
 public:
   NetManager();
+
+  /** A WiFi network candidate for auto-failover (#2). */
+  struct WifiCred { const char *ssid; const char *pass; };
+
   void begin(const char *ssid, const char *pass);
+  /** Register multiple networks; connects to the strongest reachable one and
+   * auto-fails-over between them (WiFiMulti). */
+  void begin(const WifiCred *nets, size_t count);
   void setServer(const char *ip, uint16_t port);
   void tick(unsigned long now);
 
@@ -66,6 +74,8 @@ private:
   bool firstDataReceived_;
   bool searchMode_;
   bool suspended_ = false;
+  bool haveNetworks_ = false;
+  WiFiMulti wifiMulti_;
   int rssi_;
   int lastSentScreen_;
 };

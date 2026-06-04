@@ -134,6 +134,8 @@
  * ESP32 stack also auto-reconnects on its own (setAutoReconnect, see NetManager),
  * so this only fires when that gets stuck. 30s was far too slow to recover. */
 #define NOCT_WIFI_RETRY_INTERVAL_MS 8000
+/* WiFiMulti per-attempt connect timeout (initial connect + each failover scan). */
+#define NOCT_WIFI_CONNECT_TIMEOUT_MS 5000
 
 /* ── Timing ────────────────────────────────────────────────────────────── */
 #define NOCT_SPLASH_MS 2500
