@@ -356,7 +356,7 @@ IT8688E_PREFIX = "/lpc/it8688e/0"
 stop_requested = False
 executor: Optional[ThreadPoolExecutor] = None
 _server_thread_holder: List[Optional[threading.Thread]] = [None]  # for Restart
-weather_cache: Dict = {"temp": 0, "desc": "", "icon": 0}
+weather_cache: Dict = {"temp": 0, "desc": "", "icon": 0, "forecast": []}
 _weather_first_ok = False
 tcp_clients: List = []
 client_screens: Dict = {}
@@ -382,6 +382,11 @@ global_data_cache: Dict = {
 cache_lock: Optional[asyncio.Lock] = None
 _last_sent_snapshot: Optional[Tuple] = None
 _last_heartbeat_time: float = 0.0
+# Device-requested forced refreshes (set by inbound "cmd:claude" / "cmd:status"
+# in handle_client, honored once by the next run() poll iteration). Plain bools
+# are safe: asyncio is single-threaded, so set and check never truly race.
+_force_claude_refresh: bool = False
+_force_status_refresh: bool = False
 
 
 async def cache_set(key: str, value: Any) -> None:
@@ -719,7 +724,14 @@ async def get_weather_async(session: aiohttp.ClientSession) -> Dict:
         cur = data.get("current") or {}
         temp = int(cur.get("temperature_2m", 0) or 0)
         code = int(cur.get("weather_code", 0) or 0)
-        weather_cache = {"temp": temp, "desc": _weather_desc_from_code(code)[:20], "icon": code}
+        # Compact <=5-day daily forecast: each entry [tmin, tmax, wmocode] (ints).
+        forecast = weather_mod.parse_daily_forecast(data, days=5)
+        weather_cache = {
+            "temp": temp,
+            "desc": _weather_desc_from_code(code)[:20],
+            "icon": code,
+            "forecast": forecast,
+        }
         _weather_first_ok = True
         return weather_cache
     except Exception as e:
@@ -1129,6 +1141,8 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
     w = weather  # (kept identical to prior weather-cache selection, which was a no-op)
     wt_val = w.get("temp", 0)
     wd_val = (w.get("desc") or "")[:20]
+    # Compact daily forecast: up to 5 entries, each [tmin, tmax, wmocode] (ints).
+    wf_val = (w.get("forecast") or [])[:5]
     ram_used_f = round(float(hw.get("ru", 0)), 1)
     ram_total_f = round(float(hw.get("ra", 0)), 1)
     media_status = media.get("media_status", "PAUSED")
@@ -1164,7 +1178,7 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "mb_sys": int(hw.get("mb_sys", 0)), "mb_vsoc": int(hw.get("mb_vsoc", 0)),
         "mb_vrm": int(hw.get("mb_vrm", 0)), "mb_chipset": int(hw.get("mb_chipset", 0)),
         "dr": disk[0], "dw": disk[1],
-        "wt": wt_val, "wd": wd_val, "wi": int(w.get("icon", 0)),
+        "wt": wt_val, "wd": wd_val, "wi": int(w.get("icon", 0)), "wf": wf_val,
         "tp": top_procs, "tr": top_procs_ram,
         "art": media.get("art", ""), "trk": media.get("trk", ""),
         "mp": media.get("play", False), "idle": media.get("idle", False),
@@ -1293,6 +1307,17 @@ async def handle_client(reader, writer):
                             client_screens[writer] = int(line.split(":", 1)[1])
                         except (ValueError, IndexError):
                             pass
+                    elif line == "cmd:claude":
+                        # Device asked to refresh the Claude-usage block ASAP; the
+                        # next run() poll iteration honors this flag (see below).
+                        global _force_claude_refresh
+                        _force_claude_refresh = True
+                        log_info(f"cmd:claude from {addr}: forcing Claude refresh")
+                    elif line == "cmd:status":
+                        # Device asked to refresh services/forest status blocks.
+                        global _force_status_refresh
+                        _force_status_refresh = True
+                        log_info(f"cmd:status from {addr}: forcing status refresh")
             except UnicodeDecodeError:
                 client_buffers[writer] = ""
     except Exception as e:
@@ -1314,6 +1339,7 @@ async def run():
     global executor, last_sent_track_key, top_procs_cache, top_procs_ram_cache
     global last_top_procs_time, last_media_time, ping_latency_ms, global_data_cache
     global _last_sent_snapshot, _last_heartbeat_time, _forest_block, _svc_block
+    global _force_claude_refresh, _force_status_refresh
 
     server = None
     executor = ThreadPoolExecutor(max_workers=6)
@@ -1375,6 +1401,20 @@ async def run():
     try:
         while not stop_requested:
             now = time.time()
+
+            # Honor device-requested forced refreshes (inbound cmd:claude /
+            # cmd:status). Zero the relevant last-poll timestamps so the existing
+            # interval checks below fire this iteration; the refreshed block then
+            # rides out on the very next payload. Flags are cleared immediately so
+            # each command triggers exactly one refresh.
+            if _force_claude_refresh:
+                _force_claude_refresh = False
+                last_claude_time = 0.0
+            if _force_status_refresh:
+                _force_status_refresh = False
+                last_forest_time = 0.0
+                last_svc_time = 0.0
+
             if now - last_lhm_time >= POLL_INTERVAL:
                 last_lhm_time = now
                 try:

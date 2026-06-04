@@ -97,6 +97,82 @@ def test_payload_has_all_blocks(server):
     assert "forest" in p and isinstance(p["forest"], dict)
     assert "events" in p and isinstance(p["events"], dict)
     assert "sv" in p  # server version
+    # Compact weather forecast key always present (list; [] when no daily data).
+    assert "wf" in p and isinstance(p["wf"], list)
+    for entry in p["wf"]:
+        assert isinstance(entry, list) and len(entry) == 3
+        assert all(isinstance(v, int) for v in entry)
+
+
+def test_inbound_refresh_commands_accepted(server):
+    """The device can send cmd:claude / cmd:status without the server dropping
+    the client or wedging: after each command the server still serves a fresh,
+    valid payload to a new connection (the firmware reconnects per session)."""
+    host, port = server
+    # Send each command on its own short-lived connection (mirrors the firmware's
+    # connect -> HELO -> read loop), then confirm the server is still healthy.
+    for cmd in (b"cmd:claude\n", b"cmd:status\n"):
+        with socket.create_connection((host, port), timeout=3) as c:
+            c.sendall(b"HELO\n")
+            c.sendall(cmd)
+            c.settimeout(5)
+            buf = b""
+            deadline = time.time() + 8.0
+            while b"\n" not in buf and time.time() < deadline:
+                buf += c.recv(4096)
+            assert b"\n" in buf, f"no payload after {cmd!r}"
+            json.loads(buf.split(b"\n", 1)[0].decode("utf-8"))
+        # A subsequent fresh client still gets a valid payload -> server healthy.
+        json.loads(json.dumps(_read_one_payload(host, port)))
+
+
+def test_inbound_refresh_commands_set_flags():
+    """Unit-level, deterministic check of the command parsing in handle_client:
+    feed the two command lines through a fake reader/writer and assert the
+    module-level force-refresh flags flip on (no live run() loop to race)."""
+    import asyncio
+
+    import monitor
+
+    class _FakeReader:
+        def __init__(self, chunks):
+            self._chunks = list(chunks)
+
+        async def read(self, _n):
+            await asyncio.sleep(0)
+            return self._chunks.pop(0) if self._chunks else b""
+
+    class _FakeWriter:
+        def get_extra_info(self, _k):
+            return ("127.0.0.1", 0)
+
+        def is_closing(self):
+            return False
+
+        def write(self, _data):
+            pass
+
+        async def drain(self):
+            await asyncio.sleep(0)
+
+        def close(self):
+            pass
+
+        async def wait_closed(self):
+            await asyncio.sleep(0)
+
+    async def _drive():
+        monitor._force_claude_refresh = False
+        monitor._force_status_refresh = False
+        reader = _FakeReader([b"cmd:claude\ncmd:status\n", b""])
+        writer = _FakeWriter()
+        # cache_lock may be None outside run(); cache_snapshot tolerates that.
+        await monitor.handle_client(reader, writer)
+        return monitor._force_claude_refresh, monitor._force_status_refresh
+
+    claude_flag, status_flag = asyncio.run(_drive())
+    assert claude_flag is True, "cmd:claude did not set _force_claude_refresh"
+    assert status_flag is True, "cmd:status did not set _force_status_refresh"
 
 
 def test_claude_block_shape(server):
