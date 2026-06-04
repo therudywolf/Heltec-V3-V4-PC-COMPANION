@@ -49,10 +49,9 @@ throttle/intake) and add **DTC read (mode 03) / clear (mode 04)**.
 Owner wants to **re-stand-up a dedicated monitoring server** (as existed before)
 AND aggregate node status in monitor.py for the device.
 
-- **dashboard.example.com is text/hierarchical/monospace/mono** → maps 1:1 to 128×64.
-  3 nodes: Forestserver (Debian) / PC-Rudywolf (Windows) / Forestrouter
-  (Keenetic) + VPN handshakes + game servers; status `●/—`, labels left, values
-  right.
+- **The monitoring dashboard is text/hierarchical/monospace/mono** → maps 1:1 to 128×64.
+  Example nodes: a Linux server / a Windows PC / a router + VPN handshakes + game
+  servers; status `●/—`, labels left, values right.
 - **Device side:** new "Forest" scene set (one screen per node + a summary),
   rendered from a compact `forest` payload block (same pattern as `claude`).
 - **Server side (two parts):**
@@ -60,7 +59,7 @@ AND aggregate node status in monitor.py for the device.
      Prometheus / SSH / API) into the `forest` block. Owner chose "aggregate in
      monitor.py".
   2. **Separate monitoring server**: stand up the dedicated dashboard service
-     again (the dashboard.example.com-style panel) — its own repo/service, exposing a
+     again (the monitoring-style panel) — its own repo/service, exposing a
      JSON endpoint that both the web panel and monitor.py consume. Scope/host TBD
      with owner (likely Debian node, Prometheus-backed).
 

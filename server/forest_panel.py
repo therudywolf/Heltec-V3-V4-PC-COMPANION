@@ -2,9 +2,9 @@
 """
 Forest panel aggregation for NOCTURNE_OS.
 
-Duplicates the dashboard.example.com node dashboard onto the device: a compact status
-view of several monitored nodes (e.g. Forestserver/Debian, PC/Windows,
-Forestrouter/Keenetic). Each node is scraped from its own Prometheus / exporter
+A compact node-status dashboard on the device: a status view of several monitored
+nodes (e.g. a Linux server, a Windows PC, a router). Each node is scraped from its
+own Prometheus / exporter
 endpoint; this module turns the scraped metrics into a small ``forest`` payload
 block the firmware renders as node-status scenes.
 
@@ -97,26 +97,26 @@ def build_forest_block(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"n": len(wire), "up": up, "nodes": wire}
 
 
-# Default node roster (matches the dashboard.example.com panel). Each node has a set of
-# PromQL expressions for cpu/ram/disk; monitor.py runs them against the Grafana
-# datasource-proxy query API and feeds the results to build_node. Overridable via
-# config.json "forest_nodes". Verified targets on dashboard.example.com:
-#   node_exporter job="node" instance="forestserver"
-#   windows_exporter job="integrations/windows_exporter" instance="PC-RUDYWOLF"
+# Default node roster — GENERIC EXAMPLE. Put your REAL nodes in config.json
+# "forest_nodes" (kept out of the repo). Each node has cpu/ram/disk PromQL run
+# against forest_query_url (any Prometheus-compatible /api/v1/query, e.g. a
+# Grafana datasource proxy). Example targets:
+#   node_exporter     instance="myserver"
+#   windows_exporter  instance="MY-PC"
 DEFAULT_NODES: List[Dict[str, Any]] = [
     {
-        "id": "srv", "name": "Forestserver",
-        "cpu": '100-(avg(rate(node_cpu_seconds_total{mode="idle",instance="forestserver"}[2m]))*100)',
-        "ram": '100*(1-node_memory_MemAvailable_bytes{instance="forestserver"}/node_memory_MemTotal_bytes{instance="forestserver"})',
-        "disk": '100*(1-node_filesystem_avail_bytes{instance="forestserver",mountpoint="/"}/node_filesystem_size_bytes{instance="forestserver",mountpoint="/"})',
+        "id": "srv", "name": "Server",
+        "cpu": '100-(avg(rate(node_cpu_seconds_total{mode="idle",instance="myserver"}[2m]))*100)',
+        "ram": '100*(1-node_memory_MemAvailable_bytes{instance="myserver"}/node_memory_MemTotal_bytes{instance="myserver"})',
+        "disk": '100*(1-node_filesystem_avail_bytes{instance="myserver",mountpoint="/"}/node_filesystem_size_bytes{instance="myserver",mountpoint="/"})',
     },
     {
-        "id": "pc", "name": "PC-Rudywolf",
-        # PC scrapes via Grafana Agent at a longer interval than the server's
-        # node_exporter, so the idle rate needs a wider [5m] window than [2m].
-        "cpu": '100-(avg(rate(windows_cpu_time_total{mode="idle",instance="PC-RUDYWOLF"}[5m]))*100)',
-        "ram": '100*(1-windows_os_physical_memory_free_bytes{instance="PC-RUDYWOLF"}/windows_cs_physical_memory_bytes{instance="PC-RUDYWOLF"})',
-        "disk": '100*(1-windows_logical_disk_free_bytes{instance="PC-RUDYWOLF",volume="C:"}/windows_logical_disk_size_bytes{instance="PC-RUDYWOLF",volume="C:"})',
+        "id": "pc", "name": "My PC",
+        # windows_exporter often scrapes at a longer interval than node_exporter,
+        # so the idle rate needs a wider [5m] window than [2m].
+        "cpu": '100-(avg(rate(windows_cpu_time_total{mode="idle",instance="MY-PC"}[5m]))*100)',
+        "ram": '100*(1-windows_os_physical_memory_free_bytes{instance="MY-PC"}/windows_cs_physical_memory_bytes{instance="MY-PC"})',
+        "disk": '100*(1-windows_logical_disk_free_bytes{instance="MY-PC",volume="C:"}/windows_logical_disk_size_bytes{instance="MY-PC",volume="C:"})',
     },
 ]
 

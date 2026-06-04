@@ -27,7 +27,7 @@ OAUTH_BETA = "oauth-2025-04-20"
 # OAuth (Pro/Max) tokens are scoped to Claude Code; the API expects the CLI's
 # system prompt on the request, otherwise it rejects the token.
 SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude."
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"   # cheapest; matches the forestserver bot
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"   # cheapest; matches the reference Telegram bot
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"   # Claude Code OAuth client
 USER_AGENT = "claude-code/2.1.5"
 REFRESH_SKEW = 120   # refresh if the token expires within this many seconds
@@ -52,7 +52,7 @@ def read_oauth_token(base_dir: Optional[str] = None) -> Optional[str]:
 
 def _refresh_access_token(refresh_token: str, timeout: int = 30) -> Optional[Dict[str, Any]]:
     """Exchange a refresh_token for a fresh access token (same flow as Claude Code
-    and the forestserver bot). Returns the token JSON or None. Never raises."""
+    and the reference Telegram bot). Returns the token JSON or None. Never raises."""
     if not refresh_token:
         return None
     body = json.dumps({
@@ -74,7 +74,7 @@ def _refresh_access_token(refresh_token: str, timeout: int = 30) -> Optional[Dic
 def get_token(base_dir: Optional[str] = None) -> Optional[str]:
     """Return a VALID access token, refreshing (and writing back) if it's expired
     or within REFRESH_SKEW of expiry — so the device's Claude never goes stale the
-    way a static token would. Mirrors the forestserver bot's claude_meter. Falls
+    way a static token would. Mirrors the reference Telegram bot's claude_meter. Falls
     back to the stored token on any refresh failure. Never raises.
     """
     import time

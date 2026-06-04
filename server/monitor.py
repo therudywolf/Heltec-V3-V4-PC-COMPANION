@@ -637,7 +637,7 @@ async def get_forest_block_async(session: aiohttp.ClientSession) -> Dict[str, An
 async def poll_alertmanager_async(session: aiohttp.ClientSession) -> None:
     """Poll the Alertmanager v2 API and feed firing alerts into the events block.
 
-    Surfaces the SAME alerts that go to Telegram (dashboard.example.com stack). Replaces
+    Surfaces the SAME alerts that go to Telegram (monitoring.example.com stack). Replaces
     each poll's view of external alerts via AlertState.replace, so resolved/cleared
     alerts disappear. No-op when ALERTMANAGER_URL is unset. Best-effort.
     """

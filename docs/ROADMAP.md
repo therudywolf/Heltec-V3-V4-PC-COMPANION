@@ -140,12 +140,12 @@ navigable.
 
 ## Sprint 5 — Forest panel + monitoring server
 
-**Goal:** duplicate the dashboard.example.com node panel on-device, plus re-stand-up a
+**Goal:** duplicate the monitoring node panel on-device, plus re-stand-up a
 dedicated monitoring server.
 
 **Scope**
-1. **`forest_panel.py`** in the server: aggregate the 3 nodes (Forestserver /
-   PC-Rudywolf / Forestrouter) via each one's Prometheus/SSH/API into a compact
+1. **`forest_panel.py`** in the server: aggregate the nodes (e.g. a Linux server /
+   a Windows PC / a router) via each one's Prometheus/SSH/API into a compact
    `forest` payload block; VPN + game-server status.
 2. **Device Forest scenes** — one screen per node + a summary; status `●/—`,
    labels left / values right (maps 1:1 to 128×64; multi-only).

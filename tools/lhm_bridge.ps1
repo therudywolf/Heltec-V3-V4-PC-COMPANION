@@ -146,7 +146,7 @@ if ($Once) {
 # --- Serve over a RAW TcpListener (NOT HttpListener) ---------------------------
 # HttpListener routes through HTTP.sys, which is exactly what broke LHM's own web
 # server (needs a urlacl reservation; conflicts with stale +:8085 / IP:8085
-# registrations - we saw PID 4 already holding 10.77.77.2:8085). A raw socket on
+# registrations - we saw PID 4 already holding 192.168.1.2:8085). A raw socket on
 # 127.0.0.1 has none of that: no kernel reservation, no admin-for-bind, and it
 # coexists with any HTTP.sys binding on a different local address. We speak just
 # enough HTTP/1.1 for aiohttp's GET to succeed.
