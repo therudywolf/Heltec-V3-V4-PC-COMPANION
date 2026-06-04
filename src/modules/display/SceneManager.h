@@ -75,6 +75,7 @@ public:
   void drawBleDevices(class BleManager &mgr, int selected); // passive device browser
   void drawWifiSniffMode(int selected, class WifiSniffManager &mgr);
   void drawExport(class CaptureExport &cap); // pcap/csv SoftAP download page
+  void drawFoxhunt(int source, int rssi, int peak, int count); // RSSI direction-finder
 #endif
 
   // --- Conditional: LoRa / sub-GHz (#21) ---

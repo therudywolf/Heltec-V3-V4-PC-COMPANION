@@ -57,7 +57,7 @@ int submenuCountForHackerGroup(int group)
   switch (group)
   {
   case HACKER_GROUP_WIFI:
-    return 14; // 13 sniff tools + Export
+    return 15; // 13 sniff tools + Export + Foxhunt
   case HACKER_GROUP_BLE:
     return 2; // Trackers, Devices
 #if NOCT_FEATURE_LORA
@@ -98,6 +98,7 @@ AppMode getModeForHackerItem(int group, int item)
     case 11: return MODE_WIFI_RAW_CAPTURE;
     case 12: return MODE_WIFI_AP_STA;
     case 13: return MODE_EXPORT;
+    case 14: return MODE_FOXHUNT;
     default: return NOCT_DEFAULT_MODE;
     }
   }
