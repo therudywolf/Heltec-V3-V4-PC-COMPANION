@@ -164,11 +164,11 @@
 #define NOCT_MENU_CONFIG_BAR_W 124
 #define NOCT_MENU_CONFIG_BAR_H 10
 #define NOCT_MENU_CONFIG_BAR_CHAMFER 2
-#define NOCT_MENU_ROW_H 10
-#define NOCT_MENU_VISIBLE_ROWS 5
+#define NOCT_MENU_ROW_H 12
+#define NOCT_MENU_VISIBLE_ROWS 4
 #define NOCT_MENU_LIST_LEFT 2
 #define NOCT_MENU_LIST_W 124
-#define NOCT_MENU_START_Y 14
+#define NOCT_MENU_START_Y 20
 
 /* ── Battery HUD ───────────────────────────────────────────────────────── */
 #define NOCT_BAT_FRAME_W 16

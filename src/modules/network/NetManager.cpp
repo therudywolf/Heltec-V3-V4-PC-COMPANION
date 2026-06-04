@@ -273,7 +273,7 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
   hw.ra = doc["ra"] | 0.0f;
   hw.nd = doc["nd"] | 0;
   hw.nu = doc["nu"] | 0;
-  hw.pg = doc["pg"] | 0;
+  hw.pg = doc["ping"] | (doc["pg"] | 0); // #7: prefer server "ping" (google.com)
   hw.cf = doc["cf"] | 0;
   hw.s1 = doc["s1"] | 0;
   hw.s2 = doc["s2"] | 0;
