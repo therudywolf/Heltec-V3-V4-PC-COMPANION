@@ -262,11 +262,22 @@ static void phaseLoadingBar(DisplayEngine &display, unsigned long phaseStart,
 // ============================================================================
 //  Driver — runs the 3 phases (blocking). Total = 2200+1800+1200 = 5200 ms.
 // ============================================================================
-void drawBootSequence(DisplayEngine &display) {
-  // Boot always renders unflipped; restore the user's flip preference at the
-  // end (matches original behaviour).
-  display.u8g2().setFlipMode(1);
+void drawBootSequence(DisplayEngine &display, bool fancy) {
+  // Respect the user's screen rotation during boot (#3) — was hardcoded to 1.
+  display.u8g2().setFlipMode(display.isScreenFlipped() ? 1 : 0);
   display.u8g2().setFontPosBaseline();
+
+  if (!fancy) {
+    // Special effects off: clean quick boot — static splash, no dither/scan/hex.
+    display.clearBuffer();
+    display.drawSplash();
+    display.sendBuffer();
+    vTaskDelay(pdMS_TO_TICKS(900));
+    display.u8g2().setMaxClipWindow();
+    display.clearBuffer();
+    display.sendBuffer();
+    return;
+  }
 
   const unsigned long phase1Ms = 2200;
   const unsigned long phase2Ms = 1800;

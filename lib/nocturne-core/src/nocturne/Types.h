@@ -132,6 +132,7 @@ struct Settings {
   bool lowBrightnessDefault =
       false; /* NVS "lowBright": start with dim display */
   int pinnedScene = -1; /* NVS "pinScene": home monitoring scene; -1 = none (#10) */
+  bool colorInverted = false; /* NVS "invert": SSD1306 colour inversion (#2) */
 };
 
 /** Single app state: hardware, weather, media, process, alerts (filled by

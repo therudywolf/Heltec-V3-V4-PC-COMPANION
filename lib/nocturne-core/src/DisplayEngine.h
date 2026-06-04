@@ -60,6 +60,13 @@ public:
   void setScreenFlipped(bool flipped);
   bool isScreenFlipped() const { return screenRotated_; }
 
+  /** Master toggle for "special effects" (glitch, header heartbeat + scan-tick).
+   * Off = clean dashboards, less CPU/I2C. */
+  void setEffectsEnabled(bool e) { effectsEnabled_ = e; }
+  bool effectsEnabled() const { return effectsEnabled_; }
+  /** Hardware colour inversion (SSD1306 0xA7/0xA6). Persists in the controller. */
+  void setColorInverted(bool inverted);
+
   // --- Cyberpunk helpers (implement first) ---
   /** Random horizontal slice shift + optional 10x10 invert. intensity 0..3. */
   void drawGlitch(int intensity);
@@ -212,6 +219,7 @@ private:
   int sdaPin_;
   int sclPin_;
   bool screenRotated_ = false;
+  bool effectsEnabled_ = false;
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2_;
 };
 

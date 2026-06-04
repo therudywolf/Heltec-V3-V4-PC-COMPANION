@@ -44,7 +44,7 @@ public:
                 bool screenRotated, bool glitchEnabled, bool ledEnabled,
                 bool lowBrightnessDefault, bool rebootConfirmed = false,
                 int displayContrast = 128, int displayTimeoutSec = 0,
-                int pinnedScene = -1);
+                int pinnedScene = -1, bool colorInverted = false);
   void drawChargeOnlyScreen(int pct, bool isCharging, float batteryVoltage);
   void drawToast(const char *msg);
   void drawNoSignal(bool wifiOk, bool tcpOk, int rssi, bool blinkState);

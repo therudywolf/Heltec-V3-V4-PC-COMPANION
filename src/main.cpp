@@ -281,7 +281,19 @@ void setup()
   if (digitalRead(NOCT_VEXT_PIN) != LOW)
     digitalWrite(NOCT_VEXT_PIN, LOW);
   vTaskDelay(pdMS_TO_TICKS(50));
-  drawBootSequence(display);
+  // Load display prefs BEFORE the boot animation so it respects rotation, colour
+  // inversion and the special-effects toggle (#3 + clean/quick boot when FX off).
+  {
+    Preferences pe; pe.begin("nocturne", true);
+    settings.displayInverted = pe.getBool("inverted", true);
+    settings.glitchEnabled = pe.getBool("glitch", false);
+    settings.colorInverted = pe.getBool("invert", false);
+    pe.end();
+  }
+  display.setScreenFlipped(settings.displayInverted);
+  display.setColorInverted(settings.colorInverted);
+  display.setEffectsEnabled(settings.glitchEnabled);
+  drawBootSequence(display, settings.glitchEnabled);
   splashDone = true;
 
   pinMode(NOCT_BUTTON_PIN, INPUT_PULLUP);
@@ -347,6 +359,7 @@ void setup()
   if (settings.displayContrast < 0) settings.displayContrast = 0;
   settings.displayInverted = prefs.getBool("inverted", true);
   settings.glitchEnabled = prefs.getBool("glitch", false);
+  settings.colorInverted = prefs.getBool("invert", false);
   settings.lowBrightnessDefault = prefs.getBool("lowBright", false);
   settings.displayTimeoutSec = prefs.getInt("dispTimeout", 0);
   if (settings.displayTimeoutSec != 0 && settings.displayTimeoutSec != 30 &&
@@ -364,6 +377,8 @@ void setup()
     display.u8g2().setContrast(contrast);
   }
   display.setScreenFlipped(settings.displayInverted);
+  display.setColorInverted(settings.colorInverted);
+  display.setEffectsEnabled(settings.glitchEnabled);
   randomSeed(esp_random());
 
 #if NOCT_FEATURE_MONITORING
@@ -539,6 +554,7 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
     else if (item == 2)
     {
       settings.glitchEnabled = !settings.glitchEnabled;
+      display.setEffectsEnabled(settings.glitchEnabled);
       Preferences p; p.begin("nocturne", false);
       p.putBool("glitch", settings.glitchEnabled); p.end();
       snprintf(toastMsg, sizeof(toastMsg), "Saved"); toastUntil = now + 800;
@@ -584,8 +600,18 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
               settings.displayTimeoutSec);
       toastUntil = now + 800;
     }
-#if NOCT_FEATURE_MONITORING
     else if (item == 7)
+    {
+      settings.colorInverted = !settings.colorInverted;
+      display.setColorInverted(settings.colorInverted);
+      Preferences p; p.begin("nocturne", false);
+      p.putBool("invert", settings.colorInverted); p.end();
+      snprintf(toastMsg, sizeof(toastMsg),
+               settings.colorInverted ? "INVERT ON" : "INVERT OFF");
+      toastUntil = now + 800;
+    }
+#if NOCT_FEATURE_MONITORING
+    else if (item == 8)
     {
       // Cycle pinned home scene: OFF -> 0 -> ... -> last -> OFF (#10)
       if (settings.pinnedScene < 0) settings.pinnedScene = 0;
@@ -1173,7 +1199,7 @@ void loop()
         settings.displayInverted, settings.glitchEnabled, settings.ledEnabled,
         settings.lowBrightnessDefault, rebootConfirmed,
         settings.displayContrast, settings.displayTimeoutSec,
-        settings.pinnedScene);
+        settings.pinnedScene, settings.colorInverted);
   }
   else
   {

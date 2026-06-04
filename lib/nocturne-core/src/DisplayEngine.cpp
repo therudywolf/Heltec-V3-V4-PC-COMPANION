@@ -100,6 +100,11 @@ void DisplayEngine::setScreenFlipped(bool flipped) {
   u8g2_.setFlipMode(screenRotated_ ? 1 : 0);
 }
 
+void DisplayEngine::setColorInverted(bool inverted) {
+  // SSD1306: 0xA7 = inverse display, 0xA6 = normal. Controller-level, persists.
+  u8g2_.sendF("c", inverted ? 0x00A7 : 0x00A6);
+}
+
 void DisplayEngine::begin() {
   Wire.begin(sdaPin_, sclPin_);
   Wire.setClock(800000); // V4 overclock: 800kHz for fluid frames (if artifacts,
@@ -812,7 +817,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   /* Blinking 3x3 pixel square next to scene name (heartbeat = liveness).
      Only when connected, so it doubles as the link indicator. */
   int titleW = u8g2_.getUTF8Width(titleBuf);
-  if (wifiConnected)
+  if (wifiConnected && effectsEnabled_)
     drawActiveIndicator(nameX + titleW + 2, baselineY - 2);
   (void)rightAnchor;
   /* (Removed the mid-screen "WOOF!"/"NET:--" status text — it overlapped long
@@ -822,10 +827,12 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   /* Cyberpunk accent: a thin dark scan-tick sweeping the header's top edge —
      an intentional "active scan" motif. 1px tall, above the title baseline, so
      it never collides with the scene name. */
-  int sweep = (int)((millis() / 22) % (NOCT_DISP_W + 16)) - 8;
-  u8g2_.setDrawColor(0);
-  u8g2_.drawBox(sweep, 0, 8, 1);
-  u8g2_.setDrawColor(1);
+  if (effectsEnabled_) {
+    int sweep = (int)((millis() / 22) % (NOCT_DISP_W + 16)) - 8;
+    u8g2_.setDrawColor(0);
+    u8g2_.drawBox(sweep, 0, 8, 1);
+    u8g2_.setDrawColor(1);
+  }
 
   /* Separator: black line for visible boundary below white header */
   u8g2_.setDrawColor(0);
@@ -1192,6 +1199,7 @@ void DisplayEngine::drawEdgeArtifacts(int borderPx) {
 // (V-sync loss), occasional rolling tear. No grid/scanlines.
 // ===========================================================================
 void DisplayEngine::applyGlitch() {
+  if (!effectsEnabled_) return; // special effects off -> no glitch
   unsigned long now = millis();
 
   // 1. FILM GRAIN — sparse pixel dust, like BR2049 monitors
