@@ -10,6 +10,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 
 
 struct AppState;
@@ -26,6 +27,10 @@ public:
    * auto-fails-over between them (WiFiMulti). */
   void begin(const WifiCred *nets, size_t count);
   void setServer(const char *ip, uint16_t port);
+  /** Select TLS transport (WiFiClientSecure + setInsecure). Use when the server
+   * is reached through an HTTPS-fronted proxy / public domain on :443. The
+   * line-protocol on top is identical to the raw-TCP path. */
+  void setTls(bool on);
   void tick(unsigned long now);
 
   bool isWifiConnected() const { return wifiConnected_; }
@@ -35,10 +40,10 @@ public:
   bool isSearchMode() const { return searchMode_; }
   bool isSignalLost(unsigned long now) const;
 
-  int available() { return client_.available(); }
-  int read() { return client_.read(); }
-  size_t print(const String &s) { return client_.print(s); }
-  size_t print(const char *s) { return client_.print(s); }
+  int available() { return client_->available(); }
+  int read() { return client_->read(); }
+  size_t print(const String &s) { return client_->print(s); }
+  size_t print(const char *s) { return client_->print(s); }
 
   void setSuspend(bool suspend);
   void disconnectTcp();
@@ -59,7 +64,13 @@ private:
 
   char storedSSID_[33]; // Max SSID length is 32 + null terminator
   char storedPass_[65]; // Max password length is 64 + null terminator
-  WiFiClient client_;
+  // Transport: raw TCP by default, or TLS when setTls(true) (HTTPS-fronted
+  // proxy / public domain). client_ points at the active one; the line-protocol
+  // is transport-agnostic (Client base class).
+  WiFiClient clientPlain_;
+  WiFiClientSecure clientTls_;
+  Client *client_ = &clientPlain_;
+  bool useTls_ = false;
   char lineBuffer_[NOCT_TCP_LINE_MAX];
   size_t lineBufferLen_;
   const char *serverIp_;

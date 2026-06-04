@@ -412,6 +412,11 @@ void setup()
   netManager.begin(WIFI_SSID, WIFI_PASS);
 #endif
   netManager.setServer(PC_IP, TCP_PORT);
+#ifdef NOCT_SERVER_TLS
+  // Server reached via an HTTPS-fronted proxy / public domain on :443 — works on
+  // any WiFi network (incl. the phone hotspot), unlike a LAN-only numeric IP.
+  netManager.setTls(true);
+#endif
   currentMode = MODE_NORMAL;
   currentScene = (settings.pinnedScene >= 0) ? settings.pinnedScene : 0;
 #else
