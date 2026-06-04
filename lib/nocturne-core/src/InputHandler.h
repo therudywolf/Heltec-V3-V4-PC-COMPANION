@@ -15,7 +15,8 @@ enum ButtonEvent
   EV_NONE,
   EV_SHORT,
   EV_LONG,
-  EV_DOUBLE
+  EV_DOUBLE,
+  EV_TRIPLE
 };
 
 struct InputSystem
@@ -49,8 +50,9 @@ struct InputSystem
         releaseTime = now;
         if (clickCount >= 4)
         {
+          // 4+ rapid taps: collapse to the highest discrete gesture (triple).
           clickCount = 0;
-          return EV_DOUBLE;
+          return EV_TRIPLE;
         }
       }
       else if (duration >= 500)
@@ -65,8 +67,10 @@ struct InputSystem
     {
       if (clickCount == 1)
         event = EV_SHORT;
-      else if (clickCount >= 2)
+      else if (clickCount == 2)
         event = EV_DOUBLE;
+      else
+        event = EV_TRIPLE;   // 3+ taps within the multi-tap window
       clickCount = 0;
     }
     return event;
