@@ -1070,16 +1070,27 @@ void loop()
         currentScene = (currentScene + 1) % sceneManager.totalScenes();
         if (previousScene != currentScene)
         { inTransition = true; transitionStart = now; }
+        sceneManager.setWeatherExpanded(false); // collapse forecast on scene change (#14)
         lastCarousel = now;
         needRedraw = true;
       }
       else if (event == EV_LONG)
       {
-        settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
-        applyContrast(settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX);
-        Preferences p; p.begin("nocturne", false);
-        p.putBool("lowBright", settings.lowBrightnessDefault); p.end();
-        needRedraw = true;
+        // #14: long-press on Weather opens the multi-day forecast; elsewhere it
+        // toggles dim/low-brightness as before.
+        if (currentScene == NOCT_SCENE_WEATHER)
+        {
+          sceneManager.setWeatherExpanded(!sceneManager.weatherExpanded());
+          needRedraw = true;
+        }
+        else
+        {
+          settings.lowBrightnessDefault = !settings.lowBrightnessDefault;
+          applyContrast(settings.lowBrightnessDefault ? NOCT_CONTRAST_MIN : NOCT_CONTRAST_MAX);
+          Preferences p; p.begin("nocturne", false);
+          p.putBool("lowBright", settings.lowBrightnessDefault); p.end();
+          needRedraw = true;
+        }
       }
       break;
 #endif
