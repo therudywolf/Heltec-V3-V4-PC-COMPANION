@@ -4,9 +4,9 @@ Poll a Prometheus Alertmanager v2 API for firing alerts (NOCTURNE_OS).
 
 Alternative to the inbound webhook (alert_events.py): instead of Alertmanager
 POSTing to us (needs it to reach this PC), WE poll its public API and surface the
-SAME alerts that go to Telegram. Used for the dashboard.example.com monitoring stack
-whose Alertmanager is reachable at
-``https://dashboard.example.com/monitoring/alertmanager/api/v2/alerts``.
+SAME alerts that go to Telegram. Works with any Prometheus Alertmanager stack
+whose v2 API is reachable, e.g.
+``https://monitoring.example.com/alertmanager/api/v2/alerts``.
 
 :func:`normalize_am_v2` is the pure parser (offline-testable); the fetch lives in
 monitor.py. Reuses alert_events.build_events_block for the wire shape so the

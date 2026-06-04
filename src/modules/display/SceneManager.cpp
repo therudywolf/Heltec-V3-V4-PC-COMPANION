@@ -939,7 +939,7 @@ void SceneManager::drawNet(int xOff)
 }
 
 // ---------------------------------------------------------------------------
-// SCENE: FOREST — node-status panel (mirrors dashboard.example.com). One row per node:
+// SCENE: FOREST — node-status panel (mirrors monitoring.example.com). One row per node:
 // status dot (filled=up, hollow=warn, x=down) + name left, cpu/ram/disk right.
 // Header shows up/total. Monitoring-only (data comes from the server payload).
 // ---------------------------------------------------------------------------

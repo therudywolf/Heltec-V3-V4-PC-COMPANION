@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 import alertmanager_poll as amp  # noqa: E402
 
 
-# A trimmed sample of the real dashboard.example.com /api/v2/alerts shape.
+# A trimmed sample of a real Alertmanager /api/v2/alerts shape.
 SAMPLE_V2 = [
     {
         "labels": {"alertname": "DiskWillFill", "severity": "warning"},

@@ -88,7 +88,7 @@ for a remote Prometheus), reuse it — no extra monitoring load:
 2. **Alertmanager — show the SAME alerts as Telegram.** Two ways; pick one:
    - **Poll (recommended, no inbound port):** set `alertmanager_url` to the
      Alertmanager **v2 API**, e.g.
-     `https://dashboard.example.com/monitoring/alertmanager/api/v2/alerts`. The server
+     `https://monitoring.example.com/alertmanager/api/v2/alerts`. The server
      polls it every ~20 s and shows the firing alerts. Works even when the
      Alertmanager can't reach this PC — *we* call *it*. Active alerts map to
      firing; silenced/suppressed are hidden; resolved disappear on the next poll.
@@ -108,11 +108,10 @@ for a remote Prometheus), reuse it — no extra monitoring load:
 
 ## Forest panel — node-status scene
 
-Mirrors the dashboard.example.com node dashboard on the device: a compact CPU/RAM/disk
-status per monitored host. Populated by querying a **Prometheus-compatible**
-`/api/v1/query` endpoint — set `forest_query_url`. A Grafana **datasource proxy**
-works unauthenticated and read-only, e.g.
-`https://dashboard.example.com/monitoring/api/datasources/proxy/1/api/v1/query`.
+A compact CPU/RAM/disk status per monitored host. Populated by querying a
+**Prometheus-compatible** `/api/v1/query` endpoint — set `forest_query_url`. A
+Grafana **datasource proxy** works unauthenticated and read-only, e.g.
+`https://monitoring.example.com/api/datasources/proxy/1/api/v1/query`.
 
 The roster + per-node PromQL ship in `forest_panel.DEFAULT_NODES` (a Linux
 `node_exporter` host and a Windows `windows_exporter` host). Override per node
@@ -120,10 +119,10 @@ from `config.json`:
 
 ```json
 "forest_nodes": [
-  { "id": "srv", "name": "Forestserver",
-    "cpu":  "100-(avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"forestserver\"}[2m]))*100)",
-    "ram":  "100*(1-node_memory_MemAvailable_bytes{instance=\"forestserver\"}/node_memory_MemTotal_bytes{instance=\"forestserver\"})",
-    "disk": "100*(1-node_filesystem_avail_bytes{instance=\"forestserver\",mountpoint=\"/\"}/node_filesystem_size_bytes{instance=\"forestserver\",mountpoint=\"/\"})" }
+  { "id": "srv", "name": "Server",
+    "cpu":  "100-(avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"myserver\"}[2m]))*100)",
+    "ram":  "100*(1-node_memory_MemAvailable_bytes{instance=\"myserver\"}/node_memory_MemTotal_bytes{instance=\"myserver\"})",
+    "disk": "100*(1-node_filesystem_avail_bytes{instance=\"myserver\",mountpoint=\"/\"}/node_filesystem_size_bytes{instance=\"myserver\",mountpoint=\"/\"})" }
 ]
 ```
 

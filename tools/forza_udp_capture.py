@@ -11,7 +11,7 @@ USAGE
        IP   = <this PC's IP on the 192.168.1.0 network>
        Port = 5300
   2. Run:
-       python tools/forza_udp_capture.py --forward 192.168.1.20:5300
+       python tools/forza_udp_capture.py --forward 192.168.1.50:5300
      (omit --forward, or pass --no-forward, to just sniff)
   3. Drive. A live line prints ~5x/sec; every 3s a field-validity summary
      prints so we can confirm which packet offsets are correct for YOUR game.
@@ -105,7 +105,7 @@ def decode(b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=5300)
-    ap.add_argument("--forward", default="192.168.1.20:5300",
+    ap.add_argument("--forward", default="192.168.1.50:5300",
                     help="HOST:PORT of the board to relay to (default board)")
     ap.add_argument("--no-forward", action="store_true",
                     help="sniff only, do not relay to the board")

@@ -128,6 +128,12 @@ credentials.json
 *credentials*.json
 !*credentials*.example.json
 
+# --- local server config (real infra: URLs, hostnames, PromQL — never commit) ---
+# Copy server/config.example.json -> server/config.json and fill in your stack.
+server/config.json
+/config.json
+config.local.json
+
 
 # Per-app PlatformIO build dirs
 apps/*/.pio/
