@@ -36,9 +36,9 @@ int submenuCount(int category)
 
   case MCAT_SYSTEM:
 #if NOCT_FEATURE_BMW
-    return 5; // Demo toggle, REBOOT, CHARGE ONLY, POWER OFF, VERSION
+    return 6; // Demo, REBOOT, CHARGE ONLY, SCREENSAVER, POWER OFF, VERSION
 #else
-    return 4; // REBOOT, CHARGE ONLY, POWER OFF, VERSION
+    return 5; // REBOOT, CHARGE ONLY, SCREENSAVER, POWER OFF, VERSION
 #endif
 
   default:

@@ -1622,6 +1622,9 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       strncpy(items[k], STR_MENU_CHARGE_ONLY, sizeof(items[k]) - 1);
       items[k][sizeof(items[k]) - 1] = '\0';
       k++;
+      strncpy(items[k], "SCREENSAVER", sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
       strncpy(items[k], STR_MENU_POWER_OFF, sizeof(items[k]) - 1);
       items[k][sizeof(items[k]) - 1] = '\0';
       k++;
@@ -1816,13 +1819,15 @@ void SceneManager::drawIdleScreensaver(unsigned long now)
   /* Tech bracket frame around wolf (viewfinder) */
   disp_.drawTechBrackets(wolfX - 2, wolfY - 2, wolfW + 4, wolfH + 4, 4);
 
-  /* Hex stream columns left and right (cyberpunk data rain) */
-  disp_.drawHexStream(2, NOCT_CONTENT_TOP, 3);
-  disp_.drawHexStream(NOCT_DISP_W - 56, NOCT_CONTENT_TOP, 3);
+  /* Hex stream columns — full height incl. the top panel zone so the standby
+   * animation fills the whole screen (no blank header band). */
+  disp_.drawHexStream(2, 4, 6);
+  disp_.drawHexStream(NOCT_DISP_W - 56, 4, 6);
 
-  /* Diagonal scratches / Blade Runner watermark */
+  /* Diagonal scratches / Blade Runner watermark in the corners (incl. top). */
   disp_.drawCyberClaw(0, NOCT_DISP_H - 22);
   disp_.drawCyberClaw(NOCT_DISP_W - 24, 0);
+  disp_.drawCyberClaw(0, 0);
 
   /* Bottom corner hex decor */
   disp_.drawHexDecoration(0);
