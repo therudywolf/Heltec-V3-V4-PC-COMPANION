@@ -485,6 +485,16 @@ bool NetManager::parsePayload(const char *line, size_t lineLen,
     sv.up = 0;
   }
 
+  // #5: Docker container counts ("dock":{"n":total,"up":running}).
+  JsonObjectConst dk = doc["dock"];
+  if (!dk.isNull()) {
+    sv.dockTotal = dk["n"] | 0;
+    sv.dockUp = dk["up"] | -1;
+  } else {
+    sv.dockTotal = 0;
+    sv.dockUp = -1;
+  }
+
   const char *alert = doc["alert"];
   const char *target = doc["target_screen"];
   const char *metric = doc["alert_metric"];

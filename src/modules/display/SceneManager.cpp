@@ -1166,6 +1166,11 @@ void SceneManager::drawServices(int xOff)
   snprintf(hdr, sizeof(hdr), "%d/%d up", s.up, s.count);
   int hw_ = u8g2.getUTF8Width(hdr);
   u8g2.drawUTF8(X(right - hw_, xOff), NOCT_CONTENT_START + 6, hdr);
+  if (s.dockTotal > 0) { // #5: Docker container count from dashboard.example.com
+    char dk[20];
+    snprintf(dk, sizeof(dk), "DOCK %d/%d", s.dockUp < 0 ? 0 : s.dockUp, s.dockTotal);
+    u8g2.drawUTF8(X(left, xOff), NOCT_CONTENT_START + 6, dk);
+  }
 
   const int rowH = 9;
   int y0 = NOCT_CONTENT_START + 8;
