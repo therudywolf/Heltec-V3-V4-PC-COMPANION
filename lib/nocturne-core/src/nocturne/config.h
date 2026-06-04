@@ -28,6 +28,21 @@
 #ifndef NOCT_FEATURE_WOLFPET
 #define NOCT_FEATURE_WOLFPET 0
 #endif
+#ifndef NOCT_FEATURE_LORA
+#define NOCT_FEATURE_LORA 0
+#endif
+
+/* ── LoRa SX1262 (Heltec V4 / HTIT-WB32LAF, EU868). Standard Heltec-S3 SPI
+ * pinout — VERIFY on hardware if the radio fails to init. 1.8V TCXO. ───────── */
+#define NOCT_LORA_NSS 8
+#define NOCT_LORA_DIO1 14
+#define NOCT_LORA_RST 12
+#define NOCT_LORA_BUSY 13
+#define NOCT_LORA_SCK 9
+#define NOCT_LORA_MISO 11
+#define NOCT_LORA_MOSI 10
+#define NOCT_LORA_FREQ 868.0f
+#define NOCT_LORA_TCXO 1.8f
 
 /* ── Display contrast ──────────────────────────────────────────────────── */
 #define NOCT_CONTRAST_MIN 12
