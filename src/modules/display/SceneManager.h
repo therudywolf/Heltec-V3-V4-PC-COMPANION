@@ -31,6 +31,8 @@ public:
   void drawFans(int fanFrame, int xOff = 0);
   void drawMotherboard(int xOff = 0);
   void drawWeather(int xOff = 0);
+  void setWeatherExpanded(bool e) { weatherExpanded_ = e; }
+  bool weatherExpanded() const { return weatherExpanded_; }
   void drawClaude(int xOff = 0);
   void drawNet(int xOff = 0);
   void drawForest(int xOff = 0);
@@ -84,6 +86,7 @@ private:
 
   DisplayEngine &disp_;
   AppState &state_;
+  bool weatherExpanded_ = false; // #14: weather forecast drill-in (long-press)
 };
 
 #endif

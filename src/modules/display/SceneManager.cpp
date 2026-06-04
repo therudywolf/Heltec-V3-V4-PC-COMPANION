@@ -672,7 +672,7 @@ void SceneManager::drawMotherboard(int xOff)
   int soc = (hw.mb_vsoc > 0) ? hw.mb_vsoc : 0;
   int chip = (hw.mb_chipset > 0) ? hw.mb_chipset : 0;
   static char buf[16];
-  const int VALUE_DOWN = 6;
+  const int VALUE_DOWN = 2; // #8: raise MB values (bottom row was near the edge)
 
   snprintf(buf, sizeof(buf), "%d\xC2\xB0", sys);
   drawGridCell(X(GRID_COL1_X, xOff), GRID_ROW1_Y, "SYS", buf, VALUE_DOWN);
@@ -770,6 +770,27 @@ void SceneManager::drawWeather(int xOff)
     return;
   }
 
+  /* #14: long-press drills into a readable multi-day forecast (Today + next
+   * days, hi/lo per day). Replaces the unreadable tiny strip on the main card. */
+  if (weatherExpanded_ && weather.wfDays > 0) {
+    u8g2.setFont(LABEL_FONT);
+    int n = weather.wfDays > 5 ? 5 : weather.wfDays;
+    for (int i = 0; i < n; i++) {
+      int ry = boxY + 8 + i * 8;
+      if (ry + 1 > boxY + boxH) break;
+      char lbl[8];
+      if (i == 0) { strncpy(lbl, "Today", sizeof(lbl)); lbl[sizeof(lbl) - 1] = '\0'; }
+      else snprintf(lbl, sizeof(lbl), "+%dd", i);
+      u8g2.drawUTF8(boxX + 6, ry, lbl);
+      char val[16];
+      snprintf(val, sizeof(val), "%+d/%+d", weather.wfMax[i], weather.wfMin[i]);
+      int vw = u8g2.getUTF8Width(val);
+      u8g2.drawUTF8(boxX + boxW - 6 - vw, ry, val);
+    }
+    disp_.drawGreebles();
+    return;
+  }
+
   /* Left: procedural weather glyph + description stacked (crisp, bold). */
   const int stackH = WTHR_ICON_H + WTHR_DESC_PAD + WTHR_DESC_BASELINE;
   const int iconY = boxY + (boxH - stackH) / 2;
@@ -793,20 +814,9 @@ void SceneManager::drawWeather(int xOff)
   int tempX = rightX + rightW - tw - 4;
   u8g2.drawUTF8(tempX, WTHR_TEMP_Y, buf);
 
-  /* #8: compact forecast strip along the very bottom — highs of the next days
-   * (skip index 0 = today). Tiny font in the free band below desc/temp. */
-  if (weather.wfDays > 1) {
-    int n = weather.wfDays - 1;
-    if (n > 3) n = 3;               // 3 days, readable size (#1)
-    u8g2.setFont(LABEL_FONT);
-    int slot = boxW / n;
-    for (int i = 0; i < n; i++) {
-      char fb[8];
-      snprintf(fb, sizeof(fb), "%+d", weather.wfMax[i + 1]);
-      int fw = u8g2.getUTF8Width(fb);
-      u8g2.drawUTF8(boxX + i * slot + (slot - fw) / 2, boxY + boxH - 1, fb);
-    }
-  }
+  /* #1/#14: the tiny bottom forecast strip was unreadable — the multi-day
+   * forecast now lives in the long-press expanded view above. Main card stays
+   * clean (glyph + description + big current temp). */
 
   disp_.drawGreebles();
 }
