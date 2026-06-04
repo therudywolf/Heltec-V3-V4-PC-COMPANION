@@ -1478,7 +1478,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                             bool glitchEnabled, bool ledEnabled,
                             bool lowBrightnessDefault, bool rebootConfirmed,
                             int displayContrast, int displayTimeoutSec,
-                            int pinnedScene)
+                            int pinnedScene, bool colorInverted)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = NOCT_MENU_BOX_X;
@@ -1564,7 +1564,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
         snprintf(items[0], sizeof(items[0]), "AUTO: %ds", carouselSec);
       snprintf(items[1], sizeof(items[1]), "FLIP: %s",
                screenRotated ? "180deg" : "0deg");
-      snprintf(items[2], sizeof(items[2]), "GLITCH: %s",
+      snprintf(items[2], sizeof(items[2]), "FX: %s",
                glitchEnabled ? "ON" : "OFF");
       snprintf(items[3], sizeof(items[3]), "LED: %s",
                ledEnabled ? "ON" : "OFF");
@@ -1576,12 +1576,14 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       else
         snprintf(items[6], sizeof(items[6]), "TIMEOUT:%ds", displayTimeoutSec);
       items[6][sizeof(items[6]) - 1] = '\0';
+      snprintf(items[7], sizeof(items[7]), "INVERT: %s", colorInverted ? "ON" : "OFF");
+      items[7][sizeof(items[7]) - 1] = '\0';
 #if NOCT_FEATURE_MONITORING
       if (pinnedScene < 0)
-        strncpy(items[7], "PIN: OFF", sizeof(items[7]) - 1);
+        strncpy(items[8], "PIN: OFF", sizeof(items[8]) - 1);
       else
-        snprintf(items[7], sizeof(items[7]), "PIN:%s", getSceneName(pinnedScene));
-      items[7][sizeof(items[7]) - 1] = '\0';
+        snprintf(items[8], sizeof(items[8]), "PIN:%s", getSceneName(pinnedScene));
+      items[8][sizeof(items[8]) - 1] = '\0';
 #endif
     }
     else if (menuCategory == MCAT_SYSTEM)

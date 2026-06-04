@@ -8,6 +8,6 @@ class DisplayEngine;
 
 /** Runs full boot sequence (blocking): Phase 1 BIOS scroll, Phase 2 logo +
  * title, Phase 3 loading bar. */
-void drawBootSequence(DisplayEngine &display);
+void drawBootSequence(DisplayEngine &display, bool fancy = true);
 
 #endif
