@@ -270,6 +270,20 @@ bool AppModeManager::initializeMode(AppMode mode
     Serial.println("[SYS] CHARGE_ONLY mode initialized");
     return true;
 
+  case MODE_SYSINFO:
+    if (WiFi.getMode() != WIFI_STA)
+      WiFi.mode(WIFI_STA);
+#if NOCT_FEATURE_MONITORING
+    net_.setSuspend(true); // keep WiFi for RSSI/NTP, but no TCP
+#endif
+    configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com"); // MSK = UTC+3
+    Serial.println("[SYS] SYSINFO mode initialized");
+    return true;
+
+  case MODE_BENCH:
+    Serial.println("[SYS] BENCH mode initialized");
+    return true;
+
 #if NOCT_FEATURE_MONITORING
   case MODE_NORMAL:
     manageWiFiState(mode);

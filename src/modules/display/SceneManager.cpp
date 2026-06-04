@@ -15,6 +15,8 @@
 #endif
 #include <Arduino.h>
 #include <WiFi.h>
+#include <Wire.h>
+#include <time.h>
 #include <math.h>
 #include <string.h>
 
@@ -1649,6 +1651,12 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       strncpy(items[k], "SCREENSAVER", sizeof(items[k]) - 1);
       items[k][sizeof(items[k]) - 1] = '\0';
       k++;
+      strncpy(items[k], "SYS INFO", sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
+      strncpy(items[k], "I2C/GPIO", sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0';
+      k++;
       strncpy(items[k], STR_MENU_POWER_OFF, sizeof(items[k]) - 1);
       items[k][sizeof(items[k]) - 1] = '\0';
       k++;
@@ -1751,6 +1759,112 @@ void SceneManager::drawBottomHint(const char *hint)
   // baseline 52 made the y50 line strike through the text ("poloska snizu").
   u8g2.setCursor(NOCT_MARGIN, NOCT_DISP_H - 4);
   u8g2.print(hint ? hint : DEFAULT_BOTTOM_HINT);
+}
+
+// --- SYS INFO: NTP clock + RF/system facts (bonus) ---
+void SceneManager::drawSysInfo()
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
+  // NTP time in the header (HH:MM:SS), or "--:--:--" before sync.
+  struct tm ti;
+  char hdr[20];
+  if (getLocalTime(&ti, 5))
+    snprintf(hdr, sizeof(hdr), "%02d:%02d:%02d", ti.tm_hour, ti.tm_min, ti.tm_sec);
+  else
+    snprintf(hdr, sizeof(hdr), "SYS  --:--:--");
+  u8g2.print(hdr);
+  u8g2.setDrawColor(1);
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+  char s[30];
+  unsigned long up = millis() / 1000;
+  snprintf(s, sizeof(s), "up %luh%02lum  heap %dk", up / 3600, (up / 60) % 60,
+           (int)(ESP.getFreeHeap() / 1024));
+  u8g2.setCursor(2, 19);
+  u8g2.print(s);
+  snprintf(s, sizeof(s), "chip %.0fC  flash %dM", temperatureRead(),
+           (int)(ESP.getFlashChipSize() / (1024 * 1024)));
+  u8g2.setCursor(2, 28);
+  u8g2.print(s);
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    snprintf(s, sizeof(s), "%.12s %ddB c%d", WiFi.SSID().c_str(), (int)WiFi.RSSI(),
+             (int)WiFi.channel());
+    u8g2.setCursor(2, 37);
+    u8g2.print(s);
+    u8g2.setCursor(2, 46);
+    u8g2.print(WiFi.macAddress());
+  }
+  else
+  {
+    u8g2.setCursor(2, 37);
+    u8g2.print("WiFi: disconnected");
+  }
+  u8g2.setMaxClipWindow();
+  drawBottomHint("2x BACK");
+}
+
+// --- BENCH: I2C bus scan + chip/GPIO facts (bonus) ---
+void SceneManager::drawBench()
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  // Re-scan the I2C bus every ~2 s (sequential with u8g2's own bus use).
+  static uint8_t found[12];
+  static int nfound = 0;
+  static unsigned long lastScan = 0;
+  if (lastScan == 0 || millis() - lastScan > 2000)
+  {
+    nfound = 0;
+    for (uint8_t a = 1; a < 127 && nfound < 12; a++)
+    {
+      Wire.beginTransmission(a);
+      if (Wire.endTransmission() == 0)
+        found[nfound++] = a;
+    }
+    lastScan = millis();
+  }
+
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
+  u8g2.print("BENCH");
+  char rt[12];
+  snprintf(rt, sizeof(rt), "I2C %d", nfound);
+  int w = u8g2.getUTF8Width(rt);
+  u8g2.setCursor(NOCT_DISP_W - 2 - w, NOCT_MODE_HEADER_H - 2);
+  u8g2.print(rt);
+  u8g2.setDrawColor(1);
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  u8g2.setFont(LABEL_FONT);
+  char line[30];
+  // I2C addresses (hex), up to ~6 per row, 2 rows.
+  for (int row = 0; row < 2; row++)
+  {
+    line[0] = '\0';
+    int off = 0;
+    for (int i = row * 6; i < (row + 1) * 6 && i < nfound; i++)
+      off += snprintf(line + off, sizeof(line) - off, "%02X ", found[i]);
+    u8g2.setCursor(2, 19 + row * 9);
+    u8g2.print(line[0] ? line : (row == 0 ? "(no I2C devices)" : ""));
+  }
+  // chip + a sample GPIO (button pin) readout.
+  snprintf(line, sizeof(line), "%dMHz x%d  GPIO0=%d", (int)getCpuFrequencyMhz(),
+           ESP.getChipCores(), digitalRead(NOCT_BUTTON_PIN));
+  u8g2.setCursor(2, 46);
+  u8g2.print(line);
+  u8g2.setMaxClipWindow();
+  drawBottomHint("auto-scan 2s  2x BACK");
 }
 
 void SceneManager::drawToast(const char *msg)

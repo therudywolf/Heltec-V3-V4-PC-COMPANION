@@ -741,6 +741,22 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       needRedraw = true;
       return true;
     }
+    if (item == k++) // SYS INFO (NTP clock + RF/system)
+    {
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      if (!appModeManager.switchToMode(currentMode, MODE_SYSINFO))
+      { snprintf(toastMsg, sizeof(toastMsg), "FAIL"); toastUntil = now + 1500; return false; }
+      return true;
+    }
+    if (item == k++) // I2C/GPIO bench
+    {
+      quickMenuOpen = false;
+      rebootConfirmed = false;
+      if (!appModeManager.switchToMode(currentMode, MODE_BENCH))
+      { snprintf(toastMsg, sizeof(toastMsg), "FAIL"); toastUntil = now + 1500; return false; }
+      return true;
+    }
     if (item == k++)
     {
       quickMenuOpen = false;
@@ -1436,6 +1452,13 @@ void loop()
     {
     case MODE_CHARGE_ONLY:
       sceneManager.drawChargeOnlyScreen(state.batteryPct, state.isCharging, state.batteryVoltage);
+      break;
+
+    case MODE_SYSINFO:
+      sceneManager.drawSysInfo();
+      break;
+    case MODE_BENCH:
+      sceneManager.drawBench();
       break;
 
 #if NOCT_FEATURE_BMW
