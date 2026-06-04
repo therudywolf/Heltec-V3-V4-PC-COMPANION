@@ -811,7 +811,7 @@ void DisplayEngine::drawGlobalHeader(const char *sceneTitle,
   u8g2_.setFont(HEADER_FONT);
   const char *raw = sceneTitle && sceneTitle[0] ? sceneTitle : "HUB";
   char titleBuf[24];
-  snprintf(titleBuf, sizeof(titleBuf), "%s", raw);
+  snprintf(titleBuf, sizeof(titleBuf), "// %s", raw); // menu-style "//" motif on every scene header
   u8g2_.drawUTF8(nameX, baselineY, titleBuf);
 
   /* Blinking 3x3 pixel square next to scene name (heartbeat = liveness).
