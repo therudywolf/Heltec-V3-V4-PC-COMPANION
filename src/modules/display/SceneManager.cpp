@@ -1458,6 +1458,7 @@ void SceneManager::drawSearchMode(int scanPhase)
   u8g2.setFontMode(1);
   int y0 = NOCT_CONTENT_TOP;
   int dy = NOCT_ROW_DY;
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H); // full-screen frame (no header reserved here)
   u8g2.setFont(LABEL_FONT);
   int tw = u8g2.getUTF8Width("SEARCH_MODE");
   u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, y0 + dy - 2, "SEARCH_MODE");
@@ -1761,6 +1762,7 @@ void SceneManager::drawNoSignal(bool wifiOk, bool tcpOk, int rssi,
   u8g2.setFontMode(1);
   int y0 = NOCT_CONTENT_TOP;
   int dy = NOCT_ROW_DY;
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H); // full-screen frame (no header reserved here)
   u8g2.setFont(LABEL_FONT);
   int tw = u8g2.getUTF8Width("NO SIGNAL");
   u8g2.drawUTF8((NOCT_DISP_W - tw) / 2, y0 + dy - 2, "NO SIGNAL");
@@ -1781,6 +1783,7 @@ void SceneManager::drawConnecting(int rssi, bool blinkState)
   u8g2.setFontMode(1);
   (void)rssi;
   (void)blinkState;
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H); // full-screen frame (no header reserved here)
   int y0 = NOCT_CONTENT_TOP;
   int dy = NOCT_ROW_DY;
   u8g2.setFont(LABEL_FONT);
