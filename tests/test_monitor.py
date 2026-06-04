@@ -150,6 +150,54 @@ class TestBuildPayload:
         finally:
             monitor._dock_block = saved
 
+    def test_lmstudio_svc_status_from_stats_json(self):
+        # The "lmstudio" svc entry's status comes from the module-level
+        # _lmstudio_up (parsed from /stats.json pc.lmstudio_up), overriding the
+        # local probe result that lives in _svc_block. None -> fall back to probe.
+        hw = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0,
+              "hdd": [], "fans": [0, 0, 0, 0], "fan_controls": [0, 0, 0, 0]}
+        media = {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}
+        weather = {"temp": 0, "desc": "", "icon": 0}
+        import time
+
+        def _lm(p):
+            return next(s for s in p["svc"]["list"] if s["id"] == "lmstudio")
+
+        saved_svc, saved_lm = monitor._svc_block, monitor._lmstudio_up
+        try:
+            monitor._last_alert = (None, None)
+            # Local probe said DOWN (e.g. localhost:1234 unreachable from server).
+            monitor._svc_block = {
+                "n": 1, "up": 0,
+                "list": [{"id": "lmstudio", "name": "LM Studio", "st": "down", "ms": -1}],
+            }
+
+            # pc.lmstudio_up == "1" -> overridden to UP.
+            monitor._lmstudio_up = True
+            p_up = monitor.build_payload(hw, media, weather, [], [], (0, 0), (0, 0), 0,
+                                         time.time())
+            assert _lm(p_up)["st"] == "up"
+            assert p_up["svc"]["up"] == 1
+
+            # pc.lmstudio_up == "0" -> stays/forced DOWN even if probe said up.
+            monitor._svc_block = {
+                "n": 1, "up": 1,
+                "list": [{"id": "lmstudio", "name": "LM Studio", "st": "up", "ms": 5}],
+            }
+            monitor._lmstudio_up = False
+            p_down = monitor.build_payload(hw, media, weather, [], [], (0, 0), (0, 0), 0,
+                                           time.time())
+            assert _lm(p_down)["st"] == "down"
+            assert p_down["svc"]["up"] == 0
+
+            # Feed unavailable (None) -> fall back to the local probe result.
+            monitor._lmstudio_up = None
+            p_fb = monitor.build_payload(hw, media, weather, [], [], (0, 0), (0, 0), 0,
+                                         time.time())
+            assert _lm(p_fb)["st"] == "up"  # the probe's "up" is preserved
+        finally:
+            monitor._svc_block, monitor._lmstudio_up = saved_svc, saved_lm
+
     def test_build_payload_json_serializable(self):
         hw = {"ct": 0, "gt": 0, "cl": 0, "gl": 0, "ru": 0, "ra": 0, "hdd": [], "fans": [0, 0, 0, 0], "fan_controls": [0, 0, 0, 0]}
         media = {"art": "", "trk": "", "play": False, "idle": False, "media_status": "PAUSED"}

@@ -3,6 +3,7 @@
 # change-detection snapshot.
 # Run from project root: python -m pytest tests/ -v
 
+import json
 import os
 import sys
 
@@ -205,3 +206,110 @@ class TestParseDashboardStats:
 
     def test_empty_dock_constant(self):
         assert payload_mod.EMPTY_DOCK == {"n": 0, "up": 0}
+
+
+# --------------------------------------------------------------------------- #
+# parse_lmstudio_up (LM Studio status from /stats.json pc.lmstudio_up)
+# --------------------------------------------------------------------------- #
+class TestParseLmstudioUp:
+    def test_string_one_is_up(self):
+        # Live feed shape: numbers are JSON strings.
+        stats = {"pc": {"lmstudio_up": "1", "docker_running": "7"}}
+        assert payload_mod.parse_lmstudio_up(stats) is True
+
+    def test_string_zero_is_down(self):
+        stats = {"pc": {"lmstudio_up": "0"}}
+        assert payload_mod.parse_lmstudio_up(stats) is False
+
+    def test_missing_field_is_unknown(self):
+        # pc present but no lmstudio_up -> unknown (fall back to local probe).
+        assert payload_mod.parse_lmstudio_up({"pc": {"cpu": "24.4"}}) is None
+
+    def test_missing_block_is_unknown(self):
+        assert payload_mod.parse_lmstudio_up({"server": {}}) is None
+        assert payload_mod.parse_lmstudio_up({}) is None
+
+    def test_int_and_bool_values(self):
+        assert payload_mod.parse_lmstudio_up({"pc": {"lmstudio_up": 1}}) is True
+        assert payload_mod.parse_lmstudio_up({"pc": {"lmstudio_up": 0}}) is False
+        assert payload_mod.parse_lmstudio_up({"pc": {"lmstudio_up": True}}) is True
+        assert payload_mod.parse_lmstudio_up({"pc": {"lmstudio_up": False}}) is False
+
+    def test_garbage_and_none_are_unknown(self):
+        for bad in (None, [], "nope", 123, {"pc": "x"},
+                    {"pc": {"lmstudio_up": "maybe"}},
+                    {"pc": {"lmstudio_up": None}}):
+            assert payload_mod.parse_lmstudio_up(bad) is None
+
+    def test_real_feed_shape(self):
+        # Mirrors docs/FORESTSERVER_DASHBOARD.md example.
+        stats = {
+            "server": {"containers": "46", "containers_up": "46"},
+            "pc": {"up": "1", "lmstudio_up": "1", "docker_running": "7"},
+            "alerts": "37",
+        }
+        assert payload_mod.parse_lmstudio_up(stats) is True
+
+
+# --------------------------------------------------------------------------- #
+# merge_lmstudio_status (override the local "lmstudio" probe with stats.json)
+# --------------------------------------------------------------------------- #
+def _svc_block_with_lmstudio(lm_status, lm_ms=7):
+    """A two-service svc block: a 'lmstudio' entry + an always-up 'other' entry."""
+    return {
+        "n": 2,
+        "up": (1 if lm_status in ("up", "warn") else 0) + 1,
+        "list": [
+            {"id": "lmstudio", "name": "LM Studio", "st": lm_status, "ms": lm_ms},
+            {"id": "other", "name": "Other", "st": "up", "ms": 3},
+        ],
+    }
+
+
+class TestMergeLmstudioStatus:
+    def test_stats_up_overrides_probe_down(self):
+        # Local probe said down; pc.lmstudio_up="1" -> up wins, ms preserved.
+        block = _svc_block_with_lmstudio("down", lm_ms=-1)
+        out = payload_mod.merge_lmstudio_status(block, True)
+        lm = next(s for s in out["list"] if s["id"] == "lmstudio")
+        assert lm["st"] == "up"
+        assert out["up"] == 2  # both lmstudio (now up) + other
+
+    def test_stats_down_overrides_probe_up(self):
+        # Local probe said up; pc.lmstudio_up="0" -> down wins, ms forced to -1.
+        block = _svc_block_with_lmstudio("up", lm_ms=7)
+        out = payload_mod.merge_lmstudio_status(block, False)
+        lm = next(s for s in out["list"] if s["id"] == "lmstudio")
+        assert lm["st"] == "down"
+        assert lm["ms"] == -1
+        assert out["up"] == 1  # only "other" remains up
+
+    def test_unknown_leaves_probe_result(self):
+        # Feed unknown (None) -> fall back to the local-probe block unchanged.
+        block = _svc_block_with_lmstudio("up", lm_ms=7)
+        out = payload_mod.merge_lmstudio_status(block, None)
+        assert out is block  # untouched, same object
+
+    def test_no_lmstudio_entry_is_noop(self):
+        block = {"n": 1, "up": 1,
+                 "list": [{"id": "other", "name": "Other", "st": "up", "ms": 3}]}
+        out = payload_mod.merge_lmstudio_status(block, True)
+        assert out is block  # nothing to override
+
+    def test_preserves_up_ms_on_up_override(self):
+        # An "up" override keeps the probe's latency (still meaningful).
+        block = _svc_block_with_lmstudio("warn", lm_ms=1800)
+        out = payload_mod.merge_lmstudio_status(block, True)
+        lm = next(s for s in out["list"] if s["id"] == "lmstudio")
+        assert lm["st"] == "up" and lm["ms"] == 1800
+
+    def test_does_not_mutate_input(self):
+        block = _svc_block_with_lmstudio("down", lm_ms=-1)
+        original = json.loads(json.dumps(block))
+        payload_mod.merge_lmstudio_status(block, True)
+        assert block == original  # input untouched
+
+    def test_empty_block_is_safe(self):
+        assert payload_mod.merge_lmstudio_status(payload_mod.EMPTY_DOCK, True) \
+            == payload_mod.EMPTY_DOCK  # no "list" -> returned as-is
+        assert payload_mod.merge_lmstudio_status({"list": []}, True) == {"list": []}

@@ -26,7 +26,7 @@
   "_comment_forest": "Forest panel node-status scene. Set forest_query_url to any Prometheus /api/v1/query endpoint (e.g. a Grafana datasource proxy) to populate it; empty = scene shows NO NODES. Nodes + PromQL default to forest_panel.DEFAULT_NODES; override with 'forest_nodes'. See SETUP.md.",
   "forest_query_url": "",
 
-  "_comment_dashboard": "Docker container counts (#5) for the payload 'dock' block {n:total,up:running}. dashboard_stats_url is a CUSTOM JSON feed that already aggregates container counts (e.g. the dashboard.example.com dashboard's /stats.json with server.containers / server.containers_up) - NOT a Prometheus query URL. Empty = dock ships {n:0,up:0}. LM Studio status is handled by the 'services' probe below (the 'lmstudio' entry), not here. See docs/FORESTSERVER_DASHBOARD.md.",
+  "_comment_dashboard": "CUSTOM JSON feed (e.g. the dashboard.example.com dashboard's /stats.json) - NOT a Prometheus query URL. ONE fetch drives two things: (1) the 'dock' block {n:total,up:running} from server.containers / server.containers_up (#5), and (2) the 'lmstudio' service status from pc.lmstudio_up ('1'=up/'0'=down), which OVERRIDES the local 'lmstudio' services probe below (dashboard is the source of truth; the probe is the fallback when this feed is unset/unreachable). Empty = dock ships {n:0,up:0} AND lmstudio falls back to the local probe. See docs/FORESTSERVER_DASHBOARD.md.",
   "dashboard_stats_url": "",
 
   "_comment_services": "Resource-status panel (#18). Each entry probes an HTTP url (up = 2xx/3xx, or status matches 'expect') OR a 'tcp':'host:port'. 'timeout' seconds. Shown as up/down on the device; empty list hides the panel.",

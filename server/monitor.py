@@ -872,28 +872,39 @@ async def measure_tcp_connect_ms(
                 pass
 
 
-async def get_dock_block_async(session: aiohttp.ClientSession) -> Dict[str, int]:
-    """Fetch the dashboard ``/stats.json`` and build the ``dock`` block (#5).
+async def get_dashboard_block_async(
+    session: aiohttp.ClientSession,
+) -> Tuple[Dict[str, int], Optional[bool]]:
+    """Fetch the dashboard ``/stats.json`` ONCE and derive everything from it.
 
     DASHBOARD_STATS_URL points at a custom JSON feed (the dashboard.example.com
-    dashboard) that already aggregates Docker container counts — see
-    docs/FORESTSERVER_DASHBOARD.md. Pure parsing lives in
-    :func:`payload.parse_dashboard_stats`; this is just the best-effort fetch.
-    Returns a copy of EMPTY_DOCK when unset or unreachable (never invents data).
+    dashboard) that already aggregates Docker container counts AND LM Studio
+    status — see docs/FORESTSERVER_DASHBOARD.md. One fetch feeds two pure
+    parsers:
+
+    * ``dock`` block via :func:`payload.parse_dashboard_stats`
+      (``server.containers`` / ``server.containers_up``, #5).
+    * LM Studio up/down via :func:`payload.parse_lmstudio_up` (``pc.lmstudio_up``)
+      — the authoritative source for the device's ``lmstudio`` service status.
+
+    Returns ``(dock, lmstudio_up)``. On any failure (URL unset, non-200,
+    network/JSON error) returns ``(EMPTY_DOCK, None)`` so the dock block stays
+    "unknown" and the LM Studio status falls back to the local probe — never
+    invents data.
     """
     if not DASHBOARD_STATS_URL:
-        return dict(payload_mod.EMPTY_DOCK)
+        return dict(payload_mod.EMPTY_DOCK), None
     try:
         async with session.get(
             DASHBOARD_STATS_URL, timeout=aiohttp.ClientTimeout(total=4),
         ) as r:
             if r.status != 200:
-                return dict(payload_mod.EMPTY_DOCK)
+                return dict(payload_mod.EMPTY_DOCK), None
             data = await r.json(content_type=None)
     except Exception as e:
         log_debug(f"Dashboard stats fetch failed: {e}")
-        return dict(payload_mod.EMPTY_DOCK)
-    return payload_mod.parse_dashboard_stats(data)
+        return dict(payload_mod.EMPTY_DOCK), None
+    return payload_mod.parse_dashboard_stats(data), payload_mod.parse_lmstudio_up(data)
 
 
 def _collect_top_processes(
@@ -1112,6 +1123,11 @@ _svc_block: Dict[str, Any] = dict(services_panel.EMPTY_SVC)
 # Docker container counts (#5) from the dashboard /stats.json feed. Empty until
 # the first successful fetch (or when no DASHBOARD_STATS_URL is configured).
 _dock_block: Dict[str, int] = dict(payload_mod.EMPTY_DOCK)
+# LM Studio up/down from the SAME /stats.json feed (pc.lmstudio_up). This is the
+# authoritative source the dashboard uses; build_payload overrides the local
+# "lmstudio" services-probe result with it. None = unknown (feed unset /
+# unreachable / field absent) -> keep the local probe result as the fallback.
+_lmstudio_up: Optional[bool] = None
 
 
 def _alert_thresholds() -> Dict[str, int]:
@@ -1267,7 +1283,11 @@ def build_payload(hw: Dict, media: Dict, weather: Dict, top_procs: List, top_pro
         "claude": _build_claude_block(claude),
         "events": _events_with_claude(claude, now),
         "forest": _forest_block,
-        "svc": _svc_block,
+        # LM Studio status comes from the dashboard /stats.json (pc.lmstudio_up),
+        # the SAME source the dashboard shows — it overrides the local "lmstudio"
+        # services-probe result. _lmstudio_up is None (unknown) when the feed is
+        # unset/unreachable, in which case the local probe result is kept as-is.
+        "svc": payload_mod.merge_lmstudio_status(_svc_block, _lmstudio_up),
         "dock": _dock_block,                  # Docker container counts {"n":total,"up":running} (#5)
         "pidle": get_pc_idle_seconds(),       # PC idle seconds (device dims >10min)
         "clk": time.strftime("%H:%M"),        # PC wall clock (time-of-day)
@@ -1422,7 +1442,7 @@ async def run():
     global executor, last_sent_track_key, top_procs_cache, top_procs_ram_cache
     global last_top_procs_time, last_media_time, ping_latency_ms, global_data_cache
     global _last_sent_snapshot, _last_heartbeat_time, _forest_block, _svc_block
-    global _dock_block, _force_claude_refresh, _force_status_refresh
+    global _dock_block, _lmstudio_up, _force_claude_refresh, _force_status_refresh
 
     server = None
     executor = ThreadPoolExecutor(max_workers=6)
@@ -1481,7 +1501,7 @@ async def run():
             _svc_block = await get_svc_block_async(session)
             last_svc_time = time.time()
         if DASHBOARD_STATS_URL:
-            _dock_block = await get_dock_block_async(session)
+            _dock_block, _lmstudio_up = await get_dashboard_block_async(session)
             last_dock_time = time.time()
         if ALERTMANAGER_URL:
             await poll_alertmanager_async(session)
@@ -1582,7 +1602,7 @@ async def run():
             if DASHBOARD_STATS_URL and now - last_dock_time >= DASHBOARD_UPDATE_INTERVAL:
                 last_dock_time = now
                 try:
-                    _dock_block = await get_dock_block_async(session)
+                    _dock_block, _lmstudio_up = await get_dashboard_block_async(session)
                 except Exception as e:
                     log_debug(f"Dashboard stats: {e}")
 

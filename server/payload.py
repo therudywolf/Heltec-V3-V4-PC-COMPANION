@@ -213,3 +213,93 @@ def parse_dashboard_stats(
     up = max(0, up if up is not None else 0)
     up = min(up, n) if n > 0 else up
     return {"n": n, "up": up}
+
+
+def parse_lmstudio_up(
+    stats: Any,
+    block: str = "pc",
+    key: str = "lmstudio_up",
+) -> Optional[bool]:
+    """Extract LM Studio up/down from the dashboard ``/stats.json`` feed.
+
+    Pure / network-free so it is unit-testable: ``stats`` is the already-decoded
+    JSON dict from the dashboard's ``/stats.json`` (see
+    docs/FORESTSERVER_DASHBOARD.md). Reads ``stats[block][key]`` (the live feed
+    sends it as the JSON STRING ``"1"`` / ``"0"``, but ints/bools are tolerated).
+
+    Returns ``True`` when the value reads as up (``"1"`` / ``1`` / ``True``),
+    ``False`` when it reads as a recognised "down" value (``"0"`` / ``0`` /
+    ``False``), and ``None`` ("unknown") when the feed is missing, malformed, or
+    the field is absent / unrecognised — so callers can fall back to the local
+    probe instead of fabricating a status. Never raises.
+    """
+    if not isinstance(stats, dict):
+        return None
+    sub = stats.get(block)
+    if not isinstance(sub, dict):
+        return None
+    val = sub.get(key)
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val != 0
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s in ("1", "true", "yes", "up", "on"):
+            return True
+        if s in ("0", "false", "no", "down", "off"):
+            return False
+    return None
+
+
+def merge_lmstudio_status(
+    svc_block: Dict[str, Any],
+    lmstudio_up: Optional[bool],
+    svc_id: str = "lmstudio",
+) -> Dict[str, Any]:
+    """Override the ``lmstudio`` service entry's status from the dashboard feed.
+
+    The local ``services`` probe (monitor.get_svc_block_async) already produced
+    ``svc_block``; this makes the dashboard's ``pc.lmstudio_up`` the source of
+    truth for the entry whose ``id`` is ``svc_id``. ``lmstudio_up`` is the
+    tri-state from :func:`parse_lmstudio_up`:
+
+    * ``True``  -> force that entry's ``st`` to ``"up"``.
+    * ``False`` -> force it to ``"down"`` (and ``ms`` to -1, matching a down probe).
+    * ``None``  -> leave the entry untouched (fall back to the local-probe result).
+
+    ``ms`` is preserved on an "up" override (the local probe's latency stays
+    meaningful). The ``up`` count is recomputed so it stays consistent with the
+    (possibly changed) statuses. Pure: returns a new block, never mutates the
+    input, and is a no-op when the feed is unknown or the entry is absent.
+    """
+    if lmstudio_up is None or not isinstance(svc_block, dict):
+        return svc_block
+    items = svc_block.get("list")
+    if not isinstance(items, list):
+        return svc_block
+
+    new_list: List[Dict[str, Any]] = []
+    changed = False
+    for entry in items:
+        if isinstance(entry, dict) and entry.get("id") == svc_id:
+            e = dict(entry)
+            if lmstudio_up:
+                e["st"] = "up"
+            else:
+                e["st"] = "down"
+                e["ms"] = -1
+            changed = True
+            new_list.append(e)
+        else:
+            new_list.append(entry)
+    if not changed:
+        return svc_block
+
+    up = sum(
+        1 for s in new_list
+        if isinstance(s, dict) and s.get("st") in ("up", "warn")
+    )
+    return {"n": len(new_list), "up": up, "list": new_list}
