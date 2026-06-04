@@ -16,7 +16,6 @@
 #include "modules/car/ForzaManager.h"
 #endif
 #if NOCT_FEATURE_HACKER
-#include "modules/network/TrapManager.h"
 #include "modules/network/WifiSniffManager.h"
 #include "modules/ble/BleManager.h"
 #endif
@@ -30,7 +29,6 @@ AppModeManager::AppModeManager(
     , ForzaManager &forza
 #endif
 #if NOCT_FEATURE_HACKER
-    , TrapManager &trap
     , WifiSniffManager &wifiSniff
     , BleManager &ble
 #endif
@@ -43,7 +41,6 @@ AppModeManager::AppModeManager(
       , forza_(forza)
 #endif
 #if NOCT_FEATURE_HACKER
-      , trap_(trap)
       , wifiSniff_(wifiSniff)
       , ble_(ble)
 #endif
@@ -86,16 +83,6 @@ void AppModeManager::cleanupMode(AppMode mode)
     wifiSniff_.stop();
     WiFi.scanDelete();
     break;
-  case MODE_WIFI_TRAP:
-    trap_.stop();
-    WiFi.mode(WIFI_STA);
-    break;
-  case MODE_BLE_SPAM:
-  case MODE_BLE_SOUR_APPLE:
-  case MODE_BLE_SWIFTPAIR_MICROSOFT:
-  case MODE_BLE_SWIFTPAIR_GOOGLE:
-  case MODE_BLE_SWIFTPAIR_SAMSUNG:
-  case MODE_BLE_FLIPPER_SPAM:
   case MODE_BLE_SCAN:
     ble_.stopScan();
     ble_.stop();
@@ -147,12 +134,7 @@ void AppModeManager::manageWiFiState(AppMode mode)
 #endif
 
 #if NOCT_FEATURE_HACKER
-  case MODE_BLE_SPAM:
-  case MODE_BLE_SOUR_APPLE:
-  case MODE_BLE_SWIFTPAIR_MICROSOFT:
-  case MODE_BLE_SWIFTPAIR_GOOGLE:
-  case MODE_BLE_SWIFTPAIR_SAMSUNG:
-  case MODE_BLE_FLIPPER_SPAM:
+  case MODE_BLE_SCAN:
     if (WiFi.getMode() != WIFI_OFF)
     {
       WiFi.disconnect(true);
@@ -178,7 +160,6 @@ void AppModeManager::manageWiFiState(AppMode mode)
   case MODE_WIFI_RAW_CAPTURE:
   case MODE_WIFI_AP_STA:
   case MODE_WIFI_SNIFF:
-  case MODE_WIFI_TRAP:
     if (WiFi.getMode() != WIFI_STA)
     {
       WiFi.mode(WIFI_STA);
@@ -249,43 +230,6 @@ bool AppModeManager::initializeMode(AppMode mode
     manageWiFiState(mode);
     wifiSniff_.begin();
     Serial.println("[SYS] SNIFF mode initialized");
-    return true;
-
-  case MODE_WIFI_TRAP:
-  {
-    manageWiFiState(mode);
-    int n = WiFi.scanComplete();
-    if (n == -1)
-      WiFi.scanNetworks(true, true);
-    if (n > 0 && trapFilteredCount > 0 && trapWifiSelected >= 0 &&
-        trapWifiSelected < trapFilteredCount && trapSortedIndices)
-      trap_.setClonedSSID(trapSortedIndices[trapWifiSelected]);
-    trap_.start();
-    yield();
-    if (!trap_.isActive())
-    {
-      Serial.println("[SYS] TRAP init failed");
-      return false;
-    }
-    Serial.println("[SYS] TRAP mode initialized");
-    return true;
-  }
-
-  case MODE_BLE_SPAM:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF)
-    {
-      WiFi.disconnect(true);
-      yield();
-      WiFi.mode(WIFI_OFF);
-    }
-    ble_.begin();
-    if (!ble_.isActive())
-    {
-      Serial.println("[SYS] BLE init failed");
-      return false;
-    }
-    Serial.println("[SYS] BLE SPAM mode initialized");
     return true;
 
   case MODE_BLE_SCAN:
@@ -361,36 +305,6 @@ bool AppModeManager::initializeMode(AppMode mode
     Serial.println("[SYS] AP+STA mode initialized");
     return true;
 
-  case MODE_BLE_SOUR_APPLE:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) { WiFi.disconnect(true); yield(); WiFi.mode(WIFI_OFF); }
-    ble_.startAttack(BLE_ATTACK_SOUR_APPLE);
-    Serial.println("[SYS] SOUR APPLE mode initialized");
-    return true;
-  case MODE_BLE_SWIFTPAIR_MICROSOFT:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) { WiFi.disconnect(true); yield(); WiFi.mode(WIFI_OFF); }
-    ble_.startAttack(BLE_ATTACK_SWIFTPAIR_MICROSOFT);
-    Serial.println("[SYS] SWIFTPAIR MS mode initialized");
-    return true;
-  case MODE_BLE_SWIFTPAIR_GOOGLE:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) { WiFi.disconnect(true); yield(); WiFi.mode(WIFI_OFF); }
-    ble_.startAttack(BLE_ATTACK_SWIFTPAIR_GOOGLE);
-    Serial.println("[SYS] SWIFTPAIR GOOGLE mode initialized");
-    return true;
-  case MODE_BLE_SWIFTPAIR_SAMSUNG:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) { WiFi.disconnect(true); yield(); WiFi.mode(WIFI_OFF); }
-    ble_.startAttack(BLE_ATTACK_SWIFTPAIR_SAMSUNG);
-    Serial.println("[SYS] SWIFTPAIR SAMSUNG mode initialized");
-    return true;
-  case MODE_BLE_FLIPPER_SPAM:
-    manageWiFiState(mode);
-    if (WiFi.getMode() != WIFI_OFF) { WiFi.disconnect(true); yield(); WiFi.mode(WIFI_OFF); }
-    ble_.startAttack(BLE_ATTACK_FLIPPER_SPAM);
-    Serial.println("[SYS] BLE FLIPPER SPAM mode initialized");
-    return true;
 #endif
 
   default:

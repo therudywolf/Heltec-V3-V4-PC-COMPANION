@@ -32,13 +32,6 @@ enum AppMode
   MODE_WIFI_RAW_CAPTURE,
   MODE_WIFI_AP_STA,
   MODE_WIFI_SNIFF,
-  MODE_WIFI_TRAP,
-  MODE_BLE_SPAM,
-  MODE_BLE_SOUR_APPLE,
-  MODE_BLE_SWIFTPAIR_MICROSOFT,
-  MODE_BLE_SWIFTPAIR_GOOGLE,
-  MODE_BLE_SWIFTPAIR_SAMSUNG,
-  MODE_BLE_FLIPPER_SPAM,
   MODE_BLE_SCAN,        // passive BLE scan + tracker detection (AirTag/Flipper/Tile)
 #endif
 };
@@ -51,7 +44,6 @@ class NetManager;
 class ForzaManager;
 #endif
 #if NOCT_FEATURE_HACKER
-class TrapManager;
 class WifiSniffManager;
 class BleManager;
 #endif
@@ -68,7 +60,6 @@ public:
       , ForzaManager &forza
 #endif
 #if NOCT_FEATURE_HACKER
-      , TrapManager &trap
       , WifiSniffManager &wifiSniff
       , BleManager &ble
 #endif
@@ -105,7 +96,6 @@ private:
   ForzaManager &forza_;
 #endif
 #if NOCT_FEATURE_HACKER
-  TrapManager &trap_;
   WifiSniffManager &wifiSniff_;
   BleManager &ble_;
 #endif
