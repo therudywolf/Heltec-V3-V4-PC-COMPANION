@@ -10,7 +10,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
-#include <WiFiMulti.h>
 
 
 struct AppState;
@@ -74,8 +73,11 @@ private:
   bool firstDataReceived_;
   bool searchMode_;
   bool suspended_ = false;
-  bool haveNetworks_ = false;
-  WiFiMulti wifiMulti_;
+  static const int kMaxNets = 5;
+  char netSsid_[kMaxNets][33];
+  char netPass_[kMaxNets][65];
+  int netCount_ = 0; // priority list of WiFi networks (#2)
+  int netIdx_ = 0;   // index currently being attempted
   int rssi_;
   int lastSentScreen_;
 };
