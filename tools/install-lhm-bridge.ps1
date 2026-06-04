@@ -26,8 +26,8 @@
 #>
 param(
     [string]$BridgeSource = (Join-Path $PSScriptRoot "lhm_bridge.ps1"),
-    [string]$InstallDir   = "C:\Users\rudywolf\NocturneServer",
-    [string]$LhmDir       = "C:\Users\rudywolf\LibreHardwareMonitor",
+    [string]$InstallDir   = "$env:USERPROFILE\NocturneServer",
+    [string]$LhmDir       = "$env:USERPROFILE\NocturneServer\lhm",
     [int]   $Port         = 8086,   # NOT 8085: a stale http://+:8085/ urlacl poisons it
     [string]$TaskName     = "NocturneLhmBridge"
 )

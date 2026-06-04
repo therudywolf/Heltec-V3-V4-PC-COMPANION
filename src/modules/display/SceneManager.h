@@ -74,7 +74,6 @@ private:
   void drawGridCell(int x, int y, const char *label, const char *value,
                     int valueYOffset = 0);
   void drawFanIconSmall(int x, int y, int frame);
-  void drawWeatherIcon32(int x, int y, int wmoCode);
   void drawNoDataCross(int x, int y, int w, int h);
   void drawNoisePattern(int x, int y, int w, int h);
 

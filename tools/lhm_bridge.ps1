@@ -40,7 +40,7 @@
   Optional path to append status/errors to.
 #>
 param(
-    [string]$LhmDir  = "C:\Users\rudywolf\LibreHardwareMonitor",
+    [string]$LhmDir  = "$env:USERPROFILE\NocturneServer\lhm",
     [int]   $Port    = 8086,
     [string]$Bind    = "127.0.0.1",
     [switch]$Once,
