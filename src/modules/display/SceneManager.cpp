@@ -1238,36 +1238,6 @@ void SceneManager::drawFanIconSmall(int x, int y, int frame)
   u8g2.drawXBM(x, y, 8, 8, bits);
 }
 
-// ---------------------------------------------------------------------------
-// 32x32 weather icon by WMO code. Fallback: Cloud or Sun (never blank).
-// ---------------------------------------------------------------------------
-void SceneManager::drawWeatherIcon32(int x, int y, int wmoCode)
-{
-  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
-  const uint8_t *bits = icon_weather_cloud_32_bits; /* default fallback */
-  if (wmoCode == 0)
-    bits = icon_weather_sun_32_bits;
-  else if (wmoCode >= 1 && wmoCode <= 3)
-    bits = icon_weather_sun_32_bits;
-  else if (wmoCode >= 4 && wmoCode <= 49)
-    bits = icon_weather_cloud_32_bits;
-  else if (wmoCode >= 50 && wmoCode <= 67)
-    bits = icon_weather_rain_32_bits;
-  else if (wmoCode >= 68 && wmoCode <= 70)
-    bits = icon_weather_rain_32_bits;
-  else if (wmoCode >= 71 && wmoCode <= 77)
-    bits = icon_weather_snow_32_bits;
-  else if (wmoCode >= 80 && wmoCode <= 82)
-    bits = icon_weather_rain_32_bits;
-  else if (wmoCode >= 85 && wmoCode <= 86)
-    bits = icon_weather_snow_32_bits;
-  else if (wmoCode >= 95 && wmoCode <= 99)
-    bits = icon_weather_rain_32_bits;
-  else
-    bits = icon_weather_cloud_32_bits; /* unknown WMO → cloud */
-  u8g2.drawXBM(x, y, WEATHER_ICON_W, WEATHER_ICON_H, bits);
-}
-
 // Battery HUD: far right of top bar. Uses NOCT_BAT_* and
 // NOCT_HEADER_BASELINE_Y. onWhiteHeader: true = draw in black (visible on white
 // header); false = white.
