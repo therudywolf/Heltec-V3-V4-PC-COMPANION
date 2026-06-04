@@ -41,7 +41,7 @@ static const char* const kBmwActionNames[] = {
 static const char* const kHackerWifiModes[] = {
     "Radar", "Probe", "EAPOL", "Station", "PktMon",
     "ChAnalyz", "ChActiv", "PktRate", "Pine",
-    "MultiSSID", "Signal", "RawCap", "AP+STA", "Export"};
+    "MultiSSID", "Signal", "RawCap", "AP+STA", "Export", "Foxhunt"};
 
 /* ── Hacker BLE submenu ────────────────────────────────────────────────── */
 static const char* const kHackerBleModes[] = {

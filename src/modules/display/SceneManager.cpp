@@ -2781,6 +2781,54 @@ void SceneManager::drawExport(CaptureExport &cap)
 }
 
 
+// --- FOXHUNT: RSSI direction-finder (warmer/colder) ---
+void SceneManager::drawFoxhunt(int source, int rssi, int peak, int count)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  char rt[12];
+  snprintf(rt, sizeof(rt), "%s %d", source == 1 ? "BLE" : "WiFi", count);
+  drawModeHeader(u8g2, "FOXHUNT", rt);
+
+  u8g2.setClipWindow(0, NOCT_MODE_HEADER_H, NOCT_DISP_W, NOCT_FOOTER_Y);
+  // big current dBm
+  u8g2.setFont(VALUE_FONT);
+  char v[12];
+  snprintf(v, sizeof(v), "%d dBm", rssi);
+  u8g2.setCursor(2, 26);
+  u8g2.print(v);
+
+  // warmer/colder arrow vs the previous frame
+  static int last = -120;
+  const char *trend = (rssi > last + 1) ? "WARMER" : (rssi < last - 1) ? "colder" : "...";
+  last = rssi;
+  int tw = u8g2.getUTF8Width(trend);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(NOCT_DISP_W - 2 - tw, 19);
+  u8g2.print(trend);
+
+  // proximity bar: map -100..-30 dBm -> 0..barW, with a peak-hold tick.
+  const int bx = 2, by = 32, bw = NOCT_DISP_W - 4, bh = 10;
+  disp_.drawTechFrame(bx, by, bw, bh);
+  auto toW = [&](int dbm) -> int {
+    int w = (dbm + 100) * bw / 70;
+    if (w < 0) w = 0; if (w > bw) w = bw; return w;
+  };
+  int cw = toW(rssi);
+  if (cw > 0) u8g2.drawBox(bx, by, cw, bh);
+  int pw = toW(peak);
+  u8g2.drawVLine(bx + (pw < bw ? pw : bw - 1), by - 2, bh + 4); // peak marker
+
+  u8g2.setFont(LABEL_FONT);
+  char s[20];
+  snprintf(s, sizeof(s), "peak %d dBm", peak);
+  u8g2.setCursor(2, 48);
+  u8g2.print(s);
+  u8g2.setMaxClipWindow();
+  drawBottomHint("TAP src  HOLD reset");
+}
+
+
 // --- WIFI SNIFF ---
 void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 {

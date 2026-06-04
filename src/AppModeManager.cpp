@@ -115,6 +115,11 @@ void AppModeManager::cleanupMode(AppMode mode)
     capture_.end(); // stop SoftAP + HTTP server
     WiFi.mode(WIFI_STA);
     break;
+  case MODE_FOXHUNT:
+    ble_.stopScan();
+    ble_.stop();
+    WiFi.scanDelete();
+    break;
 #endif
 #if NOCT_FEATURE_LORA
   case MODE_LORA:
@@ -225,6 +230,7 @@ void AppModeManager::manageWiFiState(AppMode mode)
   case MODE_WIFI_RAW_CAPTURE:
   case MODE_WIFI_AP_STA:
   case MODE_WIFI_SNIFF:
+  case MODE_FOXHUNT:
     if (WiFi.getMode() != WIFI_STA)
     {
       WiFi.mode(WIFI_STA);
@@ -343,6 +349,12 @@ bool AppModeManager::initializeMode(AppMode mode
     WiFi.scanDelete();
     capture_.begin(wifiSniff_);  // write pcap+csv to LittleFS, raise the SoftAP
     Serial.println("[SYS] EXPORT (SoftAP) mode initialized");
+    return true;
+
+  case MODE_FOXHUNT:
+    manageWiFiState(mode);       // WiFi STA — default source is the AP scan
+    WiFi.scanNetworks(true, true);
+    Serial.println("[SYS] FOXHUNT mode initialized");
     return true;
 
   case MODE_WIFI_PROBE_SCAN:

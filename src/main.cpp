@@ -184,6 +184,11 @@ int wifiSortedIndices[32];
 int wifiFilteredCount = 0;
 static int wifiSniffSelected = 0;
 static int bleScanSelected = 0;
+// Foxhunt direction-finder state (source 0=WiFi 1=BLE).
+static int foxSource = 0;
+static int foxRssi = -100;
+static int foxPeak = -120;
+static int foxCount = 0;
 
 static void sortAndFilterWiFiNetworks()
 {
@@ -961,6 +966,17 @@ void loop()
     if (settings.ledEnabled) analogWrite(NOCT_LED_ALERT_PIN, breath);
     else digitalWrite(NOCT_LED_ALERT_PIN, LOW);
   }
+#if NOCT_FEATURE_HACKER
+  else if (currentMode == MODE_FOXHUNT)
+  {
+    // Geiger-style proximity: blink faster + brighter as RSSI climbs.
+    int prox = foxRssi + 100; if (prox < 0) prox = 0; if (prox > 75) prox = 75;
+    unsigned long period = (unsigned long)(900 - prox * 11); // ~900ms far .. ~75ms near
+    bool on = (now % period) < (period / 2);
+    if (settings.ledEnabled) analogWrite(NOCT_LED_ALERT_PIN, on ? (prox * 3 + 20) : 0);
+    else digitalWrite(NOCT_LED_ALERT_PIN, LOW);
+  }
+#endif
 #if NOCT_FEATURE_FORZA
   else if (currentMode == MODE_GAME_FORZA)
   {
@@ -1311,6 +1327,17 @@ void loop()
         if (c > 0) { bleScanSelected = (bleScanSelected + 1) % c; needRedraw = true; }
       }
       break;
+    case MODE_FOXHUNT:
+      if (event == EV_SHORT) // toggle WiFi <-> BLE source
+      {
+        foxSource ^= 1;
+        foxPeak = -120; foxRssi = -100; foxCount = 0;
+        if (foxSource == 1) { WiFi.scanDelete(); bleManager.beginScan(BLE_SCAN_BASIC); }
+        else { bleManager.stopScan(); WiFi.scanNetworks(true, true); }
+        needRedraw = true;
+      }
+      else if (event == EV_LONG) { foxPeak = -120; needRedraw = true; } // reset peak
+      break;
 #endif
 #if NOCT_FEATURE_LORA
     case MODE_LORA:
@@ -1566,6 +1593,38 @@ void loop()
     case MODE_EXPORT:
       sceneManager.drawExport(captureExport);
       break;
+    case MODE_FOXHUNT:
+    {
+      int best = -120, cnt = 0;
+      if (foxSource == 0) // WiFi: strongest AP
+      {
+        int n = WiFi.scanComplete();
+        if (n > 0)
+        {
+          cnt = n;
+          for (int i = 0; i < n; i++) { int r = WiFi.RSSI(i); if (r > best) best = r; }
+        }
+        if (n != -1) WiFi.scanNetworks(true, true); // re-arm when a scan finishes
+      }
+      else // BLE: strongest advertiser
+      {
+        if (bleManager.isScanning()) bleManager.tick();
+        cnt = bleManager.getScanCount();
+        for (int i = 0; i < cnt; i++)
+        {
+          const BleScanDevice *d = bleManager.getScanDevice(i);
+          if (d && d->rssi > best) best = d->rssi;
+        }
+      }
+      if (best > -120)
+      {
+        foxRssi += (best - foxRssi) / 2; // smooth
+        if (best > foxPeak) foxPeak = best;
+        foxCount = cnt;
+      }
+      sceneManager.drawFoxhunt(foxSource, foxRssi, foxPeak, foxCount);
+      break;
+    }
 #endif // NOCT_FEATURE_HACKER
 
 #if NOCT_FEATURE_LORA
