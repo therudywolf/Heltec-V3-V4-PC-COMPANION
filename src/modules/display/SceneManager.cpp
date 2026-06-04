@@ -27,6 +27,10 @@
 #include "ForzaManager.h"
 #endif
 
+#if NOCT_FEATURE_LORA
+#include "modules/lora/LoraManager.h"
+#endif
+
 // ===========================================================================
 // ASSETS: 32x32 PIXEL PERFECT WOLF (High contrast for OLED)
 // ===========================================================================
@@ -1532,9 +1536,13 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
   else if (menuLevel == 2)
   {
     count = submenuCountForHackerGroup(menuHackerGroup);
-    headerStr = (menuHackerGroup == HACKER_GROUP_WIFI) ? STR_MENU_WIFI : STR_MENU_BLE;
-    const char* const* names =
-        (menuHackerGroup == HACKER_GROUP_WIFI) ? kHackerWifiModes : kHackerBleModes;
+    const char* const* names;
+    if (menuHackerGroup == HACKER_GROUP_WIFI)      { headerStr = STR_MENU_WIFI; names = kHackerWifiModes; }
+    else if (menuHackerGroup == HACKER_GROUP_BLE)  { headerStr = STR_MENU_BLE;  names = kHackerBleModes; }
+#if NOCT_FEATURE_LORA
+    else if (menuHackerGroup == HACKER_GROUP_LORA) { headerStr = STR_MENU_LORA; names = kHackerLoraModes; }
+#endif
+    else { headerStr = STR_MENU_WIFI; names = kHackerWifiModes; }
     for (int i = 0; i < count && i < 25; i++)
     {
       strncpy(items[i], names[i], sizeof(items[i]) - 1);
@@ -1567,10 +1575,15 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
 #if NOCT_FEATURE_HACKER
     if (menuCategory == MCAT_HACKER)
     {
-      strncpy(items[0], STR_MENU_WIFI, sizeof(items[0]) - 1);
-      strncpy(items[1], STR_MENU_BLE, sizeof(items[1]) - 1);
-      items[0][sizeof(items[0]) - 1] = '\0';
-      items[1][sizeof(items[1]) - 1] = '\0';
+      int k = 0;
+      strncpy(items[k], STR_MENU_WIFI, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
+      strncpy(items[k], STR_MENU_BLE, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
+#if NOCT_FEATURE_LORA
+      strncpy(items[k], STR_MENU_LORA, sizeof(items[k]) - 1);
+      items[k][sizeof(items[k]) - 1] = '\0'; k++;
+#endif
     }
     else
 #endif
@@ -2986,6 +2999,112 @@ void SceneManager::drawWifiSniffMode(int selected, WifiSniffManager &mgr)
 
 
 #endif // NOCT_FEATURE_HACKER
+
+#if NOCT_FEATURE_LORA
+// ===========================================================================
+// LoRa / sub-GHz (SX1262 @ EU868) — passive spectrum + activity monitor (#21)
+// ===========================================================================
+
+// dBm → pixel height inside a `gh`-tall meter, mapped over -120..-30 (90 dB).
+static int loraRssiToH(float dbm, int gh)
+{
+  float v = (dbm + 120.0f) * (float)gh / 90.0f;
+  if (v < 0) v = 0;
+  if (v > gh) v = (float)gh;
+  return (int)v;
+}
+
+// Antenna-present gate shown before MODE_LORA arms the SX1262 (#21). We are
+// RX-only so a missing antenna won't damage the PA, but the gate keeps "start
+// sniffing 868 MHz" an explicit, deliberate action.
+void SceneManager::drawLoraArm()
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setDrawColor(1);
+  disp_.drawTechFrame(0, 0, NOCT_DISP_W, NOCT_DISP_H);
+  u8g2.setFont(VALUE_FONT);
+  disp_.drawCentered(22, "LoRa 868 MHz");
+  u8g2.setFont(LABEL_FONT);
+  disp_.drawCentered(36, "ATTACH ANTENNA FIRST");
+  if ((millis() / 500) % 2 == 0)
+    disp_.drawCentered(48, "[HOLD]=ARM  [TAP]=BACK");
+}
+
+void SceneManager::drawLora(LoraManager &mgr)
+{
+  U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
+  u8g2.setFontMode(1);
+  u8g2.setDrawColor(1);
+  unsigned long now = millis();
+
+  // --- header (self-contained, mirrors the hacker mode-header style) ---
+  u8g2.drawBox(0, 0, NOCT_DISP_W, NOCT_MODE_HEADER_H);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(LABEL_FONT);
+  u8g2.setCursor(2, NOCT_MODE_HEADER_H - 2);
+  u8g2.print("LoRa 868");
+  {
+    char rt[12];
+    if (!mgr.isReady())
+      snprintf(rt, sizeof(rt), "NO RADIO");
+    else
+    {
+      bool live = (mgr.lastHitMs() != 0) && (now - mgr.lastHitMs() < 1200);
+      snprintf(rt, sizeof(rt), "%s%ddBm", live ? "*" : "", (int)mgr.rssi());
+    }
+    int w = u8g2.getUTF8Width(rt);
+    u8g2.setCursor(NOCT_DISP_W - 2 - w, NOCT_MODE_HEADER_H - 2);
+    u8g2.print(rt);
+  }
+  u8g2.setDrawColor(1);
+
+  if (!mgr.isReady())
+  {
+    u8g2.setFont(VALUE_FONT);
+    disp_.drawCentered(30, "RADIO INIT FAIL");
+    u8g2.setFont(LABEL_FONT);
+    char e[26];
+    snprintf(e, sizeof(e), "err %d - check wiring", mgr.lastError());
+    disp_.drawCentered(43, e);
+    drawBottomHint();
+    return;
+  }
+
+  // --- RSSI history waterfall (1 px per sample, oldest left) ---
+  const int gx = 4;
+  const int gw = mgr.histLen();          // 120 px
+  const int gy = NOCT_MODE_HEADER_H + 2; // 12
+  const int gh = 26;                     // body 12..38
+  const int gbot = gy + gh;
+  disp_.drawTechFrame(gx - 2, gy - 1, gw + 4, gh + 2);
+  for (int i = 0; i < gw; i++)
+  {
+    int h = loraRssiToH((float)mgr.histAt(i), gh);
+    if (h > 0)
+      u8g2.drawVLine(gx + i, gbot - h, h);
+  }
+  // dotted noise-floor reference across the meter
+  int fh = loraRssiToH(mgr.floorRssi(), gh);
+  for (int x = gx; x < gx + gw; x += 3)
+    u8g2.drawPixel(x, gbot - fh);
+
+  // --- stats row ---
+  u8g2.setFont(LABEL_FONT);
+  char s[16];
+  snprintf(s, sizeof(s), "FLR%d", (int)mgr.floorRssi());
+  u8g2.setCursor(2, 48);
+  u8g2.print(s);
+  snprintf(s, sizeof(s), "ACT%d", mgr.activity());
+  u8g2.setCursor(50, 48);
+  u8g2.print(s);
+  snprintf(s, sizeof(s), "PKT%d", mgr.packets());
+  u8g2.setCursor(92, 48);
+  u8g2.print(s);
+
+  drawBottomHint();
+}
+#endif // NOCT_FEATURE_LORA
 
 #if NOCT_FEATURE_FORZA
 

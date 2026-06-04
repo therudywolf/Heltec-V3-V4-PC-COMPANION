@@ -17,13 +17,23 @@ public:
   int lastError() const { return lastErr_; }
 
   void startListen();            // enter continuous RX (for RSSI/sniff)
+  void sleep();                  // park the radio (RX off) on mode exit
   void tick();                   // poll: refresh channel RSSI + count detections
+  void resetCounters() { activity_ = 0; packets_ = 0; } // clear session tallies
 
   float rssi() const { return rssi_; }       // live channel RSSI (dBm)
   float floorRssi() const { return floor_; } // slow noise-floor estimate
-  int activity() const { return activity_; } // CAD hits in the last window
+  int activity() const { return activity_; } // CAD hits this session
   int packets() const { return packets_; }   // LoRa packets seen
   float freqMhz() const { return NOCT_LORA_FREQ; }
+  unsigned long lastHitMs() const { return lastHitMs_; } // last CAD-detected ms
+
+  // Rolling RSSI history (oldest..newest) for the on-screen waterfall.
+  static const int kHistLen = 120;
+  int histLen() const { return kHistLen; }
+  int8_t histAt(int i) const { // i in [0..kHistLen): 0 = oldest
+    return hist_[(histHead_ + i) % kHistLen];
+  }
 
 private:
   bool ready_ = false;
@@ -33,6 +43,9 @@ private:
   int activity_ = 0;
   int packets_ = 0;
   unsigned long lastPollMs_ = 0;
+  unsigned long lastHitMs_ = 0;
+  int8_t hist_[kHistLen] = {0};
+  int histHead_ = 0; // index of the oldest sample (ring write position)
 };
 
 #endif // NOCT_FEATURE_LORA

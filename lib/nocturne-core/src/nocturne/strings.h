@@ -21,6 +21,7 @@
 #define STR_MENU_FORZA       "Forza"
 #define STR_MENU_WIFI        "WiFi"
 #define STR_MENU_BLE         "BLE"
+#define STR_MENU_LORA        "LoRa"
 #define STR_MENU_BMW_ASSIST  "BMW Assistant"
 #define STR_MENU_BMW_DEMO    "BMW Demo"
 #define STR_MENU_DEMO        "Demo"
@@ -45,6 +46,12 @@ static const char* const kHackerWifiModes[] = {
 /* ── Hacker BLE submenu ────────────────────────────────────────────────── */
 static const char* const kHackerBleModes[] = {
     "Trackers"};
+
+#if NOCT_FEATURE_LORA
+/* ── Hacker LoRa / sub-GHz submenu (EU868) ─────────────────────────────── */
+static const char* const kHackerLoraModes[] = {
+    "Spectrum"};
+#endif
 #endif
 
 #endif

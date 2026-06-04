@@ -19,12 +19,18 @@ bool LoraManager::begin() {
     radio.setDio2AsRfSwitch(true); // Heltec SX1262 uses DIO2 as the RF switch
     radio.startReceive();
   }
+  for (int i = 0; i < kHistLen; i++) hist_[i] = -128; // prime the waterfall flat (int8 floor)
+  histHead_ = 0;
   lastPollMs_ = millis();
   return ready_;
 }
 
 void LoraManager::startListen() {
   if (ready_) radio.startReceive();
+}
+
+void LoraManager::sleep() {
+  if (ready_) radio.sleep();
 }
 
 void LoraManager::tick() {
@@ -39,10 +45,17 @@ void LoraManager::tick() {
   if (rssi_ < floor_) floor_ = rssi_;
   else floor_ += (rssi_ - floor_) * 0.02f;
 
+  // Push into the rolling waterfall (clamp to int8 dBm range).
+  float r = rssi_;
+  if (r > 0) r = 0; else if (r < -128) r = -128;
+  hist_[histHead_] = (int8_t)r;
+  histHead_ = (histHead_ + 1) % kHistLen;
+
   // Channel Activity Detection: a quick LoRa-preamble probe.
   int cad = radio.scanChannel();
   if (cad == RADIOLIB_LORA_DETECTED) {
     activity_++;
+    lastHitMs_ = now;
     // A detected preamble often means a frame is incoming — try to read it.
     uint8_t buf[64];
     int len = radio.readData(buf, sizeof(buf));
