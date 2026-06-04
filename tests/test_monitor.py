@@ -76,7 +76,8 @@ class TestBuildPayload:
             "dr": 0, "dw": 0,
         }
         media = {"art": "Artist", "trk": "Track", "play": True, "idle": False, "media_status": "PLAYING"}
-        weather = {"temp": 22, "desc": "Clear", "icon": 0}
+        weather = {"temp": 22, "desc": "Clear", "icon": 0,
+                   "forecast": [[12, 21, 2], [10, 19, 3]]}
         top_procs = [["a", 5], ["b", 3], ["c", 2]]
         top_procs_ram = [["x", 512], ["y", 256]]
         net = (1000, 2000)
@@ -97,6 +98,11 @@ class TestBuildPayload:
         assert payload["media_status"] == "PLAYING"
         assert payload["wt"] == 22
         assert payload["wd"] == "Clear"
+        # Compact daily forecast: list of [tmin, tmax, wmocode] int-triples (<=5).
+        assert payload["wf"] == [[12, 21, 2], [10, 19, 3]]
+        assert len(payload["wf"]) <= 5
+        for entry in payload["wf"]:
+            assert len(entry) == 3 and all(isinstance(v, int) for v in entry)
         assert payload["tp"] == top_procs
         assert payload["tr"] == top_procs_ram
         assert "hdd" in payload
@@ -116,6 +122,8 @@ class TestBuildPayload:
         assert len(s) > 0
         back = json.loads(s)
         assert back["ct"] == 0
+        # No forecast in the weather dict -> wf defaults to an empty list.
+        assert back["wf"] == []
         assert "alert" not in back or back.get("alert") != "CRITICAL"
 
 

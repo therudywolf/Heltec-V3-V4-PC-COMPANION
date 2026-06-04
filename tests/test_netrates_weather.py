@@ -87,3 +87,55 @@ class TestWeatherDesc:
         assert "latitude=55.75" in url
         assert "longitude=37.61" in url
         assert "current=temperature_2m,weather_code" in url
+        # Daily forecast is requested so parse_daily_forecast has data to read.
+        assert "daily=temperature_2m_max,temperature_2m_min,weather_code" in url
+
+
+# --------------------------------------------------------------------------- #
+# parse_daily_forecast  (compact device forecast: [tmin, tmax, wmocode])
+# --------------------------------------------------------------------------- #
+class TestParseDailyForecast:
+    def _data(self, tmax, tmin, code):
+        return {"daily": {
+            "temperature_2m_max": tmax,
+            "temperature_2m_min": tmin,
+            "weather_code": code,
+        }}
+
+    def test_shape_is_list_of_three_int_lists(self):
+        data = self._data([21.4, 19.0], [12.6, 10.0], [2, 3])
+        out = weather.parse_daily_forecast(data, days=5)
+        # Order is [tmin, tmax, code], rounded to ints.
+        assert out == [[13, 21, 2], [10, 19, 3]]
+        for entry in out:
+            assert isinstance(entry, list) and len(entry) == 3
+            assert all(isinstance(v, int) for v in entry)
+
+    def test_clamps_to_days_limit(self):
+        data = self._data(
+            [20, 21, 22, 23, 24, 25, 26, 27],
+            [10, 11, 12, 13, 14, 15, 16, 17],
+            [0, 1, 2, 3, 45, 61, 71, 95],
+        )
+        out = weather.parse_daily_forecast(data, days=5)
+        assert len(out) == 5
+        assert out[0] == [10, 20, 0]
+        assert out[4] == [14, 24, 45]
+
+    def test_ragged_arrays_use_shortest(self):
+        # Only two codes -> only two entries even though temps have three.
+        data = self._data([20, 21, 22], [10, 11, 12], [0, 1])
+        out = weather.parse_daily_forecast(data, days=5)
+        assert len(out) == 2
+
+    def test_missing_or_bad_returns_empty_list(self):
+        assert weather.parse_daily_forecast({}, days=5) == []
+        assert weather.parse_daily_forecast({"daily": None}, days=5) == []
+        assert weather.parse_daily_forecast({"daily": {}}, days=5) == []
+        assert weather.parse_daily_forecast(None, days=5) == []
+
+    def test_skips_unparsable_entry(self):
+        data = self._data([20, None, 22], [10, 11, 12], [0, 1, 2])
+        out = weather.parse_daily_forecast(data, days=5)
+        # Middle entry (None tmax) is skipped; first and third survive.
+        assert out == [[10, 20, 0], [12, 22, 2]]
