@@ -38,7 +38,8 @@ enum AppMode
   MODE_BLE_DEVICES,     // passive BLE device browser (all advertisers, by RSSI)
 #endif
 #if NOCT_FEATURE_LORA
-  MODE_LORA,            // SX1262 sub-GHz spectrum/activity monitor (#21, EU868)
+  MODE_LORA,            // SX1262 packet listener: mesh RX + node list (#21, EU868)
+  MODE_LORA_SWEEP,      // SX1262 wide-band RSSI spectrum sweep (863-870 MHz)
 #endif
 #if NOCT_FEATURE_WOLFPET
   MODE_WOLFPET,         // tamagotchi wolf pet (#3)

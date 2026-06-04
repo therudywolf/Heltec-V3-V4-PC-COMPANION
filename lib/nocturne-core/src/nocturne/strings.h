@@ -50,7 +50,7 @@ static const char* const kHackerBleModes[] = {
 #if NOCT_FEATURE_LORA
 /* ── Hacker LoRa / sub-GHz submenu (EU868) ─────────────────────────────── */
 static const char* const kHackerLoraModes[] = {
-    "Spectrum"};
+    "Listen", "Spectrum"};
 #endif
 #endif
 

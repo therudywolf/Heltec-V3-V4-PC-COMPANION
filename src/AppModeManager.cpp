@@ -111,6 +111,7 @@ void AppModeManager::cleanupMode(AppMode mode)
 #endif
 #if NOCT_FEATURE_LORA
   case MODE_LORA:
+  case MODE_LORA_SWEEP:
     lora_.sleep(); // park the SX1262 (RX off) on exit
     break;
 #endif
@@ -177,6 +178,7 @@ void AppModeManager::manageWiFiState(AppMode mode)
 #endif
 #if NOCT_FEATURE_LORA
   case MODE_LORA:
+  case MODE_LORA_SWEEP:
     if (WiFi.getMode() != WIFI_OFF)
     {
       WiFi.disconnect(true);
@@ -370,9 +372,17 @@ bool AppModeManager::initializeMode(AppMode mode
     manageWiFiState(mode);            // WiFi off so the SX1262 owns the RF path
     if (lora_.begin())                // init @ EU868; lazy, so re-entry re-arms it
       lora_.startListen();
-    Serial.printf("[SYS] LoRa mode initialized (radio %s)\n",
+    Serial.printf("[SYS] LoRa LISTEN initialized (radio %s)\n",
                   lora_.isReady() ? "OK" : "NOT FOUND");
     return true;                      // enter even if radio missing — scene shows the error
+
+  case MODE_LORA_SWEEP:
+    manageWiFiState(mode);
+    if (lora_.begin())
+      lora_.beginSweep();
+    Serial.printf("[SYS] LoRa SWEEP initialized (radio %s)\n",
+                  lora_.isReady() ? "OK" : "NOT FOUND");
+    return true;
 #endif
 
 #if NOCT_FEATURE_WOLFPET
