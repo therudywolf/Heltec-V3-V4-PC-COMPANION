@@ -718,6 +718,20 @@ void loop()
       toastUntil = now + 1500;
     }
   }
+
+  // Auto-exit: telemetry stopped (signal lost) -> fall back to PC monitoring and
+  // re-arm so Forza can auto-enter again when the stream returns (#11).
+  if (currentMode == MODE_GAME_FORZA && splashDone && now > forzaSplashUntil &&
+      !forzaManager.isConnected())
+  {
+    if (appModeManager.switchToMode(currentMode, MODE_NORMAL))
+    {
+      forzaAutoArmed = true;
+      needRedraw = true;
+      snprintf(toastMsg, sizeof(toastMsg), "FORZA LOST");
+      toastUntil = now + 1500;
+    }
+  }
 #endif
 
   // ── Input ───────────────────────────────────────────────────────────
