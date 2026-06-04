@@ -609,7 +609,7 @@ void SceneManager::drawDisks(int xOff)
 // Format: "CPU  [1200] 45%" aligned columns.
 // ---------------------------------------------------------------------------
 #define FAN_ROW_Y0 NOCT_CONTENT_TOP
-#define FAN_ROW_DY 12
+#define FAN_ROW_DY 11
 #define FAN_NAME_X 2
 #define FAN_RPM_X 28
 #define FAN_PCT_X 90
@@ -797,13 +797,14 @@ void SceneManager::drawWeather(int xOff)
    * (skip index 0 = today). Tiny font in the free band below desc/temp. */
   if (weather.wfDays > 1) {
     int n = weather.wfDays - 1;
-    if (n > 4) n = 4;
-    u8g2.setFont(UNIT_FONT);
+    if (n > 3) n = 3;               // 3 days, readable size (#1)
+    u8g2.setFont(LABEL_FONT);
     int slot = boxW / n;
     for (int i = 0; i < n; i++) {
       char fb[8];
-      snprintf(fb, sizeof(fb), "%+d\xC2\xB0", weather.wfMax[i + 1]);
-      u8g2.drawUTF8(boxX + 4 + i * slot, boxY + boxH - 1, fb);
+      snprintf(fb, sizeof(fb), "%+d", weather.wfMax[i + 1]);
+      int fw = u8g2.getUTF8Width(fb);
+      u8g2.drawUTF8(boxX + i * slot + (slot - fw) / 2, boxY + boxH - 1, fb);
     }
   }
 
@@ -992,10 +993,13 @@ void SceneManager::drawForest(int xOff)
 
   // Header: "NODES  up/total" right-aligned.
   u8g2.setFont(LABEL_FONT);
-  char hdr[20];
-  snprintf(hdr, sizeof(hdr), "%d/%d up", f.up, f.count);
-  int hw_ = u8g2.getUTF8Width(hdr);
-  u8g2.drawUTF8(X(right - hw_, xOff), NOCT_CONTENT_START + 6, hdr);
+  char hdr[24];
+  snprintf(hdr, sizeof(hdr), "up %d/%d", f.up, f.count);
+  u8g2.drawUTF8(X(left, xOff), NOCT_CONTENT_START + 6, hdr);
+  // Legend so the per-row "c/r/d" numbers are readable (#4).
+  const char *leg = "C/R/D%";
+  int legW = u8g2.getUTF8Width(leg);
+  u8g2.drawUTF8(X(right - legW, xOff), NOCT_CONTENT_START + 6, leg);
 
   // Node rows.
   const int rowH = 9;
@@ -1642,7 +1646,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     firstVisible = 0; // when count < NOCT_MENU_VISIBLE_ROWS (e.g. 4 categories)
 
   u8g2.setFontMode(1);
-  u8g2.setFont(LABEL_FONT);
+  u8g2.setFont(HEADER_FONT); /* bigger, more readable menu items (#3) */
 
   for (int r = 0; r < NOCT_MENU_VISIBLE_ROWS; r++)
   {
@@ -1663,7 +1667,7 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
     if (i == selected)
     {
       u8g2.setDrawColor(1);
-      u8g2.drawBox(NOCT_MENU_LIST_LEFT, y - 6, NOCT_MENU_LIST_W,
+      u8g2.drawBox(NOCT_MENU_LIST_LEFT, y - 8, NOCT_MENU_LIST_W,
                    NOCT_MENU_ROW_H);
       u8g2.setDrawColor(0);
       u8g2.drawUTF8(NOCT_MENU_LIST_LEFT + 2, y, ">");
