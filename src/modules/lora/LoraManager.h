@@ -66,8 +66,9 @@ public:
   void startListen();                    // (re)arm RX with the active preset
   void tick();                           // poll RX flag, decode, update tables
   void nextPreset();                     // cycle modem config (re-arms RX)
+  void nudgeFreq(float dMhz);            // tune the RX frequency (wraps in band)
   const char *presetName() const { return kPresets[preset_].name; }
-  float freqMhz() const { return kPresets[preset_].freq; }
+  float freqMhz() const { return curFreq_; } // the active (tuned) RX frequency
   int  spreadingFactor() const { return kPresets[preset_].sf; }
 
   int  packetCount() const { return packets_; }
@@ -113,13 +114,15 @@ private:
 
   static const LoraPreset kPresets[];
   static const int kPresetCount;
-  static constexpr float kBandStart = 863.0f;
-  static constexpr float kBandEnd   = 870.0f;
+  // Sweep the EU mesh-relevant band (867.0-869.75) for tighter resolution.
+  static constexpr float kBandStart = 867.0f;
+  static constexpr float kBandEnd   = 869.75f;
   static constexpr float kBinMHz    = (kBandEnd - kBandStart) / LORA_SPEC_BINS;
 
   bool ready_ = false;
   int  lastErr_ = 0;
   int  preset_ = 0;
+  float curFreq_ = 869.525f; // active RX frequency (tunable, persisted)
   float rssi_ = -130.0f;
   int  packets_ = 0;
   unsigned long lastHitMs_ = 0;

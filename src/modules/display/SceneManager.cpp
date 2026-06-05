@@ -3380,7 +3380,7 @@ void SceneManager::drawLora(LoraManager &mgr, int view)
   unsigned long now = millis();
 
   char hl[16], hr[14];
-  snprintf(hl, sizeof(hl), "LoRa %s", mgr.presetName());
+  snprintf(hl, sizeof(hl), "%.3f", mgr.freqMhz()); // the tuned RX frequency
   if (!mgr.isReady())
     snprintf(hr, sizeof(hr), "NO RADIO");
   else
@@ -3398,7 +3398,7 @@ void SceneManager::drawLora(LoraManager &mgr, int view)
     char e[26];
     snprintf(e, sizeof(e), "err %d - check wiring", mgr.lastError());
     disp_.drawCentered(43, e);
-    drawBottomHint("TAP preset  2x BACK");
+    drawBottomHint("TAP=freq  2x BACK");
     return;
   }
 
@@ -3431,7 +3431,8 @@ void SceneManager::drawLora(LoraManager &mgr, int view)
   else
   {
     // -------- recent packets --------
-    snprintf(s, sizeof(s), "PKT %d  ND %d", mgr.packetCount(), mgr.nodeCount());
+    snprintf(s, sizeof(s), "PKT%d ND%d  %s SF%d", mgr.packetCount(),
+             mgr.nodeCount(), mgr.presetName(), mgr.spreadingFactor());
     u8g2.setCursor(2, 19);
     u8g2.print(s);
     int shown = mgr.recentCount() < 3 ? mgr.recentCount() : 3;
@@ -3457,7 +3458,7 @@ void SceneManager::drawLora(LoraManager &mgr, int view)
   }
 
   u8g2.setMaxClipWindow();
-  drawBottomHint(view == 1 ? "TAP preset HOLD pkts" : "TAP preset HOLD nodes");
+  drawBottomHint("TAP freq HOLD modem 3x view");
 }
 
 // LoRa SPECTRUM: wide-band RSSI sweep across 863..870 MHz. Each bin is a bar;

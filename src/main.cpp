@@ -1386,14 +1386,21 @@ void loop()
 #endif
 #if NOCT_FEATURE_LORA
     case MODE_LORA:
-      if (event == EV_SHORT) // cycle the modem preset to lock onto traffic
+      if (event == EV_SHORT) // tune the RX frequency to find your mesh
+      {
+        loraMgr.nudgeFreq(0.25f);
+        snprintf(toastMsg, sizeof(toastMsg), "%.3f MHz", loraMgr.freqMhz());
+        toastUntil = now + 1000;
+        needRedraw = true;
+      }
+      else if (event == EV_LONG) // cycle the modem preset (SF/BW/sync)
       {
         loraMgr.nextPreset();
         snprintf(toastMsg, sizeof(toastMsg), "%s", loraMgr.presetName());
         toastUntil = now + 1000;
         needRedraw = true;
       }
-      else if (event == EV_LONG) // toggle packet list <-> node table
+      else if (event == EV_TRIPLE) // toggle packet list <-> node table
       {
         loraView ^= 1;
         needRedraw = true;

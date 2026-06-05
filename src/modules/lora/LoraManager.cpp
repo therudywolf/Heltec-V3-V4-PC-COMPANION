@@ -44,9 +44,37 @@ bool LoraManager::begin() {
     radio.setPacketReceivedAction(loraRxIsr);
     radio.startReceive();
   }
+  curFreq_ = p.freq;
+  { // restore a previously tuned frequency
+    Preferences pr;
+    if (pr.begin("lora", true)) {
+      int k = pr.getInt("freqk", 0);
+      pr.end();
+      if (k >= 863000 && k <= 870000) {
+        curFreq_ = k / 1000.0f;
+        if (ready_) radio.setFrequency(curFreq_);
+      }
+    }
+  }
   for (int i = 0; i < LORA_SPEC_BINS; i++) spec_[i] = -128;
   loadNodes(); // restore the unique-node table across reboots
   return ready_;
+}
+
+void LoraManager::nudgeFreq(float dMhz) {
+  curFreq_ += dMhz;
+  if (curFreq_ > 869.75f) curFreq_ = 867.0f; // wrap within the EU mesh band
+  if (curFreq_ < 867.0f) curFreq_ = 869.75f;
+  if (ready_) {
+    radio.standby();
+    radio.setFrequency(curFreq_);
+    radio.startReceive();
+  }
+  Preferences pr;
+  if (pr.begin("lora", false)) {
+    pr.putInt("freqk", (int)(curFreq_ * 1000.0f + 0.5f));
+    pr.end();
+  }
 }
 
 void LoraManager::loadNodes() {
@@ -74,7 +102,7 @@ void LoraManager::applyPreset() {
   if (!ready_) return;
   const LoraPreset &p = kPresets[preset_];
   radio.standby();
-  radio.setFrequency(p.freq);
+  radio.setFrequency(curFreq_); // keep the tuned freq; preset drives bw/sf/cr/sync
   radio.setBandwidth(p.bw);
   radio.setSpreadingFactor(p.sf);
   radio.setCodingRate(p.cr);
@@ -89,6 +117,7 @@ void LoraManager::startListen() {
 
 void LoraManager::nextPreset() {
   preset_ = (preset_ + 1) % kPresetCount;
+  curFreq_ = kPresets[preset_].freq; // reset to this preset's standard mesh freq
   applyPreset();
 }
 
@@ -181,31 +210,40 @@ void LoraManager::resetStats() {
 }
 
 // ── Spectrum sweep ────────────────────────────────────────────────────────
-// Wide-band energy view: hop the synth across 863..870 MHz reading the
-// instantaneous RSSI at each bin. A narrow modem (BW125/SF7) keeps the RBW
-// tight; only a few bins are sampled per call so the UI stays responsive.
+// Energy view across 867.0..869.75 MHz: hop the synth per bin and read the
+// instantaneous RSSI. BW250 matches the mesh signals' occupied bandwidth so
+// their energy actually lands in a bin. Peak-hold with slow decay so brief
+// packets stick long enough to see; a few bins per call keeps the UI live.
 void LoraManager::beginSweep() {
   if (!ready_) return;
   radio.standby();
-  radio.setBandwidth(125.0f);
+  radio.setBandwidth(250.0f); // match mesh occupied BW so bursts register
   radio.setSpreadingFactor(7);
+  radio.setPreambleLength(8);
   sweepIdx_ = 0;
-  for (int i = 0; i < LORA_SPEC_BINS; i++) spec_[i] = -128;
+  for (int i = 0; i < LORA_SPEC_BINS; i++) spec_[i] = -123;
 }
 
 void LoraManager::sweepTick() {
   if (!ready_) return;
-  const int binsPerTick = 6;
+  const int binsPerTick = 3;
   for (int k = 0; k < binsPerTick; k++) {
     float f = kBandStart + (sweepIdx_ + 0.5f) * kBinMHz;
     radio.standby();
     radio.setFrequency(f);
     radio.startReceive();
-    delayMicroseconds(400); // let the instantaneous-RSSI register settle
+    delayMicroseconds(1500);    // PLL lock + AGC settle on the new frequency
+    (void)radio.getRSSI(false); // discard the first (possibly stale) sample
+    delayMicroseconds(300);
     float r = radio.getRSSI(false);
     if (r > 0) r = 0;
-    else if (r < -128) r = -128;
-    spec_[sweepIdx_] = (int8_t)r;
+    else if (r < -127) r = -127;
+    // peak-hold with ~1 dB/visit decay: signals persist, noise floor relaxes.
+    int8_t cur = (int8_t)r;
+    int8_t prev = spec_[sweepIdx_];
+    if (cur > prev) spec_[sweepIdx_] = cur;
+    else if (prev > -123) spec_[sweepIdx_] = (int8_t)(prev - 1);
+    else spec_[sweepIdx_] = cur;
     sweepIdx_ = (sweepIdx_ + 1) % LORA_SPEC_BINS;
   }
 }
