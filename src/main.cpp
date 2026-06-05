@@ -1291,12 +1291,12 @@ void loop()
 #if NOCT_FEATURE_WOLFPET
     case MODE_WOLFPET:
       if (event == EV_SHORT)
-      { wolfActionSel = (wolfActionSel + 1) % 3; needRedraw = true; }
+      { wolfActionSel = (wolfActionSel + 1) % WolfPet::ACT_COUNT; needRedraw = true; }
       else if (event == EV_LONG)
       {
         wolfPet.doAction(wolfActionSel);
         snprintf(toastMsg, sizeof(toastMsg), "%s!",
-                 wolfActionSel == 0 ? "Fed" : wolfActionSel == 1 ? "Played" : "Rested");
+                 wolfActionSel == 0 ? "Fed" : "Played");
         toastUntil = now + 1000;
         needRedraw = true;
       }
