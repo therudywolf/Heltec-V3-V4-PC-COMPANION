@@ -122,6 +122,19 @@ void NetManager::setServer(const char *ip, uint16_t port) {
   serverPort_ = port;
 }
 
+void NetManager::setForcedNetwork(int idx) {
+  if (idx < -1) idx = -1;
+  if (idx >= netCount_) idx = netCount_ - 1;
+  forcedNet_ = idx;
+  if (netCount_ == 0) return;
+  netIdx_ = (idx >= 0) ? idx : 0; // AUTO restarts from the primary
+  WiFi.disconnect();
+  WiFi.begin(netSsid_[netIdx_], netPass_[netIdx_]);
+  WiFi.setSleep(false);
+  lastWifiRetry_ = millis();
+  Serial.printf("[NET] network select: %s\n", idx < 0 ? "AUTO" : netSsid_[netIdx_]);
+}
+
 void NetManager::setTls(bool on) {
   useTls_ = on;
   if (on) {
@@ -181,8 +194,11 @@ void NetManager::tick(unsigned long now) {
       WiFi.setAutoReconnect(true);
       WiFi.disconnect();
       // Failover: advance to the next network in the priority list each retry,
-      // wrapping back to the primary so we keep preferring the PC's LAN.
-      if (netCount_ > 1)
+      // wrapping back to the primary so we keep preferring the PC's LAN. When a
+      // network is force-selected in Settings, stay locked to it (no cycling).
+      if (forcedNet_ >= 0)
+        netIdx_ = forcedNet_;
+      else if (netCount_ > 1)
         netIdx_ = (netIdx_ + 1) % netCount_;
       WiFi.begin(netSsid_[netIdx_], netPass_[netIdx_]);
       WiFi.setSleep(false);

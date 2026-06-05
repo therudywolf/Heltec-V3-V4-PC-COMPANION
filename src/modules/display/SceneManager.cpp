@@ -1512,7 +1512,8 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
                             bool glitchEnabled, bool ledEnabled,
                             bool lowBrightnessDefault, bool rebootConfirmed,
                             int displayContrast, int displayTimeoutSec,
-                            int pinnedScene, bool colorInverted)
+                            int pinnedScene, bool colorInverted,
+                            const char *wifiNetLabel)
 {
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C &u8g2 = disp_.u8g2();
   const int boxX = NOCT_MENU_BOX_X;
@@ -1639,6 +1640,9 @@ void SceneManager::drawMenu(int menuLevel, int menuCategory, int mainIndex,
       else
         snprintf(items[8], sizeof(items[8]), "PIN:%s", getSceneName(pinnedScene));
       items[8][sizeof(items[8]) - 1] = '\0';
+      snprintf(items[9], sizeof(items[9]), "NET:%s",
+               wifiNetLabel ? wifiNetLabel : "AUTO");
+      items[9][sizeof(items[9]) - 1] = '\0';
 #endif
     }
     else if (menuCategory == MCAT_SYSTEM)
