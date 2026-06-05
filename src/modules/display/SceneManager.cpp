@@ -2013,11 +2013,18 @@ void SceneManager::drawWolfPet(WolfPet &pet, int selectedAction)
   // Wolf sprite by mood (reuse the screensaver sprites).
   const unsigned char *spr = wolf_idle;
   int m = pet.mood();
-  if (!pet.isAlive() || m == 0) spr = wolf_blink;
+  if (pet.isSleeping()) spr = wolf_blink;       // eyes shut while resting
+  else if (!pet.isAlive() || m == 0) spr = wolf_blink;
   else if (m == 2) spr = wolf_funny;
   const int wx = 2, wy = NOCT_CONTENT_TOP + 4;
   u8g2.drawXBMP(wx, wy, 32, 32, spr);
   disp_.drawTechBrackets(wx - 1, wy - 1, 34, 34, 4);
+  if (pet.isSleeping())
+  { // floating "Zzz" so the autonomous nap reads at a glance
+    u8g2.setFont(LABEL_FONT);
+    u8g2.drawUTF8(wx + 26, wy + 4, "z");
+    u8g2.drawUTF8(wx + 30, wy - 1, "Z");
+  }
 
   // Stat bars to the right of the wolf.
   const int lx = 40;
@@ -2038,8 +2045,8 @@ void SceneManager::drawWolfPet(WolfPet &pet, int selectedAction)
   char buf[24];
   snprintf(buf, sizeof(buf), "%lud %s", (unsigned long)pet.ageDays(), pet.statusText());
   u8g2.drawUTF8(2, NOCT_DISP_H - 2, buf);
-  static const char *kActs[3] = {"FEED", "PLAY", "REST"};
-  int sa = selectedAction < 0 ? 0 : (selectedAction > 2 ? 2 : selectedAction);
+  static const char *kActs[2] = {"FEED", "PLAY"};
+  int sa = selectedAction < 0 ? 0 : (selectedAction > 1 ? 1 : selectedAction);
   snprintf(buf, sizeof(buf), ">%s", kActs[sa]);
   int aw = u8g2.getUTF8Width(buf);
   u8g2.drawUTF8(NOCT_DISP_W - aw - 2, NOCT_DISP_H - 2, buf);
