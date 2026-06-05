@@ -45,6 +45,15 @@ public:
   size_t print(const String &s) { return client_->print(s); }
   size_t print(const char *s) { return client_->print(s); }
 
+  // WiFi network selection (#2): -1 = AUTO (priority failover), or a fixed index
+  // into the registered networks. Forcing one reconnects to it immediately.
+  void setForcedNetwork(int idx);
+  int forcedNetwork() const { return forcedNet_; }
+  int networkCount() const { return netCount_; }
+  const char *networkName(int i) const {
+    return (i >= 0 && i < netCount_) ? netSsid_[i] : "";
+  }
+
   void setSuspend(bool suspend);
   void disconnectTcp();
   void markDataReceived(unsigned long now);
@@ -89,6 +98,7 @@ private:
   char netPass_[kMaxNets][65];
   int netCount_ = 0; // priority list of WiFi networks (#2)
   int netIdx_ = 0;   // index currently being attempted
+  int forcedNet_ = -1; // -1 = AUTO failover; else lock to this network index
   int rssi_;
   int lastSentScreen_;
 };

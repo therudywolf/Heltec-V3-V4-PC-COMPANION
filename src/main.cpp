@@ -429,6 +429,13 @@ void setup()
 #else
   netManager.begin(WIFI_SSID, WIFI_PASS);
 #endif
+  {
+    // Restore the saved WiFi network selection (#2): -1 = AUTO failover.
+    Preferences p; p.begin("nocturne", true);
+    int netSel = p.getInt("netSel", -1);
+    p.end();
+    if (netSel >= 0) netManager.setForcedNetwork(netSel);
+  }
   netManager.setServer(PC_IP, TCP_PORT);
 #ifdef NOCT_SERVER_TLS
   // Server reached via an HTTPS-fronted proxy / public domain on :443 — works on
@@ -707,6 +714,18 @@ static bool handleMenuActionByCategory(int cat, int item, unsigned long now)
       else
         snprintf(toastMsg, sizeof(toastMsg), "PIN OFF");
       toastUntil = now + 1000;
+    }
+    else if (item == 9)
+    {
+      // WiFi network: AUTO -> net0 -> ... -> netN-1 -> AUTO (#2)
+      int n = netManager.networkCount();
+      int sel = (netManager.forcedNetwork() + 2) % (n + 1) - 1;
+      netManager.setForcedNetwork(sel);
+      Preferences p; p.begin("nocturne", false);
+      p.putInt("netSel", sel); p.end();
+      snprintf(toastMsg, sizeof(toastMsg), "NET:%s",
+               sel < 0 ? "AUTO" : netManager.networkName(sel));
+      toastUntil = now + 1200;
     }
 #endif
     return true;
@@ -1491,13 +1510,20 @@ void loop()
 #endif
   else if (quickMenuOpen)
   {
+#if NOCT_FEATURE_MONITORING
+    const char *netLbl = (netManager.forcedNetwork() < 0)
+                             ? "AUTO"
+                             : netManager.networkName(netManager.forcedNetwork());
+#else
+    const char *netLbl = nullptr;
+#endif
     sceneManager.drawMenu(
         menuLevel, menuCategory, quickMenuItem, menuHackerGroup,
         settings.carouselEnabled, settings.carouselIntervalSec,
         settings.displayInverted, settings.glitchEnabled, settings.ledEnabled,
         settings.lowBrightnessDefault, rebootConfirmed,
         settings.displayContrast, settings.displayTimeoutSec,
-        settings.pinnedScene, settings.colorInverted);
+        settings.pinnedScene, settings.colorInverted, netLbl);
   }
   else
   {

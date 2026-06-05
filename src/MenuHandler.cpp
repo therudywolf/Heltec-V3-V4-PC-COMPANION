@@ -34,7 +34,7 @@ int submenuCount(int category)
 
   case MCAT_CONFIG:
 #if NOCT_FEATURE_MONITORING
-    return 9; // AUTO, FLIP, FX, LED, DIM, CONTRAST, TIMEOUT, INVERT, PIN
+    return 10; // AUTO, FLIP, FX, LED, DIM, CONTRAST, TIMEOUT, INVERT, PIN, NET
 #else
     return 8; // AUTO, FLIP, FX, LED, DIM, CONTRAST, TIMEOUT, INVERT
 #endif
